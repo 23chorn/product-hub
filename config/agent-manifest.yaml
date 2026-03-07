@@ -1,0 +1,47 @@
+# Agent Manifest
+# Lists all active agent personas and their workflow mappings.
+# Replaces _bmad/_config/agent-manifest.csv and _bmad/_config/manifest.yaml.
+
+agents:
+  - id: pm
+    persona: agents/personas/pm.md
+    modes: [prd, backlog]
+    workflows:
+      - id: create-prd
+        path: agents/workflows/planning/create-prd/workflow-create-prd.md
+        menu_code: CP
+      - id: validate-prd
+        path: agents/workflows/planning/create-prd/workflow-validate-prd.md
+        menu_code: VP
+      - id: edit-prd
+        path: agents/workflows/planning/create-prd/workflow-edit-prd.md
+        menu_code: EP
+      - id: create-epics-and-stories
+        path: agents/workflows/solutioning/create-epics-and-stories/workflow.md
+        menu_code: CE
+      - id: quick-tickets
+        path: agents/workflows/solutioning/create-epics-and-stories/workflow-quick-tickets.md
+        menu_code: QT
+
+  - id: analyst
+    persona: agents/personas/analyst.md
+    modes: [analyst]
+    workflows:
+      - id: market-research
+        path: agents/workflows/analysis/research/workflow-market-research.md
+        menu_code: MR
+      - id: domain-research
+        path: agents/workflows/analysis/research/workflow-domain-research.md
+        menu_code: DR
+      - id: technical-research
+        path: agents/workflows/analysis/research/workflow-technical-research.md
+        menu_code: TR
+      - id: create-product-brief
+        path: agents/workflows/analysis/create-product-brief/workflow.md
+        menu_code: CB
+
+templates:
+  - id: research
+    path: agents/templates/research.template.md
+  - id: product-brief
+    path: agents/templates/product-brief.template.md

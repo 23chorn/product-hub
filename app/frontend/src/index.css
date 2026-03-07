@@ -1,0 +1,157 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+/* Chat message prose styling */
+
+/* Hide stray horizontal rules from markdown --- dividers */
+.chat-message hr {
+  display: none;
+}
+
+/* Spacing between headings and the content that follows */
+.chat-message h1,
+.chat-message h2,
+.chat-message h3,
+.chat-message h4 {
+  margin-top: 1.25em;
+  margin-bottom: 0.5em;
+  font-weight: 700;
+}
+
+.chat-message h1:first-child,
+.chat-message h2:first-child,
+.chat-message h3:first-child,
+.chat-message h4:first-child {
+  margin-top: 0;
+}
+
+/* Spacing for lists after paragraphs/headings */
+.chat-message ul,
+.chat-message ol {
+  margin-top: 0.5em;
+  margin-bottom: 0.75em;
+}
+
+/* Spacing between list items */
+.chat-message li {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+
+/* Paragraph spacing */
+.chat-message p {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+.chat-message p:first-child {
+  margin-top: 0;
+}
+
+.chat-message p:last-child {
+  margin-bottom: 0;
+}
+
+/* Overflow handling */
+.chat-message pre {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.chat-message table {
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.chat-message img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ── Scrollbars ─────────────────────────────────────────────────────────────
+   Webkit (Chrome, Edge, Safari): thin, rounded, matched to the app palette.
+   Firefox: uses scrollbar-color / scrollbar-width properties.
+   Dark mode is driven by the .dark class that Tailwind puts on <html>.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db #f3f4f6; /* thumb: gray-300  track: gray-100 */
+}
+
+.dark * {
+  scrollbar-color: #4b5563 #1f2937; /* thumb: gray-600  track: gray-800 */
+}
+
+/* Webkit */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f3f4f6; /* gray-100 */
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d1d5db; /* gray-300 */
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af; /* gray-400 */
+}
+
+::-webkit-scrollbar-corner {
+  background: #f3f4f6;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: #1f2937; /* gray-800 */
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #4b5563; /* gray-600 */
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #6b7280; /* gray-500 */
+}
+
+.dark ::-webkit-scrollbar-corner {
+  background: #1f2937;
+}
+
+/* Toast animations */
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.3s ease-out;
+}

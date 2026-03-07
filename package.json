@@ -1,0 +1,39 @@
+{
+  "name": "product-automation-pipeline",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI-powered Product Requirements Document and backlog automation",
+  "workspaces": [
+    "app/frontend",
+    "app/backend",
+    "app/shared"
+  ],
+  "scripts": {
+    "dev:backend": "cd app/backend && npm run dev",
+    "dev:frontend": "cd app/frontend && npm run dev",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "test:airtable": "cd app/backend && npm run test:airtable",
+    "test:gitbook": "cd app/backend && npm run test:gitbook",
+    "test:ado": "cd app/backend && npm run test:ado",
+    "test:claude": "cd app/backend && npm run test:claude",
+    "test:integrations": "npm run test:airtable && npm run test:gitbook && npm run test:ado && npm run test:claude",
+    "build": "npm run build --workspaces",
+    "lint": "npm run lint --workspaces",
+    "validate-env": "cd app/backend && npm run validate-env",
+    "verify-schema": "tsx scripts/verify-schema.ts",
+    "test": "cd app/backend && npm run test",
+    "test:pipeline": "tsx scripts/test-pipeline.ts"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.992.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "better-sqlite3": "^12.6.2"
+  }
+}

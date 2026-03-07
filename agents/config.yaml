@@ -1,0 +1,16 @@
+# Agent User Configuration
+# Fill in your details below. These values are injected into every agent session.
+
+# Your name — agents will address you by this in conversation
+user_name: Your Name
+
+# Language for all agent communication and document output
+communication_language: English
+document_output_language: English
+
+# Your product / project name (used in document titles and context)
+project_name: My Product
+
+# Your experience level — affects how much context agents provide
+# Options: beginner, intermediate, expert
+user_skill_level: intermediate

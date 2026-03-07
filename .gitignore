@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+coverage/
+.nyc_output/
+
+# Misc
+*.tgz
+.cache/
+.temp/
+.tmp/
+
+
+# Only ignore root-level templates/ (not agents/templates/)
+/templates/
+
+# Context files: ignore company-specific .md files, but track README, examples, and .gitkeep
+context/*.md
+!context/README.md
+!context/*.example.md
+
+!app/backend/src/data
+
+# Runtime database (schema.sql is tracked, the .db file is not)
+db/product-ops.db
+db/product-ops.db-shm
+db/product-ops.db-wal
+
+# Old data directory (superseded by db/)
+data/
+

@@ -1,0 +1,168 @@
+import { useEffect } from 'react';
+import { useWorkflowStore, type StageStatus } from '../stores/workflowStore';
+import { api } from '../services/api';
+
+const STAGE_LABELS: Record<string, string> = {
+  analyst:    'Analyst',
+  pm_prd:     'PM — PRD',
+  pm_backlog: 'PM — Backlog',
+  critic:     'Critic',
+  curator:    'Curator',
+};
+
+function stageIcon(status: StageStatus) {
+  switch (status) {
+    case 'complete':       return <span className="text-green-500">✓</span>;
+    case 'in-progress':    return <span className="text-blue-500 animate-pulse">●</span>;
+    case 'at-checkpoint':  return <span className="text-amber-500 animate-pulse">⏸</span>;
+    case 'rejected':       return <span className="text-red-500">✕</span>;
+    case 'skipped':        return <span className="text-gray-400">—</span>;
+    default:               return <span className="text-gray-300 dark:text-gray-600">○</span>;
+  }
+}
+
+function stageDot(status: StageStatus) {
+  const base = 'w-2 h-2 rounded-full flex-shrink-0';
+  switch (status) {
+    case 'complete':       return <span className={`${base} bg-green-500`} />;
+    case 'in-progress':    return <span className={`${base} bg-blue-500 animate-pulse`} />;
+    case 'at-checkpoint':  return <span className={`${base} bg-amber-500 animate-pulse`} />;
+    case 'rejected':       return <span className={`${base} bg-red-500`} />;
+    case 'skipped':        return <span className={`${base} bg-gray-300 dark:bg-gray-600`} />;
+    default:               return <span className={`${base} bg-gray-200 dark:bg-gray-700`} />;
+  }
+}
+
+function labelClass(status: StageStatus) {
+  switch (status) {
+    case 'complete':       return 'text-green-700 dark:text-green-400';
+    case 'in-progress':    return 'text-blue-700 dark:text-blue-400 font-semibold';
+    case 'at-checkpoint':  return 'text-amber-700 dark:text-amber-400 font-semibold';
+    case 'rejected':       return 'text-red-600 dark:text-red-400 line-through';
+    case 'skipped':        return 'text-gray-400 dark:text-gray-600 line-through';
+    default:               return 'text-gray-400 dark:text-gray-600';
+  }
+}
+
+function deriveStageStatus(
+  stageName: string,
+  currentStage: string | null,
+  completedStages: string[],
+  pendingStage: string | null,
+  workflowStatus: string
+): StageStatus {
+  if (completedStages.includes(stageName)) return 'complete';
+  if (pendingStage === stageName) return 'at-checkpoint';
+  if (currentStage === stageName && workflowStatus === 'active') return 'in-progress';
+  return 'pending';
+}
+
+export function WorkflowStageTracker() {
+  const {
+    activeWorkflow,
+    stageSequence,
+    currentStage,
+    completedStages,
+    pendingStage,
+    checkpoints,
+    applyWorkflowStatus,
+  } = useWorkflowStore();
+
+  // Poll for status updates while workflow is active
+  useEffect(() => {
+    if (!activeWorkflow || activeWorkflow.status === 'complete') return;
+
+    const poll = async () => {
+      try {
+        const status = await api.getWorkflowStatus(activeWorkflow.id);
+        applyWorkflowStatus(status);
+      } catch { /* ignore transient errors */ }
+    };
+
+    const t = setInterval(poll, 5_000);
+    return () => clearInterval(t);
+  }, [activeWorkflow?.id, activeWorkflow?.status]);
+
+  if (!activeWorkflow) return null;
+
+  return (
+    <div className="px-3 py-3">
+      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">
+        Workflow Stages
+      </p>
+
+      <div className="space-y-1">
+        {stageSequence.map((stageName, idx) => {
+          const status = deriveStageStatus(
+            stageName,
+            currentStage,
+            completedStages,
+            pendingStage,
+            activeWorkflow.status
+          );
+
+          const checkpoint = checkpoints.find(
+            (c) => c.stage === stageName && c.status === 'pending'
+          );
+
+          const resolvedAt = checkpoints
+            .filter((c) => c.stage === stageName && c.resolved_at)
+            .at(-1)?.resolved_at;
+
+          return (
+            <div key={stageName}>
+              {/* Connector line (skip first) */}
+              {idx > 0 && (
+                <div className="ml-3 w-px h-2 bg-gray-200 dark:bg-gray-700" />
+              )}
+
+              <div
+                className={`flex items-start gap-2.5 rounded-lg px-2 py-1.5 ${
+                  status === 'at-checkpoint'
+                    ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800'
+                    : status === 'in-progress'
+                    ? 'bg-blue-50 dark:bg-blue-900/20'
+                    : ''
+                }`}
+              >
+                <div className="mt-0.5">{stageDot(status)}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-xs ${labelClass(status)}`}>
+                      {STAGE_LABELS[stageName] ?? stageName}
+                    </span>
+                    <span className="text-xs">{stageIcon(status)}</span>
+                  </div>
+                  {status === 'at-checkpoint' && checkpoint && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                      Awaiting review
+                      {checkpoint.coordinator_action && (() => {
+                        try {
+                          const action = JSON.parse(checkpoint.coordinator_action);
+                          if (action.critic_verdict) return ` — Critic: ${action.critic_verdict}`;
+                        } catch { /* ignore */ }
+                        return '';
+                      })()}
+                    </p>
+                  )}
+                  {status === 'complete' && resolvedAt && (
+                    <p className="text-xs text-gray-400 dark:text-gray-600 mt-0.5">
+                      {new Date(resolvedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {activeWorkflow.status === 'complete' && (
+        <div className="mt-3 flex items-center gap-1.5 px-2 py-1.5 bg-green-50 dark:bg-green-900/20 rounded-lg">
+          <span className="text-green-500 text-xs">✓</span>
+          <span className="text-xs text-green-700 dark:text-green-400 font-medium">All stages complete</span>
+        </div>
+      )}
+    </div>
+  );
+}

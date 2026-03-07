@@ -1,0 +1,176 @@
+import type { AirtableItem } from '@pap/shared';
+
+/**
+ * Sample Airtable items for local testing.
+ * Enable by setting USE_MOCK_DATA=true in .env
+ */
+export const MOCK_ITEMS: AirtableItem[] = [
+  {
+    id: 'recMOCK001',
+    initiative: 'Customer Onboarding Redesign',
+    description: 'Redesign the onboarding flow to reduce time-to-value for new customers. Current drop-off rate is 40% at step 3.',
+    status: 'In Progress',
+    businessValue: 9,
+    priorityScore: 87,
+    estimate: 'L',
+    confidence: 0.7,
+    targetQuarter: 'Q2 2025',
+    targetWindow: 'Now',
+    productArea: 'Growth',
+    strategicTheme: 'Customer Experience',
+    requiresDevWork: 'Yes',
+    owner: 'Chris',
+    prdLink: '',
+    epicLink: '',
+    azureEpicId: '',
+    azureFeatureIds: '',
+    azureStoryIds: '',
+    createdAt: '2025-01-10T09:00:00.000Z',
+    lastModified: '2025-02-01T14:30:00.000Z',
+  },
+  {
+    id: 'recMOCK002',
+    initiative: 'AI-Powered Search',
+    description: 'Implement semantic search across all content using embeddings. Replace current keyword search that has poor recall.',
+    status: 'Shipped',
+    businessValue: 8,
+    priorityScore: 82,
+    estimate: 'XL',
+    confidence: 0.6,
+    targetQuarter: 'Q2 2025',
+    targetWindow: 'Now',
+    productArea: 'Core Platform',
+    strategicTheme: 'AI Capabilities',
+    requiresDevWork: 'Yes',
+    owner: 'Chris',
+    prdLink: '',
+    epicLink: '',
+    azureEpicId: '',
+    azureFeatureIds: '',
+    azureStoryIds: '',
+    createdAt: '2025-01-15T10:00:00.000Z',
+    lastModified: '2025-02-05T11:00:00.000Z',
+  },
+  {
+    id: 'recMOCK003',
+    initiative: 'Bulk Export Feature',
+    description: 'Allow users to export data in CSV/Excel formats. High-volume enterprise customers have been requesting this.',
+    status: 'Discovery',
+    businessValue: 7,
+    priorityScore: 68,
+    estimate: 'M',
+    confidence: 0.85,
+    targetQuarter: 'Q2 2025',
+    targetWindow: 'Next',
+    productArea: 'Data & Reporting',
+    strategicTheme: 'Enterprise Readiness',
+    requiresDevWork: 'Yes',
+    owner: 'Chris',
+    prdLink: '',
+    epicLink: '',
+    azureEpicId: '',
+    azureFeatureIds: '',
+    azureStoryIds: '',
+    createdAt: '2025-01-20T08:00:00.000Z',
+    lastModified: '2025-01-28T16:00:00.000Z',
+  },
+  {
+    id: 'recMOCK004',
+    initiative: 'Role-Based Access Control',
+    description: 'Introduce granular permission levels (Admin, Editor, Viewer) to support team-based workflows.',
+    status: 'In Progress',
+    businessValue: 9,
+    priorityScore: 91,
+    estimate: 'L',
+    confidence: 0.8,
+    targetQuarter: 'Q1 2025',
+    targetWindow: 'Now',
+    productArea: 'Security & Compliance',
+    strategicTheme: 'Enterprise Readiness',
+    requiresDevWork: 'Yes',
+    owner: 'Chris',
+    prdLink: '',
+    epicLink: '',
+    azureEpicId: '',
+    azureFeatureIds: '',
+    azureStoryIds: '',
+    createdAt: '2025-01-05T09:00:00.000Z',
+    lastModified: '2025-02-10T09:00:00.000Z',
+  },
+  {
+    id: 'recMOCK005',
+    initiative: 'Mobile Push Notifications',
+    description: 'Add push notification support to iOS and Android apps for real-time alerts and re-engagement.',
+    status: 'Discovery',
+    businessValue: 6,
+    priorityScore: 55,
+    estimate: 'M',
+    confidence: 0.65,
+    targetQuarter: 'Q3 2025',
+    targetWindow: 'Next',
+    productArea: 'Mobile',
+    strategicTheme: 'Engagement',
+    requiresDevWork: 'Yes',
+    owner: 'Chris',
+    prdLink: '',
+    epicLink: '',
+    azureEpicId: '',
+    azureFeatureIds: '',
+    azureStoryIds: '',
+    createdAt: '2025-02-01T10:00:00.000Z',
+    lastModified: '2025-02-12T14:00:00.000Z',
+  },
+  {
+    id: 'recMOCK006',
+    initiative: 'Instant deposits',
+    description: 'Add a method to improve the speed of depositing funds to a users account from their bank account. Also will reduce the need for manual processing.',
+    status: 'Discovery',
+    businessValue: 8,
+    priorityScore: 75,
+    estimate: 'M',
+    confidence: 0.65,
+    targetQuarter: 'Q2 2025',
+    targetWindow: 'Next',
+    productArea: 'Mobile',
+    strategicTheme: 'Engagement',
+    requiresDevWork: 'Yes',
+    owner: 'Chris',
+    prdLink: '',
+    epicLink: '',
+    azureEpicId: '',
+    azureFeatureIds: '',
+    azureStoryIds: '',
+    createdAt: '2025-02-01T10:00:00.000Z',
+    lastModified: '2025-02-12T14:00:00.000Z',
+  },
+];
+
+/**
+ * Seed data for testing the Context Keeper.
+ * Represents the *previous* known statuses — seeding these into item_status_snapshots
+ * causes detectStatusChanges() to report material transitions when MOCK_ITEMS is compared.
+ *
+ * Transitions this produces:
+ *   Customer Onboarding Redesign  Ready       → In Progress  (material)
+ *   AI-Powered Search             In Progress → Shipped      (material — any → Shipped)
+ *   Role-Based Access Control     Ready       → In Progress  (material)
+ */
+export const MOCK_SNAPSHOT_SEED: { airtableId: string; title: string; status: string }[] = [
+  { airtableId: 'recMOCK001', title: 'Customer Onboarding Redesign', status: 'Ready' },
+  { airtableId: 'recMOCK002', title: 'AI-Powered Search',            status: 'In Progress' },
+  { airtableId: 'recMOCK003', title: 'Bulk Export Feature',          status: 'Discovery' },
+  { airtableId: 'recMOCK004', title: 'Role-Based Access Control',    status: 'Ready' },
+  { airtableId: 'recMOCK005', title: 'Mobile Push Notifications',    status: 'Discovery' },
+  { airtableId: 'recMOCK006', title: 'Instant Deposits',             status: 'Discovery' },
+];
+
+export const MOCK_ITEMS_NEEDING_PRD = MOCK_ITEMS.filter(
+  item =>
+    (item.status === 'Discovery' || item.status === 'Ready') &&
+    !item.prdLink &&
+    item.requiresDevWork === 'Yes'
+);
+
+export const MOCK_ITEMS_NEEDING_BACKLOG = MOCK_ITEMS.filter(
+  item => item.status === 'In Progress' && item.prdLink && !item.epicLink
+);
