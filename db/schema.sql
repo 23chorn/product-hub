@@ -164,7 +164,7 @@ CREATE TABLE workflows (
   item_id          TEXT    NOT NULL REFERENCES items(id),
   goal             TEXT    NOT NULL,
   status           TEXT    NOT NULL DEFAULT 'active'
-                   CHECK(status IN ('active','paused_at_checkpoint','complete')),
+                   CHECK(status IN ('active','paused_at_checkpoint','awaiting_user_input','complete')),
   current_stage    TEXT,
   stage_sequence   TEXT    NOT NULL DEFAULT '[]',   -- JSON array of stage names
   policy_overrides TEXT    NOT NULL DEFAULT '{}',   -- JSON key-value overrides
@@ -219,6 +219,45 @@ CREATE TABLE context_diffs (
 
 CREATE INDEX idx_context_diffs_status   ON context_diffs(status);
 CREATE INDEX idx_context_diffs_workflow ON context_diffs(workflow_id);
+
+-- ------------------------------------------------------------
+-- coordinator_sessions — Coordinator Planning Conversations
+-- Persists coordinator chat history so sessions survive page reloads.
+-- workflow_id is null for pre-workflow planning (no workflow created yet).
+-- type: 'pre_workflow' | 'stage_briefing'
+-- messages: JSON array of {role:'user'|'assistant', content:string}
+-- ------------------------------------------------------------
+CREATE TABLE coordinator_sessions (
+  id          TEXT    PRIMARY KEY,
+  workflow_id TEXT    REFERENCES workflows(id) ON DELETE CASCADE,
+  type        TEXT    NOT NULL CHECK(type IN ('pre_workflow','stage_briefing')),
+  next_stage  TEXT,
+  messages    TEXT    NOT NULL DEFAULT '[]',
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+
+CREATE INDEX idx_coordinator_sessions_workflow ON coordinator_sessions(workflow_id);
+
+-- ------------------------------------------------------------
+-- workflow_events — Workflow Event Log
+-- Stores narration events for the CoS conversation UI.
+-- Each event represents a milestone (stage start/complete, critic
+-- verdict, revision, error, workflow complete). The frontend polls
+-- for new events to build the narration thread.
+-- ------------------------------------------------------------
+CREATE TABLE workflow_events (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  workflow_id TEXT    NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+  event_type  TEXT    NOT NULL,  -- 'stage_started','stage_completed','critic_verdict','revision','error','workflow_complete'
+  stage       TEXT,
+  summary     TEXT    NOT NULL,
+  details     TEXT,              -- JSON blob
+  created_at  INTEGER NOT NULL
+);
+
+CREATE INDEX idx_workflow_events_workflow ON workflow_events(workflow_id);
+CREATE INDEX idx_workflow_events_type     ON workflow_events(event_type);
 
 -- ------------------------------------------------------------
 -- policies — Governance Rules

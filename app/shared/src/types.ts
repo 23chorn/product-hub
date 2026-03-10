@@ -148,8 +148,8 @@ export interface QuickItem {
 // BMAD Agent Types
 // ============================================
 
-export type AppMode = 'prd' | 'backlog' | 'analyst' | 'decision-log' | 'context';
-export type AgentType = 'pm' | 'analyst' | 'decision-log' | 'context-keeper';
+export type AppMode = 'prd' | 'backlog' | 'analyst' | 'architecture' | 'decision-log' | 'context';
+export type AgentType = 'pm' | 'analyst' | 'architect' | 'decision-log' | 'context-keeper';
 
 export interface BmadPersona {
   name: string;

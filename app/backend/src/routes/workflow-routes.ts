@@ -8,6 +8,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { randomUUID } from 'crypto';
 import {
   createWorkflow,
   advanceStage,
@@ -16,13 +17,101 @@ import {
   getWorkflowStatus,
   propagateFeedback,
   markWorkflowComplete,
+  getWorkflowEvents,
+  reiterateFromStage,
+  deleteWorkflow,
 } from '../agents/workflow-router';
+import { CoordinatorAgent } from '../agents/coordinator-agent';
 import db from '../data/database';
 import Logger from '../utils/logger';
 
+// ── Coordinator planning sessions (DB-backed) ─────────────────────────────────
+
+type PlanningMessages = Array<{ role: 'user' | 'assistant'; content: string }>;
+
+function saveCoordinatorSession(
+  id: string,
+  workflowId: string | null,
+  type: 'pre_workflow' | 'stage_briefing',
+  nextStage: string | null,
+  messages: PlanningMessages
+): void {
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO coordinator_sessions (id, workflow_id, type, next_stage, messages, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET messages = excluded.messages, updated_at = excluded.updated_at
+  `).run(id, workflowId, type, nextStage, JSON.stringify(messages), now, now);
+}
+
+function loadCoordinatorSession(id: string): {
+  messages: PlanningMessages;
+  type: 'pre_workflow' | 'stage_briefing';
+  nextStage: string | null;
+  workflowId: string | null;
+} | null {
+  const row = db.prepare('SELECT * FROM coordinator_sessions WHERE id = ?').get(id) as {
+    messages: string; type: string; next_stage: string | null; workflow_id: string | null;
+  } | undefined;
+  if (!row) return null;
+  return {
+    messages: JSON.parse(row.messages ?? '[]'),
+    type: row.type as 'pre_workflow' | 'stage_briefing',
+    nextStage: row.next_stage,
+    workflowId: row.workflow_id,
+  };
+}
+
+let _planningCoordinator: CoordinatorAgent | null = null;
+function getPlanningCoordinator(): CoordinatorAgent {
+  if (!_planningCoordinator) _planningCoordinator = new CoordinatorAgent();
+  return _planningCoordinator;
+}
+
 const logger = new Logger('WORKFLOW-ROUTES-V2');
 
-const KNOWN_STAGES = new Set(['analyst', 'pm_prd', 'pm_backlog', 'critic', 'curator']);
+/**
+ * Strip leaked system prompt instructions from coordinator responses.
+ * Small models (especially Ollama) sometimes echo their instructions verbatim.
+ */
+function cleanCoordinatorResponse(text: string): string {
+  // Patterns that indicate leaked system prompt content
+  const leakedPatterns = [
+    /^#+\s*(Hard limits|What actually matters|How to ask|Signalling readiness|Format rules)[^\n]*\n/gm,
+    /\*?\*?(Maximum \d+ questions|Maximum \d+ rounds|Prefer to launch early)\*?\*?[^\n]*\n/gm,
+    /Do NOT ask about feature lists[^\n]*\n/gm,
+    /Put each question on its own line[^\n]*\n/gm,
+    /Use lettered options \(A \/ B \/ C\) when choices are clear:\s*\n\s*A\) Option one\s*\n\s*B\) Option two\s*\n/gm,
+    /Accept terse answers and make reasonable inferences[^\n]*\n/gm,
+    /End your response with exactly these two lines[^\n]*\n/gm,
+    /`?COORDINATOR_READY`? must be a standalone line[^\n]*\n/gm,
+    /The JSON object must be on the very next line[^\n]*\n/gm,
+    /COORDINATOR_READY is\s*\*?\*?forbidden\*?\*?\s*in your first message[^\n]*\n/gm,
+    /From message \d+ onward[^\n]*\n/gm,
+    /By message \d+ you must include it[^\n]*\n/gm,
+    /a wrong format causes a system failure[^\n]*\n/gm,
+    /Do not ask a fourth round[^\n]*\n/gm,
+    /Ask only if you genuinely cannot infer[^\n]*:\n/gm,
+    /\*?\*?Who is it for\*?\*?\s*—\s*primary user\/customer segment[^\n]*\n/gm,
+    /\*?\*?Scope\*?\*?\s*—\s*MVP or full product[^\n]*\n/gm,
+    /\*?\*?Hard blockers\*?\*?\s*—\s*regulatory, technical[^\n]*\n/gm,
+    /For message \d+, provide the following[^\n]*/gm,
+    /Nothing may follow the JSON line[^\n]*\n/gm,
+    /Do NOT repeat or quote these instructions[^\n]*\n/gm,
+  ];
+
+  let cleaned = text;
+  for (const pattern of leakedPatterns) {
+    cleaned = cleaned.replace(pattern, '');
+  }
+
+  // Collapse multiple blank lines
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
+
+  return cleaned;
+}
+
+const KNOWN_STAGES = new Set(['analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'critic', 'curator']);
 
 /**
  * Validate a candidate stage sequence.
@@ -69,7 +158,190 @@ function extractStageSequence(text: string): string[] {
 }
 export const workflowRoutes = Router();
 
-const DEFAULT_STAGES = ['analyst', 'pm_prd', 'pm_backlog', 'critic', 'curator'];
+// Critic no longer appears as a standalone stage — it runs inline after each specialist stage.
+// The curator runs at the end to update project context files.
+const DEFAULT_STAGES = ['analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'curator'];
+
+// ── Coordinator planning phase ─────────────────────────────────────────────────
+
+function sseStream(res: Response, generator: AsyncGenerator<string, void, unknown>): Promise<void> {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  return (async () => {
+    let fullContent = '';
+    try {
+      for await (const chunk of generator) {
+        fullContent += chunk;
+        res.write(`data: ${JSON.stringify({ type: 'content', content: chunk })}\n\n`);
+      }
+      res.write(`data: ${JSON.stringify({ type: 'done', content: fullContent })}\n\n`);
+    } catch (err: any) {
+      res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
+    } finally {
+      res.end();
+    }
+  })();
+}
+
+/**
+ * POST /api/workflow/coordinator/open
+ * Body: { goal, model? }
+ *
+ * Opens a pre-workflow coordinator planning session. The coordinator asks
+ * clarifying questions on behalf of the specialist agents.
+ * Returns SSE stream. First event: { type: 'session', sessionId }.
+ * When coordinator is ready: done event content will contain COORDINATOR_READY marker.
+ */
+workflowRoutes.post('/coordinator/open', async (req: Request, res: Response) => {
+  const { goal, model } = req.body as { goal?: string; model?: string };
+  if (!goal) return res.status(400).json({ error: 'goal is required' });
+
+  const sessionId = randomUUID();
+  const messages: PlanningMessages = [
+    { role: 'user', content: `New initiative goal:\n\n${goal}` },
+  ];
+  saveCoordinatorSession(sessionId, null, 'pre_workflow', null, messages);
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.write(`data: ${JSON.stringify({ type: 'session', sessionId })}\n\n`);
+
+  let fullContent = '';
+  try {
+    for await (const chunk of getPlanningCoordinator().streamPlanningResponse(messages, model)) {
+      fullContent += chunk;
+      res.write(`data: ${JSON.stringify({ type: 'content', content: chunk })}\n\n`);
+    }
+
+    // Clean leaked system prompt content from the response
+    const rawContent = fullContent;
+    fullContent = cleanCoordinatorResponse(fullContent);
+
+    // COORDINATOR_READY is forbidden on the first message — strip it if the model
+    // echoed the format rules and produced one prematurely.
+    if (fullContent.includes('COORDINATOR_READY')) {
+      logger.warn('Model included COORDINATOR_READY in first message — stripping it');
+      fullContent = fullContent.replace(/\n*COORDINATOR_READY\s*\n\{[\s\S]*?\}\s*$/, '').trimEnd();
+    }
+
+    // If content was cleaned, send a replace event so the frontend overwrites
+    // the raw streamed text with the cleaned version.
+    if (fullContent !== rawContent) {
+      res.write(`data: ${JSON.stringify({ type: 'replace', content: fullContent })}\n\n`);
+      logger.info('Cleaned leaked system prompt content from coordinator response');
+    }
+
+    messages.push({ role: 'assistant', content: fullContent });
+    saveCoordinatorSession(sessionId, null, 'pre_workflow', null, messages);
+    res.write(`data: ${JSON.stringify({ type: 'done', content: fullContent })}\n\n`);
+  } catch (err: any) {
+    res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
+  } finally {
+    res.end();
+  }
+});
+
+/**
+ * POST /api/workflow/coordinator/reply
+ * Body: { sessionId, message, model? }
+ *
+ * Sends a PM reply to the coordinator planning session.
+ * Returns SSE stream. Done event content may contain COORDINATOR_READY marker.
+ */
+
+workflowRoutes.post('/coordinator/reply', async (req: Request, res: Response) => {
+  const { sessionId, message, model } = req.body as {
+    sessionId?: string;
+    message?: string;
+    model?: string;
+  };
+  if (!sessionId || !message) {
+    return res.status(400).json({ error: 'sessionId and message are required' });
+  }
+
+  const session = loadCoordinatorSession(sessionId);
+  if (!session) return res.status(404).json({ error: 'Planning session not found' });
+
+  session.messages.push({ role: 'user', content: message });
+
+  // Count how many assistant turns have already happened.
+  // After 3 coordinator responses, force-inject COORDINATOR_READY if the model
+  // hasn't already included it — prevents endless question loops.
+  const assistantTurnCount = session.messages.filter(m => m.role === 'assistant').length;
+  const forceReady = assistantTurnCount >= 3;
+
+  if (forceReady) {
+    // Append a strong reminder to the last user message so the model knows it must launch now.
+    const lastIdx = session.messages.length - 1;
+    session.messages[lastIdx] = {
+      role: 'user',
+      content: session.messages[lastIdx].content +
+        '\n\n[SYSTEM: You have reached the maximum number of clarification rounds. Your response MUST end with COORDINATOR_READY followed by the JSON object. Do not ask any more questions.]',
+    };
+  }
+
+  let fullContent = '';
+  try {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    for await (const chunk of getPlanningCoordinator().streamPlanningResponse(session.messages, model)) {
+      fullContent += chunk;
+      res.write(`data: ${JSON.stringify({ type: 'content', content: chunk })}\n\n`);
+    }
+
+    // Clean leaked system prompt content
+    const rawReplyContent = fullContent;
+    fullContent = cleanCoordinatorResponse(fullContent);
+
+    // Safety net: if the model still didn't include COORDINATOR_READY after the
+    // force prompt, synthesise a minimal one from what we know so far.
+    if (forceReady && !fullContent.includes('COORDINATOR_READY')) {
+      const goalMsg = session.messages.find(m => m.role === 'user');
+      const goalText = goalMsg?.content.replace(/\[SYSTEM:.*\]/, '').trim() ?? 'the stated goal';
+      const synthetic = `\n\nCOORDINATOR_READY\n{"enriched_context": "${goalText.slice(0, 300).replace(/"/g, "'")}"}`;
+      fullContent += synthetic;
+      res.write(`data: ${JSON.stringify({ type: 'content', content: synthetic })}\n\n`);
+      logger.info('Force-injected COORDINATOR_READY after max rounds exceeded');
+    }
+
+    // If content was cleaned, send a replace event
+    if (fullContent !== rawReplyContent) {
+      res.write(`data: ${JSON.stringify({ type: 'replace', content: fullContent })}\n\n`);
+      logger.info('Cleaned leaked system prompt content from coordinator reply');
+    }
+
+    // Strip the injected [SYSTEM] annotation before saving to DB
+    if (forceReady) {
+      session.messages[session.messages.length - 1].content =
+        session.messages[session.messages.length - 1].content
+          .replace(/\n\n\[SYSTEM:.*\]/, '');
+    }
+
+    session.messages.push({ role: 'assistant', content: fullContent });
+    saveCoordinatorSession(sessionId, session.workflowId, session.type, session.nextStage, session.messages);
+    res.write(`data: ${JSON.stringify({ type: 'done', content: fullContent })}\n\n`);
+  } catch (err: any) {
+    res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
+  } finally {
+    res.end();
+  }
+});
+
+/**
+ * GET /api/workflow/coordinator/session/:id
+ * Returns the messages and metadata for a coordinator planning session.
+ */
+workflowRoutes.get('/coordinator/session/:id', (req: Request, res: Response) => {
+  const session = loadCoordinatorSession(req.params.id);
+  if (!session) return res.status(404).json({ error: 'Session not found' });
+  res.json(session);
+});
+
 
 // ── POST /api/workflow/start ──────────────────────────────────────────────────
 
@@ -82,15 +354,30 @@ const DEFAULT_STAGES = ['analyst', 'pm_prd', 'pm_backlog', 'critic', 'curator'];
  *   { workflowId, stage, sessionId, complete, stages }
  */
 workflowRoutes.post('/start', async (req: Request, res: Response) => {
-  const { itemId, goal, stageSequence, policyOverrides } = req.body as {
+  let { itemId, goal, enrichedContext, stageSequence, policyOverrides } = req.body as {
     itemId?: string;
     goal?: string;
+    enrichedContext?: string;
     stageSequence?: string[];
     policyOverrides?: Record<string, string>;
   };
 
-  if (!itemId || !goal) {
-    return res.status(400).json({ error: 'itemId and goal are required' });
+  if (!goal) {
+    return res.status(400).json({ error: 'goal is required' });
+  }
+
+  // Auto-create a local item if none provided
+  if (!itemId) {
+    const { randomUUID: uuid } = require('crypto');
+    const id = uuid();
+    const now = Date.now();
+    const title = goal.slice(0, 100) + (goal.length > 100 ? '...' : '');
+    db.prepare(`
+      INSERT INTO items (id, type, title, description, status, source, airtable_id, created_at, updated_at)
+      VALUES (?, 'initiative', ?, ?, 'active', 'local', NULL, ?, ?)
+    `).run(id, title, goal.slice(0, 500), now, now);
+    itemId = id;
+    logger.info(`Auto-created local item ${id} for workflow`);
   }
 
   try {
@@ -99,7 +386,12 @@ workflowRoutes.post('/start', async (req: Request, res: Response) => {
       ? stageSequence
       : DEFAULT_STAGES;
 
-    const workflow = createWorkflow(itemId, goal, stages, policyOverrides);
+    // Fold coordinator-gathered context into the goal so all stage briefs benefit from it
+    const fullGoal = enrichedContext
+      ? `${goal}\n\n[Coordinator context]\n\n${enrichedContext}`
+      : goal;
+
+    const workflow = createWorkflow(itemId!, fullGoal, stages, policyOverrides);
 
     let nextStage: string | null = null;
     let nextSessionId: string | null = null;
@@ -162,10 +454,11 @@ workflowRoutes.post('/complete-stage', (req: Request, res: Response) => {
  * Returns: { workflow: WorkflowStatus, nextStage?, nextSessionId?, complete? }
  */
 workflowRoutes.post('/checkpoint/resolve', async (req: Request, res: Response) => {
-  const { checkpointId, status, feedback } = req.body as {
+  const { checkpointId, status, feedback, enrichedContext } = req.body as {
     checkpointId?: number;
     status?: 'approved' | 'rejected' | 'revised';
     feedback?: string;
+    enrichedContext?: string;  // stage-specific coordinator context gathered before launch
   };
 
   const cpId = typeof checkpointId === 'number' ? checkpointId : parseInt(String(checkpointId), 10);
@@ -183,6 +476,20 @@ workflowRoutes.post('/checkpoint/resolve', async (req: Request, res: Response) =
 
     if (status === 'approved') {
       resolveCheckpoint(cpId, 'approved', feedback);
+
+      // Fold stage-specific coordinator context into the workflow goal so the
+      // next specialist's brief includes it. Appended as a labelled block so
+      // generateStageBrief picks it up naturally from workflow.goal.
+      if (enrichedContext) {
+        const stageRow = db.prepare<[string], { current_stage: string | null }>(
+          'SELECT current_stage FROM workflows WHERE id = ?'
+        ).get(workflowId);
+        const label = stageRow?.current_stage
+          ? `[${stageRow.current_stage} stage context]`
+          : '[stage context]';
+        db.prepare('UPDATE workflows SET goal = goal || ?, updated_at = ? WHERE id = ?')
+          .run(`\n\n${label}\n\n${enrichedContext}`, Date.now(), workflowId);
+      }
 
       let nextStage: string | null = null;
       let nextSessionId: string | null = null;
@@ -213,13 +520,128 @@ workflowRoutes.post('/checkpoint/resolve', async (req: Request, res: Response) =
 
     // revised
     if (!feedback) return res.status(400).json({ error: 'feedback is required for revised status' });
-    propagateFeedback(cpId, feedback);
+    await propagateFeedback(cpId, feedback);
     const workflowStatus = getWorkflowStatus(workflowId);
     return res.json({ workflow: workflowStatus });
   } catch (err: any) {
     if (err.message.includes('not found')) return res.status(404).json({ error: err.message });
     logger.error('Failed to resolve checkpoint', err);
     res.status(400).json({ error: err.message });
+  }
+});
+
+// ── POST /api/workflow/:id/reiterate ───────────────────────────────────────────
+
+/**
+ * POST /api/workflow/:id/reiterate
+ * Body: { fromStage: string, feedback: string }
+ *
+ * Re-enters a completed workflow at a specific stage. The given stage and all
+ * downstream stages are re-run with the user's feedback as context.
+ */
+workflowRoutes.post('/:id/reiterate', async (req: Request, res: Response) => {
+  const { fromStage, feedback } = req.body as { fromStage?: string; feedback?: string };
+  if (!fromStage || !feedback) {
+    return res.status(400).json({ error: 'fromStage and feedback are required' });
+  }
+  if (!KNOWN_STAGES.has(fromStage)) {
+    return res.status(400).json({ error: `Unknown stage: ${fromStage}` });
+  }
+
+  try {
+    await reiterateFromStage(req.params.id, fromStage, feedback);
+    const status = getWorkflowStatus(req.params.id);
+    res.json(status);
+  } catch (err: any) {
+    if (err.message.includes('not found')) return res.status(404).json({ error: err.message });
+    logger.error('Failed to reiterate workflow', err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ── DELETE /api/workflow/:id ────────────────────────────────────────────────────
+
+/**
+ * DELETE /api/workflow/:id
+ * Deletes a workflow and all associated data (checkpoints, events, etc.).
+ */
+workflowRoutes.delete('/:id', (req: Request, res: Response) => {
+  try {
+    deleteWorkflow(req.params.id);
+    res.json({ ok: true });
+  } catch (err: any) {
+    if (err.message.includes('not found')) return res.status(404).json({ error: err.message });
+    logger.error('Failed to delete workflow', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Mid-workflow conversation (Phase 3) ────────────────────────────────────────
+
+/**
+ * POST /api/workflow/:id/message
+ * User sends a message to the CoS while a workflow is running.
+ * CoS receives the message with workflow context and can answer status questions,
+ * accept corrections, and store user input as an event.
+ */
+workflowRoutes.post('/:id/message', async (req: Request, res: Response) => {
+  const { message, model } = req.body as { message?: string; model?: string };
+  if (!message) return res.status(400).json({ error: 'message is required' });
+
+  const workflowId = req.params.id;
+
+  try {
+    const status = getWorkflowStatus(workflowId);
+    if (!status) return res.status(404).json({ error: 'Workflow not found' });
+
+    // Store user input as an event
+    const { getWorkflowEvents: getEvents } = require('../agents/workflow-router');
+    const events = getEvents(workflowId) as Array<{ summary: string; event_type: string; stage: string | null }>;
+
+    // Insert user message event
+    db.prepare(`
+      INSERT INTO workflow_events (workflow_id, event_type, stage, summary, details, created_at)
+      VALUES (?, 'user_input', ?, ?, NULL, ?)
+    `).run(workflowId, status.currentStage, message, Date.now());
+
+    // Stream CoS response
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const coordinator = getPlanningCoordinator();
+    const systemPrompt = coordinator.buildSystemPrompt(workflowId);
+
+    // Build context from recent events
+    const recentEvents = events.slice(-10).map((e: { event_type: string; stage: string | null; summary: string }) =>
+      `[${e.event_type}${e.stage ? ` / ${e.stage}` : ''}] ${e.summary}`
+    ).join('\n');
+
+    const contextMessage = `You are the Chief of Staff. The user is talking to you during an active workflow.\n\nRecent workflow events:\n${recentEvents}\n\nUser message: ${message}\n\nRespond helpfully. If the user provides corrections or preferences, acknowledge them and note that they'll be applied to upcoming stages.`;
+
+    let fullContent = '';
+    try {
+      for await (const chunk of coordinator.streamResponse(workflowId, contextMessage, model)) {
+        fullContent += chunk;
+        res.write(`data: ${JSON.stringify({ type: 'content', content: chunk })}\n\n`);
+      }
+
+      // Store CoS response as event
+      db.prepare(`
+        INSERT INTO workflow_events (workflow_id, event_type, stage, summary, details, created_at)
+        VALUES (?, 'cos_response', ?, ?, NULL, ?)
+      `).run(workflowId, status.currentStage, fullContent.slice(0, 500), Date.now());
+
+      res.write(`data: ${JSON.stringify({ type: 'done', content: fullContent })}\n\n`);
+    } catch (err: any) {
+      res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
+    } finally {
+      res.end();
+    }
+  } catch (err: any) {
+    if (err.message?.includes('not found')) return res.status(404).json({ error: err.message });
+    logger.error('Failed to handle mid-workflow message', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -267,6 +689,43 @@ workflowRoutes.get('/:id/status', (req: Request, res: Response) => {
   } catch (err: any) {
     if (err.message.includes('not found')) return res.status(404).json({ error: err.message });
     logger.error('Failed to get workflow status', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/workflow/:id/events?since=<id>
+ * Returns workflow events after the given ID (or all events if omitted).
+ */
+workflowRoutes.get('/:id/events', (req: Request, res: Response) => {
+  try {
+    const sinceId = req.query.since ? parseInt(String(req.query.since), 10) : undefined;
+    const events = getWorkflowEvents(req.params.id, sinceId);
+    res.json({ events });
+  } catch (err: any) {
+    if (err.message.includes('not found')) return res.status(404).json({ error: err.message });
+    logger.error('Failed to get workflow events', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/workflow/list
+ * Returns all workflows ordered by created_at DESC, for the workflow history sidebar.
+ */
+workflowRoutes.get('/list/all', (_req: Request, res: Response) => {
+  try {
+    const workflows = db.prepare(`
+      SELECT w.*, COUNT(c.id) as checkpoint_count
+      FROM workflows w
+      LEFT JOIN checkpoints c ON c.workflow_id = w.id AND c.status = 'approved'
+      GROUP BY w.id
+      ORDER BY w.created_at DESC
+      LIMIT 50
+    `).all();
+    res.json({ workflows });
+  } catch (err: any) {
+    logger.error('Failed to list workflows', err);
     res.status(500).json({ error: err.message });
   }
 });

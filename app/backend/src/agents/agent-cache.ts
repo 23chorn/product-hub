@@ -6,7 +6,7 @@ const logger = new Logger('AGENT-CACHE');
 
 /**
  * Module-level cache of BmadAgent instances, keyed by AgentType.
- * Shared between bmad-routes.ts and context-routes.ts so that
+ * Shared across route files so that
  * clearAllContextCaches() invalidates the project context on every agent.
  */
 export const agentCache: Map<AgentType, BmadAgent> = new Map();

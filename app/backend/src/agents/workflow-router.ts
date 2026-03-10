@@ -25,6 +25,13 @@ const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
 
 const logger = new Logger('WORKFLOW-ROUTER');
 
+/**
+ * Stages that run silently with no human review gate.
+ * After completing, the workflow auto-advances to the next stage.
+ * Human interaction only occurs at Checkpoint A (analyst) and Checkpoint C (critic).
+ */
+const SILENT_STAGES = new Set(['analyst', 'pm_prd', 'solution_architect', 'pm_backlog']);
+
 // Lazy singletons — avoids reading persona files at import time
 let _coordinator: CoordinatorAgent | null = null;
 function getCoordinator(): CoordinatorAgent {
@@ -82,19 +89,21 @@ export interface WorkflowStatus {
 // ── Stage → specialist session mapping ────────────────────────────────────────
 
 const STAGE_SESSION_MAP: Record<string, { mode: AppMode; agentType: AgentType }> = {
-  analyst:    { mode: 'analyst', agentType: 'analyst' },
-  pm_prd:     { mode: 'prd',     agentType: 'pm' },
-  pm_backlog: { mode: 'backlog', agentType: 'pm' },
-  critic:     { mode: 'analyst', agentType: 'analyst' },
-  curator:    { mode: 'analyst', agentType: 'analyst' },
+  analyst:              { mode: 'analyst',       agentType: 'analyst' },
+  pm_prd:               { mode: 'prd',           agentType: 'pm' },
+  solution_architect:   { mode: 'architecture',  agentType: 'architect' },
+  pm_backlog:           { mode: 'backlog',       agentType: 'pm' },
+  critic:               { mode: 'analyst',       agentType: 'analyst' },
+  curator:              { mode: 'analyst',       agentType: 'analyst' },
 };
 
 // Maps stage name to the artifact.type value stored in the DB.
 // Must match what getLatestPrdArtifact / getLatestAnalystArtifact query for.
 const STAGE_ARTIFACT_TYPE: Record<string, string> = {
-  analyst:    'analyst',
-  pm_prd:     'prd',
-  pm_backlog: 'backlog',
+  analyst:            'analyst',
+  pm_prd:             'prd',
+  solution_architect: 'architecture',
+  pm_backlog:         'backlog',
 };
 
 // ── Policy helpers ─────────────────────────────────────────────────────────────
@@ -154,6 +163,53 @@ const stmts = {
     ORDER BY s.created_at DESC LIMIT 1
   `),
 };
+
+// ── Workflow event logging ────────────────────────────────────────────────────
+
+export interface WorkflowEvent {
+  id: number;
+  workflow_id: string;
+  event_type: string;
+  stage: string | null;
+  summary: string;
+  details: string | null;
+  created_at: number;
+}
+
+const eventStmts = {
+  insertEvent: db.prepare(`
+    INSERT INTO workflow_events (workflow_id, event_type, stage, summary, details, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `),
+  getEventsSince: db.prepare<[string, number], WorkflowEvent>(`
+    SELECT * FROM workflow_events WHERE workflow_id = ? AND id > ? ORDER BY id ASC
+  `),
+  getAllEvents: db.prepare<[string], WorkflowEvent>(
+    'SELECT * FROM workflow_events WHERE workflow_id = ? ORDER BY id ASC'
+  ),
+};
+
+function insertEvent(
+  workflowId: string,
+  eventType: string,
+  stage: string | null,
+  summary: string,
+  details?: Record<string, unknown>
+): number {
+  const result = eventStmts.insertEvent.run(
+    workflowId, eventType, stage, summary,
+    details ? JSON.stringify(details) : null,
+    Date.now()
+  );
+  return result.lastInsertRowid as number;
+}
+
+export function getWorkflowEvents(workflowId: string, sinceId?: number): WorkflowEvent[] {
+  if (sinceId !== undefined && sinceId > 0) {
+    return eventStmts.getEventsSince.all(workflowId, sinceId);
+  }
+  return eventStmts.getAllEvents.all(workflowId);
+}
 
 // ── Story 3.1: Core functions ──────────────────────────────────────────────────
 
@@ -229,6 +285,7 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
     stmts.updateWorkflowStageAndStatus.run(
       workflow.current_stage, 'complete', now, workflowId
     );
+    insertEvent(workflowId, 'workflow_complete', null, 'All stages complete. Your outputs are ready for review.');
     logger.info(`Workflow ${workflowId} complete — all ${sequence.length} stages done`);
     throw new Error(`WORKFLOW_COMPLETE:${workflowId}`);
   }
@@ -241,20 +298,82 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
 
   // ── Critic stage: automated single-shot review ────────────────────────────
   if (nextStage === 'critic') {
+    insertEvent(workflowId, 'stage_started', 'critic', 'Running quality review...');
+
     const { content: artifactContent, type: artifactType } = loadLatestArtifactForItem(workflow.item_id);
     const review = await getCritic().review(artifactContent, artifactType);
 
-    const coordinatorAction = JSON.stringify({
+    const criticDetails = {
       critic_verdict: review.verdict,
       issue_count: review.issues.length,
       critical_issues: review.issues.filter(i => i.severity === 'critical').length,
       major_issues:    review.issues.filter(i => i.severity === 'major').length,
       questions:       review.questions.slice(0, 3),
+      issues_summary:  review.issues.slice(0, 5).map(i => `[${i.severity.toUpperCase()}] ${i.description}`).join('; '),
       auto_reviewed:   true,
-    });
+    };
+    const coordinatorAction = JSON.stringify(criticDetails);
 
+    // Check auto_approve_critic policy
+    const policies = loadGlobalPolicies();
+    const autoApproveCritic = policies.get('auto_approve_critic') === 'true' || policies.get('auto_approve_critic') === true as any;
+
+    if (autoApproveCritic && review.verdict === 'approve') {
+      // Auto-approve: no human gate needed
+      stmts.insertCheckpoint.run(workflowId, nextStage, null, 'approved', coordinatorAction, now);
+      insertEvent(workflowId, 'critic_verdict', 'critic',
+        'Quality review passed — no issues found. Auto-approved.',
+        criticDetails);
+      logger.info(`Critic auto-approved for workflow ${workflowId}`);
+
+      // Continue to next stage
+      return advanceStage(workflowId);
+    }
+
+    if (autoApproveCritic && review.verdict === 'revise') {
+      // Auto-revise: roll back and rerun with critic feedback (max 2 retries)
+      const revisionCount = (review as any)._revisionCount ?? 0;
+      if (revisionCount < 2) {
+        stmts.insertCheckpoint.run(workflowId, nextStage, null, 'revised', coordinatorAction, now);
+        insertEvent(workflowId, 'critic_verdict', 'critic',
+          `Quality review flagged issues. Auto-revising (attempt ${revisionCount + 1}/2).`,
+          criticDetails);
+
+        // Roll back to the stage before critic and rerun
+        const criticIdx = sequence.indexOf('critic');
+        const prevStage = criticIdx > 0 ? sequence[criticIdx - 1] : null;
+        stmts.updateWorkflowStageAndStatus.run(prevStage, 'active', now, workflowId);
+
+        // Propagate critic feedback as a revision
+        const feedbackText = review.issues.map(i => `[${i.severity.toUpperCase()}] ${i.description}`).join('\n');
+        const brief = await getCoordinator().generateStageBrief(workflowId, prevStage!, feedbackText);
+        const stageMap = STAGE_SESSION_MAP[prevStage!] ?? { mode: 'analyst' as AppMode, agentType: 'analyst' as AgentType };
+        const session = sessionManager.createBmadSession(workflow.item_id, stageMap.mode, stageMap.agentType);
+        sessionManager.updateWorkflow(session.id, workflowId, brief);
+
+        runAutonomousStage(session.id, workflowId, prevStage!, workflow.item_id, brief, true)
+          .catch(err => logger.error(`Auto-revision after critic failed: ${err.message}`));
+
+        logger.info(`Critic auto-revise for workflow ${workflowId} — rerunning ${prevStage}`);
+        return { stage: nextStage, sessionId: null };
+      }
+      // Max retries exceeded — fall through to human gate
+    }
+
+    // Default: pause at checkpoint for human review
     stmts.insertCheckpoint.run(workflowId, nextStage, null, 'pending', coordinatorAction, now);
     stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
+
+    if (review.verdict === 'approve') {
+      insertEvent(workflowId, 'critic_verdict', 'critic',
+        'Quality review passed — no issues found. Approve to proceed.',
+        criticDetails);
+    } else {
+      const issuesSummary = review.issues.slice(0, 3).map(i => `[${i.severity.toUpperCase()}] ${i.description}`).join('; ');
+      insertEvent(workflowId, 'critic_verdict', 'critic',
+        `Quality review flagged issues: ${issuesSummary}. How would you like to proceed?`,
+        criticDetails);
+    }
 
     logger.info(`Critic completed for workflow ${workflowId} — verdict: ${review.verdict}`);
     return { stage: nextStage, sessionId: null };
@@ -262,31 +381,58 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
 
   // ── Curator stage: automated curation, auto-completes workflow ────────────
   if (nextStage === 'curator') {
-    const diffCount = await getCurator().runCuration(workflowId);
+    insertEvent(workflowId, 'stage_started', 'curator', 'Updating project context files...');
+
+    const { diffCount, reasoning } = await getCurator().runCuration(workflowId);
+
+    // Log the curator's reasoning so the user can review it
+    if (reasoning) {
+      insertEvent(workflowId, 'curator_reasoning', 'curator',
+        reasoning.length > 300 ? reasoning.slice(0, 297) + '...' : reasoning,
+        { full_reasoning: reasoning });
+    }
 
     stmts.insertCheckpoint.run(
       workflowId, nextStage, null, 'approved',
       JSON.stringify({ auto_approved: true, context_diffs_proposed: diffCount }),
       now
     );
+
+    insertEvent(workflowId, 'stage_completed', 'curator',
+      diffCount > 0
+        ? `Context curation complete — ${diffCount} update${diffCount !== 1 ? 's' : ''} proposed.`
+        : 'Context curation complete — no updates needed.',
+      { context_diffs_proposed: diffCount });
+
     stmts.updateWorkflowStageAndStatus.run(nextStage, 'complete', now, workflowId);
+
+    insertEvent(workflowId, 'workflow_complete', null,
+      'All stages complete. Your outputs are ready for review.');
 
     logger.info(`Curator completed for workflow ${workflowId} — ${diffCount} diff(s) proposed, workflow complete`);
     throw new Error(`WORKFLOW_COMPLETE:${workflowId}`);
   }
 
   // ── Regular specialist stage: run autonomously in the background ─────────
+  const STAGE_NARRATION: Record<string, string> = {
+    analyst:            'Starting market research analysis...',
+    pm_prd:             'Writing Product Requirements Document...',
+    solution_architect: 'Designing solution architecture...',
+    pm_backlog:         'Creating backlog with epics and stories...',
+  };
+  insertEvent(workflowId, 'stage_started', nextStage,
+    STAGE_NARRATION[nextStage] ?? `Starting ${nextStage}...`);
+
   const stageMap = STAGE_SESSION_MAP[nextStage] ?? { mode: 'analyst' as AppMode, agentType: 'analyst' as AgentType };
   const session = sessionManager.createBmadSession(workflow.item_id, stageMap.mode, stageMap.agentType);
   logger.info(`Created ${stageMap.mode} session ${session.id} for stage "${nextStage}"`);
 
-  const brief = getCoordinator().generateStageBrief(workflowId, nextStage);
+  const brief = await getCoordinator().generateStageBrief(workflowId, nextStage);
   sessionManager.updateWorkflow(session.id, workflowId, brief);
 
-  const policies = loadGlobalPolicies();
-  const autoApproveKey = `auto_approve_${nextStage}_output`;
-  const autoApprove = policies.get(autoApproveKey);
-  const shouldAutoApprove = autoApprove === 'true' || autoApprove === true as any;
+  // Silent stages (pm_prd, pm_backlog) auto-approve and chain to the next stage.
+  // Human gates only at analyst (Checkpoint A) and critic (Checkpoint C).
+  const shouldAutoApprove = SILENT_STAGES.has(nextStage);
 
   // Fire the autonomous specialist run as a background task.
   // It will collect the full output, store an artifact, then create the checkpoint.
@@ -367,9 +513,19 @@ async function runAutonomousStage(
     const agent = new BmadAgent(stageMap.agentType);
     const persona = await agent.loadPersona();
 
-    // Inject previous stage artifact as item context
+    // Extract the goal from the brief and pin it in the system prompt so the
+    // model cannot miss it even when the project context describes a different product.
+    const goalMatch = brief.match(/^## Goal\n([\s\S]*?)(?=\n## |\n# |$)/m);
+    const goalText = goalMatch ? goalMatch[1].trim() : null;
+
+    // Build item context: for analyst, the goal itself is the primary context.
+    // For later stages, inject the previous stage's artifact.
     let itemContext: string | undefined;
-    if (stage === 'pm_prd') {
+    if (stage === 'analyst') {
+      if (goalText) {
+        itemContext = `## THIS IS YOUR RESEARCH TOPIC\nThe task below defines exactly what to research. The company context above is background only — your output must be about this specific goal, NOT about the company's existing products.\n\n**Goal:** ${goalText}`;
+      }
+    } else if (stage === 'pm_prd') {
       const analystPath = sessionManager.getLatestAnalystArtifactPath(itemId);
       if (analystPath) {
         try {
@@ -377,19 +533,47 @@ async function runAutonomousStage(
           itemContext = `**Research Brief (use as background for the PRD):**\n\n${content}`;
         } catch { /* ignore */ }
       }
+    } else if (stage === 'solution_architect') {
+      const prdPath = sessionManager.getLatestPrdArtifactPath(itemId);
+      let prdContent = '';
+      if (prdPath) {
+        try { prdContent = fs.readFileSync(prdPath, 'utf-8'); } catch { /* ignore */ }
+      }
+      // Load tech-stack context if available
+      const techStackPath = path.join(PROJECT_ROOT, 'context', 'tech-stack.md');
+      let techStackNote = '';
+      try {
+        const techStack = fs.readFileSync(techStackPath, 'utf-8');
+        techStackNote = `**Existing Tech Stack (align your architecture with this):**\n\n${techStack}`;
+      } catch {
+        techStackNote = `**Note:** No existing tech stack document found at context/tech-stack.md. You should recommend technology choices with tradeoffs for each decision.`;
+      }
+      const parts: string[] = [];
+      if (prdContent) parts.push(`**PRD Document (use as source of requirements for the architecture):**\n\n${prdContent}`);
+      parts.push(techStackNote);
+      itemContext = parts.join('\n\n---\n\n');
     } else if (stage === 'pm_backlog') {
+      const parts: string[] = [];
       const prdPath = sessionManager.getLatestPrdArtifactPath(itemId);
       if (prdPath) {
         try {
           const content = fs.readFileSync(prdPath, 'utf-8');
-          itemContext = `**PRD Document (use as source of requirements for the backlog):**\n\n${content}`;
+          parts.push(`**PRD Document (use as source of requirements for the backlog):**\n\n${content}`);
         } catch { /* ignore */ }
       }
+      const archPath = getLatestArchitectureArtifactPath(itemId);
+      if (archPath) {
+        try {
+          const content = fs.readFileSync(archPath, 'utf-8');
+          parts.push(`**Architecture Document (reference specific services, APIs, and data models in stories):**\n\n${content}`);
+        } catch { /* ignore */ }
+      }
+      if (parts.length > 0) itemContext = parts.join('\n\n---\n\n');
     }
 
-    const systemPrompt = await agent.buildSystemPrompt(persona, brief, itemContext, true);
+    const systemPrompt = await agent.buildSystemPrompt(persona, undefined, itemContext, true, stage);
     const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
-      { role: 'user', content: 'Produce the complete output now.' },
+      { role: 'user', content: brief },
     ];
 
     let fullResponse = '';
@@ -400,8 +584,13 @@ async function runAutonomousStage(
     // Write artifact to disk
     const artifactDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, stageMap.mode, 'artifacts');
     await fsAsync.mkdir(artifactDir, { recursive: true });
-    const artifactPath = path.join(artifactDir, `${Date.now()}-${stage}.md`);
-    await fsAsync.writeFile(artifactPath, fullResponse, 'utf-8');
+    const ext = stage === 'pm_backlog' ? 'json' : 'md';
+    const artifactPath = path.join(artifactDir, `${Date.now()}-${stage}.${ext}`);
+    // Strip markdown code fences from JSON output before saving as .json
+    const artifactContent = stage === 'pm_backlog'
+      ? fullResponse.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim()
+      : fullResponse;
+    await fsAsync.writeFile(artifactPath, artifactContent, 'utf-8');
 
     // Insert artifact record (type must match what getLatestPrdArtifact / getLatestAnalystArtifact query for)
     const artifactType = STAGE_ARTIFACT_TYPE[stage] ?? stage;
@@ -411,7 +600,114 @@ async function runAutonomousStage(
     `).run(sessionId, artifactType, artifactPath, Date.now());
     const artifactId = artifactResult.lastInsertRowid as number;
 
-    // Create checkpoint
+    // Log stage completion event with excerpt
+    const excerpt = fullResponse.slice(0, 200).replace(/\n+/g, ' ').trim();
+    const stageLabel = stage === 'analyst' ? 'Research' : stage === 'pm_prd' ? 'PRD' : stage === 'solution_architect' ? 'Architecture' : stage === 'pm_backlog' ? 'Backlog' : stage;
+
+    // ── Inline critic review for specialist stages ────────────────────────────
+    // After each specialist produces an artifact, the critic reviews it.
+    // If issues are found, auto-revise up to 2 times. If still unresolved,
+    // pause and ask the human for input.
+    const specialistStages = new Set(['analyst', 'pm_prd', 'solution_architect', 'pm_backlog']);
+    const policies = loadGlobalPolicies();
+    const criticEnabled = policies.get('require_critic_review') !== 'false' && policies.get('require_critic_review') !== (false as any);
+
+    if (specialistStages.has(stage) && criticEnabled) {
+      insertEvent(workflowId, 'stage_completed', stage, `${stageLabel} complete. Running quality review...`,
+        { excerpt, artifact_id: artifactId });
+
+      const review = await getCritic().review(fullResponse, artifactType);
+      const criticDetails = {
+        critic_verdict: review.verdict,
+        issue_count: review.issues.length,
+        critical_issues: review.issues.filter(i => i.severity === 'critical').length,
+        major_issues: review.issues.filter(i => i.severity === 'major').length,
+        issues_summary: review.issues.slice(0, 5).map(i => `[${i.severity.toUpperCase()}] ${i.description}`).join('; '),
+        inline_review: true,
+        reviewed_stage: stage,
+      };
+
+      if (review.verdict === 'approve') {
+        // Critic approved — create approved checkpoint and advance
+        const now = Date.now();
+        stmts.insertCheckpoint.run(
+          workflowId, stage, artifactId, 'approved',
+          JSON.stringify({ session_id: sessionId, autonomous: true, auto_approved: true, critic: criticDetails }),
+          now
+        );
+        insertEvent(workflowId, 'critic_verdict', stage, 'Quality review passed.', criticDetails);
+        logger.info(`Inline critic approved "${stage}" for workflow ${workflowId} — advancing`);
+
+        advanceStage(workflowId).catch(err => {
+          if (err.message?.startsWith('WORKFLOW_COMPLETE')) {
+            logger.info(`Workflow ${workflowId} completed after "${stage}"`);
+          } else {
+            logger.error(`Auto-advance after "${stage}" critic approval failed: ${err.message}`);
+            const now2 = Date.now();
+            stmts.insertCheckpoint.run(workflowId, stage, null, 'pending',
+              JSON.stringify({ error: `Auto-advance failed: ${err.message}`, autonomous: true }), now2);
+            stmts.updateWorkflowStatus.run('paused_at_checkpoint', now2, workflowId);
+          }
+        });
+        return;
+      }
+
+      // Critic wants revisions — auto-revise up to MAX_INLINE_REVISIONS times
+      const MAX_INLINE_REVISIONS = 2;
+
+      // Check how many times we've already revised this stage in this workflow
+      const priorRevisions = stmts.getCheckpointsByWorkflow.all(workflowId)
+        .filter(c => c.stage === stage && c.status === 'revised').length;
+
+      if (priorRevisions < MAX_INLINE_REVISIONS) {
+        // Auto-revise: rerun the specialist with critic feedback
+        const feedbackText = review.issues.map(i => `[${i.severity.toUpperCase()}] ${i.description}`).join('\n');
+        const now = Date.now();
+        stmts.insertCheckpoint.run(
+          workflowId, stage, artifactId, 'revised',
+          JSON.stringify({ session_id: sessionId, autonomous: true, critic: criticDetails }),
+          now
+        );
+        insertEvent(workflowId, 'critic_verdict', stage,
+          `Quality review flagged issues. Auto-revising (attempt ${priorRevisions + 1}/${MAX_INLINE_REVISIONS}).`,
+          criticDetails);
+
+        // Keep workflow on the same stage
+        stmts.updateWorkflowStageAndStatus.run(stage, 'active', now, workflowId);
+
+        // Generate a new brief with the critic feedback and rerun
+        const revisedBrief = await getCoordinator().generateStageBrief(workflowId, stage, feedbackText);
+        const newSession = sessionManager.createBmadSession(itemId, stageMap.mode, stageMap.agentType);
+        sessionManager.updateWorkflow(newSession.id, workflowId, revisedBrief);
+
+        logger.info(`Inline critic revision ${priorRevisions + 1}/${MAX_INLINE_REVISIONS} for "${stage}" in workflow ${workflowId}`);
+        runAutonomousStage(newSession.id, workflowId, stage, itemId, revisedBrief, autoApprove)
+          .catch(err => logger.error(`Inline revision for "${stage}" failed: ${err.message}`));
+        return;
+      }
+
+      // Max revisions exhausted — pause at checkpoint for human input
+      const issuesSummary = review.issues.slice(0, 3).map(i => `[${i.severity.toUpperCase()}] ${i.description}`).join('; ');
+      const hasQuestions = review.questions && review.questions.length > 0;
+      const questionsSummary = hasQuestions
+        ? ` Questions: ${review.questions.slice(0, 2).join('; ')}`
+        : '';
+
+      const now = Date.now();
+      stmts.insertCheckpoint.run(
+        workflowId, stage, artifactId, 'pending',
+        JSON.stringify({ session_id: sessionId, autonomous: true, critic: criticDetails }),
+        now
+      );
+      stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
+      insertEvent(workflowId, 'critic_verdict', stage,
+        `Quality review still has unresolved issues after ${MAX_INLINE_REVISIONS} revision(s): ${issuesSummary}.${questionsSummary} How would you like to proceed?`,
+        criticDetails);
+      logger.info(`Inline critic exhausted revisions for "${stage}" — pausing for human input`);
+      return;
+    }
+
+    // ── Non-critic path (critic disabled or non-specialist stage) ─────────────
     const checkpointStatus = autoApprove ? 'approved' : 'pending';
     const now = Date.now();
     stmts.insertCheckpoint.run(
@@ -419,16 +715,34 @@ async function runAutonomousStage(
       JSON.stringify({ session_id: sessionId, autonomous: true, auto_approved: autoApprove }),
       now
     );
+    insertEvent(workflowId, 'stage_completed', stage, `${stageLabel} complete.`,
+      { excerpt, artifact_id: artifactId });
 
     if (autoApprove) {
-      // Keep workflow active so advanceStage can be called for the next stage
-      logger.info(`Autonomous stage "${stage}" auto-approved — workflow stays active`);
+      logger.info(`Autonomous stage "${stage}" complete (silent) — advancing to next stage`);
+      advanceStage(workflowId).catch(err => {
+        if (err.message?.startsWith('WORKFLOW_COMPLETE')) {
+          logger.info(`Workflow ${workflowId} completed after silent chain through "${stage}"`);
+        } else {
+          logger.error(`Auto-advance after silent stage "${stage}" failed: ${err.message}`);
+          const now2 = Date.now();
+          stmts.insertCheckpoint.run(
+            workflowId, stage, null, 'pending',
+            JSON.stringify({ error: `Auto-advance failed: ${err.message}`, autonomous: true }),
+            now2
+          );
+          stmts.updateWorkflowStatus.run('paused_at_checkpoint', now2, workflowId);
+        }
+      });
     } else {
       stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
       logger.info(`Autonomous stage "${stage}" complete — checkpoint created, workflow paused`);
     }
   } catch (err: any) {
     logger.error(`Autonomous stage "${stage}" failed: ${err.message}`);
+    insertEvent(workflowId, 'error', stage,
+      `Stage "${stage}" encountered an error: ${err.message}`,
+      { error: err.message });
     // Create a pending checkpoint with the error so the UI doesn't hang forever
     const now = Date.now();
     stmts.insertCheckpoint.run(
@@ -441,6 +755,20 @@ async function runAutonomousStage(
 }
 
 /**
+ * Get the file path of the most recent architecture artifact for an item.
+ */
+function getLatestArchitectureArtifactPath(itemId: string): string | null {
+  const row = db.prepare<[string], { file_path: string }>(`
+    SELECT a.file_path
+    FROM artifacts a
+    JOIN sessions s ON a.session_id = s.id
+    WHERE s.item_id = ? AND s.mode = 'architecture'
+    ORDER BY a.created_at DESC LIMIT 1
+  `).get(itemId);
+  return row?.file_path ?? null;
+}
+
+/**
  * Load the most recently created artifact for an item, across all sessions.
  * Used by the critic stage to find the document to review.
  */
@@ -449,7 +777,7 @@ function loadLatestArtifactForItem(itemId: string): { content: string; type: str
     SELECT a.file_path, a.type
     FROM artifacts a
     JOIN sessions s ON a.session_id = s.id
-    WHERE s.item_id = ? AND s.mode IN ('prd', 'analyst', 'backlog')
+    WHERE s.item_id = ? AND s.mode IN ('prd', 'analyst', 'architecture', 'backlog')
     ORDER BY a.created_at DESC LIMIT 1
   `).get(itemId);
 
@@ -466,6 +794,7 @@ function loadLatestArtifactForItem(itemId: string): { content: string; type: str
  */
 export function markWorkflowComplete(workflowId: string): void {
   stmts.updateWorkflowStatus.run('complete', Date.now(), workflowId);
+  insertEvent(workflowId, 'workflow_complete', null, 'Workflow ended.');
   logger.info(`Workflow ${workflowId} marked complete`);
 }
 
@@ -572,75 +901,130 @@ export function getWorkflowStatus(workflowId: string): WorkflowStatus {
  * Generates a revised stage brief via the Coordinator and appends it as a user
  * message to the specialist's existing session, then marks the checkpoint as revised.
  */
-export function propagateFeedback(checkpointId: number, feedback: string): void {
+export async function propagateFeedback(checkpointId: number, feedback: string): Promise<void> {
   const checkpoint = stmts.getCheckpoint.get(checkpointId);
   if (!checkpoint) throw new Error(`Checkpoint not found: ${checkpointId}`);
 
   const workflow = stmts.getWorkflow.get(checkpoint.workflow_id);
   if (!workflow) throw new Error(`Workflow not found: ${checkpoint.workflow_id}`);
 
-  // Resolve specialist session — prefer session_id stored at checkpoint creation
-  let sessionId: string | null = null;
-  if (checkpoint.coordinator_action) {
-    try {
-      const action = JSON.parse(checkpoint.coordinator_action) as { session_id?: string };
-      sessionId = action.session_id ?? null;
-    } catch { /* ignore */ }
-  }
-
-  // Fallback: find most recent session for item + stage mode
-  if (!sessionId) {
-    const stageMap = STAGE_SESSION_MAP[checkpoint.stage];
-    if (stageMap) {
-      const row = stmts.getLatestSessionForItemMode.get(workflow.item_id, stageMap.mode);
-      sessionId = row?.id ?? null;
-    }
-  }
-
-  if (!sessionId) {
-    throw new Error(
-      `No specialist session found for stage "${checkpoint.stage}" in workflow ${checkpoint.workflow_id}`
-    );
-  }
-
-  // Build artifact summary if available
+  // Include a summary of the previous output alongside the human feedback
+  // so the specialist can see what to improve, not just the critique.
   const artifactSummary = checkpoint.artifact_id
     ? loadArtifactSummary(checkpoint.artifact_id)
     : undefined;
 
   const previousContext = artifactSummary
-    ? `${artifactSummary}\n\n**Human feedback requiring revision:** ${feedback}`
+    ? `Previous output summary:\n${artifactSummary}\n\n**Human feedback requiring revision:** ${feedback}`
     : `**Human feedback requiring revision:** ${feedback}`;
 
-  // Generate revised stage brief incorporating feedback
-  const brief = getCoordinator().generateStageBrief(
+  // Generate a new brief that incorporates the feedback as context.
+  const brief = await getCoordinator().generateStageBrief(
     checkpoint.workflow_id,
     checkpoint.stage,
     previousContext
   );
 
-  // Append brief as new user message to the specialist's existing session
-  sessionManager.addMessage(sessionId, 'user', brief);
-  logger.info(`Propagated feedback to session ${sessionId} for stage "${checkpoint.stage}"`);
-
-  // Update checkpoint with action record
-  const coordinatorAction = JSON.stringify({
-    session_id: sessionId,
-    action: 'feedback_propagated',
-    feedback_summary: feedback.slice(0, 200),
-    acted_at: Date.now(),
-  });
-
+  // Mark the old checkpoint as revised.
   const now = Date.now();
-  stmts.updateCheckpoint.run('revised', feedback, coordinatorAction, now, checkpointId);
+  stmts.updateCheckpoint.run(
+    'revised',
+    feedback,
+    JSON.stringify({ action: 'revision_rerun', feedback_summary: feedback.slice(0, 200), acted_at: now }),
+    now,
+    checkpointId
+  );
 
-  // Roll current_stage back so advanceStage reruns this stage
+  // Set current_stage to this stage and status to active — a new run is starting.
+  stmts.updateWorkflowStageAndStatus.run(checkpoint.stage, 'active', now, checkpoint.workflow_id);
+
+  // Create a fresh specialist session and fire an autonomous re-run.
+  const stageMap = STAGE_SESSION_MAP[checkpoint.stage] ?? { mode: 'analyst' as AppMode, agentType: 'analyst' as AgentType };
+  const session = sessionManager.createBmadSession(workflow.item_id, stageMap.mode, stageMap.agentType);
+  sessionManager.updateWorkflow(session.id, checkpoint.workflow_id, brief);
+
+  const shouldAutoApprove = SILENT_STAGES.has(checkpoint.stage);
+
+  runAutonomousStage(session.id, checkpoint.workflow_id, checkpoint.stage, workflow.item_id, brief, shouldAutoApprove)
+    .catch(err => logger.error(`Revision re-run for stage "${checkpoint.stage}" failed: ${err.message}`));
+
+  logger.info(`Revision re-run started — session ${session.id} for stage "${checkpoint.stage}" in workflow ${checkpoint.workflow_id}`);
+}
+
+/**
+ * Re-enter a completed workflow at a specific stage.
+ * The given stage and all downstream stages are re-run using the user's
+ * feedback as context. Existing artifacts are preserved for audit trail.
+ */
+export async function reiterateFromStage(
+  workflowId: string,
+  fromStage: string,
+  feedback: string
+): Promise<void> {
+  const workflow = stmts.getWorkflow.get(workflowId);
+  if (!workflow) throw new Error(`Workflow not found: ${workflowId}`);
+  if (workflow.status !== 'complete') {
+    throw new Error(`Workflow ${workflowId} is not complete (status: ${workflow.status}) — reiteration only applies to completed workflows`);
+  }
+
   const sequence: string[] = JSON.parse(workflow.stage_sequence);
-  const stageIdx = sequence.indexOf(checkpoint.stage);
-  const prevStage = stageIdx > 0 ? sequence[stageIdx - 1] : null;
-  stmts.updateWorkflowStageAndStatus.run(prevStage, 'active', now, checkpoint.workflow_id);
+  const idx = sequence.indexOf(fromStage);
+  if (idx < 0) throw new Error(`Stage "${fromStage}" is not in the workflow's stage sequence`);
 
-  logger.info(`Workflow ${checkpoint.workflow_id} set to rerun stage "${checkpoint.stage}" with feedback`);
+  const stageLabel = STAGE_LABELS_INTERNAL[fromStage] ?? fromStage;
+  insertEvent(workflowId, 'reiteration', fromStage,
+    `Re-entering at ${stageLabel}: ${feedback.slice(0, 200)}`);
+
+  // Reset current_stage to the stage before fromStage (or null if idx=0)
+  // so advanceStage will enter fromStage next
+  const prevStage = idx > 0 ? sequence[idx - 1] : null;
+  const now = Date.now();
+  stmts.updateWorkflowStageAndStatus.run(prevStage, 'active', now, workflowId);
+
+  // Generate a brief incorporating the user's feedback
+  const brief = await getCoordinator().generateStageBrief(workflowId, fromStage, feedback);
+
+  // Create a new specialist session
+  const stageMap = STAGE_SESSION_MAP[fromStage] ?? { mode: 'analyst' as AppMode, agentType: 'analyst' as AgentType };
+  const session = sessionManager.createBmadSession(workflow.item_id, stageMap.mode, stageMap.agentType);
+  sessionManager.updateWorkflow(session.id, workflowId, brief);
+
+  const shouldAutoApprove = SILENT_STAGES.has(fromStage);
+
+  // Fire the autonomous stage — the existing chain handles all downstream stages
+  runAutonomousStage(session.id, workflowId, fromStage, workflow.item_id, brief, shouldAutoApprove)
+    .catch(err => logger.error(`Reiteration re-run for stage "${fromStage}" failed: ${err.message}`));
+
+  logger.info(`Reiteration started — session ${session.id} for stage "${fromStage}" in workflow ${workflowId}`);
+}
+
+const STAGE_LABELS_INTERNAL: Record<string, string> = {
+  analyst:            'Research',
+  pm_prd:             'PRD',
+  solution_architect: 'Architecture',
+  pm_backlog:         'Backlog',
+  critic:             'Critic',
+  curator:            'Curator',
+};
+
+/**
+ * Delete a workflow and all associated checkpoints, context_diffs,
+ * coordinator_sessions, and workflow_events.
+ */
+export function deleteWorkflow(workflowId: string): void {
+  const workflow = stmts.getWorkflow.get(workflowId);
+  if (!workflow) throw new Error(`Workflow not found: ${workflowId}`);
+
+  // Delete child rows that don't have ON DELETE CASCADE
+  db.prepare('DELETE FROM checkpoints WHERE workflow_id = ?').run(workflowId);
+  db.prepare('DELETE FROM context_diffs WHERE workflow_id = ?').run(workflowId);
+  // These cascade automatically but explicit delete is harmless
+  db.prepare('DELETE FROM workflow_events WHERE workflow_id = ?').run(workflowId);
+  db.prepare('DELETE FROM coordinator_sessions WHERE workflow_id = ?').run(workflowId);
+  // Delete the workflow itself
+  db.prepare('DELETE FROM workflows WHERE id = ?').run(workflowId);
+
+  logger.info(`Deleted workflow ${workflowId}`);
 }
 
 function loadArtifactSummary(artifactId: number): string | undefined {

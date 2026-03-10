@@ -254,18 +254,97 @@ class APIClient {
   // Workflow (Epic 4 + 7)
   // ============================================
 
+  // ============================================
+  // Coordinator Planning (pre-workflow)
+  // ============================================
+
+  /**
+   * POST /api/workflow/coordinator/open
+   * Opens a planning session. Coordinator asks clarifying questions.
+   * First SSE event is { type: 'session', sessionId }.
+   * Done event content may contain COORDINATOR_READY marker.
+   */
+  async openCoordinatorPlanning(
+    goal: string,
+    onSessionId: (id: string) => void,
+    onChunk: (content: string) => void,
+    onComplete: (fullContent: string) => void,
+    onError: (error: string) => void,
+    model?: string,
+    onReplace?: (cleanedContent: string) => void,
+  ): Promise<void> {
+    const response = await fetch(`${this.baseURL}/api/workflow/coordinator/open`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ goal, model }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error((err as any).error ?? `HTTP ${response.status}`);
+    }
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    if (!reader) throw new Error('No response body');
+    let lineBuffer = '';
+    let fullContent = '';
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        lineBuffer += decoder.decode(value, { stream: true });
+        const lines = lineBuffer.split('\n');
+        lineBuffer = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.type === 'session') onSessionId(data.sessionId);
+            else if (data.type === 'content') { fullContent += data.content; onChunk(data.content); }
+            else if (data.type === 'replace') { fullContent = data.content; onReplace?.(data.content); }
+            else if (data.type === 'done') onComplete(data.content ?? fullContent);
+            else if (data.type === 'error') onError(data.error);
+          } catch { /* skip malformed */ }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  async replyToCoordinator(
+    sessionId: string,
+    message: string,
+    onChunk: (content: string) => void,
+    onComplete: (fullContent: string) => void,
+    onError: (error: string) => void,
+    model?: string,
+    onReplace?: (cleanedContent: string) => void,
+  ): Promise<void> {
+    const response = await fetch(`${this.baseURL}/api/workflow/coordinator/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, message, model }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error((err as any).error ?? `HTTP ${response.status}`);
+    }
+    await this.readSSEStream(response, onChunk, (content) => onComplete(content ?? ''), onError, onReplace);
+  }
+
   /**
    * POST /api/workflow/start — creates workflow and advances to first stage.
    * Returns { workflowId, stage, sessionId, complete, stages }.
    */
   async startWorkflow(
-    itemId: string,
+    itemId: string | undefined,
     goal: string,
+    enrichedContext?: string,
     stageSequence?: string[],
     policyOverrides?: Record<string, string>
   ): Promise<{ workflowId: string; stage: string | null; sessionId: string | null; complete: boolean; stages: string[] }> {
     const response = await axios.post(`${this.baseURL}/api/workflow/start`, {
-      itemId, goal, stageSequence, policyOverrides,
+      itemId, goal, enrichedContext, stageSequence, policyOverrides,
     });
     return response.data;
   }
@@ -273,6 +352,68 @@ class APIClient {
   async getWorkflowStatus(workflowId: string) {
     const response = await axios.get(`${this.baseURL}/api/workflow/${workflowId}/status`);
     return response.data;
+  }
+
+  async getCoordinatorSession(sessionId: string): Promise<{
+    messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+    type: 'pre_workflow' | 'stage_briefing';
+    nextStage: string | null;
+    workflowId: string | null;
+  } | null> {
+    try {
+      const response = await axios.get(`${this.baseURL}/api/workflow/coordinator/session/${sessionId}`);
+      return response.data;
+    } catch {
+      return null;
+    }
+  }
+
+
+  async getWorkflowEvents(workflowId: string, sinceId?: number): Promise<{ events: Array<{
+    id: number; workflow_id: string; event_type: string; stage: string | null;
+    summary: string; details: string | null; created_at: number;
+  }> }> {
+    const params = sinceId ? `?since=${sinceId}` : '';
+    const response = await axios.get(`${this.baseURL}/api/workflow/${workflowId}/events${params}`);
+    return response.data;
+  }
+
+  async getWorkflowList(): Promise<{ workflows: Array<{
+    id: string; item_id: string; goal: string; status: string;
+    current_stage: string | null; stage_sequence: string;
+    created_at: number; updated_at: number; checkpoint_count: number;
+  }> }> {
+    const response = await axios.get(`${this.baseURL}/api/workflow/list/all`);
+    return response.data;
+  }
+
+  async sendWorkflowMessage(
+    workflowId: string,
+    message: string,
+    onChunk: (content: string) => void,
+    onComplete: (fullContent: string) => void,
+    onError: (error: string) => void,
+    model?: string
+  ): Promise<void> {
+    const response = await fetch(`${this.baseURL}/api/workflow/${workflowId}/message`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, model }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error((err as any).error ?? `HTTP ${response.status}`);
+    }
+    await this.readSSEStream(response, onChunk, (content) => onComplete(content ?? ''), onError);
+  }
+
+  async reiterateWorkflow(workflowId: string, fromStage: string, feedback: string) {
+    const response = await axios.post(`${this.baseURL}/api/workflow/${workflowId}/reiterate`, { fromStage, feedback });
+    return response.data;
+  }
+
+  async deleteWorkflow(workflowId: string): Promise<void> {
+    await axios.delete(`${this.baseURL}/api/workflow/${workflowId}`);
   }
 
   async getWorkflowCheckpoints(workflowId: string) {
@@ -283,12 +424,14 @@ class APIClient {
   async resolveCheckpoint(
     checkpointId: number,
     status: 'approved' | 'rejected' | 'revised',
-    feedback?: string
+    feedback?: string,
+    enrichedContext?: string
   ) {
     const response = await axios.post(`${this.baseURL}/api/workflow/checkpoint/resolve`, {
       checkpointId,
       status,
       feedback,
+      enrichedContext,
     });
     return response.data;
   }
@@ -335,6 +478,39 @@ class APIClient {
   }
 
   // ============================================
+  // Context Files (editor)
+  // ============================================
+
+  async getContextFiles(): Promise<{ files: Array<{
+    fileName: string; label: string; description: string;
+    hasTemplate: boolean; content: string; templateContent?: string;
+  }> }> {
+    const response = await axios.get(`${this.baseURL}/api/context-files`);
+    return response.data;
+  }
+
+  async saveContextFile(fileName: string, content: string): Promise<{ ok: boolean }> {
+    const response = await axios.put(`${this.baseURL}/api/context-files/${fileName}`, { content });
+    return response.data;
+  }
+
+  // ============================================
+  // Template Files (editor)
+  // ============================================
+
+  async getTemplateFiles(): Promise<{ files: Array<{
+    fileName: string; label: string; description: string; content: string;
+  }> }> {
+    const response = await axios.get(`${this.baseURL}/api/template-files`);
+    return response.data;
+  }
+
+  async saveTemplateFile(fileName: string, content: string): Promise<{ ok: boolean }> {
+    const response = await axios.put(`${this.baseURL}/api/template-files/${fileName}`, { content });
+    return response.data;
+  }
+
+  // ============================================
   // Utility
   // ============================================
 
@@ -351,7 +527,8 @@ class APIClient {
     response: globalThis.Response,
     onChunk: (content: string) => void,
     onComplete: (content?: string) => void,
-    onError: (error: string) => void
+    onError: (error: string) => void,
+    onReplace?: (cleanedContent: string) => void,
   ): Promise<void> {
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();
@@ -383,6 +560,8 @@ class APIClient {
 
               if (data.type === 'content') {
                 onChunk(data.content);
+              } else if (data.type === 'replace') {
+                onReplace?.(data.content);
               } else if (data.type === 'done') {
                 onComplete(data.content);
               } else if (data.type === 'error') {

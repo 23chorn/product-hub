@@ -41,6 +41,16 @@ export interface CoordinatorMessage {
   timestamp: number;
 }
 
+export interface WorkflowEvent {
+  id: number;
+  workflow_id: string;
+  event_type: string;
+  stage: string | null;
+  summary: string;
+  details: string | null;  // JSON blob
+  created_at: number;
+}
+
 export type StageStatus = 'pending' | 'in-progress' | 'at-checkpoint' | 'complete' | 'skipped' | 'rejected';
 
 export interface StageInfo {
@@ -57,6 +67,12 @@ interface WorkflowStoreState {
   isWorkflowMode: boolean;
   setWorkflowMode: (active: boolean) => void;
 
+  // Pre-workflow coordinator planning phase
+  planningPhase: 'idle' | 'gathering' | 'launching';
+  planningSessionId: string | null;
+  setPlanningPhase: (phase: 'idle' | 'gathering' | 'launching') => void;
+  setPlanningSessionId: (id: string | null) => void;
+
   // Active workflow data
   activeWorkflow: WorkflowRow | null;
   currentStage: string | null;
@@ -70,11 +86,20 @@ interface WorkflowStoreState {
   coordinatorMessages: CoordinatorMessage[];
   addCoordinatorMessage: (msg: CoordinatorMessage) => void;
   appendToLastCoordinatorMessage: (chunk: string) => void;
+  replaceLastCoordinatorMessage: (content: string) => void;
   clearCoordinatorMessages: () => void;
 
   // Streaming state
   isStreaming: boolean;
   setIsStreaming: (v: boolean) => void;
+
+  // Event tracking
+  lastEventId: number;
+  setLastEventId: (id: number) => void;
+
+  // Artifact viewer
+  viewingArtifactId: number | null;
+  setViewingArtifactId: (id: number | null) => void;
 
   // Pending context diffs notification
   pendingDiffCount: number;
@@ -90,6 +115,11 @@ interface WorkflowStoreState {
 export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
   isWorkflowMode: false,
   setWorkflowMode: (active) => set({ isWorkflowMode: active }),
+
+  planningPhase: 'idle',
+  planningSessionId: null,
+  setPlanningPhase: (phase) => set({ planningPhase: phase }),
+  setPlanningSessionId: (id) => set({ planningSessionId: id }),
 
   activeWorkflow: null,
   currentStage: null,
@@ -112,15 +142,28 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
       };
       return { coordinatorMessages: msgs };
     }),
+  replaceLastCoordinatorMessage: (content) =>
+    set((state) => {
+      const msgs = [...state.coordinatorMessages];
+      if (msgs.length === 0) return state;
+      msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content };
+      return { coordinatorMessages: msgs };
+    }),
   clearCoordinatorMessages: () => set({ coordinatorMessages: [] }),
 
   isStreaming: false,
   setIsStreaming: (v) => set({ isStreaming: v }),
 
+  lastEventId: 0,
+  setLastEventId: (id) => set({ lastEventId: id }),
+
+  viewingArtifactId: null,
+  setViewingArtifactId: (id) => set({ viewingArtifactId: id }),
+
   pendingDiffCount: 0,
   setPendingDiffCount: (n) => set({ pendingDiffCount: n }),
 
-  applyWorkflowStatus: ({ workflow, checkpoints, currentStage, completedStages, pendingStage, currentSessionId }) => {
+  applyWorkflowStatus: ({ workflow, checkpoints, currentStage, completedStages, pendingStage, currentSessionId }: WorkflowStatus & { currentSessionId?: string | null }) => {
     const stageSequence: string[] = JSON.parse(workflow.stage_sequence ?? '[]');
     localStorage.setItem('activeWorkflowId', workflow.id);
     set({
@@ -136,6 +179,7 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
 
   resetWorkflow: () => {
     localStorage.removeItem('activeWorkflowId');
+    localStorage.removeItem('coordinatorPlanningSessionId');
     set({
       activeWorkflow: null,
       currentStage: null,
@@ -146,6 +190,10 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
       checkpoints: [],
       coordinatorMessages: [],
       isStreaming: false,
+      planningPhase: 'idle',
+      planningSessionId: null,
+      lastEventId: 0,
+      viewingArtifactId: null,
     });
   },
 }));

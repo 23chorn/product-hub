@@ -9,7 +9,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { streamAI, resolveModelId } from '../utils/ai-provider';
+import { streamAI, resolveModelId, type SystemPrompt } from '../utils/ai-provider';
 import Logger from '../utils/logger';
 
 const logger = new Logger('CRITIC');
@@ -56,21 +56,22 @@ export class CriticAgent {
   ): Promise<CriticReview> {
     const resolvedModel = resolveModelId(model);
 
-    // Artifact injected into system prompt, not user message
-    const systemPrompt = `${this.persona}
+    // Split prompt for caching: persona is stable (cached across reviews),
+    // artifact is dynamic (changes each call). This saves ~90% of persona
+    // input tokens on subsequent reviews.
+    const stable = `${this.persona}
 
 ---
 
-## Document Under Review
+Review the document provided below according to your persona and output format. Produce Issues, Questions for the PM, Strengths, and Verdict sections.`;
+
+    const dynamic = `## Document Under Review
 
 **Type:** ${artifactType}
 
-${artifactContent}
+${artifactContent}`;
 
----
-
-Review the document above according to your persona and output format. Produce Issues, Questions for the PM, Strengths, and Verdict sections.`;
-
+    const systemPrompt: SystemPrompt = { stable, dynamic };
     const userMessage = `Please review the ${artifactType} above.`;
 
     logger.info(`Critic reviewing ${artifactType} (${artifactContent.length} chars) via ${resolvedModel}`);
@@ -89,48 +90,85 @@ Review the document above according to your persona and output format. Produce I
 
 // ── Output parser ─────────────────────────────────────────────────────────────
 
+/**
+ * Extract a section by heading (supports ##, ###, ####, or **bold** headings).
+ * Returns the body text between this heading and the next heading of same/higher level.
+ */
+function extractSection(text: string, sectionName: string): string {
+  // Try markdown headings: ## Issues, ### Issues, #### Issues
+  const headingPattern = new RegExp(
+    `^#{2,4}\\s*${sectionName}[^\\n]*\\n([\\s\\S]*?)(?=^#{2,4}\\s|$)`,
+    'im'
+  );
+  const headingMatch = text.match(headingPattern);
+  if (headingMatch?.[1]?.trim()) return headingMatch[1];
+
+  // Try bold headings: **Issues** or **Issues:**
+  const boldPattern = new RegExp(
+    `\\*\\*${sectionName}[^*]*\\*\\*:?\\s*\\n([\\s\\S]*?)(?=\\*\\*[A-Z]|^#{2,4}\\s|$)`,
+    'im'
+  );
+  const boldMatch = text.match(boldPattern);
+  if (boldMatch?.[1]?.trim()) return boldMatch[1];
+
+  return '';
+}
+
+function parseBulletList(text: string): string[] {
+  return text
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => /^[-*]\s/.test(l) || /^\d+[.)]\s/.test(l))
+    .map(l => l.replace(/^[-*]\s*/, '').replace(/^\d+[.)]\s*/, '').trim())
+    .filter(l => l.length > 0);
+}
+
 function parseReview(text: string): CriticReview {
   // Extract Issues section
-  const issuesMatch = text.match(/###\s*Issues\s*\n([\s\S]*?)(?=###|$)/im);
-  const issuesText = issuesMatch?.[1] ?? '';
-  const issues: CriticIssue[] = issuesText
-    .split('\n')
-    .filter(l => /^[-*]\s/.test(l.trim()))
-    .map(line => {
-      const clean = line.replace(/^[-*]\s*/, '').trim();
+  const issuesText = extractSection(text, 'Issues');
+  const issues: CriticIssue[] = parseBulletList(issuesText)
+    .map(clean => {
       const severityMatch = clean.match(/^\[(critical|major|minor)\]/i);
       const severity = (severityMatch?.[1]?.toLowerCase() ?? 'minor') as CriticIssue['severity'];
       const description = clean.replace(/^\[(critical|major|minor)\]\s*/i, '').trim();
       return { severity, description };
     })
-    .filter(i => i.description.length > 0 && i.description !== 'No issues found');
+    .filter(i => i.description.length > 0 && !/^no (issues|problems) found/i.test(i.description) && !/^none$/i.test(i.description));
 
   // Extract Questions section
-  const questionsMatch = text.match(/###\s*Questions.*?\n([\s\S]*?)(?=###|$)/im);
-  const questionsText = questionsMatch?.[1] ?? '';
-  const questions = questionsText
-    .split('\n')
-    .filter(l => /^[-*]\s/.test(l.trim()))
-    .map(l => l.replace(/^[-*]\s*/, '').trim())
-    .filter(q => q.length > 0 && q !== 'None');
+  const questionsText = extractSection(text, 'Questions');
+  const questions = parseBulletList(questionsText)
+    .filter(q => !/^none$/i.test(q));
 
   // Extract Strengths section
-  const strengthsMatch = text.match(/###\s*Strengths\s*\n([\s\S]*?)(?=###|$)/im);
-  const strengthsText = strengthsMatch?.[1] ?? '';
-  const strengths = strengthsText
-    .split('\n')
-    .filter(l => /^[-*]\s/.test(l.trim()))
-    .map(l => l.replace(/^[-*]\s*/, '').trim())
-    .filter(s => s.length > 0);
+  const strengthsText = extractSection(text, 'Strengths');
+  const strengths = parseBulletList(strengthsText);
 
-  // Extract Verdict — last occurrence wins (LLM sometimes restates it)
-  const verdictMatches = [...text.matchAll(/###\s*Verdict\s*\n+(approve|revise)/gim)];
-  const rawVerdict = verdictMatches.at(-1)?.[1]?.toLowerCase() ?? 'revise';
+  // Extract Verdict — search broadly for approve/revise after a "Verdict" label
+  // Try heading format first, then inline format like "**Verdict:** approve"
+  const verdictMatches = [...text.matchAll(/(?:#{2,4}\s*)?Verdict[:\s*]*\n*\s*(approve|revise)/gim)];
+  let rawVerdict = verdictMatches.at(-1)?.[1]?.toLowerCase();
+
+  // Fallback: look for standalone "approve" or "revise" in the last 200 chars
+  if (!rawVerdict) {
+    const tail = text.slice(-200).toLowerCase();
+    if (tail.includes('approve') && !tail.includes('revise')) rawVerdict = 'approve';
+    else if (tail.includes('revise')) rawVerdict = 'revise';
+  }
+
   const verdict: CriticReview['verdict'] = rawVerdict === 'approve' ? 'approve' : 'revise';
 
   // Override to 'revise' if any CRITICAL issue was found
   const hasCritical = issues.some(i => i.severity === 'critical');
   const finalVerdict: CriticReview['verdict'] = hasCritical ? 'revise' : verdict;
 
-  return { verdict: finalVerdict, issues, questions, strengths, fullText: text };
+  // Safeguard: if verdict is 'revise' but there are no actionable issues, treat as 'approve'
+  const safeVerdict = (finalVerdict === 'revise' && issues.length === 0) ? 'approve' : finalVerdict;
+  if (safeVerdict !== finalVerdict) {
+    logger.info(`Verdict overridden: ${finalVerdict} → approve (no actionable issues found)`);
+  }
+
+  logger.info(`Parsed review: verdict=${safeVerdict} issues=${issues.length} questions=${questions.length} strengths=${strengths.length}`);
+
+  return { verdict: safeVerdict, issues, questions, strengths, fullText: text };
 }

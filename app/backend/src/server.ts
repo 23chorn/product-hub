@@ -10,7 +10,6 @@ import rateLimit from 'express-rate-limit';
 import Logger from './utils/logger';
 import { appConfig } from './config/app-config';
 import prdRoutes from './routes/prd-routes';
-import bmadRoutes from './routes/bmad-routes';
 import configRoutes from './routes/config-routes';
 import decisionLogRoutes from './routes/decision-log-routes';
 import contextRoutes from './routes/context-routes';
@@ -18,6 +17,8 @@ import initiativesRoutes from './routes/initiatives-routes';
 import { workflowRouter } from './routes/workflow-router';
 import { workflowRoutes } from './routes/workflow-routes';
 import { contextDiffRouter } from './routes/context-diff-routes';
+import { contextFileRouter } from './routes/context-file-routes';
+import { templateFileRouter } from './routes/template-file-routes';
 
 const logger = new Logger('SERVER');
 
@@ -61,7 +62,6 @@ app.get('/health', (req, res) => {
 
 // API routes
 app.use('/api/prd', prdRoutes);
-app.use('/api/bmad', bmadRoutes);
 app.use('/api/config', configRoutes);
 app.use('/api/decision-log', decisionLogRoutes);
 app.use('/api/context', contextRoutes);
@@ -76,6 +76,8 @@ if (appConfig.features.workflowModeEnabled) {
   });
 }
 app.use('/api/context-diffs', contextDiffRouter);
+app.use('/api/context-files', contextFileRouter);
+app.use('/api/template-files', templateFileRouter);
 
 app.get('/api', (req, res) => {
   res.json({

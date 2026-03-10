@@ -2,7 +2,7 @@
 # Fill in your details below. These values are injected into every agent session.
 
 # Your name — agents will address you by this in conversation
-user_name: Your Name
+user_name: Chris
 
 # Language for all agent communication and document output
 communication_language: English

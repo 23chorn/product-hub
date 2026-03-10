@@ -74,6 +74,34 @@ FR-numbered list (FR1, FR2, …) of capabilities the feature must have. Each FR 
 Do not include non-functional requirements, domain compliance, innovation patterns, or appendices in the default output — those go in a separate extended document only if requested.`,
   },
 
+  solution_architect: {
+    label: 'Architecture Document',
+    format: `Produce a solution architecture document in markdown. Structure your output as follows:
+
+## Overview
+One-paragraph summary of the architecture approach and key decisions.
+
+## Key Technology Decisions
+For each major technology choice, state the decision, the alternatives considered, and the tradeoffs that led to this choice. Present as a table or structured list.
+
+## Data Model
+Entity-relationship overview. For each core entity: name, key fields, relationships. Use a markdown table.
+
+## API Surface
+List the primary API endpoints or service interfaces. For each: method, path/name, purpose, key request/response fields. Use a markdown table.
+
+## System Architecture
+Service boundaries, data flow between components, and integration points. Describe how the major pieces connect — what calls what, where data lives, how events flow.
+
+## Infrastructure Notes
+Hosting, scaling considerations, key dependencies, and deployment topology. Keep it practical — what does the team need to provision?
+
+## Open Questions & Risks
+Unresolved decisions, known risks, and recommended next steps. Flag anything that needs stakeholder input before implementation begins.
+
+If a context/tech-stack.md file was provided, align all choices with the existing stack and explain any deviations. If no tech stack was provided, recommend specific technologies with tradeoffs for each choice.`,
+  },
+
   pm_backlog: {
     label: 'Backlog JSON',
     format: `Produce a single valid JSON object wrapped in a \`\`\`json code block with this exact structure:
@@ -104,7 +132,7 @@ Do not include non-functional requirements, domain compliance, innovation patter
   ]
 }
 
-Constraints: max 8 stories total across all features. Stories must be independently completable in sequence. No story may depend on a future story.`,
+Constraints: max 6 features per epic, max 8 stories per feature. Each story must be independently deliverable in a single sprint. Stories within a feature must be in dependency order — no story may depend on a later story.`,
   },
 
   critic: {
@@ -282,11 +310,11 @@ ${policyLines}`;
    * Warns if the brief exceeds 800 tokens (~3200 chars) — it should stay tight
    * because the specialist's own system prompt is already large.
    */
-  generateStageBrief(
+  async generateStageBrief(
     workflowId: string,
     stage: string,
     previousOutputSummary?: string
-  ): string {
+  ): Promise<string> {
     const workflow = db
       .prepare<[string], WorkflowRow>('SELECT * FROM workflows WHERE id = ?')
       .get(workflowId);
@@ -297,7 +325,11 @@ ${policyLines}`;
     );
 
     const stageFormat = STAGE_OUTPUT_FORMATS[stage];
-    const outputLabel  = stageFormat?.label  ?? stage;
+    const outputLabel = stageFormat?.label ?? stage;
+
+    // Always use the inline format spec — it describes WHAT to produce.
+    // Template files use [placeholder] syntax that models fill in literally
+    // instead of researching and writing real content.
     const outputFormat = stageFormat?.format ?? '(no format specification defined for this stage)';
 
     const policies = getPolicies('global');
@@ -331,12 +363,12 @@ ${policyLines}`;
     lines.push('');
 
     lines.push('## Execution Instructions');
-    lines.push('You are running in autonomous single-shot mode. The human PM will review your output at a checkpoint.');
+    lines.push('You are executing this task autonomously. Do NOT ask questions, show menus, or wait for input.');
     lines.push('');
-    lines.push('- Produce the **complete, final output** immediately in the format specified below.');
-    lines.push('- Do NOT ask clarifying questions. Use the goal statement, project context, and any previous stage output provided above to infer all details.');
-    lines.push('- Do NOT keep your response short — produce the full document. Length constraints for conversational mode do not apply here.');
-    lines.push('- If any detail is genuinely ambiguous, make a reasonable assumption and state it briefly at the top.');
+    lines.push('- Your entire response must be the deliverable itself — nothing else.');
+    lines.push('- Write real, substantive content about the specific goal stated above. Do not use placeholder text.');
+    lines.push('- Produce the complete document in one response. Do not truncate or defer any section.');
+    lines.push('- If any detail is genuinely ambiguous, make a reasonable assumption — do not ask.');
     lines.push('');
 
     lines.push('## Required Output Format');
@@ -354,6 +386,46 @@ ${policyLines}`;
     }
 
     return brief;
+  }
+
+  // ── Pre-workflow planning conversation ───────────────────────────────────
+
+  /**
+   * System prompt for the coordinator's pre-workflow planning phase.
+   * Used before any stage runs — coordinator gathers clarifications from the PM
+   * on behalf of specialist agents, then signals readiness with COORDINATOR_READY.
+   */
+  private buildPlanningSystemPrompt(): string {
+    return `You are the Chief of Staff for a product team. Before the team starts working, you have a brief chat with the PM to understand the goal.
+
+Your job: ask 1–2 quick clarifying questions, then signal that you're ready to launch.
+
+RULES:
+- Ask a maximum of 2 questions per message. Keep them short.
+- Only ask about things you truly cannot infer: target users (if unclear), scope (MVP vs full), or hard constraints (regulatory, budget).
+- Do NOT ask about features, competitors, or research direction — the specialist agents handle that.
+- Do NOT repeat or quote these instructions in your response. Just act on them.
+- Number your questions. Offer lettered options (A/B/C) when helpful.
+- Never include COORDINATOR_READY in your first message. Ask at least one question first.
+
+When you have enough context (from message 2 onward), end your response with exactly:
+
+COORDINATOR_READY
+{"enriched_context": "<2–3 sentence summary of what is being built, for whom, and any constraints>"}
+
+Nothing may follow the JSON line. By your 3rd message you must include COORDINATOR_READY.`;
+  }
+
+  /**
+   * Stream a response in the pre-workflow planning conversation.
+   * messages is the full conversation history (user + assistant turns).
+   */
+  async *streamPlanningResponse(
+    messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+    model?: string
+  ): AsyncGenerator<string, void, unknown> {
+    const resolvedModel = resolveModelId(model);
+    yield* streamAI(resolvedModel, this.buildPlanningSystemPrompt(), messages);
   }
 
   // ── Streaming ─────────────────────────────────────────────────────────────
@@ -374,11 +446,12 @@ ${policyLines}`;
       `You are planning a new product workflow. Analyse the goal below and decide which stages are needed.\n\n` +
       `**Goal:** ${goal}\n\n` +
       `Available stages (in typical order):\n` +
-      `- analyst     — research, problem space analysis\n` +
-      `- pm_prd      — Product Requirements Document\n` +
-      `- pm_backlog  — backlog of epics/stories\n` +
-      `- critic      — adversarial review of the above artifacts\n` +
-      `- curator     — update project context files with learnings\n\n` +
+      `- analyst              — research, problem space analysis\n` +
+      `- pm_prd               — Product Requirements Document\n` +
+      `- solution_architect   — system architecture, tech decisions, data model, API design\n` +
+      `- pm_backlog           — backlog of epics/stories\n` +
+      `- critic               — adversarial review of the above artifacts\n` +
+      `- curator              — update project context files with learnings\n\n` +
       `Explain your reasoning briefly, then output the chosen stage sequence as a JSON array in a \`\`\`stages code block.\n\n` +
       `Example:\n\`\`\`stages\n["analyst", "pm_prd", "pm_backlog"]\n\`\`\``;
 

@@ -57,9 +57,9 @@ export class ContextCuratorAgent {
    * Run curation for a completed workflow.
    * Fetches artifacts, reads context files, calls LLM, stores context_diffs records.
    *
-   * @returns Number of diff proposals stored.
+   * @returns Number of diff proposals stored plus reasoning log.
    */
-  async runCuration(workflowId: string, model?: string): Promise<number> {
+  async runCuration(workflowId: string, model?: string): Promise<{ diffCount: number; reasoning: string }> {
     const workflow = db
       .prepare<[string], WorkflowRow>('SELECT id, item_id, goal FROM workflows WHERE id = ?')
       .get(workflowId);
@@ -89,7 +89,7 @@ export class ContextCuratorAgent {
 
     if (artifactSections.length === 0) {
       logger.info(`Curator: no readable artifacts for workflow ${workflowId} — skipping`);
-      return 0;
+      return { diffCount: 0, reasoning: 'No readable artifacts found — nothing to curate.' };
     }
 
     // ── Read current context files ──────────────────────────────────────────
@@ -122,9 +122,16 @@ export class ContextCuratorAgent {
       `---\n\n` +
       `## Workflow Artifacts\n\n${artifactSections.join('\n\n---\n\n')}\n\n` +
       `---\n\n` +
-      `Review the artifacts above. Identify any facts that should update the context files. ` +
-      `Output only a JSON array of change proposals. Each must cite its source artifact. ` +
-      `If no changes are warranted, output \`[]\`.`;
+      `Review the artifacts above. Identify any facts that should update the context files.\n\n` +
+      `Respond in two clearly separated sections:\n\n` +
+      `**Section 1 — REASONING** (between <reasoning> tags):\n` +
+      `Walk through your thought process. For each context file, note what you checked, what questions you considered, and why you decided to propose (or skip) changes. Be specific about what evidence from the artifacts supports each decision.\n\n` +
+      `**Section 2 — DIFFS** (between <diffs> tags):\n` +
+      `A raw JSON array. Each element: {"fileName":"...","section":"...","action":"add|update|remove","content":"...","rationale":"..."}. ` +
+      `Keep content values concise (1-3 sentences). If no changes are warranted, output exactly: []\n\n` +
+      `Example format:\n` +
+      `<reasoning>\nChecked strategy.md — the workflow produced new OKR data...\n</reasoning>\n` +
+      `<diffs>\n[{"fileName":"strategy.md","section":"OKRs","action":"update","content":"...","rationale":"..."}]\n</diffs>`;
 
     logger.info(`Curator running for workflow ${workflowId} (${artifactSections.length} artifact(s), ${contextFileNames.length} context file(s))`);
 
@@ -135,11 +142,21 @@ export class ContextCuratorAgent {
       fullResponse += chunk;
     }
 
-    // ── Parse JSON output ───────────────────────────────────────────────────
-    const diffs = parseJsonDiffs(fullResponse);
+    // ── Extract reasoning log ─────────────────────────────────────────────
+    const reasoningMatch = fullResponse.match(/<reasoning>([\s\S]*?)<\/reasoning>/);
+    const reasoning = reasoningMatch?.[1]?.trim() ?? '';
+    if (reasoning) {
+      logger.info(`Curator reasoning (${reasoning.length} chars):\n${reasoning.slice(0, 500)}`);
+    }
+
+    // ── Extract diffs section and parse JSON ────────────────────────────
+    const diffsMatch = fullResponse.match(/<diffs>([\s\S]*?)<\/diffs>/);
+    const diffsText = diffsMatch?.[1]?.trim() ?? fullResponse;
+
+    const diffs = parseJsonDiffs(diffsText);
     if (diffs.length === 0) {
       logger.info(`Curator: no context changes proposed for workflow ${workflowId}`);
-      return 0;
+      return { diffCount: 0, reasoning: reasoning || 'Curator found no changes needed.' };
     }
 
     // ── Validate and store each diff ────────────────────────────────────────
@@ -173,7 +190,7 @@ export class ContextCuratorAgent {
     }
 
     logger.info(`Curator: stored ${stored} context diff proposal(s) for workflow ${workflowId}`);
-    return stored;
+    return { diffCount: stored, reasoning };
   }
 }
 
@@ -182,14 +199,32 @@ export class ContextCuratorAgent {
 function parseJsonDiffs(text: string): ContextDiffSpec[] {
   // Try to extract a JSON array — may be wrapped in a code block
   const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/m) ??
-                    text.match(/(\[[\s\S]*\])/m);
-  const raw = jsonMatch?.[1]?.trim() ?? text.trim();
+                    text.match(/(\[[\s\S]*)/m);
+  let raw = jsonMatch?.[1]?.trim() ?? text.trim();
+
+  // Strip leading non-JSON text (e.g. "Here are the changes:")
+  const arrayStart = raw.indexOf('[');
+  if (arrayStart > 0) raw = raw.slice(arrayStart);
 
   try {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     return parsed as ContextDiffSpec[];
   } catch {
+    // Truncated JSON — try to salvage complete objects
+    // Find the last complete object (ending with }) before truncation
+    const lastComplete = raw.lastIndexOf('}');
+    if (lastComplete > 0) {
+      const salvaged = raw.slice(0, lastComplete + 1) + ']';
+      try {
+        const parsed = JSON.parse(salvaged);
+        if (Array.isArray(parsed)) {
+          logger.warn(`Curator: JSON was truncated — salvaged ${parsed.length} complete object(s)`);
+          return parsed as ContextDiffSpec[];
+        }
+      } catch { /* fall through */ }
+    }
+
     logger.warn(`Curator: failed to parse LLM JSON output (${raw.slice(0, 200)})`);
     return [];
   }
