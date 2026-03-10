@@ -76,28 +76,14 @@ Do not include non-functional requirements, domain compliance, innovation patter
 
   solution_architect: {
     label: 'Architecture Document',
-    format: `Produce a solution architecture document in markdown. Structure your output as follows:
+    format: `Produce a solution architecture document in markdown following the architecture output template injected into your system prompt. The template defines the exact section structure — fill every section with specific, implementation-ready content. Key requirements:
 
-## Overview
-One-paragraph summary of the architecture approach and key decisions.
-
-## Key Technology Decisions
-For each major technology choice, state the decision, the alternatives considered, and the tradeoffs that led to this choice. Present as a table or structured list.
-
-## Data Model
-Entity-relationship overview. For each core entity: name, key fields, relationships. Use a markdown table.
-
-## API Surface
-List the primary API endpoints or service interfaces. For each: method, path/name, purpose, key request/response fields. Use a markdown table.
-
-## System Architecture
-Service boundaries, data flow between components, and integration points. Describe how the major pieces connect — what calls what, where data lives, how events flow.
-
-## Infrastructure Notes
-Hosting, scaling considerations, key dependencies, and deployment topology. Keep it practical — what does the team need to provision?
-
-## Open Questions & Risks
-Unresolved decisions, known risks, and recommended next steps. Flag anything that needs stakeholder input before implementation begins.
+- **Key Technology Decisions**: Name specific products, versions, and pricing tiers. State alternatives and tradeoffs in the table.
+- **Data Model**: Full entity table with PKs, fields, relationships, and notes. Include an ASCII entity-relationship diagram.
+- **API Surface**: Every endpoint with method, path, request/response shapes, and notes on auth/idempotency.
+- **System Architecture**: ASCII service diagram showing all components and data flow. Include 2-3 detailed data flow walkthroughs for primary user journeys.
+- **Infrastructure Notes**: Hosting topology with per-component cost estimates. Deployment pipeline steps. Failure modes table with mitigations.
+- **Open Questions & Risks**: Unresolved decisions table with recommendations. Known risks with severity and specific mitigations.
 
 If a context/tech-stack.md file was provided, align all choices with the existing stack and explain any deviations. If no tech stack was provided, recommend specific technologies with tradeoffs for each choice.`,
   },

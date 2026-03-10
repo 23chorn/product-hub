@@ -163,11 +163,13 @@ CREATE TABLE workflows (
   id               TEXT    PRIMARY KEY,
   item_id          TEXT    NOT NULL REFERENCES items(id),
   goal             TEXT    NOT NULL,
+  summary          TEXT,                             -- AI-generated brief name
   status           TEXT    NOT NULL DEFAULT 'active'
                    CHECK(status IN ('active','paused_at_checkpoint','awaiting_user_input','complete')),
   current_stage    TEXT,
   stage_sequence   TEXT    NOT NULL DEFAULT '[]',   -- JSON array of stage names
   policy_overrides TEXT    NOT NULL DEFAULT '{}',   -- JSON key-value overrides
+  estimated_cost   REAL    NOT NULL DEFAULT 0,      -- cumulative estimated USD cost
   created_at       INTEGER NOT NULL,
   updated_at       INTEGER NOT NULL
 );

@@ -73,7 +73,8 @@ behavior. You can edit these to adjust how agents communicate:
 |------|-------|------------------|
 | `pm.md` | PM Strategy & PM Backlog | PRD writing style, backlog format |
 | `analyst.md` | Research Analyst | Research depth, analysis approach |
-| `coordinator.md` | Coordinator | Goal decomposition style |
+| `architect.md` | Solution Architect | Architecture design approach |
+| `coordinator.md` | Coordinator (Chief of Staff) | Goal decomposition, planning style |
 | `critic.md` | Critic | Review strictness and severity |
 | `curator.md` | Context Curator | How context files are updated |
 
@@ -88,14 +89,16 @@ Templates define the structure of documents agents produce:
 
 | File | Output |
 |------|--------|
-| `prd.template.md` | Product Requirements Document |
-| `backlog.template.md` | Epic and story backlog |
-| `research.template.md` | Research/analysis report |
-| `product-brief.template.md` | Product brief |
+| `research.template.md` | Research/analysis report (Analyst) |
+| `prd.template.md` | Product Requirements Document (PM Strategy) |
+| `backlog.template.md` | Epic, feature, and story backlog (PM Backlog) |
 
 Edit these to match your team's preferred document format. The section headings
 and structure guide the agent's output — keep the overall shape but adjust
 headings, add sections, or remove ones you don't need.
+
+Templates can also be edited from the UI — click **Templates** in the header.
+Saves require double-confirmation since changes affect all future outputs.
 
 ---
 

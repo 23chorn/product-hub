@@ -5,20 +5,16 @@ Files in this directory are injected into every agent's system prompt under the 
 ## How it works
 
 - All `.md` files in this directory are concatenated and injected automatically — no code changes needed to add a new file
-- Files are read once on the first message after server start and cached in memory
-- **Restart the backend server** to pick up any edits
+- Files are cached in memory and the cache is invalidated automatically when files are saved via the UI or when context diffs are approved — **no restart needed**
 - There is no enforced length limit per file, but keep each file focused — unnecessary content adds to input tokens on every request
 
-## Getting started
+## Editing context files
+
+**From the UI (recommended):** Click the **Context** button in the app header to open the Context Editor. All 6 canonical files are shown. Files with templates have a "Load template" button when empty. Changes are saved immediately and picked up by the next agent request.
+
+**From disk:** Edit files directly in this directory. The cache is invalidated automatically when the Context Curator approves diffs, or when the UI saves a file. If editing on disk outside those flows, restart the backend to pick up changes.
 
 Example files (`*.example.md`) are tracked in git as templates. Your actual context files are gitignored so company-specific content stays off the repo.
-
-To set up:
-```bash
-cp context/company.example.md context/company.md
-cp context/strategy.example.md context/strategy.md
-# Edit both files with your real details, then restart the backend
-```
 
 ## Active files
 

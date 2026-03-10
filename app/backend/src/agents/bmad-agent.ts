@@ -1,5 +1,5 @@
 import { AgentType, AppMode, BmadPersona } from '@pap/shared';
-import { streamAI, resolveModelId, type SystemPrompt } from '../utils/ai-provider';
+import { streamAI, resolveModelId, type SystemPrompt, type TokenUsage } from '../utils/ai-provider';
 import Logger from '../utils/logger';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -17,9 +17,10 @@ const TEMPLATES_DIR = path.join(AGENTS_ROOT, 'templates');
  * Only the relevant template is injected — avoids wasting tokens on unrelated formats.
  */
 const STAGE_TEMPLATE_MAP: Record<string, string> = {
-  analyst:            'research.template.md',
-  pm_prd:             'prd.template.md',
-  pm_backlog:         'backlog.template.md',
+  analyst:              'research.template.md',
+  pm_prd:               'prd.template.md',
+  solution_architect:   'architecture.template.md',
+  pm_backlog:           'backlog.template.md',
 };
 
 /**
@@ -236,11 +237,15 @@ You are producing cited research. Citation accuracy is paramount — a fabricate
 - You may ONLY attach a [N] to a claim if that specific fact, figure, or statement appeared in the content of that search result
 - Never construct, guess, or paraphrase a URL — use the exact URL the search tool returned
 - Never cite a source as supporting a claim unless you can point to the exact passage in that source that contains it
-- If you cannot find a real search result that confirms a claim, do not make the claim
+
+**When sources are unavailable:**
+- If no search results confirm a claim, you may still include it using your best available knowledge — but you MUST explicitly label it as an assumption: *"[Assumption]"* or *"Based on general industry knowledge, …"*
+- Never fabricate a reference to back up an assumption — uncited claims with an honest caveat are far better than fake citations
+- If an entire section lacks verifiable sources, open it with a note: *"No specific sources were found for this section; the following is based on general domain knowledge."*
 
 **Workflow — search first, then write:**
 - Before writing each section, run a web search for the specific facts you intend to state
-- Write only what your search results actually confirm
+- Write only what your search results actually confirm, supplemented by clearly labelled assumptions where needed
 - If search results contradict your expectation, report what the sources say
 
 **Citation format:**
@@ -253,7 +258,7 @@ You are producing cited research. Citation accuracy is paramount — a fabricate
   [2] Exact page title or article headline — https://exact-url-returned-by-search
 Every [N] used inline must appear here. Every entry here must be used inline.
 
-**If you cannot find a verifiable source for a claim, omit the claim.** An accurate report with fewer facts is always better than a comprehensive report with invented or mismatched citations.
+**Never fabricate a reference.** If no source exists, state the claim as an assumption. An honest report with clearly labelled assumptions is always better than one with invented citations.
 
 ## Output Formatting & Completeness
 Your responses have a token ceiling. A document that is cut off is always worse than a complete one.
@@ -293,7 +298,8 @@ Your responses have a token ceiling. A document that is cut off is always worse 
   async *streamResponse(
     system: SystemPrompt,
     messages: Array<{ role: 'user' | 'assistant'; content: string }>,
-    modelOverride?: string
+    modelOverride?: string,
+    onTokens?: (usage: TokenUsage) => void
   ): AsyncGenerator<string, void, unknown> {
     const model = modelOverride || this.model;
     const webSearch = this.agentType === 'analyst';
@@ -303,7 +309,7 @@ Your responses have a token ceiling. A document that is cut off is always worse 
     logger.info(`Streaming response (${messages.length} messages in history, model: ${model}, webSearch: ${webSearch}, maxTokens: ${maxTokens})`);
 
     try {
-      yield* streamAI(model, system, messages, maxTokens, { webSearch });
+      yield* streamAI(model, system, messages, maxTokens, { webSearch, onTokens });
       logger.info('Completed streaming response');
     } catch (error: any) {
       logger.error('Failed to stream response', error);

@@ -9,7 +9,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { streamAI, resolveModelId } from '../utils/ai-provider';
+import { streamAI, resolveModelId, type TokenUsage } from '../utils/ai-provider';
 import db from '../data/database';
 import Logger from '../utils/logger';
 
@@ -59,7 +59,7 @@ export class ContextCuratorAgent {
    *
    * @returns Number of diff proposals stored plus reasoning log.
    */
-  async runCuration(workflowId: string, model?: string): Promise<{ diffCount: number; reasoning: string }> {
+  async runCuration(workflowId: string, model?: string, onTokens?: (usage: TokenUsage) => void): Promise<{ diffCount: number; reasoning: string }> {
     const workflow = db
       .prepare<[string], WorkflowRow>('SELECT id, item_id, goal FROM workflows WHERE id = ?')
       .get(workflowId);
@@ -107,6 +107,17 @@ export class ContextCuratorAgent {
       logger.warn('Curator: could not read context/ directory');
     }
 
+    // Ensure current-state.md exists so the curator can target it
+    const CURRENT_STATE = 'current-state.md';
+    if (!contextFileNames.includes(CURRENT_STATE)) {
+      const template = '# Current State\n\n## What is live today\n\n## Active work\n\n## Recent decisions\n';
+      const csPath = path.join(CONTEXT_ROOT, CURRENT_STATE);
+      fs.writeFileSync(csPath, template, 'utf-8');
+      contextSections.push(`### ${CURRENT_STATE}\n\n${template}`);
+      contextFileNames.push(CURRENT_STATE);
+      logger.info('Curator: auto-created current-state.md for phase tracking');
+    }
+
     const contextBlock = contextSections.length > 0
       ? contextSections.join('\n\n---\n\n')
       : '(no context files exist yet — do not propose any changes)';
@@ -138,7 +149,7 @@ export class ContextCuratorAgent {
     // ── Call LLM — buffer full response (non-streaming to caller) ──────────
     const resolvedModel = resolveModelId(model);
     let fullResponse = '';
-    for await (const chunk of streamAI(resolvedModel, systemPrompt, [{ role: 'user', content: userMessage }])) {
+    for await (const chunk of streamAI(resolvedModel, systemPrompt, [{ role: 'user', content: userMessage }], undefined, { onTokens })) {
       fullResponse += chunk;
     }
 

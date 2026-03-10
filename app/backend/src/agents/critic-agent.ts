@@ -9,7 +9,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { streamAI, resolveModelId, type SystemPrompt } from '../utils/ai-provider';
+import { streamAI, resolveModelId, type SystemPrompt, type TokenUsage } from '../utils/ai-provider';
 import Logger from '../utils/logger';
 
 const logger = new Logger('CRITIC');
@@ -52,7 +52,8 @@ export class CriticAgent {
   async review(
     artifactContent: string,
     artifactType: string,
-    model?: string
+    model?: string,
+    onTokens?: (usage: TokenUsage) => void
   ): Promise<CriticReview> {
     const resolvedModel = resolveModelId(model);
 
@@ -78,7 +79,7 @@ ${artifactContent}`;
 
     // Buffer stream — output goes to DB, not the UI
     let fullText = '';
-    for await (const chunk of streamAI(resolvedModel, systemPrompt, [{ role: 'user', content: userMessage }])) {
+    for await (const chunk of streamAI(resolvedModel, systemPrompt, [{ role: 'user', content: userMessage }], undefined, { onTokens })) {
       fullText += chunk;
     }
 
@@ -158,9 +159,11 @@ function parseReview(text: string): CriticReview {
 
   const verdict: CriticReview['verdict'] = rawVerdict === 'approve' ? 'approve' : 'revise';
 
-  // Override to 'revise' if any CRITICAL issue was found
+  // Override to 'revise' if any CRITICAL issue or 2+ MAJOR issues found
   const hasCritical = issues.some(i => i.severity === 'critical');
-  const finalVerdict: CriticReview['verdict'] = hasCritical ? 'revise' : verdict;
+  const majorCount = issues.filter(i => i.severity === 'major').length;
+  const forceRevise = hasCritical || majorCount >= 2;
+  const finalVerdict: CriticReview['verdict'] = forceRevise ? 'revise' : verdict;
 
   // Safeguard: if verdict is 'revise' but there are no actionable issues, treat as 'approve'
   const safeVerdict = (finalVerdict === 'revise' && issues.length === 0) ? 'approve' : finalVerdict;

@@ -1,3 +1,5 @@
+<!-- START OUTPUT HERE — no preamble, no introductory text, no commentary. Begin directly with the heading below. -->
+
 # PRD: [Feature / Initiative Name]
 
 **Status:** Draft

@@ -379,7 +379,7 @@ class APIClient {
   }
 
   async getWorkflowList(): Promise<{ workflows: Array<{
-    id: string; item_id: string; goal: string; status: string;
+    id: string; item_id: string; goal: string; summary: string | null; status: string;
     current_stage: string | null; stage_sequence: string;
     created_at: number; updated_at: number; checkpoint_count: number;
   }> }> {

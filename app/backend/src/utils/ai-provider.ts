@@ -164,15 +164,41 @@ function toSystemString(system: SystemPrompt): string {
   return system.dynamic ? `${system.stable}\n\n${system.dynamic}` : system.stable;
 }
 
+/** Token usage metadata returned via the onTokens callback. */
+export interface TokenUsage {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  estimatedCost: number; // USD
+}
+
+/** Calculate estimated cost in USD from token counts. Returns 0 if model not in pricing table. */
+export function calculateCost(
+  model: string,
+  uncachedInput: number,
+  cacheWrite: number,
+  cacheRead: number,
+  output: number
+): number {
+  const p = MODEL_PRICING[model];
+  if (!p) return 0;
+  const M = 1_000_000;
+  return (uncachedInput * p.input + cacheWrite * p.cacheWrite + cacheRead * p.cacheRead) / M
+       + output * p.output / M;
+}
+
 /**
- * Stream AI responses — provider is selected via AI_PROVIDER env var
+ * Stream AI responses — provider is selected via AI_PROVIDER env var.
+ * Optional onTokens callback receives token usage after streaming completes.
  */
 export async function* streamAI(
   model: string,
   system: SystemPrompt,
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
   maxTokens = 8192,
-  options: { webSearch?: boolean } = {}
+  options: { webSearch?: boolean; onTokens?: (usage: TokenUsage) => void } = {}
 ): AsyncGenerator<string, void, unknown> {
   const provider = getActiveProvider();
   logger.info(`Streaming via provider: ${provider}, model: ${model}`);
@@ -180,9 +206,9 @@ export async function* streamAI(
   if (provider === 'anthropic') {
     yield* streamWithAnthropic(model, system, messages, maxTokens, options);
   } else if (provider === 'bedrock') {
-    yield* streamWithBedrock(model, system, messages, maxTokens);
+    yield* streamWithBedrock(model, system, messages, maxTokens, options.onTokens);
   } else {
-    yield* streamWithOllama(model, toSystemString(system), messages);
+    yield* streamWithOllama(model, toSystemString(system), messages, options.onTokens);
   }
 }
 
@@ -191,7 +217,7 @@ async function* streamWithAnthropic(
   system: SystemPrompt,
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
   maxTokens: number,
-  options: { webSearch?: boolean } = {}
+  options: { webSearch?: boolean; onTokens?: (usage: TokenUsage) => void } = {}
 ): AsyncGenerator<string, void, unknown> {
   const tools = options.webSearch
     ? [{ type: 'web_search_20250305' as const, name: 'web_search' as const }]
@@ -265,6 +291,11 @@ async function* streamWithAnthropic(
         estimateCost(model, inputTokens, cacheWriteTokens, cacheReadTokens, outputTokens)
       );
 
+      options.onTokens?.({
+        model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens,
+        estimatedCost: calculateCost(model, inputTokens, cacheWriteTokens, cacheReadTokens, outputTokens),
+      });
+
       return; // success — exit retry loop
 
     } catch (err: any) {
@@ -292,7 +323,8 @@ async function* streamWithBedrock(
   model: string,
   system: SystemPrompt,
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
-  maxTokens: number
+  maxTokens: number,
+  onTokens?: (usage: TokenUsage) => void
 ): AsyncGenerator<string, void, unknown> {
   const bedrockMessages: Message[] = messages.map(msg => ({
     role: msg.role as 'user' | 'assistant',
@@ -350,6 +382,11 @@ async function* streamWithBedrock(
           ` | output=${outputTokens}` +
           estimateCost(model, inputTokens, cacheWriteTokens, cacheReadTokens, outputTokens)
         );
+
+        onTokens?.({
+          model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens,
+          estimatedCost: calculateCost(model, inputTokens, cacheWriteTokens, cacheReadTokens, outputTokens),
+        });
       }
 
       return; // success — exit retry loop
@@ -384,6 +421,7 @@ async function* streamWithOllama(
   model: string,
   systemPrompt: string,
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  onTokens?: (usage: TokenUsage) => void,
 ): AsyncGenerator<string, void, unknown> {
   const baseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
 
@@ -433,6 +471,10 @@ async function* streamWithOllama(
             ` | output=${outputTokens}` +
             estimateCost(model, inputTokens, 0, 0, outputTokens)
           );
+          onTokens?.({
+            model, inputTokens, outputTokens, cacheReadTokens: 0, cacheWriteTokens: 0,
+            estimatedCost: calculateCost(model, inputTokens, 0, 0, outputTokens),
+          });
         }
       } catch {
         // Ignore unparseable lines

@@ -6,6 +6,7 @@ interface WorkflowListItem {
   id: string;
   item_id: string;
   goal: string;
+  summary: string | null;
   status: string;
   current_stage: string | null;
   stage_sequence: string;
@@ -61,7 +62,7 @@ export function WorkflowHistory() {
           <div className="divide-y divide-gray-100 dark:divide-gray-700/50">
             {workflows.map((w) => {
               const stages: string[] = JSON.parse(w.stage_sequence || '[]');
-              const goalPreview = w.goal.split('\n')[0].slice(0, 80) + (w.goal.length > 80 ? '...' : '');
+              const goalPreview = w.summary || (w.goal.split('\n')[0].slice(0, 80) + (w.goal.length > 80 ? '...' : ''));
               const date = new Date(w.created_at);
               const isConfirming = confirmDeleteId === w.id;
 

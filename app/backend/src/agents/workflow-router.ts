@@ -18,6 +18,7 @@ import { CoordinatorAgent } from './coordinator-agent';
 import { CriticAgent } from './critic-agent';
 import { ContextCuratorAgent } from './curator-agent';
 import { BmadAgent } from './bmad-agent';
+import { streamAI, resolveModelId, type TokenUsage } from '../utils/ai-provider';
 import Logger from '../utils/logger';
 import type { AppMode, AgentType } from '@pap/shared';
 
@@ -30,7 +31,12 @@ const logger = new Logger('WORKFLOW-ROUTER');
  * After completing, the workflow auto-advances to the next stage.
  * Human interaction only occurs at Checkpoint A (analyst) and Checkpoint C (critic).
  */
-const SILENT_STAGES = new Set(['analyst', 'pm_prd', 'solution_architect', 'pm_backlog']);
+/**
+ * Stages that run silently with no human review gate.
+ * Currently empty — every stage pauses for human approval.
+ * To skip human review on a stage, add it here (e.g. new Set(['pm_prd'])).
+ */
+const SILENT_STAGES = new Set<string>([]);
 
 // Lazy singletons — avoids reading persona files at import time
 let _coordinator: CoordinatorAgent | null = null;
@@ -57,10 +63,12 @@ export interface WorkflowRow {
   id: string;
   item_id: string;
   goal: string;
+  summary: string | null;    // AI-generated brief name
   status: string;
   current_stage: string | null;
   stage_sequence: string;    // JSON string[]
   policy_overrides: string;  // JSON Record<string,string>
+  estimated_cost: number;    // cumulative USD cost
   created_at: number;
   updated_at: number;
 }
@@ -84,6 +92,32 @@ export interface WorkflowStatus {
   completedStages: string[];
   pendingStage: string | null;
   currentSessionId: string | null;
+}
+
+// ── Save critic review as artifact ─────────────────────────────────────────────
+
+/**
+ * Saves the critic's full markdown review to disk and inserts an artifact row.
+ * Returns the artifact row ID.
+ */
+async function saveCriticArtifact(
+  itemId: string,
+  stage: string,
+  fullText: string,
+  sessionId?: string | null
+): Promise<number> {
+  const artifactDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, 'critic', 'artifacts');
+  await fsAsync.mkdir(artifactDir, { recursive: true });
+  const artifactPath = path.join(artifactDir, `${Date.now()}-critic-${stage}.md`);
+  await fsAsync.writeFile(artifactPath, fullText, 'utf-8');
+
+  const result = db.prepare(`
+    INSERT INTO artifacts (session_id, type, file_path, created_at)
+    VALUES (?, ?, ?, ?)
+  `).run(sessionId ?? null, 'critic_review', artifactPath, Date.now());
+
+  logger.info(`Saved critic review artifact for stage "${stage}" → ${artifactPath}`);
+  return result.lastInsertRowid as number;
 }
 
 // ── Stage → specialist session mapping ────────────────────────────────────────
@@ -130,6 +164,9 @@ const stmts = {
   insertWorkflow: db.prepare(`
     INSERT INTO workflows (id, item_id, goal, status, current_stage, stage_sequence, policy_overrides, created_at, updated_at)
     VALUES (?, ?, ?, 'active', NULL, ?, ?, ?, ?)
+  `),
+  updateWorkflowSummary: db.prepare(`
+    UPDATE workflows SET summary = ?, updated_at = ? WHERE id = ?
   `),
   updateWorkflowStage: db.prepare(`
     UPDATE workflows SET current_stage = ?, status = 'active', updated_at = ? WHERE id = ?
@@ -204,6 +241,19 @@ function insertEvent(
   return result.lastInsertRowid as number;
 }
 
+/**
+ * Atomically add an estimated cost (USD) to a workflow's running total.
+ */
+function addWorkflowCost(workflowId: string, cost: number): void {
+  if (cost <= 0) return;
+  db.prepare(`UPDATE workflows SET estimated_cost = estimated_cost + ? WHERE id = ?`).run(cost, workflowId);
+}
+
+/** Build an onTokens callback that accumulates cost on a workflow. */
+function costTracker(workflowId: string): (usage: TokenUsage) => void {
+  return (usage) => addWorkflowCost(workflowId, usage.estimatedCost);
+}
+
 export function getWorkflowEvents(workflowId: string, sinceId?: number): WorkflowEvent[] {
   if (sinceId !== undefined && sinceId > 0) {
     return eventStmts.getEventsSince.all(workflowId, sinceId);
@@ -249,7 +299,34 @@ export function createWorkflow(
 
   const workflow = stmts.getWorkflow.get(id)!;
   logger.info(`Created workflow ${id} (item=${itemId}) stages: ${sequence.join(' → ')}`);
+
+  // Fire-and-forget: generate a brief summary name in the background
+  generateWorkflowSummary(id, goal).catch(err =>
+    logger.warn(`Failed to generate workflow summary: ${err.message}`)
+  );
+
   return workflow;
+}
+
+/**
+ * Generate a brief summary name for a workflow via LLM.
+ * Runs fire-and-forget after workflow creation — updates the DB row when done.
+ */
+async function generateWorkflowSummary(workflowId: string, goal: string): Promise<void> {
+  const model = resolveModelId(undefined);
+  const system = 'You generate concise workflow titles. Respond with ONLY the title — no quotes, no punctuation at the end, no explanation.';
+  const userMsg = `Generate a brief summary name (4-8 words) for this product workflow goal. The name should capture the core intent, like a project name a team would use.\n\nGoal:\n${goal.split('\n\n[Coordinator context]')[0].slice(0, 500)}`;
+
+  let summary = '';
+  for await (const chunk of streamAI(model, system, [{ role: 'user', content: userMsg }], 60)) {
+    summary += chunk;
+  }
+
+  summary = summary.trim().replace(/^["']|["']$/g, '').replace(/\.+$/, '');
+  if (summary.length > 0 && summary.length <= 100) {
+    stmts.updateWorkflowSummary.run(summary, Date.now(), workflowId);
+    logger.info(`Workflow ${workflowId} summary: "${summary}"`);
+  }
 }
 
 /**
@@ -301,7 +378,10 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
     insertEvent(workflowId, 'stage_started', 'critic', 'Running quality review...');
 
     const { content: artifactContent, type: artifactType } = loadLatestArtifactForItem(workflow.item_id);
-    const review = await getCritic().review(artifactContent, artifactType);
+    const review = await getCritic().review(artifactContent, artifactType, undefined, costTracker(workflowId));
+
+    // Save full critic review as artifact .md file
+    const criticArtifactId = await saveCriticArtifact(workflow.item_id, 'critic', review.fullText);
 
     const criticDetails = {
       critic_verdict: review.verdict,
@@ -311,6 +391,7 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
       questions:       review.questions.slice(0, 3),
       issues_summary:  review.issues.slice(0, 5).map(i => `[${i.severity.toUpperCase()}] ${i.description}`).join('; '),
       auto_reviewed:   true,
+      critic_artifact_id: criticArtifactId,
     };
     const coordinatorAction = JSON.stringify(criticDetails);
 
@@ -383,7 +464,7 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
   if (nextStage === 'curator') {
     insertEvent(workflowId, 'stage_started', 'curator', 'Updating project context files...');
 
-    const { diffCount, reasoning } = await getCurator().runCuration(workflowId);
+    const { diffCount, reasoning } = await getCurator().runCuration(workflowId, undefined, costTracker(workflowId));
 
     // Log the curator's reasoning so the user can review it
     if (reasoning) {
@@ -577,7 +658,7 @@ async function runAutonomousStage(
     ];
 
     let fullResponse = '';
-    for await (const chunk of agent.streamResponse(systemPrompt, messages)) {
+    for await (const chunk of agent.streamResponse(systemPrompt, messages, undefined, costTracker(workflowId))) {
       fullResponse += chunk;
     }
 
@@ -586,10 +667,18 @@ async function runAutonomousStage(
     await fsAsync.mkdir(artifactDir, { recursive: true });
     const ext = stage === 'pm_backlog' ? 'json' : 'md';
     const artifactPath = path.join(artifactDir, `${Date.now()}-${stage}.${ext}`);
-    // Strip markdown code fences from JSON output before saving as .json
-    const artifactContent = stage === 'pm_backlog'
-      ? fullResponse.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim()
-      : fullResponse;
+    // Clean up LLM output before saving
+    let artifactContent: string;
+    if (stage === 'pm_backlog') {
+      // Strip markdown code fences from JSON output
+      artifactContent = fullResponse.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+    } else {
+      // Strip any preamble before the first markdown heading (e.g. "Here's the research brief:")
+      const match = fullResponse.match(/^# /m);
+      artifactContent = match?.index && match.index > 0
+        ? fullResponse.slice(match.index)
+        : fullResponse;
+    }
     await fsAsync.writeFile(artifactPath, artifactContent, 'utf-8');
 
     // Insert artifact record (type must match what getLatestPrdArtifact / getLatestAnalystArtifact query for)
@@ -616,7 +705,11 @@ async function runAutonomousStage(
       insertEvent(workflowId, 'stage_completed', stage, `${stageLabel} complete. Running quality review...`,
         { excerpt, artifact_id: artifactId });
 
-      const review = await getCritic().review(fullResponse, artifactType);
+      const review = await getCritic().review(fullResponse, artifactType, undefined, costTracker(workflowId));
+
+      // Save full critic review as artifact .md file
+      const criticArtifactId = await saveCriticArtifact(itemId, stage, review.fullText, sessionId);
+
       const criticDetails = {
         critic_verdict: review.verdict,
         issue_count: review.issues.length,
@@ -625,30 +718,24 @@ async function runAutonomousStage(
         issues_summary: review.issues.slice(0, 5).map(i => `[${i.severity.toUpperCase()}] ${i.description}`).join('; '),
         inline_review: true,
         reviewed_stage: stage,
+        critic_artifact_id: criticArtifactId,
       };
 
       if (review.verdict === 'approve') {
-        // Critic approved — create approved checkpoint and advance
+        // Critic approved — still pause for human review before advancing
         const now = Date.now();
         stmts.insertCheckpoint.run(
-          workflowId, stage, artifactId, 'approved',
-          JSON.stringify({ session_id: sessionId, autonomous: true, auto_approved: true, critic: criticDetails }),
+          workflowId, stage, artifactId, 'pending',
+          JSON.stringify({ session_id: sessionId, autonomous: true, critic: criticDetails }),
           now
         );
-        insertEvent(workflowId, 'critic_verdict', stage, 'Quality review passed.', criticDetails);
-        logger.info(`Inline critic approved "${stage}" for workflow ${workflowId} — advancing`);
-
-        advanceStage(workflowId).catch(err => {
-          if (err.message?.startsWith('WORKFLOW_COMPLETE')) {
-            logger.info(`Workflow ${workflowId} completed after "${stage}"`);
-          } else {
-            logger.error(`Auto-advance after "${stage}" critic approval failed: ${err.message}`);
-            const now2 = Date.now();
-            stmts.insertCheckpoint.run(workflowId, stage, null, 'pending',
-              JSON.stringify({ error: `Auto-advance failed: ${err.message}`, autonomous: true }), now2);
-            stmts.updateWorkflowStatus.run('paused_at_checkpoint', now2, workflowId);
-          }
-        });
+        stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
+        const minorCount = review.issues.filter(i => i.severity === 'minor').length;
+        const approveMsg = minorCount > 0
+          ? `Quality review passed with ${minorCount} minor note${minorCount > 1 ? 's' : ''} (resolved internally). Approve to proceed.`
+          : 'Quality review passed — no issues found. Approve to proceed.';
+        insertEvent(workflowId, 'critic_verdict', stage, approveMsg, criticDetails);
+        logger.info(`Inline critic approved "${stage}" for workflow ${workflowId} — paused for human review`);
         return;
       }
 

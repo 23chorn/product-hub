@@ -241,17 +241,27 @@ const STAGE_LABELS: Record<string, string> = {
 };
 ```
 
-Also add the same label to `CheckpointPanel.tsx`:
+Also add the same label to `CoordinatorChat.tsx`:
 
 ```typescript
 const STAGE_LABELS: Record<string, string> = {
-  analyst:     'Analyst Research',
-  pm_prd:      'Product Requirements Document',
-  pm_backlog:  'Backlog',
-  critic:      'Critic Review',
-  curator:     'Context Curation',
-  l10n_review: 'Localisation Review', // <-- add this
+  analyst:            'Analyst (Sage)',
+  pm_prd:             'PM Strategy (Rex)',
+  solution_architect: 'Architect (Atlas)',
+  pm_backlog:         'Backlog Agent (Pip)',
+  critic:             'Critic',
+  curator:            'Context Curator',
+  l10n_review:        'Localisation Review', // <-- add this
 };
+```
+
+And add it to the `TOGGLEABLE_STAGES` array in `CoordinatorChat.tsx` so users can toggle it on/off at workflow start:
+
+```typescript
+const TOGGLEABLE_STAGES: Array<{ key: string; label: string; short: string }> = [
+  // ... existing entries ...
+  { key: 'l10n_review', label: 'L10n Review', short: 'L10n' },
+];
 ```
 
 ---
@@ -277,10 +287,11 @@ Open `agents/personas/coordinator.md`. Add the new stage to the list of availabl
 | 3b | `agents/workflow-router.ts` | Add lazy singleton and import |
 | 3c | `agents/workflow-router.ts` | Add branch in `advanceStage()` |
 | 4 | `agents/coordinator-agent.ts` | Add to `STAGE_OUTPUT_FORMATS` |
-| 5 | `routes/workflow-routes.ts` | Add to `KNOWN_STAGES` |
+| 5 | `routes/workflow-routes.ts` | Add to `KNOWN_STAGES` and `DEFAULT_STAGES` |
 | 6a | `components/WorkflowStageTracker.tsx` | Add to `STAGE_LABELS` |
-| 6b | `components/CheckpointPanel.tsx` | Add to `STAGE_LABELS` |
+| 6b | `components/CoordinatorChat.tsx` | Add to `STAGE_LABELS` and `TOGGLEABLE_STAGES` |
 | 7 | `agents/personas/coordinator.md` | Document the stage for the Coordinator |
+| 8 | `agents/bmad-agent.ts` | If stage has a template, add to `STAGE_TEMPLATE_MAP` |
 
 ---
 
@@ -318,4 +329,4 @@ If the new stage should open an interactive BMAD chat session (like `pm_prd` or 
 3. The `advanceStage()` function's regular specialist block handles it automatically — it creates a BMAD session using the mapped mode and pauses at a checkpoint.
 4. Still add `STAGE_OUTPUT_FORMATS`, `KNOWN_STAGES`, frontend labels, and Coordinator persona documentation.
 
-The specialist session is driven by the existing `ChatInterface` / `bmad-routes.ts` flow — the user opens the session via the BMAD chat and the Coordinator-generated stage brief is injected as the first message.
+The specialist session runs autonomously via `runAutonomousStage()` — it creates a BMAD session, builds a stage brief via the Coordinator, runs the specialist, collects the full response, saves an artifact, and creates a checkpoint for human review. The inline critic reviews the output automatically before pausing.

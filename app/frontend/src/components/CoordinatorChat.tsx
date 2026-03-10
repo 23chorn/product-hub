@@ -15,6 +15,15 @@ const STAGE_LABELS: Record<string, string> = {
   curator:            'Context Curator',
 };
 
+// Stages available for user toggle at workflow start (order matters)
+const TOGGLEABLE_STAGES: Array<{ key: string; label: string; short: string }> = [
+  { key: 'analyst',            label: 'Research',     short: 'Research' },
+  { key: 'pm_prd',             label: 'PRD',          short: 'PRD' },
+  { key: 'solution_architect', label: 'Architecture', short: 'Arch' },
+  { key: 'pm_backlog',         label: 'Backlog',      short: 'Backlog' },
+  { key: 'curator',            label: 'Context Update', short: 'Context' },
+];
+
 // Strip the COORDINATOR_READY marker from displayed coordinator text
 function stripReadyMarker(text: string): string {
   return text.replace(/\n*COORDINATOR_READY\s*\n\{[\s\S]*?\}\s*$/, '').trimEnd();
@@ -50,6 +59,9 @@ export function CoordinatorChat() {
   const [error, setError] = useState<string | null>(null);
   const [reiterateStage, setReiterateStage] = useState<string | null>(null);
   const [reiterateFeedback, setReiterateFeedback] = useState('');
+  const [enabledStages, setEnabledStages] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(TOGGLEABLE_STAGES.map(s => [s.key, true]))
+  );
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const replyRef = useRef<HTMLTextAreaElement>(null);
@@ -74,14 +86,21 @@ export function CoordinatorChat() {
   }, [coordinatorMessages]);
 
   // ── Event polling: fetch new workflow events and append narration ────────
+  // Use a ref for lastEventId to avoid recreating the interval on every poll
+  const lastEventIdRef = useRef(lastEventId);
+  useEffect(() => { lastEventIdRef.current = lastEventId; }, [lastEventId]);
+
   useEffect(() => {
     if (!activeWorkflow || isComplete) return;
     if (planningPhase !== 'idle') return;
 
+    let cancelled = false;
+
     const poll = async () => {
+      if (cancelled) return;
       try {
-        const { events } = await api.getWorkflowEvents(activeWorkflow.id, lastEventId);
-        if (events.length === 0) return;
+        const { events } = await api.getWorkflowEvents(activeWorkflow.id, lastEventIdRef.current);
+        if (cancelled || events.length === 0) return;
 
         for (const event of events) {
           // Skip user_input and cos_response events (handled by mid-workflow chat)
@@ -93,18 +112,21 @@ export function CoordinatorChat() {
 
         const maxId = Math.max(...events.map((e: WorkflowEvent) => e.id));
         setLastEventId(maxId);
+        lastEventIdRef.current = maxId;
 
         // Also refresh workflow status
-        const status = await api.getWorkflowStatus(activeWorkflow.id);
-        applyWorkflowStatus(status);
+        if (!cancelled) {
+          const status = await api.getWorkflowStatus(activeWorkflow.id);
+          if (!cancelled) applyWorkflowStatus(status);
+        }
       } catch { /* ignore transient errors */ }
     };
 
-    const id = setInterval(poll, 3000);
-    // Also poll immediately on mount
+    // Poll immediately, then every 2 seconds for more responsive updates
     poll();
-    return () => clearInterval(id);
-  }, [activeWorkflow?.id, activeWorkflow?.status, planningPhase, lastEventId]);
+    const id = setInterval(poll, 2000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [activeWorkflow?.id, activeWorkflow?.status, planningPhase]);
 
   // Convert a workflow event to a coordinator message for the chat
   function eventToMessage(event: WorkflowEvent): { role: 'coordinator'; content: string; timestamp: number } | null {
@@ -251,7 +273,8 @@ export function CoordinatorChat() {
   async function handleLaunchWorkflow(originalGoal: string, enrichedContext: string) {
     setPlanningPhase('launching');
     try {
-      const result = await api.startWorkflow(itemId || undefined, originalGoal, enrichedContext);
+      const selectedStages = TOGGLEABLE_STAGES.filter(s => enabledStages[s.key]).map(s => s.key);
+      const result = await api.startWorkflow(itemId || undefined, originalGoal, enrichedContext, selectedStages);
       const status = await api.getWorkflowStatus(result.workflowId);
       applyWorkflowStatus(status);
       setPlanningPhase('idle');
@@ -302,6 +325,31 @@ export function CoordinatorChat() {
                 rows={7}
                 className="w-full resize-none rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-4 py-3 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
+              {/* Stage toggles */}
+              <div className="flex flex-wrap gap-1.5">
+                {TOGGLEABLE_STAGES.map(stage => {
+                  const enabled = enabledStages[stage.key];
+                  const enabledCount = Object.values(enabledStages).filter(Boolean).length;
+                  const isLastEnabled = enabled && enabledCount === 1;
+                  return (
+                    <button
+                      key={stage.key}
+                      type="button"
+                      disabled={isLastEnabled}
+                      onClick={() => setEnabledStages(prev => ({ ...prev, [stage.key]: !prev[stage.key] }))}
+                      title={isLastEnabled ? 'At least one stage required' : `${enabled ? 'Disable' : 'Enable'} ${stage.label}`}
+                      className={`px-2 py-0.5 text-xs rounded-md border transition-colors ${
+                        enabled
+                          ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-600 text-blue-700 dark:text-blue-300'
+                          : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-600 line-through'
+                      } ${isLastEnabled ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-80 cursor-pointer'}`}
+                    >
+                      {stage.short}
+                    </button>
+                  );
+                })}
+              </div>
+
               {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
               <button
                 type="submit"
@@ -361,9 +409,10 @@ export function CoordinatorChat() {
   }
 
   // ── Conversation view (planning, active workflow, or complete) ──────────
-  const displayGoal = activeWorkflow?.goal.includes('\n\n[Coordinator context]\n\n')
+  const rawGoal = activeWorkflow?.goal.includes('\n\n[Coordinator context]\n\n')
     ? activeWorkflow.goal.split('\n\n[Coordinator context]\n\n')[0]
     : activeWorkflow?.goal;
+  const displayGoal = activeWorkflow?.summary || rawGoal;
 
   const showInput = !isLaunching && (
     isGathering ||
@@ -385,6 +434,13 @@ export function CoordinatorChat() {
             {activeWorkflow?.item_id && (
               <span className="ml-2 text-xs font-mono text-gray-400 dark:text-gray-500">
                 …{activeWorkflow.item_id.slice(-8)}
+              </span>
+            )}
+            {activeWorkflow && activeWorkflow.estimated_cost > 0 && (
+              <span className="ml-2 text-xs font-mono text-amber-600 dark:text-amber-400" title="Estimated workflow cost">
+                ${activeWorkflow.estimated_cost < 0.01
+                  ? activeWorkflow.estimated_cost.toFixed(4)
+                  : activeWorkflow.estimated_cost.toFixed(2)}
               </span>
             )}
           </h2>

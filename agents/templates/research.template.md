@@ -1,8 +1,12 @@
+<!-- START OUTPUT HERE — no preamble, no introductory text, no commentary. Begin directly with the heading below. -->
+
 # Research Brief: [Initiative Name]
+
+> **Citation rule:** Every factual claim, statistic, market figure, or competitive insight MUST have an inline reference like [1] immediately after the claim. No exceptions — unreferenced claims will be flagged as defects. Each [N] must correspond to a numbered entry in the References section at the end.
 
 ## Executive Summary
 
-[Two paragraphs: the market opportunity and the top 2–3 findings the PM team needs to act on.]
+[Two paragraphs: the market opportunity and the top 2–3 findings the PM team needs to act on. Include inline references for key claims.]
 
 ---
 
@@ -59,9 +63,19 @@
 
 ---
 
+## Conclusion
+
+[Provide a concluding set of statements based on the findings of the report]
+
+---
+
 ## References
 
 [1] [Page title] — [URL returned by web search]
 [2] [Page title] — [URL returned by web search]
 
-Every inline [N] must appear here. Every entry here must be cited inline. Only include URLs returned by actual web searches — never construct or guess URLs.
+**Rules:**
+- Every inline [N] must appear here. Every entry here must be cited inline at least once.
+- Only include URLs returned by actual web searches — never construct or guess URLs.
+- If you cannot find a source for a claim, state it as an assumption and mark it with "[unverified]" instead of a reference number.
+- Aim for a minimum of 5 references in any research brief.

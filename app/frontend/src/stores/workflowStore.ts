@@ -19,10 +19,12 @@ export interface WorkflowRow {
   id: string;
   item_id: string;
   goal: string;
+  summary: string | null;    // AI-generated brief name
   status: 'active' | 'paused_at_checkpoint' | 'complete';
   current_stage: string | null;
   stage_sequence: string;    // JSON string[]
   policy_overrides: string;  // JSON Record<string,string>
+  estimated_cost: number;    // cumulative USD cost
   created_at: number;
   updated_at: number;
 }
