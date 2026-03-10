@@ -7,9 +7,18 @@ import { useToast } from '../hooks/useToast';
 
 const MAX_QUICK_SESSIONS = 5;
 
+// Module-level cache so items survive component unmount/remount
+let _cachedItems: AirtableItem[] = [];
+
 export function AirtableItemList() {
-  const [items, setItems] = useState<AirtableItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [items, setItemsState] = useState<AirtableItem[]>(_cachedItems);
+  const [loading, setLoading] = useState(_cachedItems.length === 0);
+
+  // Wrap setItems to also update the cache
+  const setItems = (data: AirtableItem[]) => {
+    _cachedItems = data;
+    setItemsState(data);
+  };
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [creatingQuick, setCreatingQuick] = useState(false);
@@ -42,29 +51,18 @@ export function AirtableItemList() {
   }, [showRoadmap]);
 
   const loadItems = async () => {
-    if (!showRoadmap) {
-      // Load local initiatives via the same endpoint (it returns them when roadmap=none)
-      try {
-        setLoading(true);
-        setError(null);
-        const data = await api.getItemsNeedingPRD();
-        setItems(data);
-      } catch (err: any) {
-        console.error('Error loading local initiatives:', err);
-      } finally {
-        setLoading(false);
-      }
-      return;
-    }
     try {
-      setLoading(true);
+      // Only show loading spinner if we have no cached data
+      if (_cachedItems.length === 0) setLoading(true);
       setError(null);
       const data = await api.getItemsNeedingPRD();
       setItems(data);
     } catch (err: any) {
       const errorMsg = err.message || 'Failed to load items';
-      setError(errorMsg);
-      toast.error(errorMsg);
+      // Only show error if we have no cached data to fall back on
+      if (_cachedItems.length === 0) {
+        setError(errorMsg);
+      }
       console.error('Error loading items:', err);
     } finally {
       setLoading(false);

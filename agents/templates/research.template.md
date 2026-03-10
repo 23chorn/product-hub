@@ -2,7 +2,12 @@
 
 # Research Brief: [Initiative Name]
 
-> **Citation rule:** Every factual claim, statistic, market figure, or competitive insight MUST have an inline reference like [1] immediately after the claim. No exceptions — unreferenced claims will be flagged as defects. Each [N] must correspond to a numbered entry in the References section at the end.
+> **Citation rule — STRICT FORMAT:**
+> - Every factual claim MUST have a bracketed number `[N]` immediately after: "Market grew 15% [1]."
+> - WRONG: footnotes, superscripts, inline URLs, "(Source: ...)", or "according to [source name]"
+> - RIGHT: "The sector is valued at $4.2B [1] with projected growth of 12% CAGR [2]."
+> - Unreferenced factual claims will be flagged as defects by the Critic.
+> - If no source was found, write: "[Assumption — no source found]" instead of inventing a reference.
 
 ## Executive Summary
 

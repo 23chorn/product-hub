@@ -231,8 +231,8 @@ export function ArtifactViewer() {
       addCoordinatorMessage({
         role: 'coordinator',
         content: `Checkpoint **${STAGE_LABELS[pendingCheckpoint.stage] ?? pendingCheckpoint.stage}** ${statusLabel}.${
-          result.nextStage ? ` Moving to **${STAGE_LABELS[result.nextStage] ?? result.nextStage}**.` : ''
-        }${result.complete ? ' Workflow complete.' : ''}`,
+          result.complete ? ' Workflow complete.' : ''
+        }`,
         timestamp: Date.now(),
       });
 

@@ -300,10 +300,13 @@ export function createWorkflow(
   const workflow = stmts.getWorkflow.get(id)!;
   logger.info(`Created workflow ${id} (item=${itemId}) stages: ${sequence.join(' → ')}`);
 
-  // Fire-and-forget: generate a brief summary name in the background
-  generateWorkflowSummary(id, goal).catch(err =>
-    logger.warn(`Failed to generate workflow summary: ${err.message}`)
-  );
+  // Fire-and-forget: generate a brief summary name in the background.
+  // Delay 30s to avoid competing with the first stage's LLM calls for rate limits.
+  setTimeout(() => {
+    generateWorkflowSummary(id, goal).catch(err =>
+      logger.warn(`Failed to generate workflow summary: ${err.message}`)
+    );
+  }, 30_000);
 
   return workflow;
 }
@@ -496,10 +499,10 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
 
   // ── Regular specialist stage: run autonomously in the background ─────────
   const STAGE_NARRATION: Record<string, string> = {
-    analyst:            'Starting market research analysis...',
-    pm_prd:             'Writing Product Requirements Document...',
-    solution_architect: 'Designing solution architecture...',
-    pm_backlog:         'Creating backlog with epics and stories...',
+    analyst:            'Sage is starting market research. This stage uses web search and typically takes 2–4 minutes.',
+    pm_prd:             'Rex is writing the Product Requirements Document based on the research brief.',
+    solution_architect: 'Atlas is designing the solution architecture based on the PRD.',
+    pm_backlog:         'Pip is creating the backlog with epics, features, and stories.',
   };
   insertEvent(workflowId, 'stage_started', nextStage,
     STAGE_NARRATION[nextStage] ?? `Starting ${nextStage}...`);
@@ -508,8 +511,10 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
   const session = sessionManager.createBmadSession(workflow.item_id, stageMap.mode, stageMap.agentType);
   logger.info(`Created ${stageMap.mode} session ${session.id} for stage "${nextStage}"`);
 
+  insertEvent(workflowId, 'stage_progress', nextStage, 'Coordinator is briefing the specialist...');
   const brief = await getCoordinator().generateStageBrief(workflowId, nextStage);
   sessionManager.updateWorkflow(session.id, workflowId, brief);
+  insertEvent(workflowId, 'stage_progress', nextStage, 'Brief received. Specialist is working...');
 
   // Silent stages (pm_prd, pm_backlog) auto-approve and chain to the next stage.
   // Human gates only at analyst (Checkpoint A) and critic (Checkpoint C).
@@ -518,7 +523,29 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
   // Fire the autonomous specialist run as a background task.
   // It will collect the full output, store an artifact, then create the checkpoint.
   runAutonomousStage(session.id, workflowId, nextStage, workflow.item_id, brief, shouldAutoApprove)
-    .catch(err => logger.error(`Autonomous stage "${nextStage}" background task failed: ${err.message}`));
+    .catch(err => {
+      logger.error(`Autonomous stage "${nextStage}" background task failed: ${err.message}`);
+      // Safety net: if runAutonomousStage's inner try/catch didn't create a checkpoint,
+      // create one here so the workflow doesn't get stuck in 'active' forever.
+      try {
+        const wf = stmts.getWorkflow.get(workflowId);
+        if (wf && wf.status === 'active') {
+          const now = Date.now();
+          insertEvent(workflowId, 'error', nextStage,
+            `Stage "${nextStage}" failed unexpectedly: ${err.message}`,
+            { error: err.message });
+          stmts.insertCheckpoint.run(
+            workflowId, nextStage, null, 'pending',
+            JSON.stringify({ error: err.message, autonomous: true, safety_net: true }),
+            now
+          );
+          stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
+          logger.info(`Safety net: created error checkpoint for stuck workflow ${workflowId}`);
+        }
+      } catch (inner) {
+        logger.error(`Safety net checkpoint creation also failed: ${(inner as Error).message}`);
+      }
+    });
 
   return { stage: nextStage, sessionId: null };
 }
@@ -658,9 +685,32 @@ async function runAutonomousStage(
     ];
 
     let fullResponse = '';
+    let lastReportedSection = '';
+    const startTime = Date.now();
+    let lastProgressTime = startTime;
+
     for await (const chunk of agent.streamResponse(systemPrompt, messages, undefined, costTracker(workflowId))) {
       fullResponse += chunk;
+
+      // Detect new markdown sections and emit progress events
+      const now = Date.now();
+      if (now - lastProgressTime > 3000) {  // Throttle to max once every 3s
+        const sectionMatch = fullResponse.match(/^## ([^\n]+)/gm);
+        if (sectionMatch && sectionMatch.length > 0) {
+          const latestSection = sectionMatch[sectionMatch.length - 1].replace(/^## /, '').trim();
+          if (latestSection !== lastReportedSection) {
+            lastReportedSection = latestSection;
+            const sectionCount = sectionMatch.length;
+            insertEvent(workflowId, 'stage_progress', stage,
+              `Writing section ${sectionCount}: ${latestSection}...`);
+            lastProgressTime = now;
+          }
+        }
+      }
     }
+
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+    logger.info(`Autonomous stage "${stage}" LLM streaming complete (${elapsed}s, ${fullResponse.length} chars)`);
 
     // Write artifact to disk
     const artifactDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, stageMap.mode, 'artifacts');
@@ -702,10 +752,12 @@ async function runAutonomousStage(
     const criticEnabled = policies.get('require_critic_review') !== 'false' && policies.get('require_critic_review') !== (false as any);
 
     if (specialistStages.has(stage) && criticEnabled) {
-      insertEvent(workflowId, 'stage_completed', stage, `${stageLabel} complete. Running quality review...`,
+      insertEvent(workflowId, 'stage_completed', stage, `${stageLabel} draft complete.`,
         { excerpt, artifact_id: artifactId });
+      insertEvent(workflowId, 'stage_progress', stage, 'Running quality review...');
 
       const review = await getCritic().review(fullResponse, artifactType, undefined, costTracker(workflowId));
+      insertEvent(workflowId, 'stage_progress', stage, 'Quality review complete. Processing results...');
 
       // Save full critic review as artifact .md file
       const criticArtifactId = await saveCriticArtifact(itemId, stage, review.fullText, sessionId);
@@ -1126,3 +1178,56 @@ function loadArtifactSummary(artifactId: number): string | undefined {
     return undefined;
   }
 }
+
+// ── Stale workflow recovery ─────────────────────────────────────────────────
+
+const STALE_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes with no update = stale
+
+interface StaleWorkflowRow {
+  id: string;
+  current_stage: string | null;
+  updated_at: number;
+}
+
+/**
+ * Recover workflows stuck in 'active' status with no recent updates.
+ * Creates an error checkpoint so the user can retry or dismiss.
+ * Safe to call on startup and periodically.
+ */
+export function recoverStaleWorkflows(): number {
+  const cutoff = Date.now() - STALE_THRESHOLD_MS;
+  const stale = db.prepare<[number], StaleWorkflowRow>(
+    `SELECT id, current_stage, updated_at FROM workflows
+     WHERE status = 'active' AND updated_at < ?`
+  ).all(cutoff);
+
+  let recovered = 0;
+  for (const wf of stale) {
+    const stage = wf.current_stage ?? 'unknown';
+    const staleMinutes = Math.round((Date.now() - wf.updated_at) / 60_000);
+    const now = Date.now();
+
+    insertEvent(wf.id, 'error', stage,
+      `Stage "${stage}" appears stuck (no activity for ${staleMinutes} minutes). You can retry or dismiss this stage.`,
+      { error: 'stale_workflow_recovery', stale_minutes: staleMinutes });
+
+    stmts.insertCheckpoint.run(
+      wf.id, stage, null, 'pending',
+      JSON.stringify({ error: `Stage stalled after ${staleMinutes} minutes of inactivity`, autonomous: true, stale_recovery: true }),
+      now
+    );
+    stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, wf.id);
+
+    logger.warn(`Recovered stale workflow ${wf.id} — stage "${stage}" stuck for ${staleMinutes}m`);
+    recovered++;
+  }
+
+  if (recovered > 0) {
+    logger.info(`Stale workflow recovery: ${recovered} workflow(s) recovered`);
+  }
+  return recovered;
+}
+
+// Run stale recovery on module load (server startup) and every 5 minutes
+recoverStaleWorkflows();
+setInterval(recoverStaleWorkflows, 5 * 60 * 1000);

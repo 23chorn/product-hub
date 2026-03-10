@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
-import { useWorkflowStore, type WorkflowEvent } from '../stores/workflowStore';
+import { useWorkflowStore, type WorkflowEvent, type CoordinatorMessage } from '../stores/workflowStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { api } from '../services/api';
 
@@ -85,6 +85,9 @@ export function CoordinatorChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [coordinatorMessages]);
 
+  // Track which pending checkpoint we've already auto-opened, to avoid re-opening after user closes
+  const autoOpenedCheckpointRef = useRef<number | null>(null);
+
   // ── Event polling: fetch new workflow events and append narration ────────
   // Use a ref for lastEventId to avoid recreating the interval on every poll
   const lastEventIdRef = useRef(lastEventId);
@@ -99,25 +102,48 @@ export function CoordinatorChat() {
     const poll = async () => {
       if (cancelled) return;
       try {
+        // 1. Fetch new events
         const { events } = await api.getWorkflowEvents(activeWorkflow.id, lastEventIdRef.current);
-        if (cancelled || events.length === 0) return;
 
-        for (const event of events) {
-          // Skip user_input and cos_response events (handled by mid-workflow chat)
-          if (event.event_type === 'user_input' || event.event_type === 'cos_response') continue;
+        if (!cancelled && events.length > 0) {
+          for (const event of events) {
+            if (event.event_type === 'user_input' || event.event_type === 'cos_response') continue;
 
-          const msg = eventToMessage(event);
-          if (msg) addCoordinatorMessage(msg);
+            const msg = eventToMessage(event);
+            if (!msg) continue;
+
+            // Progress events replace the previous progress message (live-updating status line)
+            if (event.event_type === 'stage_progress') {
+              const messages = useWorkflowStore.getState().coordinatorMessages;
+              const lastMsg = messages[messages.length - 1];
+              if (lastMsg?.role === 'coordinator' && lastMsg.isProgress) {
+                replaceLastCoordinatorMessage({ ...msg, isProgress: true });
+              } else {
+                addCoordinatorMessage({ ...msg, isProgress: true });
+              }
+            } else {
+              addCoordinatorMessage(msg);
+            }
+          }
+
+          const maxId = Math.max(...events.map((e: WorkflowEvent) => e.id));
+          setLastEventId(maxId);
+          lastEventIdRef.current = maxId;
         }
 
-        const maxId = Math.max(...events.map((e: WorkflowEvent) => e.id));
-        setLastEventId(maxId);
-        lastEventIdRef.current = maxId;
+        // 2. Always refresh workflow status
+        if (cancelled) return;
+        const status = await api.getWorkflowStatus(activeWorkflow.id);
+        if (cancelled) return;
+        applyWorkflowStatus(status);
 
-        // Also refresh workflow status
-        if (!cancelled) {
-          const status = await api.getWorkflowStatus(activeWorkflow.id);
-          if (!cancelled) applyWorkflowStatus(status);
+        // 3. Auto-open artifact viewer when a pending checkpoint appears
+        if (status.workflow?.status === 'paused_at_checkpoint') {
+          const pending = status.checkpoints?.find((c: any) => c.status === 'pending');
+          if (pending?.artifact_id && pending.id !== autoOpenedCheckpointRef.current) {
+            autoOpenedCheckpointRef.current = pending.id;
+            setViewingArtifactId(pending.artifact_id);
+          }
         }
       } catch { /* ignore transient errors */ }
     };
@@ -161,13 +187,24 @@ export function CoordinatorChat() {
     if (planningPhase !== 'idle') return;
 
     api.getWorkflowEvents(activeWorkflow.id).then(({ events }) => {
-      const msgs: Array<{ role: 'coordinator' | 'human'; content: string; timestamp: number }> = [];
+      const msgs: Array<CoordinatorMessage> = [];
       for (const event of events) {
         if (event.event_type === 'user_input') {
           msgs.push({ role: 'human', content: event.summary, timestamp: event.created_at });
         } else if (event.event_type === 'cos_response') {
           msgs.push({ role: 'coordinator', content: event.summary, timestamp: event.created_at });
+        } else if (event.event_type === 'stage_progress') {
+          // On replay, collapse progress events — only keep the latest one per stage
+          let lastIdx = -1;
+          for (let j = msgs.length - 1; j >= 0; j--) { if (msgs[j].isProgress) { lastIdx = j; break; } }
+          const progressMsg: CoordinatorMessage = { role: 'coordinator', content: event.summary, timestamp: event.created_at, isProgress: true };
+          if (lastIdx >= 0) {
+            msgs[lastIdx] = progressMsg;
+          } else {
+            msgs.push(progressMsg);
+          }
         } else {
+          // Non-progress event after progress → clear the progress flag so it doesn't get replaced
           const msg = eventToMessage(event);
           if (msg) msgs.push(msg);
         }
@@ -468,6 +505,18 @@ export function CoordinatorChat() {
           const isLast = i === coordinatorMessages.length - 1;
           const isEmptyStreaming = isCoordinator && displayContent === '' && isStreaming && isLast;
 
+          // Progress messages render as a compact, updating status line
+          if (msg.isProgress) {
+            return (
+              <div key={i} className="flex justify-start">
+                <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                  {displayContent}
+                </div>
+              </div>
+            );
+          }
+
           return (
             <div key={i} className={`flex ${isCoordinator ? 'justify-start' : 'justify-end'}`}>
               <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
@@ -513,15 +562,18 @@ export function CoordinatorChat() {
           const pending = checkpoints.find(c => c.status === 'pending');
           if (!pending) return null;
           return (
-            <div className="flex gap-2 pt-2">
+            <div className="flex items-center gap-2 pt-2">
               {pending.artifact_id && (
                 <button
                   onClick={() => setViewingArtifactId(pending.artifact_id!)}
                   className="text-xs px-2.5 py-1 rounded-md border border-blue-300 dark:border-blue-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
                 >
-                  View output
+                  Review output
                 </button>
               )}
+              <span className="text-xs text-gray-400 dark:text-gray-500">
+                Approve, revise, or reject from the artifact viewer
+              </span>
             </div>
           );
         })()}

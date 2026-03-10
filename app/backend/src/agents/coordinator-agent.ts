@@ -22,32 +22,15 @@ const PERSONA_PATH = path.join(PROJECT_ROOT, 'agents', 'personas', 'coordinator.
 const STAGE_OUTPUT_FORMATS: Record<string, { label: string; format: string }> = {
   analyst: {
     label: 'Research Brief',
-    format: `Produce a comprehensive market research document in markdown. Use web search to verify facts. Structure your output as follows:
+    format: `Produce a comprehensive market research document in markdown following the research output template injected into your system prompt. Use web search to find and verify facts before writing each section.
 
-## Executive Summary
-Two-paragraph overview of the market opportunity and top findings.
+**CITATION FORMAT — MANDATORY:**
+- Every factual claim must have a bracketed number [N] immediately after it: "Market reached $4.2B [1]."
+- NEVER use footnotes, superscripts, inline URLs, or "(Source: ...)" format.
+- If web search found no source for a claim, write "[Assumption — no source found]" instead of inventing a reference.
+- Never fabricate URLs. Only cite URLs that your web search actually returned.
 
-## Problem Space
-The core user pain points and unmet needs this initiative addresses. Cite specific evidence where available.
-
-## Market Size & Growth
-Quantified market opportunity with sources. Include TAM/SAM if data exists.
-
-## Target Users
-Primary user segments, their behaviours, motivations, and key jobs-to-be-done.
-
-## Competitive Landscape
-Key players, their positioning, strengths/weaknesses, and gaps the initiative can exploit.
-
-## Constraints & Risks
-Technical, regulatory, or market risks with brief mitigations.
-
-## Strategic Recommendations
-2–4 concrete recommendations that should inform the product requirements.
-
-## References
-List every source cited inline as [N]. Each entry: [N] Title — URL
-Every inline [N] must appear here; every entry here must be cited inline.
+The output template defines the exact section structure. Fill every section. End with a ## References section listing every source as: [N] Page title — URL. Every inline [N] must appear in References; every References entry must be cited inline.
 
 Depth guide: each section should be as long as the evidence warrants. Do not pad short sections or truncate evidence-rich ones. Aim for a document the PM can use directly to write a PRD without doing additional research.`,
   },

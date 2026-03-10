@@ -58,6 +58,6 @@ db/product-ops.db
 db/product-ops.db-shm
 db/product-ops.db-wal
 
-# Old data directory (superseded by db/)
+
 data/
 

@@ -412,7 +412,8 @@ workflowRoutes.post('/start', async (req: Request, res: Response) => {
     res.json({ workflowId: workflow.id, stage: nextStage, sessionId: nextSessionId, complete, stages });
   } catch (err: any) {
     logger.error('Failed to start workflow', err);
-    res.status(500).json({ error: err.message });
+    const isRateLimit = err.message?.includes('Rate limit') || err.message?.includes('throttled');
+    res.status(isRateLimit ? 429 : 500).json({ error: err.message });
   }
 });
 
@@ -491,24 +492,22 @@ workflowRoutes.post('/checkpoint/resolve', async (req: Request, res: Response) =
           .run(`\n\n${label}\n\n${enrichedContext}`, Date.now(), workflowId);
       }
 
-      let nextStage: string | null = null;
-      let nextSessionId: string | null = null;
-      let complete = false;
-
-      try {
-        const result = await advanceStage(workflowId);
-        nextStage = result.stage;
-        nextSessionId = result.sessionId;
-      } catch (err: any) {
-        if (err.message.startsWith('WORKFLOW_COMPLETE:')) {
-          complete = true;
-        } else {
-          throw err;
-        }
-      }
+      // Advance to the next stage asynchronously — don't block the response.
+      // The checkpoint is already approved; the frontend polls for status updates.
+      advanceStage(workflowId)
+        .then(result => {
+          logger.info(`Stage advanced to "${result.stage}" for workflow ${workflowId}`);
+        })
+        .catch(err => {
+          if (err.message?.startsWith('WORKFLOW_COMPLETE:')) {
+            logger.info(`Workflow ${workflowId} complete after checkpoint approval`);
+          } else {
+            logger.error(`advanceStage failed after checkpoint approval: ${err.message}`);
+          }
+        });
 
       const workflowStatus = getWorkflowStatus(workflowId);
-      return res.json({ workflow: workflowStatus, nextStage, nextSessionId, complete });
+      return res.json({ workflow: workflowStatus });
     }
 
     if (status === 'rejected') {
@@ -526,7 +525,8 @@ workflowRoutes.post('/checkpoint/resolve', async (req: Request, res: Response) =
   } catch (err: any) {
     if (err.message.includes('not found')) return res.status(404).json({ error: err.message });
     logger.error('Failed to resolve checkpoint', err);
-    res.status(400).json({ error: err.message });
+    const isRateLimit = err.message?.includes('Rate limit') || err.message?.includes('throttled');
+    res.status(isRateLimit ? 429 : 400).json({ error: err.message });
   }
 });
 

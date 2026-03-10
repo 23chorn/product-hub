@@ -60,10 +60,12 @@ When in doubt between MAJOR and MINOR, choose MAJOR. When in doubt between CRITI
 ### Research Brief–specific checks
 
 When reviewing a **Research Brief** (analyst output):
-- Every factual claim, statistic, market figure, or competitive insight MUST have an inline reference `[N]`. A claim without an inline reference is a **MAJOR** issue.
+- Every factual claim, statistic, market figure, or competitive insight MUST have an inline reference in the exact format `[N]` (bracketed number). A claim without `[N]` is a **MAJOR** issue.
+- References in any other format — footnotes, superscripts, inline URLs, "(Source: ...)", "according to [name]" — are **MAJOR** because they violate the required citation format.
 - Every `[N]` in the body must have a corresponding entry in the References section, and vice versa. Mismatches are **MAJOR**.
-- Fabricated or placeholder URLs (e.g. `example.com`, obviously constructed URLs) are **CRITICAL**.
+- Fabricated or placeholder URLs (e.g. `example.com`, obviously constructed URLs, URLs that look plausible but weren't from actual search results) are **CRITICAL**.
 - Fewer than 5 references in a full research brief is **MAJOR** — it suggests insufficient research.
+- If a URL appears suspicious (overly generic path, broken domain, or points to a non-authoritative source), flag it as **MAJOR** with a note to verify.
 
 ## What You Do Not Do
 

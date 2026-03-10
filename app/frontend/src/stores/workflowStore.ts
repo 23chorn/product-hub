@@ -41,6 +41,7 @@ export interface CoordinatorMessage {
   role: 'coordinator' | 'human';
   content: string;
   timestamp: number;
+  isProgress?: boolean;  // progress events replace each other in the chat
 }
 
 export interface WorkflowEvent {
@@ -88,7 +89,7 @@ interface WorkflowStoreState {
   coordinatorMessages: CoordinatorMessage[];
   addCoordinatorMessage: (msg: CoordinatorMessage) => void;
   appendToLastCoordinatorMessage: (chunk: string) => void;
-  replaceLastCoordinatorMessage: (content: string) => void;
+  replaceLastCoordinatorMessage: (content: string | CoordinatorMessage) => void;
   clearCoordinatorMessages: () => void;
 
   // Streaming state
@@ -148,7 +149,11 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
     set((state) => {
       const msgs = [...state.coordinatorMessages];
       if (msgs.length === 0) return state;
-      msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content };
+      if (typeof content === 'string') {
+        msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content };
+      } else {
+        msgs[msgs.length - 1] = content;
+      }
       return { coordinatorMessages: msgs };
     }),
   clearCoordinatorMessages: () => set({ coordinatorMessages: [] }),

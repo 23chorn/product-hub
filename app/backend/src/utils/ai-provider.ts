@@ -260,6 +260,9 @@ async function* streamWithAnthropic(
       let cacheReadTokens = 0;
       let cacheWriteTokens = 0;
 
+      // Track web search URLs for citation verification
+      const searchUrls: Array<{ url: string; title: string }> = [];
+
       for await (const event of stream) {
         if (event.type === 'message_start') {
           const usage = event.message.usage as {
@@ -278,7 +281,21 @@ async function* streamWithAnthropic(
           event.delta.type === 'text_delta'
         ) {
           yield event.delta.text;
+        } else if (event.type === 'content_block_start') {
+          // Capture web search result URLs from server tool results
+          const block = event.content_block as any;
+          if (block?.type === 'web_search_tool_result' && Array.isArray(block.content)) {
+            for (const result of block.content) {
+              if (result.type === 'web_search_result' && result.url) {
+                searchUrls.push({ url: result.url, title: result.title ?? '' });
+              }
+            }
+          }
         }
+      }
+
+      if (searchUrls.length > 0) {
+        logger.info(`[WEB SEARCH] ${searchUrls.length} source(s) found: ${searchUrls.map(s => s.url).join(', ')}`);
       }
 
       // inputTokens = uncached tokens only; cache fields are reported separately.
