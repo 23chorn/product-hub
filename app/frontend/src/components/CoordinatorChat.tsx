@@ -41,6 +41,91 @@ function extractEnrichedContext(text: string): string | null {
   }
 }
 
+// Inline approve/reject for checkpoints that have no artifact (e.g. stuck stages)
+function InlineCheckpointActions({
+  checkpointId,
+  stage,
+  onResolved,
+}: {
+  checkpointId: number;
+  stage: string;
+  onResolved: (result: any) => void;
+}) {
+  const [showRevise, setShowRevise] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function resolve(status: 'approved' | 'rejected' | 'revised', fb?: string) {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api.resolveCheckpoint(checkpointId, status, fb);
+      onResolved({ ...result, status });
+    } catch (err: any) {
+      setError(err.response?.data?.error ?? err.message ?? 'Failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="pt-2 space-y-2">
+      {error && <p className="text-xs text-red-500">{error}</p>}
+      {showRevise ? (
+        <div className="space-y-2">
+          <textarea
+            value={feedback}
+            onChange={(e) => setFeedback(e.target.value)}
+            placeholder="What needs to change?"
+            rows={2}
+            className="w-full text-sm resize-none rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={() => resolve('revised', feedback)}
+              disabled={!feedback.trim() || loading}
+              className="px-2.5 py-1 text-xs bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white rounded-md transition-colors"
+            >
+              {loading ? 'Sending...' : 'Send Revision'}
+            </button>
+            <button onClick={() => { setShowRevise(false); setFeedback(''); }} className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-400 dark:text-gray-500 mr-1">
+            {STAGE_LABELS[stage] ?? stage}:
+          </span>
+          <button
+            onClick={() => resolve('approved')}
+            disabled={loading}
+            className="text-xs px-2.5 py-1 rounded-md bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white transition-colors"
+          >
+            Approve
+          </button>
+          <button
+            onClick={() => setShowRevise(true)}
+            disabled={loading}
+            className="text-xs px-2.5 py-1 rounded-md bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white transition-colors"
+          >
+            Revise
+          </button>
+          <button
+            onClick={() => resolve('rejected')}
+            disabled={loading}
+            className="text-xs px-2.5 py-1 rounded-md border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+          >
+            Reject
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function CoordinatorChat() {
   const {
     activeWorkflow, stageSequence, completedStages, currentStage, checkpoints,
@@ -92,6 +177,17 @@ export function CoordinatorChat() {
   useEffect(() => {
     autoOpenedCheckpointRef.current = null;
   }, [activeWorkflow?.id]);
+
+  // ── Auto-open artifact viewer when a pending checkpoint appears ─────────
+  // Reactive to store state — fires on initial restore (App.tsx), poll updates, or any status change
+  useEffect(() => {
+    if (activeWorkflow?.status !== 'paused_at_checkpoint') return;
+    const pending = checkpoints.find(c => c.status === 'pending');
+    if (!pending?.artifact_id) return;
+    if (pending.id === autoOpenedCheckpointRef.current) return;
+    autoOpenedCheckpointRef.current = pending.id;
+    setViewingArtifactId(pending.artifact_id);
+  }, [activeWorkflow?.status, checkpoints, setViewingArtifactId]);
 
   // ── Event polling: fetch new workflow events and append narration ────────
   // Use refs for values the poll reads — avoids stale closures without causing effect recreation
@@ -154,15 +250,6 @@ export function CoordinatorChat() {
         const status = await api.getWorkflowStatus(currentId);
         if (cancelled) return;
         applyWorkflowStatus(status);
-
-        // 3. Auto-open artifact viewer when a pending checkpoint appears
-        if (status.workflow?.status === 'paused_at_checkpoint') {
-          const pending = status.checkpoints?.find((c: any) => c.status === 'pending');
-          if (pending?.artifact_id && pending.id !== autoOpenedCheckpointRef.current) {
-            autoOpenedCheckpointRef.current = pending.id;
-            setViewingArtifactId(pending.artifact_id);
-          }
-        }
       } catch { /* ignore transient errors */ }
     };
 
@@ -579,20 +666,35 @@ export function CoordinatorChat() {
         {isAtCheckpoint && (() => {
           const pending = checkpoints.find(c => c.status === 'pending');
           if (!pending) return null;
-          return (
-            <div className="flex items-center gap-2 pt-2">
-              {pending.artifact_id && (
+          if (pending.artifact_id) {
+            return (
+              <div className="flex items-center gap-2 pt-2">
                 <button
                   onClick={() => setViewingArtifactId(pending.artifact_id!)}
                   className="text-xs px-2.5 py-1 rounded-md border border-blue-300 dark:border-blue-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
                 >
                   Review output
                 </button>
-              )}
-              <span className="text-xs text-gray-400 dark:text-gray-500">
-                Approve, revise, or reject from the artifact viewer
-              </span>
-            </div>
+                <span className="text-xs text-gray-400 dark:text-gray-500">
+                  Approve, revise, or reject from the artifact viewer
+                </span>
+              </div>
+            );
+          }
+          // No artifact — show inline approve/reject buttons
+          return (
+            <InlineCheckpointActions
+              checkpointId={pending.id}
+              stage={pending.stage}
+              onResolved={(result) => {
+                applyWorkflowStatus(result.workflow);
+                addCoordinatorMessage({
+                  role: 'coordinator',
+                  content: `Checkpoint **${STAGE_LABELS[pending.stage] ?? pending.stage}** ${result.status === 'approved' ? 'approved' : result.status === 'rejected' ? 'rejected' : 'sent for revision'}.${result.complete ? ' Workflow complete.' : ''}`,
+                  timestamp: Date.now(),
+                });
+              }}
+            />
           );
         })()}
 

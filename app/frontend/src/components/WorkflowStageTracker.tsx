@@ -68,21 +68,23 @@ export function WorkflowStageTracker() {
     checkpoints,
     applyWorkflowStatus,
     resetWorkflow,
+    setViewingArtifactId,
   } = useWorkflowStore();
 
   // Poll for status updates while workflow is active
   useEffect(() => {
     if (!activeWorkflow || activeWorkflow.status === 'complete') return;
 
+    let cancelled = false;
     const poll = async () => {
       try {
         const status = await api.getWorkflowStatus(activeWorkflow.id);
-        applyWorkflowStatus(status);
+        if (!cancelled) applyWorkflowStatus(status);
       } catch { /* ignore transient errors */ }
     };
 
     const t = setInterval(poll, 5_000);
-    return () => clearInterval(t);
+    return () => { cancelled = true; clearInterval(t); };
   }, [activeWorkflow?.id, activeWorkflow?.status]);
 
   if (!activeWorkflow) return null;
@@ -151,21 +153,43 @@ export function WorkflowStageTracker() {
                     <span className="text-xs">{stageIcon(status)}</span>
                   </div>
                   {status === 'at-checkpoint' && checkpoint && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
-                      Awaiting review
-                      {checkpoint.coordinator_action && (() => {
-                        try {
-                          const action = JSON.parse(checkpoint.coordinator_action);
-                          if (action.critic_verdict) return ` — Critic: ${action.critic_verdict}`;
-                        } catch { /* ignore */ }
-                        return '';
-                      })()}
-                    </p>
+                    <div className="mt-0.5">
+                      <p className="text-xs text-amber-600 dark:text-amber-400">
+                        Awaiting review
+                        {checkpoint.coordinator_action && (() => {
+                          try {
+                            const action = JSON.parse(checkpoint.coordinator_action);
+                            if (action.critic_verdict) return ` — Critic: ${action.critic_verdict}`;
+                          } catch { /* ignore */ }
+                          return '';
+                        })()}
+                      </p>
+                      {checkpoint.artifact_id && (
+                        <button
+                          onClick={() => setViewingArtifactId(checkpoint.artifact_id!)}
+                          className="mt-1 text-xs px-2 py-0.5 rounded border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-colors"
+                        >
+                          Review output
+                        </button>
+                      )}
+                    </div>
                   )}
-                  {status === 'complete' && completedAt && (
-                    <p className="text-xs text-gray-400 dark:text-gray-600 mt-0.5">
-                      {new Date(completedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                    </p>
+                  {status === 'complete' && (
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {completedAt && (
+                        <span className="text-xs text-gray-400 dark:text-gray-600">
+                          {new Date(completedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                      {latestApproved?.artifact_id && (
+                        <button
+                          onClick={() => setViewingArtifactId(latestApproved.artifact_id!)}
+                          className="text-xs text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+                        >
+                          View
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
