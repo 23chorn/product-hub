@@ -208,13 +208,26 @@ export function ArtifactViewer() {
   );
 
   useEffect(() => {
-    if (!viewingArtifactId) { setContent(null); return; }
+    if (!viewingArtifactId) { setContent(null); setError(null); return; }
+
+    let stale = false;
     setLoading(true);
     setError(null);
+
     api.getArtifactContent(viewingArtifactId)
-      .then(({ content: c, type: t }) => { setContent(c); setArtifactType(t); })
-      .catch(() => { setContent(null); setError('Failed to load artifact'); })
-      .finally(() => setLoading(false));
+      .then(({ content: c, type: t }) => {
+        if (!stale) { setContent(c); setArtifactType(t); }
+      })
+      .catch((err) => {
+        if (!stale) {
+          setContent(null);
+          const detail = err?.response?.data?.error ?? err?.message ?? '';
+          setError(`Failed to load artifact${detail ? ': ' + detail : ''}`);
+        }
+      })
+      .finally(() => { if (!stale) setLoading(false); });
+
+    return () => { stale = true; };
   }, [viewingArtifactId]);
 
   if (!viewingArtifactId) return null;

@@ -88,22 +88,40 @@ export function CoordinatorChat() {
   // Track which pending checkpoint we've already auto-opened, to avoid re-opening after user closes
   const autoOpenedCheckpointRef = useRef<number | null>(null);
 
+  // Reset auto-open ref when workflow changes
+  useEffect(() => {
+    autoOpenedCheckpointRef.current = null;
+  }, [activeWorkflow?.id]);
+
   // ── Event polling: fetch new workflow events and append narration ────────
-  // Use a ref for lastEventId to avoid recreating the interval on every poll
+  // Use refs for values the poll reads — avoids stale closures without causing effect recreation
   const lastEventIdRef = useRef(lastEventId);
   useEffect(() => { lastEventIdRef.current = lastEventId; }, [lastEventId]);
 
+  const workflowIdRef = useRef(activeWorkflow?.id);
+  const planningPhaseRef = useRef(planningPhase);
+  useEffect(() => { workflowIdRef.current = activeWorkflow?.id; }, [activeWorkflow?.id]);
+  useEffect(() => { planningPhaseRef.current = planningPhase; }, [planningPhase]);
+
   useEffect(() => {
-    if (!activeWorkflow || isComplete) return;
-    if (planningPhase !== 'idle') return;
+    const wfId = activeWorkflow?.id;
+    if (!wfId || planningPhase !== 'idle') return;
 
     let cancelled = false;
 
     const poll = async () => {
       if (cancelled) return;
+      // Read current workflow ID from ref (handles edge case where ID changed)
+      const currentId = workflowIdRef.current;
+      if (!currentId) return;
+
+      // Check if workflow is complete — stop polling
+      const currentWorkflow = useWorkflowStore.getState().activeWorkflow;
+      if (currentWorkflow?.status === 'complete') return;
+
       try {
         // 1. Fetch new events
-        const { events } = await api.getWorkflowEvents(activeWorkflow.id, lastEventIdRef.current);
+        const { events } = await api.getWorkflowEvents(currentId, lastEventIdRef.current);
 
         if (!cancelled && events.length > 0) {
           for (const event of events) {
@@ -133,7 +151,7 @@ export function CoordinatorChat() {
 
         // 2. Always refresh workflow status
         if (cancelled) return;
-        const status = await api.getWorkflowStatus(activeWorkflow.id);
+        const status = await api.getWorkflowStatus(currentId);
         if (cancelled) return;
         applyWorkflowStatus(status);
 
@@ -152,7 +170,7 @@ export function CoordinatorChat() {
     poll();
     const id = setInterval(poll, 2000);
     return () => { cancelled = true; clearInterval(id); };
-  }, [activeWorkflow?.id, activeWorkflow?.status, planningPhase]);
+  }, [activeWorkflow?.id, planningPhase]);
 
   // Convert a workflow event to a coordinator message for the chat
   function eventToMessage(event: WorkflowEvent): { role: 'coordinator'; content: string; timestamp: number } | null {
