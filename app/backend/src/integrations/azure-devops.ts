@@ -4,6 +4,33 @@ import { BacklogStructure } from '@pap/shared';
 
 const logger = new Logger('AZURE-DEVOPS');
 
+/** Escape special HTML characters to prevent injection in ADO rich-text fields */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
+ * Format a Given/When/Then acceptance criterion string into HTML with
+ * each keyword on a new line and bolded.
+ * Input:  "Given X When Y Then Z"
+ * Output: "<b>Given</b> X<br><b>When</b> Y<br><b>Then</b> Z"
+ */
+function formatGivenWhenThen(text: string): string {
+  // Split on Given/When/Then/And keywords (case-insensitive, word boundary)
+  // while preserving the keyword itself
+  return text
+    .replace(/\b(Given|When|Then|And|But)\b/gi, '\n$1')
+    .trim()
+    .split('\n')
+    .filter(line => line.trim())
+    .map(line => line.trim().replace(/^(Given|When|Then|And|But)\b/i, '<b>$1</b>'))
+    .join('<br>');
+}
+
 export interface WorkItem {
   id?: number;
   fields: {
@@ -23,6 +50,7 @@ export interface CreateWorkItemRequest {
   type: 'Epic' | 'Feature' | 'User Story' | 'Task';
   title: string;
   description?: string;
+  acceptanceCriteria?: string;
   parentId?: number;
   areaPath?: string;
   iterationPath?: string;
@@ -152,6 +180,14 @@ export class AzureDevOpsClient {
       });
     }
 
+    if (request.acceptanceCriteria) {
+      operations.push({
+        op: 'add',
+        path: '/fields/Microsoft.VSTS.Common.AcceptanceCriteria',
+        value: request.acceptanceCriteria,
+      });
+    }
+
     // Add parent link if specified
     if (request.parentId) {
       operations.push({
@@ -225,20 +261,30 @@ export class AzureDevOpsClient {
 
         // 3. Create Stories under Feature
         for (const storyData of featureData.stories) {
-          // Build story description with acceptance criteria
-          let storyDescription = `As a ${storyData.persona}, I want ${storyData.goal} so that ${storyData.benefit}`;
+          // Description: persona/goal/benefit as HTML user story
+          const storyDescription = [
+            `<b>As a</b> ${escapeHtml(storyData.persona)}`,
+            `<b>I want</b> ${escapeHtml(storyData.goal)}`,
+            `<b>So that</b> ${escapeHtml(storyData.benefit)}`,
+          ].join('<br>');
 
+          // Acceptance Criteria: formatted with Given/When/Then on separate lines, keywords bolded
+          let acceptanceCriteriaHtml: string | undefined;
           if (storyData.acceptanceCriteria && storyData.acceptanceCriteria.length > 0) {
-            storyDescription += `\n\n### Acceptance Criteria\n`;
-            storyData.acceptanceCriteria.forEach((criteria, index) => {
-              storyDescription += `${index + 1}. ${criteria}\n`;
-            });
+            acceptanceCriteriaHtml = storyData.acceptanceCriteria
+              .map((ac, i) => {
+                const formatted = formatGivenWhenThen(escapeHtml(ac));
+                return `<b>AC ${i + 1}</b><br>${formatted}`;
+              })
+              .join('<br><br>');
           }
 
           const story = await this.createWorkItem({
             type: this.workItemTypes.story as any,
             title: storyData.title,
             description: storyDescription,
+            acceptanceCriteria: acceptanceCriteriaHtml,
+            effort: storyData.effort,
             parentId: feature.id,
           });
           storyIds.push(story.id!);

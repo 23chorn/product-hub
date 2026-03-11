@@ -97,7 +97,8 @@ If a context/tech-stack.md file was provided, align all choices with the existin
           "goal": "string",
           "benefit": "string",
           "acceptanceCriteria": ["Given … When … Then …"],
-          "agentContext": "string — implementation context a developer agent needs"
+          "agentContext": "string — implementation context a developer agent needs",
+          "effort": "number — Fibonacci estimate (1, 2, 3, 5, 8, 13) for implementation complexity"
         }
       ]
     }

@@ -23,7 +23,8 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
             "Given [context] When [action] Then [result]",
             "Given [context] When [action] Then [result]"
           ],
-          "agentContext": "FR numbers this covers, user journey served, technical constraints, definition of done"
+          "agentContext": "FR numbers this covers, user journey served, technical constraints, definition of done",
+          "effort": 3
         }
       ]
     }
@@ -37,4 +38,5 @@ Rules:
 - Stories within a feature must be in dependency order — no story may depend on a later story
 - Each story needs 2–4 acceptance criteria, each independently testable
 - agentContext must include relevant FR numbers (e.g. "Covers FR3, FR7") and the user journey served
+- effort: Fibonacci estimate (1, 2, 3, 5, 8, 13) reflecting implementation complexity. 1 = trivial config change, 2 = simple CRUD, 3 = moderate feature, 5 = complex with integrations, 8 = large cross-cutting, 13 = epic-scale requiring decomposition
 - phase: use "MVP" for must-have, "Phase 2" for next iteration

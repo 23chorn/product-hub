@@ -1144,6 +1144,48 @@ export async function reiterateFromStage(
   logger.info(`Reiteration started — session ${session.id} for stage "${fromStage}" in workflow ${workflowId}`);
 }
 
+/**
+ * Retry the current stage of an active workflow that appears stuck.
+ * Only allowed when status is 'active' and there's a current_stage set.
+ * Re-generates the stage brief and starts a fresh specialist session.
+ */
+export async function retryCurrentStage(workflowId: string): Promise<{ stage: string }> {
+  const workflow = stmts.getWorkflow.get(workflowId);
+  if (!workflow) throw new Error(`Workflow not found: ${workflowId}`);
+  if (workflow.status !== 'active') {
+    throw new Error(`Workflow is not active (status: ${workflow.status})`);
+  }
+  if (!workflow.current_stage) {
+    throw new Error('No current stage to retry');
+  }
+
+  const stage = workflow.current_stage;
+  const stageLabel = STAGE_LABELS_INTERNAL[stage] ?? stage;
+
+  logger.info(`Retrying stuck stage "${stage}" for workflow ${workflowId}`);
+  insertEvent(workflowId, 'stage_progress', stage,
+    `Retrying ${stageLabel} (manually triggered)...`);
+
+  // Reset workflow status to active on this stage
+  const now = Date.now();
+  stmts.updateWorkflowStageAndStatus.run(stage, 'active', now, workflowId);
+
+  // Generate a fresh brief
+  const brief = await getCoordinator().generateStageBrief(workflowId, stage);
+
+  // Create a new specialist session
+  const stageMap = STAGE_SESSION_MAP[stage] ?? { mode: 'analyst' as AppMode, agentType: 'analyst' as AgentType };
+  const session = sessionManager.createBmadSession(workflow.item_id, stageMap.mode, stageMap.agentType);
+  sessionManager.updateWorkflow(session.id, workflowId, brief);
+
+  const shouldAutoApprove = SILENT_STAGES.has(stage);
+
+  runAutonomousStage(session.id, workflowId, stage, workflow.item_id, brief, shouldAutoApprove)
+    .catch(err => logger.error(`Retry re-run for stage "${stage}" failed: ${err.message}`));
+
+  return { stage };
+}
+
 const STAGE_LABELS_INTERNAL: Record<string, string> = {
   analyst:            'Analyst — Sage',
   pm_prd:             'Requirements — Rex',

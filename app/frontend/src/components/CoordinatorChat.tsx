@@ -78,6 +78,7 @@ function InlineCheckpointActions({
   onResolved: (result: any) => void;
 }) {
   const [showRevise, setShowRevise] = useState(false);
+  const [showRejectConfirm, setShowRejectConfirm] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -152,12 +153,51 @@ function InlineCheckpointActions({
             Revise
           </button>
           <button
-            onClick={() => resolve('rejected')}
+            onClick={() => setShowRejectConfirm(true)}
             disabled={loading}
             className="text-xs px-2.5 py-1 rounded-md border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
           >
             Reject
           </button>
+        </div>
+      )}
+
+      {/* Reject confirmation modal */}
+      {showRejectConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowRejectConfirm(false)} />
+          <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-sm w-full mx-4 p-6">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                <svg className="w-5 h-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">End this workflow?</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">This action cannot be undone</p>
+              </div>
+            </div>
+            <p className="text-sm text-gray-600 dark:text-gray-300 mb-5">
+              Rejecting will permanently end this workflow. All completed stages are preserved, but no further stages will run. You can start a new workflow with a fresh goal afterward.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowRejectConfirm(false)}
+                disabled={loading}
+                className="flex-1 py-2 px-3 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                Go Back
+              </button>
+              <button
+                onClick={() => resolve('rejected')}
+                disabled={loading}
+                className="flex-1 py-2 px-3 bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                {loading ? 'Rejecting...' : 'Yes, Reject'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -186,6 +226,9 @@ export function CoordinatorChat() {
     () => Object.fromEntries(TOGGLEABLE_STAGES.map(s => [s.key, true]))
   );
   const [showDiffPanel, setShowDiffPanel] = useState(false);
+  const [stageStale, setStageStale] = useState(false);
+  const [retryLoading, setRetryLoading] = useState(false);
+  const lastEventTimeRef = useRef(Date.now());
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const replyRef = useRef<HTMLTextAreaElement>(null);
@@ -295,6 +338,8 @@ export function CoordinatorChat() {
           const maxId = Math.max(...events.map((e: WorkflowEvent) => e.id));
           setLastEventId(maxId);
           lastEventIdRef.current = maxId;
+          lastEventTimeRef.current = Date.now();
+          setStageStale(false);
         }
       } catch (err) {
         console.warn('[POLL] Event fetch failed:', err);
@@ -306,6 +351,15 @@ export function CoordinatorChat() {
         const status = await api.getWorkflowStatus(currentId);
         if (cancelled) return;
         applyWorkflowStatus(status);
+
+        // 3. Staleness detection: active workflow with no events for 3+ minutes
+        const wf = status.workflow;
+        if (wf.status === 'active' && wf.current_stage) {
+          const elapsed = Date.now() - lastEventTimeRef.current;
+          setStageStale(elapsed > 3 * 60 * 1000);
+        } else {
+          setStageStale(false);
+        }
       } catch (err) {
         console.warn('[POLL] Status fetch failed:', err);
       }
@@ -494,7 +548,11 @@ export function CoordinatorChat() {
 
   // ── Find artifacts for "View output" buttons ──────────────────────────────
   function getArtifactForStage(stage: string): number | null {
-    const cp = checkpoints.find(c => c.stage === stage && c.artifact_id);
+    // Use the latest checkpoint for this stage (last in array) — not the first,
+    // which may be an outdated revision.
+    const cp = checkpoints
+      .filter(c => c.stage === stage && c.artifact_id)
+      .at(-1);
     return cp?.artifact_id ?? null;
   }
 
@@ -762,6 +820,44 @@ export function CoordinatorChat() {
             />
           );
         })()}
+
+        {/* Retry button for stuck stages */}
+        {stageStale && !isAtCheckpoint && activeWorkflow && currentStage && (
+          <div className="flex items-center gap-3 pt-2 pb-1">
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+              <svg className="w-4 h-4 text-amber-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+              <span className="text-xs text-amber-700 dark:text-amber-400">
+                {STAGE_LABELS[currentStage] ?? currentStage} appears to be stuck — no activity for 3+ minutes
+              </span>
+              <button
+                onClick={async () => {
+                  setRetryLoading(true);
+                  try {
+                    const result = await api.retryWorkflowStage(activeWorkflow.id);
+                    applyWorkflowStatus(result);
+                    lastEventTimeRef.current = Date.now();
+                    setStageStale(false);
+                    addCoordinatorMessage({
+                      role: 'coordinator',
+                      content: `Retrying **${STAGE_LABELS[currentStage] ?? currentStage}**...`,
+                      timestamp: Date.now(),
+                    });
+                  } catch (err: any) {
+                    setError(err.response?.data?.error ?? err.message ?? 'Retry failed');
+                  } finally {
+                    setRetryLoading(false);
+                  }
+                }}
+                disabled={retryLoading}
+                className="text-xs px-2.5 py-1 rounded-md bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white font-medium transition-colors flex-shrink-0"
+              >
+                {retryLoading ? 'Retrying...' : 'Retry Stage'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Context Diff Review Panel */}
         {showDiffPanel && (

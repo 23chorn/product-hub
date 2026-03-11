@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useWorkflowStore } from '../stores/workflowStore';
+import { useConfigStore } from '../stores/configStore';
 import { api } from '../services/api';
 import { CriticQuestionForm, CriticIssuesPanel } from './CriticQuestionForm';
 
@@ -23,6 +24,7 @@ interface BacklogStory {
   benefit?: string;
   acceptanceCriteria?: string[];
   agentContext?: string;
+  effort?: number;
 }
 
 interface BacklogFeature {
@@ -66,6 +68,7 @@ function BacklogView({ data }: { data: BacklogData }) {
   };
 
   const totalStories = data.features.reduce((sum, f) => sum + f.stories.length, 0);
+  const totalEffort = data.features.reduce((sum, f) => sum + f.stories.reduce((s, st) => s + (st.effort ?? 0), 0), 0);
 
   return (
     <div className="space-y-4">
@@ -76,6 +79,7 @@ function BacklogView({ data }: { data: BacklogData }) {
           <span className="text-xs text-gray-400">·</span>
           <span className="text-xs text-gray-500 dark:text-gray-400">
             {data.features.length} feature{data.features.length !== 1 ? 's' : ''} · {totalStories} stor{totalStories !== 1 ? 'ies' : 'y'}
+            {totalEffort > 0 && <> · {totalEffort} pts</>}
           </span>
         </div>
         <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">{data.epic.title}</h3>
@@ -88,7 +92,9 @@ function BacklogView({ data }: { data: BacklogData }) {
       </div>
 
       {/* Features */}
-      {data.features.map((feature, fi) => (
+      {data.features.map((feature, fi) => {
+        const featureEffort = feature.stories.reduce((s, st) => s + (st.effort ?? 0), 0);
+        return (
         <div key={fi} className="rounded-lg border border-gray-200 dark:border-gray-700">
           {/* Feature header */}
           <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-700 rounded-t-lg">
@@ -102,6 +108,9 @@ function BacklogView({ data }: { data: BacklogData }) {
                 }`}>
                   {feature.phase}
                 </span>
+              )}
+              {featureEffort > 0 && (
+                <span className="text-xs text-gray-400 dark:text-gray-500">{featureEffort} pts</span>
               )}
             </div>
             <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{feature.title}</h4>
@@ -134,6 +143,15 @@ function BacklogView({ data }: { data: BacklogData }) {
                         <span className="text-sm text-gray-900 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                           {story.title}
                         </span>
+                        {story.effort != null && (
+                          <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                            story.effort >= 8 ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                              : story.effort >= 5 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                              : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                          }`}>
+                            {story.effort}
+                          </span>
+                        )}
                       </div>
                       {story.persona && !isExpanded && (
                         <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 truncate">{story.persona}</p>
@@ -187,13 +205,15 @@ function BacklogView({ data }: { data: BacklogData }) {
             })}
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
 export function ArtifactViewer() {
   const { viewingArtifactId, setViewingArtifactId, checkpoints, activeWorkflow, applyWorkflowStatus, addCoordinatorMessage } = useWorkflowStore();
+  const { config } = useConfigStore();
   const [content, setContent] = useState<string | null>(null);
   const [artifactType, setArtifactType] = useState<string>('');
   const [loading, setLoading] = useState(false);
@@ -202,6 +222,8 @@ export function ArtifactViewer() {
   const [showRejectConfirm, setShowRejectConfirm] = useState(false);
   const [showIssuesPanel, setShowIssuesPanel] = useState(false);
   const [resolveLoading, setResolveLoading] = useState(false);
+  const [pushLoading, setPushLoading] = useState(false);
+  const [pushResult, setPushResult] = useState<{ epicUrl: string; featureCount: number; storyCount: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Find the pending checkpoint that has this artifact
@@ -259,6 +281,31 @@ export function ArtifactViewer() {
       setError(err.response?.data?.error ?? err.message ?? 'Failed to resolve');
     } finally {
       setResolveLoading(false);
+    }
+  }
+
+  const workItemsEnabled = config?.integrations?.workItems && config.integrations.workItems !== 'none';
+  const isBacklog = artifactType === 'backlog';
+  // Show push button for approved backlogs or pending backlog checkpoints
+  const backlogApproved = isBacklog && checkpoints.some(c => c.stage === 'pm_backlog' && c.status === 'approved');
+  const showPushButton = isBacklog && workItemsEnabled && backlogApproved;
+
+  async function pushToBoard() {
+    if (!activeWorkflow) return;
+    setPushLoading(true);
+    setError(null);
+    try {
+      const result = await api.pushToBoard(activeWorkflow.id);
+      setPushResult(result);
+      addCoordinatorMessage({
+        role: 'coordinator',
+        content: `Backlog pushed to board: **Epic #${result.epicId}** with ${result.featureCount} features and ${result.storyCount} stories. [View in Azure DevOps](${result.epicUrl})`,
+        timestamp: Date.now(),
+      });
+    } catch (err: any) {
+      setError(err.response?.data?.error ?? err.message ?? 'Failed to push to board');
+    } finally {
+      setPushLoading(false);
     }
   }
 
@@ -360,14 +407,53 @@ export function ArtifactViewer() {
                 </p>
               )}
             </div>
-            <button
-              onClick={() => setViewingArtifactId(null)}
-              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            <div className="flex items-center gap-2">
+              {showPushButton && !pushResult && (
+                <button
+                  onClick={pushToBoard}
+                  disabled={pushLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white transition-colors"
+                >
+                  {pushLoading ? (
+                    <>
+                      <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Pushing...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                      </svg>
+                      Push to Board
+                    </>
+                  )}
+                </button>
+              )}
+              {pushResult && (
+                <a
+                  href={pushResult.epicUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  View in Board ({pushResult.featureCount}F / {pushResult.storyCount}S)
+                </a>
+              )}
+              <button
+                onClick={() => setViewingArtifactId(null)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
 
           {/* Content */}
@@ -425,25 +511,6 @@ export function ArtifactViewer() {
                     </button>
                   </div>
                 </div>
-              ) : showRejectConfirm ? (
-                <div className="space-y-2">
-                  <p className="text-xs text-red-600">Rejecting will end the workflow. Are you sure?</p>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => resolve('rejected')}
-                      disabled={resolveLoading}
-                      className="flex-1 py-2 px-3 bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg transition-colors"
-                    >
-                      {resolveLoading ? 'Rejecting...' : 'Yes, Reject'}
-                    </button>
-                    <button
-                      onClick={() => setShowRejectConfirm(false)}
-                      className="py-2 px-3 text-sm text-gray-500 hover:text-gray-700 transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
               ) : !showSidePanel ? (
                 <div className="flex gap-2">
                   <button
@@ -473,6 +540,45 @@ export function ArtifactViewer() {
           )}
         </div>
       </div>
+
+      {/* Reject confirmation modal */}
+      {showRejectConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowRejectConfirm(false)} />
+          <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-sm w-full mx-4 p-6">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                <svg className="w-5 h-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">End this workflow?</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">This action cannot be undone</p>
+              </div>
+            </div>
+            <p className="text-sm text-gray-600 dark:text-gray-300 mb-5">
+              Rejecting will permanently end this workflow. All completed stages are preserved, but no further stages will run. You can start a new workflow with a fresh goal afterward.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowRejectConfirm(false)}
+                disabled={resolveLoading}
+                className="flex-1 py-2 px-3 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                Go Back
+              </button>
+              <button
+                onClick={() => resolve('rejected')}
+                disabled={resolveLoading}
+                className="flex-1 py-2 px-3 bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                {resolveLoading ? 'Rejecting...' : 'Yes, Reject'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -105,7 +105,9 @@ export function WorkflowHistory() {
                         <span className={`flex-shrink-0 px-1.5 py-0.5 rounded text-xs ${
                           w.status === 'complete'
                             ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                            : w.status === 'active' || w.status === 'paused_at_checkpoint'
+                            : w.status === 'paused_at_checkpoint'
+                            ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                            : w.status === 'active'
                             ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                             : 'bg-gray-100 dark:bg-gray-700 text-gray-500'
                         }`}>

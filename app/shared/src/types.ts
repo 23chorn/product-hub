@@ -89,6 +89,7 @@ export interface Story {
   goal: string;
   benefit: string;
   acceptanceCriteria: string[];
+  effort?: number;
 }
 
 // ============================================

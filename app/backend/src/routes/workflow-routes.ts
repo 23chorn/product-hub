@@ -19,6 +19,7 @@ import {
   markWorkflowComplete,
   getWorkflowEvents,
   reiterateFromStage,
+  retryCurrentStage,
   deleteWorkflow,
 } from '../agents/workflow-router';
 import { CoordinatorAgent } from '../agents/coordinator-agent';
@@ -556,6 +557,97 @@ workflowRoutes.post('/:id/reiterate', async (req: Request, res: Response) => {
     if (err.message.includes('not found')) return res.status(404).json({ error: err.message });
     logger.error('Failed to reiterate workflow', err);
     res.status(400).json({ error: err.message });
+  }
+});
+
+// ── POST /api/workflow/:id/retry ──────────────────────────────────────────────
+
+/**
+ * POST /api/workflow/:id/retry
+ * Retries the current stage of an active workflow that appears stuck.
+ * No body required — it re-triggers whatever current_stage the workflow is on.
+ */
+workflowRoutes.post('/:id/retry', async (req: Request, res: Response) => {
+  try {
+    const result = await retryCurrentStage(req.params.id);
+    const status = getWorkflowStatus(req.params.id);
+    res.json({ ...status, retriedStage: result.stage });
+  } catch (err: any) {
+    if (err.message.includes('not found')) return res.status(404).json({ error: err.message });
+    logger.error('Failed to retry stage', err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ── POST /api/workflow/:id/push-to-board ────────────────────────────────────────
+
+/**
+ * POST /api/workflow/:id/push-to-board
+ * Pushes the latest approved backlog artifact to the configured work-items
+ * provider (ADO, Jira, etc.).
+ * Returns: { epicId, epicUrl, featureCount, storyCount }
+ */
+workflowRoutes.post('/:id/push-to-board', async (req: Request, res: Response) => {
+  const workflowId = req.params.id;
+
+  try {
+    const { appConfig } = require('../config/app-config');
+    if (appConfig.integrations.workItems === 'none') {
+      return res.status(400).json({ error: 'No work-items integration is configured. Set WORK_ITEMS_INTEGRATION in .env.' });
+    }
+
+    // Find the workflow's item_id
+    const workflow = db.prepare<[string], { item_id: string }>('SELECT item_id FROM workflows WHERE id = ?').get(workflowId);
+    if (!workflow) return res.status(404).json({ error: 'Workflow not found' });
+
+    // Get the latest backlog artifact for this item
+    const artifact = db.prepare<[string], { file_path: string }>(`
+      SELECT a.file_path
+      FROM artifacts a
+      JOIN sessions s ON a.session_id = s.id
+      WHERE s.item_id = ? AND a.type = 'backlog'
+      ORDER BY a.created_at DESC LIMIT 1
+    `).get(workflow.item_id);
+
+    if (!artifact) return res.status(404).json({ error: 'No backlog artifact found for this workflow' });
+
+    // Read and parse the backlog JSON
+    const fs = require('fs');
+    const content = fs.readFileSync(artifact.file_path, 'utf-8');
+    const cleaned = content.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+    let backlog;
+    try {
+      backlog = JSON.parse(cleaned);
+    } catch {
+      return res.status(400).json({ error: 'Backlog artifact is not valid JSON' });
+    }
+
+    if (!backlog?.epic || !Array.isArray(backlog?.features)) {
+      return res.status(400).json({ error: 'Backlog JSON does not have the expected epic/features structure' });
+    }
+
+    // Push to the configured provider
+    if (appConfig.integrations.workItems === 'ado') {
+      const { AzureDevOpsClient } = require('../integrations/azure-devops');
+      const client = new AzureDevOpsClient();
+      const result = await client.createBacklog(backlog);
+      const epicUrl = client.getEpicUrl(result.epicId);
+
+      logger.info(`Pushed backlog to ADO: Epic #${result.epicId}, ${result.featureIds.length} features, ${result.storyIds.length} stories`);
+      return res.json({
+        epicId: result.epicId,
+        epicUrl,
+        featureCount: result.featureIds.length,
+        storyCount: result.storyIds.length,
+      });
+    }
+
+    // For other providers (jira, etc.), use the generic WorkItemProvider interface
+    // which creates items individually rather than as a batch
+    return res.status(400).json({ error: `Push to board is not yet supported for provider: ${appConfig.integrations.workItems}` });
+  } catch (err: any) {
+    logger.error('Failed to push to board', err);
+    res.status(500).json({ error: err.message });
   }
 });
 

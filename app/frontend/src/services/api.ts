@@ -412,6 +412,16 @@ class APIClient {
     return response.data;
   }
 
+  async retryWorkflowStage(workflowId: string) {
+    const response = await axios.post(`${this.baseURL}/api/workflow/${workflowId}/retry`);
+    return response.data;
+  }
+
+  async pushToBoard(workflowId: string): Promise<{ epicId: number; epicUrl: string; featureCount: number; storyCount: number }> {
+    const response = await axios.post(`${this.baseURL}/api/workflow/${workflowId}/push-to-board`);
+    return response.data;
+  }
+
   async deleteWorkflow(workflowId: string): Promise<void> {
     await axios.delete(`${this.baseURL}/api/workflow/${workflowId}`);
   }
