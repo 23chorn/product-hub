@@ -21,10 +21,21 @@ import {
   reiterateFromStage,
   retryCurrentStage,
   deleteWorkflow,
+  costTracker,
 } from '../agents/workflow-router';
 import { CoordinatorAgent } from '../agents/coordinator-agent';
 import db from '../data/database';
 import Logger from '../utils/logger';
+
+// ── Pre-workflow planning cost accumulator ────────────────────────────────────
+// Planning conversations happen before a workflow ID exists, so we can't call
+// costTracker(). Instead, accumulate cost in memory keyed by planning sessionId
+// and apply it to the workflow when /start is called.
+const planningCosts = new Map<string, number>();
+
+function accumulatePlanningCost(sessionId: string, cost: number): void {
+  planningCosts.set(sessionId, (planningCosts.get(sessionId) ?? 0) + cost);
+}
 
 // ── Coordinator planning sessions (DB-backed) ─────────────────────────────────
 
@@ -212,7 +223,7 @@ workflowRoutes.post('/coordinator/open', async (req: Request, res: Response) => 
 
   let fullContent = '';
   try {
-    for await (const chunk of getPlanningCoordinator().streamPlanningResponse(messages, model)) {
+    for await (const chunk of getPlanningCoordinator().streamPlanningResponse(messages, model, (u) => accumulatePlanningCost(sessionId, u.estimatedCost))) {
       fullContent += chunk;
       res.write(`data: ${JSON.stringify({ type: 'content', content: chunk })}\n\n`);
     }
@@ -290,7 +301,7 @@ workflowRoutes.post('/coordinator/reply', async (req: Request, res: Response) =>
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    for await (const chunk of getPlanningCoordinator().streamPlanningResponse(session.messages, model)) {
+    for await (const chunk of getPlanningCoordinator().streamPlanningResponse(session.messages, model, (u) => accumulatePlanningCost(sessionId, u.estimatedCost))) {
       fullContent += chunk;
       res.write(`data: ${JSON.stringify({ type: 'content', content: chunk })}\n\n`);
     }
@@ -355,12 +366,13 @@ workflowRoutes.get('/coordinator/session/:id', (req: Request, res: Response) => 
  *   { workflowId, stage, sessionId, complete, stages }
  */
 workflowRoutes.post('/start', async (req: Request, res: Response) => {
-  let { itemId, goal, enrichedContext, stageSequence, policyOverrides } = req.body as {
+  let { itemId, goal, enrichedContext, stageSequence, policyOverrides, planningSessionId } = req.body as {
     itemId?: string;
     goal?: string;
     enrichedContext?: string;
     stageSequence?: string[];
     policyOverrides?: Record<string, string>;
+    planningSessionId?: string;
   };
 
   if (!goal) {
@@ -393,6 +405,15 @@ workflowRoutes.post('/start', async (req: Request, res: Response) => {
       : goal;
 
     const workflow = createWorkflow(itemId!, fullGoal, stages, policyOverrides);
+
+    // Apply any pre-workflow planning cost accumulated during coordinator Q&A
+    if (planningSessionId) {
+      const planCost = planningCosts.get(planningSessionId) ?? 0;
+      if (planCost > 0) {
+        costTracker(workflow.id)({ model: 'coordinator', inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, searchCount: 0, estimatedCost: planCost });
+      }
+      planningCosts.delete(planningSessionId);
+    }
 
     let nextStage: string | null = null;
     let nextSessionId: string | null = null;
@@ -713,7 +734,7 @@ workflowRoutes.post('/:id/message', async (req: Request, res: Response) => {
 
     let fullContent = '';
     try {
-      for await (const chunk of coordinator.streamResponse(workflowId, contextMessage, model)) {
+      for await (const chunk of coordinator.streamResponse(workflowId, contextMessage, model, costTracker(workflowId))) {
         fullContent += chunk;
         res.write(`data: ${JSON.stringify({ type: 'content', content: chunk })}\n\n`);
       }

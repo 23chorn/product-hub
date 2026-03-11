@@ -18,7 +18,7 @@ import { CoordinatorAgent } from './coordinator-agent';
 import { CriticAgent } from './critic-agent';
 import { ContextCuratorAgent } from './curator-agent';
 import { BmadAgent } from './bmad-agent';
-import { streamAI, resolveModelId, type TokenUsage } from '../utils/ai-provider';
+import { streamAI, resolveModelId, resolveAgentModel, type TokenUsage } from '../utils/ai-provider'; // resolveModelId used for workflow summary generation
 import Logger from '../utils/logger';
 import type { AppMode, AgentType } from '@pap/shared';
 
@@ -37,6 +37,19 @@ const logger = new Logger('WORKFLOW-ROUTER');
  * To skip human review on a stage, add it here (e.g. new Set(['pm_prd'])).
  */
 const SILENT_STAGES = new Set<string>([]);
+
+/**
+ * Default model overrides per stage.
+ * Analyst gets a more capable model for better factual accuracy and source quality.
+ * Later stages can use faster/cheaper models since they work from prior artifacts.
+ * Set a key to '' (empty string) to fall back to the user-selected / provider default.
+ *
+ * Can also be overridden per-workflow via policy_overrides:
+ *   { "model:analyst": "claude-opus-4-6", "model:pm_prd": "claude-sonnet-4-6" }
+ */
+// Model selection is centralised in resolveAgentModel() (ai-provider.ts).
+// Per-workflow overrides are still supported via policy_overrides JSON on the workflow row:
+//   { "model:analyst": "claude-opus-4-6", "model:pm_prd": "claude-sonnet-4-5-20250929" }
 
 // Lazy singletons — avoids reading persona files at import time
 let _coordinator: CoordinatorAgent | null = null;
@@ -81,6 +94,7 @@ export interface CheckpointRow {
   status: string;
   human_feedback: string | null;
   coordinator_action: string | null;  // JSON blob
+  token_usage: string | null;       // JSON: StageTokenData
   created_at: number;
   resolved_at: number | null;
 }
@@ -92,6 +106,88 @@ export interface WorkflowStatus {
   completedStages: string[];
   pendingStage: string | null;
   currentSessionId: string | null;
+}
+
+// ── Line diff utility ──────────────────────────────────────────────────────────
+
+/**
+ * Compute a unified-style diff between two texts and return a markdown document.
+ * Uses LCS (Myers-style backtrack) on lines. Practical for typical LLM outputs
+ * of up to ~2 000 lines — beyond that it falls back to a stats-only summary.
+ */
+function computeRevisionDiff(oldText: string, newText: string, stageLabel: string): string {
+  const oldLines = oldText.split('\n');
+  const newLines = newText.split('\n');
+  const m = oldLines.length;
+  const n = newLines.length;
+
+  // Safety cap: fall back to stats only for very large documents
+  if (m * n > 2_000_000) {
+    return `# Revision Diff — ${stageLabel}\n\n_Document too large for line-by-line diff._\n\n- Original: ${m} lines\n- Revised: ${n} lines\n`;
+  }
+
+  // Build LCS DP table
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = oldLines[i - 1] === newLines[j - 1]
+        ? dp[i - 1][j - 1] + 1
+        : Math.max(dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+
+  // Backtrack to produce edit operations
+  type Op = { op: '+' | '-' | '='; line: string };
+  const ops: Op[] = [];
+  let i = m, j = n;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
+      ops.push({ op: '=', line: oldLines[i - 1] }); i--; j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      ops.push({ op: '+', line: newLines[j - 1] }); j--;
+    } else {
+      ops.push({ op: '-', line: oldLines[i - 1] }); i--;
+    }
+  }
+  ops.reverse();
+
+  // Emit unified diff with 3-line context windows
+  const CONTEXT = 3;
+  const chunks: string[] = [];
+  let k = 0;
+  while (k < ops.length) {
+    if (ops[k].op === '=') { k++; continue; }
+    // Found a changed region — collect context around it
+    const start = Math.max(0, k - CONTEXT);
+    let end = k;
+    while (end < ops.length && (ops[end].op !== '=' || end - k < CONTEXT)) end++;
+    end = Math.min(ops.length, end + CONTEXT);
+
+    const block: string[] = [];
+    for (let x = start; x < end; x++) {
+      const { op, line } = ops[x];
+      block.push(op === '+' ? `+ ${line}` : op === '-' ? `- ${line}` : `  ${line}`);
+    }
+    chunks.push(block.join('\n'));
+    k = end;
+  }
+
+  const added   = ops.filter(o => o.op === '+').length;
+  const removed = ops.filter(o => o.op === '-').length;
+
+  if (chunks.length === 0) {
+    return `# Revision Diff — ${stageLabel}\n\n_No line-level changes detected between drafts._\n`;
+  }
+
+  return [
+    `# Revision Diff — ${stageLabel}`,
+    '',
+    `_${added} line${added !== 1 ? 's' : ''} added · ${removed} line${removed !== 1 ? 's' : ''} removed_`,
+    '',
+    '```diff',
+    chunks.join('\n~~\n'),
+    '```',
+  ].join('\n');
 }
 
 // ── Save critic review as artifact ─────────────────────────────────────────────
@@ -129,6 +225,16 @@ const STAGE_SESSION_MAP: Record<string, { mode: AppMode; agentType: AgentType }>
   pm_backlog:           { mode: 'backlog',       agentType: 'pm' },
   critic:               { mode: 'analyst',       agentType: 'analyst' },
   curator:              { mode: 'analyst',       agentType: 'analyst' },
+};
+
+// Per-stage output token ceiling. Backlog gets more headroom because the JSON
+// scales with story count (6 features × 8 stories at max = ~15k tokens).
+// All Claude 4.x models support 64k output, so these are safe upper bounds.
+const STAGE_MAX_OUTPUT_TOKENS: Record<string, number> = {
+  analyst:            12_000,
+  pm_prd:             12_000,
+  solution_architect: 12_000,
+  pm_backlog:         24_000,
 };
 
 // Maps stage name to the artifact.type value stored in the DB.
@@ -250,8 +356,37 @@ function addWorkflowCost(workflowId: string, cost: number): void {
 }
 
 /** Build an onTokens callback that accumulates cost on a workflow. */
-function costTracker(workflowId: string): (usage: TokenUsage) => void {
+export function costTracker(workflowId: string): (usage: TokenUsage) => void {
   return (usage) => addWorkflowCost(workflowId, usage.estimatedCost);
+}
+
+/** Token usage breakdown stored per-stage on the checkpoint row. */
+interface StageTokenData {
+  specialist: {
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+    searchCount: number;
+    estimatedCost: number;
+  };
+  critic?: {
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+    estimatedCost: number;
+  };
+  /** Cost from prior revision runs for this stage (not reflected in specialist/critic tokens above). */
+  priorRunsCost?: number;
+}
+
+/** Write token usage JSON to a checkpoint row. */
+function setCheckpointTokenUsage(checkpointRowId: number, data: StageTokenData): void {
+  db.prepare('UPDATE checkpoints SET token_usage = ? WHERE id = ?')
+    .run(JSON.stringify(data), checkpointRowId);
 }
 
 export function getWorkflowEvents(workflowId: string, sinceId?: number): WorkflowEvent[] {
@@ -381,7 +516,7 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
     insertEvent(workflowId, 'stage_started', 'critic', 'Running quality review...');
 
     const { content: artifactContent, type: artifactType } = loadLatestArtifactForItem(workflow.item_id);
-    const review = await getCritic().review(artifactContent, artifactType, undefined, costTracker(workflowId));
+    const review = await getCritic().review(artifactContent, artifactType, resolveAgentModel('critic'), costTracker(workflowId), workflow.current_stage ?? undefined);
 
     // Save full critic review as artifact .md file
     const criticArtifactId = await saveCriticArtifact(workflow.item_id, 'critic', review.fullText);
@@ -467,7 +602,17 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
   if (nextStage === 'curator') {
     insertEvent(workflowId, 'stage_started', 'curator', 'Updating project context files...');
 
-    const { diffCount, reasoning } = await getCurator().runCuration(workflowId, undefined, costTracker(workflowId));
+    let curatorTokenData: StageTokenData['specialist'] | null = null;
+    const curatorTokenCallback = (usage: TokenUsage) => {
+      curatorTokenData = {
+        model: usage.model, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,
+        cacheReadTokens: usage.cacheReadTokens, cacheWriteTokens: usage.cacheWriteTokens,
+        searchCount: 0, estimatedCost: usage.estimatedCost,
+      };
+      addWorkflowCost(workflowId, usage.estimatedCost);
+    };
+
+    const { diffCount, reasoning } = await getCurator().runCuration(workflowId, resolveAgentModel('curator'), curatorTokenCallback);
 
     // Log the curator's reasoning so the user can review it
     if (reasoning) {
@@ -476,11 +621,15 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
         { full_reasoning: reasoning });
     }
 
-    stmts.insertCheckpoint.run(
+    const curatorCpResult = stmts.insertCheckpoint.run(
       workflowId, nextStage, null, 'approved',
       JSON.stringify({ auto_approved: true, context_diffs_proposed: diffCount }),
       now
     );
+    if (curatorTokenData) {
+      setCheckpointTokenUsage(curatorCpResult.lastInsertRowid as number,
+        { specialist: curatorTokenData! });
+    }
 
     insertEvent(workflowId, 'stage_completed', 'curator',
       diffCount > 0
@@ -607,13 +756,51 @@ async function runAutonomousStage(
   stage: string,
   itemId: string,
   brief: string,
-  autoApprove: boolean
+  autoApprove: boolean,
+  priorCriticIssues?: string[],
+  priorDraftContent?: string,
+  priorRunsCost?: number
 ): Promise<void> {
   const stageMap = STAGE_SESSION_MAP[stage];
   if (!stageMap) {
     logger.error(`runAutonomousStage: no stage map for "${stage}"`);
     return;
   }
+
+  // Resolve model: workflow policy_overrides take priority, then per-agent defaults
+  const workflow = stmts.getWorkflow.get(workflowId);
+  const policyOverrides: Record<string, string> = workflow?.policy_overrides
+    ? JSON.parse(workflow.policy_overrides)
+    : {};
+  const stageModelKey = `model:${stage}`;
+  const stageModel = policyOverrides[stageModelKey] || resolveAgentModel(stage);
+  logger.info(`Stage "${stage}" using model: ${stageModel}`);
+
+  // Per-stage token tracking — captured here, stored on the final pending checkpoint.
+  let specialistTokenData: StageTokenData['specialist'] | null = null;
+  let criticTokenData: StageTokenData['critic'] | null = null;
+  // Costs captured in plain numbers to avoid TS5.9 closure-narrowing issues with ?.estimatedCost
+  let specialistRunCost = 0;
+  let criticRunCost = 0;
+
+  const specialistTokenCallback = (usage: TokenUsage) => {
+    specialistTokenData = {
+      model: usage.model, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,
+      cacheReadTokens: usage.cacheReadTokens, cacheWriteTokens: usage.cacheWriteTokens,
+      searchCount: usage.searchCount, estimatedCost: usage.estimatedCost,
+    };
+    specialistRunCost = usage.estimatedCost;
+    addWorkflowCost(workflowId, usage.estimatedCost);
+  };
+  const criticTokenCallback = (usage: TokenUsage) => {
+    criticTokenData = {
+      model: usage.model, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,
+      cacheReadTokens: usage.cacheReadTokens, cacheWriteTokens: usage.cacheWriteTokens,
+      estimatedCost: usage.estimatedCost,
+    };
+    criticRunCost = usage.estimatedCost;
+    addWorkflowCost(workflowId, usage.estimatedCost);
+  };
 
   logger.info(`Autonomous stage "${stage}" starting (session=${sessionId})`);
 
@@ -689,7 +876,7 @@ async function runAutonomousStage(
     const startTime = Date.now();
     let lastProgressTime = startTime;
 
-    for await (const chunk of agent.streamResponse(systemPrompt, messages, undefined, costTracker(workflowId))) {
+    for await (const chunk of agent.streamResponse(systemPrompt, messages, stageModel, specialistTokenCallback, STAGE_MAX_OUTPUT_TOKENS[stage])) {
       fullResponse += chunk;
 
       // Detect new markdown sections and emit progress events
@@ -739,6 +926,25 @@ async function runAutonomousStage(
     `).run(sessionId, artifactType, artifactPath, Date.now());
     const artifactId = artifactResult.lastInsertRowid as number;
 
+    // If this is a revision run, compute and save a diff of what changed
+    let diffArtifactId: number | null = null;
+    if (priorDraftContent) {
+      try {
+        const stageLabel = STAGE_ARTIFACT_TYPE[stage] ?? stage;
+        const diffText = computeRevisionDiff(priorDraftContent, artifactContent, stageLabel);
+        const diffPath = path.join(artifactDir, `${Date.now()}-${stage}-diff.md`);
+        await fsAsync.writeFile(diffPath, diffText, 'utf-8');
+        const diffResult = db.prepare(`
+          INSERT INTO artifacts (session_id, type, file_path, created_at)
+          VALUES (?, ?, ?, ?)
+        `).run(sessionId, `${stage}_diff`, diffPath, Date.now());
+        diffArtifactId = diffResult.lastInsertRowid as number;
+        logger.info(`Revision diff saved for stage "${stage}" (artifact ${diffArtifactId})`);
+      } catch (err: any) {
+        logger.warn(`Failed to compute revision diff for "${stage}": ${err.message}`);
+      }
+    }
+
     // Log stage completion event with excerpt
     const excerpt = fullResponse.slice(0, 200).replace(/\n+/g, ' ').trim();
     const stageLabel = stage === 'analyst' ? 'Research' : stage === 'pm_prd' ? 'PRD' : stage === 'solution_architect' ? 'Architecture' : stage === 'pm_backlog' ? 'Backlog' : stage;
@@ -754,9 +960,13 @@ async function runAutonomousStage(
     if (specialistStages.has(stage) && criticEnabled) {
       insertEvent(workflowId, 'stage_completed', stage, `${stageLabel} draft complete.`,
         { excerpt, artifact_id: artifactId });
+
+      // Brief pause before critic to reduce back-to-back API rate limit pressure
+      await new Promise(r => setTimeout(r, 8_000));
+
       insertEvent(workflowId, 'stage_progress', stage, 'Running quality review...');
 
-      const review = await getCritic().review(fullResponse, artifactType, undefined, costTracker(workflowId));
+      const review = await getCritic().review(fullResponse, artifactType, resolveAgentModel('critic'), criticTokenCallback, stage, priorCriticIssues);
       insertEvent(workflowId, 'stage_progress', stage, 'Quality review complete. Processing results...');
 
       // Save full critic review as artifact .md file
@@ -778,11 +988,15 @@ async function runAutonomousStage(
       if (review.verdict === 'approve') {
         // Critic approved — still pause for human review before advancing
         const now = Date.now();
-        stmts.insertCheckpoint.run(
+        const cpResult = stmts.insertCheckpoint.run(
           workflowId, stage, artifactId, 'pending',
-          JSON.stringify({ session_id: sessionId, autonomous: true, critic: criticDetails }),
+          JSON.stringify({ session_id: sessionId, autonomous: true, critic: criticDetails, ...(diffArtifactId ? { diff_artifact_id: diffArtifactId } : {}) }),
           now
         );
+        if (specialistTokenData) {
+          setCheckpointTokenUsage(cpResult.lastInsertRowid as number,
+            { specialist: specialistTokenData, ...(criticTokenData ? { critic: criticTokenData } : {}), ...(priorRunsCost ? { priorRunsCost } : {}) });
+        }
         stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
         const minorCount = review.issues.filter(i => i.severity === 'minor').length;
         const approveMsg = minorCount > 0
@@ -802,12 +1016,7 @@ async function runAutonomousStage(
         .filter(c => c.stage === stage && c.status === 'revised').length;
 
       if (priorRevisions < MAX_INLINE_REVISIONS) {
-        // Auto-revise: rerun the specialist with critic feedback (issues + questions)
-        const issueFeedback = review.issues.map(i => `[${i.severity.toUpperCase()}] ${i.description}`).join('\n');
-        const questionFeedback = review.questions.length > 0
-          ? '\n\nQuestions to address:\n' + review.questions.map(q => `- ${q}`).join('\n')
-          : '';
-        const feedbackText = issueFeedback + questionFeedback;
+        // Auto-revise: rerun the specialist with the prior draft + explicit issue list.
         const now = Date.now();
         stmts.insertCheckpoint.run(
           workflowId, stage, artifactId, 'revised',
@@ -821,13 +1030,16 @@ async function runAutonomousStage(
         // Keep workflow on the same stage
         stmts.updateWorkflowStageAndStatus.run(stage, 'active', now, workflowId);
 
-        // Generate a new brief with the critic feedback and rerun
-        const revisedBrief = await getCoordinator().generateStageBrief(workflowId, stage, feedbackText);
+        // Build a revision brief: includes the prior draft + explicit issue list so the
+        // specialist revises its own output rather than writing a new document from scratch.
+        const priorIssuesForRevision = review.issues.map(i => `[${i.severity.toUpperCase()}] ${i.description}`);
+        const revisedBrief = getCoordinator().generateRevisionBrief(workflowId, stage, fullResponse, priorIssuesForRevision);
         const newSession = sessionManager.createBmadSession(itemId, stageMap.mode, stageMap.agentType);
         sessionManager.updateWorkflow(newSession.id, workflowId, revisedBrief);
 
         logger.info(`Inline critic revision ${priorRevisions + 1}/${MAX_INLINE_REVISIONS} for "${stage}" in workflow ${workflowId}`);
-        runAutonomousStage(newSession.id, workflowId, stage, itemId, revisedBrief, autoApprove)
+        const thisRunCost = specialistRunCost + criticRunCost;
+        runAutonomousStage(newSession.id, workflowId, stage, itemId, revisedBrief, autoApprove, priorIssuesForRevision, fullResponse, (priorRunsCost ?? 0) + thisRunCost)
           .catch(err => logger.error(`Inline revision for "${stage}" failed: ${err.message}`));
         return;
       }
@@ -840,11 +1052,15 @@ async function runAutonomousStage(
         : '';
 
       const now = Date.now();
-      stmts.insertCheckpoint.run(
+      const cpResult2 = stmts.insertCheckpoint.run(
         workflowId, stage, artifactId, 'pending',
-        JSON.stringify({ session_id: sessionId, autonomous: true, critic: criticDetails }),
+        JSON.stringify({ session_id: sessionId, autonomous: true, critic: criticDetails, ...(diffArtifactId ? { diff_artifact_id: diffArtifactId } : {}) }),
         now
       );
+      if (specialistTokenData) {
+        setCheckpointTokenUsage(cpResult2.lastInsertRowid as number,
+          { specialist: specialistTokenData, ...(criticTokenData ? { critic: criticTokenData } : {}) });
+      }
       stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
       insertEvent(workflowId, 'critic_verdict', stage,
         `Quality review still has unresolved issues after ${MAX_INLINE_REVISIONS} revision(s): ${issuesSummary}.${questionsSummary} How would you like to proceed?`,
@@ -856,11 +1072,15 @@ async function runAutonomousStage(
     // ── Non-critic path (critic disabled or non-specialist stage) ─────────────
     const checkpointStatus = autoApprove ? 'approved' : 'pending';
     const now = Date.now();
-    stmts.insertCheckpoint.run(
+    const cpResult3 = stmts.insertCheckpoint.run(
       workflowId, stage, artifactId, checkpointStatus,
       JSON.stringify({ session_id: sessionId, autonomous: true, auto_approved: autoApprove }),
       now
     );
+    if (specialistTokenData) {
+      setCheckpointTokenUsage(cpResult3.lastInsertRowid as number,
+        { specialist: specialistTokenData, ...(criticTokenData ? { critic: criticTokenData } : {}) });
+    }
     insertEvent(workflowId, 'stage_completed', stage, `${stageLabel} complete.`,
       { excerpt, artifact_id: artifactId });
 
@@ -1196,23 +1416,85 @@ const STAGE_LABELS_INTERNAL: Record<string, string> = {
 };
 
 /**
- * Delete a workflow and all associated checkpoints, context_diffs,
- * coordinator_sessions, and workflow_events.
+ * Delete a workflow and all associated data:
+ * - Artifact files on disk (specialist outputs, critic reviews, diffs)
+ * - Sessions created for this workflow (cascades messages + artifact rows)
+ * - Checkpoints, context_diffs, workflow_events, coordinator_sessions
+ * - The workflow row itself
  */
 export function deleteWorkflow(workflowId: string): void {
   const workflow = stmts.getWorkflow.get(workflowId);
   if (!workflow) throw new Error(`Workflow not found: ${workflowId}`);
 
-  // Delete child rows that don't have ON DELETE CASCADE
+  // ── 1. Collect session IDs and artifact file paths from checkpoints ──────
+  const checkpoints = stmts.getCheckpointsByWorkflow.all(workflowId);
+
+  const sessionIds = new Set<string>();
+  const artifactIds = new Set<number>();
+
+  for (const cp of checkpoints) {
+    // Collect artifact IDs referenced by checkpoints
+    if (cp.artifact_id) artifactIds.add(cp.artifact_id);
+
+    // Parse coordinator_action for session_id and additional artifact IDs
+    if (cp.coordinator_action) {
+      try {
+        const action = JSON.parse(cp.coordinator_action);
+        if (action.session_id) sessionIds.add(action.session_id);
+        if (action.critic?.critic_artifact_id) artifactIds.add(action.critic.critic_artifact_id);
+        if (action.diff_artifact_id) artifactIds.add(action.diff_artifact_id);
+        // Also check nested critic object
+        if (action.critic_artifact_id) artifactIds.add(action.critic_artifact_id);
+      } catch { /* ignore malformed JSON */ }
+    }
+  }
+
+  // ── 2. Resolve artifact file paths from DB ───────────────────────────────
+  const filePaths: string[] = [];
+  for (const id of artifactIds) {
+    const row = db.prepare<[number], { file_path: string }>(
+      'SELECT file_path FROM artifacts WHERE id = ?'
+    ).get(id);
+    if (row?.file_path) filePaths.push(row.file_path);
+  }
+
+  // Also collect file paths for all artifacts owned by these sessions
+  // (catches any artifacts not directly referenced by checkpoints)
+  for (const sessionId of sessionIds) {
+    const rows = db.prepare<[string], { file_path: string }>(
+      'SELECT file_path FROM artifacts WHERE session_id = ?'
+    ).all(sessionId);
+    for (const row of rows) {
+      if (row.file_path) filePaths.push(row.file_path);
+    }
+  }
+
+  // ── 3. Delete artifact files from disk ───────────────────────────────────
+  let deletedFiles = 0;
+  for (const filePath of filePaths) {
+    try {
+      fs.unlinkSync(filePath);
+      deletedFiles++;
+    } catch (err: any) {
+      if (err.code !== 'ENOENT') {
+        logger.warn(`Could not delete artifact file ${filePath}: ${err.message}`);
+      }
+    }
+  }
+
+  // ── 4. Delete sessions (cascades to messages, artifacts, staged_decisions) ─
+  for (const sessionId of sessionIds) {
+    db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
+  }
+
+  // ── 5. Delete workflow child rows and the workflow itself ─────────────────
   db.prepare('DELETE FROM checkpoints WHERE workflow_id = ?').run(workflowId);
   db.prepare('DELETE FROM context_diffs WHERE workflow_id = ?').run(workflowId);
-  // These cascade automatically but explicit delete is harmless
   db.prepare('DELETE FROM workflow_events WHERE workflow_id = ?').run(workflowId);
   db.prepare('DELETE FROM coordinator_sessions WHERE workflow_id = ?').run(workflowId);
-  // Delete the workflow itself
   db.prepare('DELETE FROM workflows WHERE id = ?').run(workflowId);
 
-  logger.info(`Deleted workflow ${workflowId}`);
+  logger.info(`Deleted workflow ${workflowId} — ${deletedFiles} file(s) removed, ${sessionIds.size} session(s) deleted`);
 }
 
 function loadArtifactSummary(artifactId: number): string | undefined {

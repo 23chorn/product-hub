@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { streamAI, resolveModelId } from '../utils/ai-provider';
-import type { SystemPrompt } from '../utils/ai-provider';
+import { streamAI, resolveAgentModel } from '../utils/ai-provider';
+import type { SystemPrompt, TokenUsage } from '../utils/ai-provider';
 import { getPolicies } from '../data/database';
 import db from '../data/database';
 import Logger from '../utils/logger';
@@ -361,6 +361,66 @@ ${policyLines}`;
     return brief;
   }
 
+  /**
+   * Build a revision brief for a specialist stage.
+   *
+   * Unlike generateStageBrief (which produces a from-scratch brief), this tells
+   * the specialist exactly what was wrong with its prior output and instructs it
+   * to fix those specific issues — not rewrite the document from scratch.
+   *
+   * @param workflowId   Active workflow ID (used to fetch the goal).
+   * @param stage        Stage name (e.g. 'analyst').
+   * @param priorDraft   Full text of the specialist's previous output.
+   * @param issues       Critic issues formatted as "[SEVERITY] description" strings.
+   */
+  generateRevisionBrief(
+    workflowId: string,
+    stage: string,
+    priorDraft: string,
+    issues: string[]
+  ): string {
+    const workflow = db
+      .prepare<[string], WorkflowRow>('SELECT * FROM workflows WHERE id = ?')
+      .get(workflowId);
+
+    const goal = workflow?.goal ?? '(workflow goal not found)';
+    const stageFormat = STAGE_OUTPUT_FORMATS[stage];
+    const outputLabel = stageFormat?.label ?? stage;
+    const outputFormat = stageFormat?.format ?? '(no format specification defined for this stage)';
+
+    const issueList = issues.map((issue, i) => `${i + 1}. ${issue}`).join('\n');
+
+    const lines: string[] = [
+      `# Revision Required: ${outputLabel}`,
+      '',
+      '## Goal',
+      goal,
+      '',
+      '## Issues to Fix',
+      'A quality review of your prior output identified the following issues. You MUST address each one specifically.',
+      'Do NOT rewrite the entire document from scratch — revise the prior draft to fix these issues and keep everything else intact.',
+      '',
+      issueList,
+      '',
+      '## Execution Instructions',
+      'You are executing this revision autonomously. Do NOT ask questions, show menus, or wait for input.',
+      '',
+      '- For each numbered issue above: locate the relevant section in the prior draft and fix it directly.',
+      '- Keep unchanged sections intact. Do not reorganise sections that were not flagged.',
+      '- Your response must be the complete revised document (all sections) — not a diff or commentary.',
+      '- Do not use placeholder text. Every factual claim needs a [N] citation or an [Assumption — no source found] marker.',
+      '- If a fix requires researching new information, do so before writing.',
+      '',
+      '## Required Output Format',
+      outputFormat,
+      '',
+      '## Prior Draft (revise this)',
+      priorDraft,
+    ];
+
+    return lines.join('\n');
+  }
+
   // ── Pre-workflow planning conversation ───────────────────────────────────
 
   /**
@@ -395,10 +455,11 @@ Nothing may follow the JSON line. By your 3rd message you must include COORDINAT
    */
   async *streamPlanningResponse(
     messages: Array<{ role: 'user' | 'assistant'; content: string }>,
-    model?: string
+    model?: string,
+    onTokens?: (usage: TokenUsage) => void
   ): AsyncGenerator<string, void, unknown> {
-    const resolvedModel = resolveModelId(model);
-    yield* streamAI(resolvedModel, this.buildPlanningSystemPrompt(), messages);
+    const resolvedModel = resolveAgentModel('coordinator');
+    yield* streamAI(resolvedModel, this.buildPlanningSystemPrompt(), messages, undefined, { onTokens });
   }
 
   // ── Streaming ─────────────────────────────────────────────────────────────
@@ -410,9 +471,10 @@ Nothing may follow the JSON line. By your 3rd message you must include COORDINAT
    */
   async *streamGoalDecomposition(
     goal: string,
-    model?: string
+    model?: string,
+    onTokens?: (usage: TokenUsage) => void
   ): AsyncGenerator<string, void, unknown> {
-    const resolvedModel = resolveModelId(model);
+    const resolvedModel = resolveAgentModel('coordinator');
     const systemPrompt  = this.buildStablePrompt();
 
     const userMessage =
@@ -433,7 +495,9 @@ Nothing may follow the JSON line. By your 3rd message you must include COORDINAT
     yield* streamAI(
       resolvedModel,
       systemPrompt,
-      [{ role: 'user', content: userMessage }]
+      [{ role: 'user', content: userMessage }],
+      undefined,
+      { onTokens }
     );
   }
 
@@ -444,9 +508,10 @@ Nothing may follow the JSON line. By your 3rd message you must include COORDINAT
   async *streamResponse(
     workflowId: string,
     userMessage: string,
-    model?: string
+    model?: string,
+    onTokens?: (usage: TokenUsage) => void
   ): AsyncGenerator<string, void, unknown> {
-    const resolvedModel = resolveModelId(model);
+    const resolvedModel = resolveAgentModel('coordinator');
     const systemPrompt  = this.buildSystemPrompt(workflowId);
 
     logger.info(`Coordinator responding for workflow ${workflowId} via model ${resolvedModel}`);
@@ -454,7 +519,9 @@ Nothing may follow the JSON line. By your 3rd message you must include COORDINAT
     yield* streamAI(
       resolvedModel,
       systemPrompt,
-      [{ role: 'user', content: userMessage }]
+      [{ role: 'user', content: userMessage }],
+      undefined,
+      { onTokens }
     );
   }
 }

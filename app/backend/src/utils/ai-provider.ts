@@ -63,6 +63,9 @@ export const PROVIDER_MODELS: Record<AIProvider, ModelOption[]> = {
   ],
 };
 
+/** Cost per Anthropic web search query (USD, as of 2025). */
+const WEB_SEARCH_COST_PER_QUERY = 0.01;
+
 export function getAvailableModels(): ModelOption[] {
   return PROVIDER_MODELS[getActiveProvider()] ?? [];
 }
@@ -74,6 +77,42 @@ export function isValidModelId(modelId: string): boolean {
 export function resolveModelId(modelEnvValue: string | undefined): string {
   if (modelEnvValue) return modelEnvValue;
   return DEFAULT_MODELS[getActiveProvider()];
+}
+
+/**
+ * Per-agent model assignments for Anthropic.
+ * Other providers use their single default model for all agents.
+ */
+export const ANTHROPIC_AGENT_MODELS: Record<string, string> = {
+  coordinator:        'claude-haiku-4-5-20251001',
+  analyst:            'claude-opus-4-6',
+  pm_prd:             'claude-sonnet-4-5-20250929',
+  solution_architect: 'claude-sonnet-4-5-20250929',
+  pm_backlog:         'claude-haiku-4-5-20251001',
+  critic:             'claude-haiku-4-5-20251001',
+  curator:            'claude-haiku-4-5-20251001',
+};
+
+/** Returns the model ID to use for a given agent, respecting the active provider. */
+export function resolveAgentModel(agent: string): string {
+  if (getActiveProvider() === 'anthropic') {
+    return ANTHROPIC_AGENT_MODELS[agent] ?? DEFAULT_MODELS.anthropic;
+  }
+  return resolveModelId(undefined);
+}
+
+/** Returns a short human-readable label for a model ID. */
+export function modelShortLabel(modelId: string): string {
+  if (modelId.includes('opus')) return 'Opus';
+  if (modelId.includes('sonnet')) return 'Sonnet';
+  if (modelId.includes('haiku')) return 'Haiku';
+  return modelId.split('/').pop()?.split(':')[0] ?? modelId;
+}
+
+/** Returns short model labels per agent — used by the frontend to show which model each stage uses. */
+export function getAgentModelLabels(): Record<string, string> {
+  const agents = ['coordinator', 'analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'critic', 'curator'];
+  return Object.fromEntries(agents.map(a => [a, modelShortLabel(resolveAgentModel(a))]));
 }
 
 /**
@@ -114,9 +153,13 @@ interface ModelPricing {
 }
 
 const MODEL_PRICING: Record<string, ModelPricing> = {
-  // Anthropic direct
+  // Anthropic direct — source: platform.claude.com/docs/en/about-claude/pricing
+  // Haiku 4.5: $1.00/$5.00 per 1M in/out
   'claude-haiku-4-5-20251001':   { input: 1.00, cacheWrite: 1.25, cacheRead: 0.10, output:  5.00 },
+  // Sonnet 4.5 / 4.6: $3.00/$15.00 per 1M in/out
   'claude-sonnet-4-5-20250929':  { input: 3.00, cacheWrite: 3.75, cacheRead: 0.30, output: 15.00 },
+  'claude-sonnet-4-6':           { input: 3.00, cacheWrite: 3.75, cacheRead: 0.30, output: 15.00 },
+  // Opus 4.6: $5.00/$25.00 per 1M in/out
   'claude-opus-4-6':             { input: 5.00, cacheWrite: 6.25, cacheRead: 0.50, output: 25.00 },
   // Bedrock global.* cross-region profiles (approximate — check aws.amazon.com/bedrock/pricing for exact rates)
   'global.anthropic.claude-haiku-4-5-20251001-v1:0':  { input: 1.00, cacheWrite: 1.25, cacheRead: 0.10, output:  5.00 },
@@ -130,16 +173,19 @@ function estimateCost(
   uncachedInput: number,
   cacheWrite: number,
   cacheRead: number,
-  output: number
+  output: number,
+  searchCount = 0
 ): string {
   const p = MODEL_PRICING[model];
-  if (!p) return '';
+  if (!p && searchCount === 0) return '';
   const M = 1_000_000;
-  const inCost    = (uncachedInput * p.input + cacheWrite * p.cacheWrite + cacheRead * p.cacheRead) / M;
-  const outCost   = output * p.output / M;
-  const total     = inCost + outCost;
+  const inCost    = p ? (uncachedInput * p.input + cacheWrite * p.cacheWrite + cacheRead * p.cacheRead) / M : 0;
+  const outCost   = p ? output * p.output / M : 0;
+  const searchCost = searchCount * WEB_SEARCH_COST_PER_QUERY;
+  const total     = inCost + outCost + searchCost;
   const fmt = (n: number) => `$${n.toFixed(6)}`;
-  return ` | cost ~${fmt(total)} (in=${fmt(inCost)} out=${fmt(outCost)})`;
+  const searchNote = searchCount > 0 ? ` searches=${searchCount}(${fmt(searchCost)})` : '';
+  return ` | cost ~${fmt(total)} (in=${fmt(inCost)} out=${fmt(outCost)}${searchNote})`;
 }
 
 /**
@@ -171,7 +217,8 @@ export interface TokenUsage {
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
-  estimatedCost: number; // USD
+  searchCount: number;   // web search queries made (Anthropic only; 0 for other providers)
+  estimatedCost: number; // USD (includes search cost)
 }
 
 /** Calculate estimated cost in USD from token counts. Returns 0 if model not in pricing table. */
@@ -180,13 +227,17 @@ export function calculateCost(
   uncachedInput: number,
   cacheWrite: number,
   cacheRead: number,
-  output: number
+  output: number,
+  searchCount = 0
 ): number {
   const p = MODEL_PRICING[model];
-  if (!p) return 0;
+  if (!p && searchCount === 0) return 0;
   const M = 1_000_000;
-  return (uncachedInput * p.input + cacheWrite * p.cacheWrite + cacheRead * p.cacheRead) / M
-       + output * p.output / M;
+  const tokenCost = p
+    ? (uncachedInput * p.input + cacheWrite * p.cacheWrite + cacheRead * p.cacheRead) / M
+      + output * p.output / M
+    : 0;
+  return tokenCost + searchCount * WEB_SEARCH_COST_PER_QUERY;
 }
 
 /**
@@ -236,11 +287,27 @@ async function* streamWithAnthropic(
           ...(system.dynamic ? [{ type: 'text' as const, text: system.dynamic }] : []),
         ];
 
+  // Multi-turn message caching: mark the second-to-last message with cache_control
+  // so the entire conversation history up to that point is served from cache on
+  // subsequent turns. Cache hits pay 10% of normal cost for those tokens.
+  // Only applied when there are 2+ messages (single-shot calls skip this).
+  type MsgBlock = { type: 'text'; text: string; cache_control: { type: 'ephemeral' } };
+  type PreparedMsg = { role: 'user' | 'assistant'; content: string | MsgBlock[] };
+  const preparedMessages: PreparedMsg[] = messages.map((m, i) => {
+    if (messages.length >= 2 && i === messages.length - 2) {
+      return {
+        role: m.role,
+        content: [{ type: 'text' as const, text: m.content, cache_control: { type: 'ephemeral' as const } }],
+      };
+    }
+    return { role: m.role, content: m.content };
+  });
+
   const params = {
     model,
     max_tokens: effectiveMaxTokens,
     system: systemParam,
-    messages: messages.map(m => ({ role: m.role, content: m.content })),
+    messages: preparedMessages,
     ...(tools && { tools }),
     stream: true as const,
   };
@@ -259,6 +326,7 @@ async function* streamWithAnthropic(
       let outputTokens = 0;
       let cacheReadTokens = 0;
       let cacheWriteTokens = 0;
+      let searchQueryCount = 0;
 
       // Track web search URLs for citation verification
       const searchUrls: Array<{ url: string; title: string }> = [];
@@ -282,8 +350,12 @@ async function* streamWithAnthropic(
         ) {
           yield event.delta.text;
         } else if (event.type === 'content_block_start') {
-          // Capture web search result URLs from server tool results
           const block = event.content_block as any;
+          // Count each search query (each server_tool_use = one $0.01 query)
+          if (block?.type === 'server_tool_use' && block.name === 'web_search') {
+            searchQueryCount++;
+          }
+          // Capture web search result URLs for citation verification
           if (block?.type === 'web_search_tool_result' && Array.isArray(block.content)) {
             for (const result of block.content) {
               if (result.type === 'web_search_result' && result.url) {
@@ -294,8 +366,10 @@ async function* streamWithAnthropic(
         }
       }
 
-      if (searchUrls.length > 0) {
-        logger.info(`[WEB SEARCH] ${searchUrls.length} source(s) found: ${searchUrls.map(s => s.url).join(', ')}`);
+      if (searchQueryCount > 0) {
+        logger.info(`[WEB SEARCH] ${searchQueryCount} search quer${searchQueryCount === 1 ? 'y' : 'ies'} (${searchUrls.length} result(s) total)`);
+      } else if (searchUrls.length > 0) {
+        logger.info(`[WEB SEARCH] ${searchUrls.length} source(s): ${searchUrls.map(s => s.url).join(', ')}`);
       }
 
       // inputTokens = uncached tokens only; cache fields are reported separately.
@@ -305,12 +379,13 @@ async function* streamWithAnthropic(
         `[TOKENS] model=${model}` +
         ` | input=${totalInput} (uncached=${inputTokens} cache_write=${cacheWriteTokens} cache_read=${cacheReadTokens})` +
         ` | output=${outputTokens}` +
-        estimateCost(model, inputTokens, cacheWriteTokens, cacheReadTokens, outputTokens)
+        estimateCost(model, inputTokens, cacheWriteTokens, cacheReadTokens, outputTokens, searchQueryCount)
       );
 
       options.onTokens?.({
         model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens,
-        estimatedCost: calculateCost(model, inputTokens, cacheWriteTokens, cacheReadTokens, outputTokens),
+        searchCount: searchQueryCount,
+        estimatedCost: calculateCost(model, inputTokens, cacheWriteTokens, cacheReadTokens, outputTokens, searchQueryCount),
       });
 
       return; // success — exit retry loop
@@ -402,6 +477,7 @@ async function* streamWithBedrock(
 
         onTokens?.({
           model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens,
+          searchCount: 0,
           estimatedCost: calculateCost(model, inputTokens, cacheWriteTokens, cacheReadTokens, outputTokens),
         });
       }
@@ -490,6 +566,7 @@ async function* streamWithOllama(
           );
           onTokens?.({
             model, inputTokens, outputTokens, cacheReadTokens: 0, cacheWriteTokens: 0,
+            searchCount: 0,
             estimatedCost: calculateCost(model, inputTokens, 0, 0, outputTokens),
           });
         }

@@ -1,13 +1,14 @@
 <!-- START OUTPUT HERE — no preamble, no introductory text, no commentary. Begin directly with the heading below. -->
 
-# Research Brief: [Initiative Name]
+<!--
+OUTPUT BUDGET: You have a fixed output token limit. A complete document is always better than a thorough-but-truncated one.
+- Write all sections. Do not skip or omit any section.
+- If you are running long, condense earlier sections (Problem Space, Market Size, Target Users, Competitive Landscape) — not later ones.
+- The final two sections — Strategic Recommendations and References — must always be present and complete.
+- Prefer concise paragraphs over exhaustive coverage of any single topic.
+-->
 
-> **Citation rule — STRICT FORMAT:**
-> - Every factual claim MUST have a bracketed number `[N]` immediately after: "Market grew 15% [1]."
-> - WRONG: footnotes, superscripts, inline URLs, "(Source: ...)", or "according to [source name]"
-> - RIGHT: "The sector is valued at $4.2B [1] with projected growth of 12% CAGR [2]."
-> - Unreferenced factual claims will be flagged as defects by the Critic.
-> - If no source was found, write: "[Assumption — no source found]" instead of inventing a reference.
+# Research Brief: [Initiative Name]
 
 ## Executive Summary
 

@@ -12,6 +12,7 @@ export interface WorkflowCheckpoint {
   coordinator_action: string | null;
   created_at: number;
   resolved_at: number | null;
+  token_usage: string | null;
   artifact?: { id: number; type: string; file_path: string; created_at: number } | null;
 }
 

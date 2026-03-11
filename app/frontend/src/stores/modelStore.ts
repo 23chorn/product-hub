@@ -4,8 +4,10 @@ import type { ModelOption } from '@pap/shared';
 interface ModelState {
   selectedModelId: string | null;
   availableModels: ModelOption[];
+  agentModels: Record<string, string>;
   setSelectedModelId: (id: string) => void;
   setAvailableModels: (models: ModelOption[]) => void;
+  setAgentModels: (agentModels: Record<string, string>) => void;
 }
 
 export const useModelStore = create<ModelState>(() => {
@@ -15,6 +17,7 @@ export const useModelStore = create<ModelState>(() => {
   return {
     selectedModelId: saved || null,
     availableModels: [],
+    agentModels: {},
 
     setSelectedModelId: (id: string) => {
       localStorage.setItem('selectedModel', id);
@@ -32,6 +35,10 @@ export const useModelStore = create<ModelState>(() => {
         availableModels: models,
         selectedModelId: isStillValid ? current : null,
       });
+    },
+
+    setAgentModels: (agentModels: Record<string, string>) => {
+      useModelStore.setState({ agentModels });
     },
   };
 });

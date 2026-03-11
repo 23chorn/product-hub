@@ -323,7 +323,8 @@ Your responses have a token ceiling. A document that is cut off is always worse 
     system: SystemPrompt,
     messages: Array<{ role: 'user' | 'assistant'; content: string }>,
     modelOverride?: string,
-    onTokens?: (usage: TokenUsage) => void
+    onTokens?: (usage: TokenUsage) => void,
+    maxOutputTokens?: number
   ): AsyncGenerator<string, void, unknown> {
     const model = modelOverride || this.model;
     // Web search is only available on Anthropic (built-in tool). Bedrock/Ollama
@@ -331,7 +332,8 @@ Your responses have a token ceiling. A document that is cut off is always worse 
     const webSearch = this.agentType === 'analyst' && getActiveProvider() === 'anthropic';
     // Autonomous mode always needs full document output — use the same ceiling as analyst.
     // ai-provider caps this to the actual model limit so no API error is thrown.
-    const maxTokens = (this.agentType === 'analyst' || this.isAutonomous) ? 32_000 : 8_192;
+    const defaultMax = (this.agentType === 'analyst' || this.isAutonomous) ? 12_000 : 8_192;
+    const maxTokens = maxOutputTokens ?? defaultMax;
     logger.info(`Streaming response (${messages.length} messages in history, model: ${model}, webSearch: ${webSearch}, maxTokens: ${maxTokens})`);
 
     try {

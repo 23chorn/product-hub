@@ -48,6 +48,9 @@ const safeSchema = schema
 
 db.exec(safeSchema);
 
+// Migrations — add columns that don't exist yet on existing databases
+try { db.exec('ALTER TABLE checkpoints ADD COLUMN token_usage TEXT'); } catch { /* already exists */ }
+
 // ---------------------------------------------------------------------------
 // Helper: getPolicies
 // ---------------------------------------------------------------------------

@@ -528,7 +528,7 @@ export function CoordinatorChat() {
     setPlanningPhase('launching');
     try {
       const selectedStages = TOGGLEABLE_STAGES.filter(s => enabledStages[s.key]).map(s => s.key);
-      const result = await api.startWorkflow(itemId || undefined, originalGoal, enrichedContext, selectedStages);
+      const result = await api.startWorkflow(itemId || undefined, originalGoal, enrichedContext, selectedStages, undefined, planningSessionId);
       const status = await api.getWorkflowStatus(result.workflowId);
       applyWorkflowStatus(status);
       setPlanningPhase('idle');

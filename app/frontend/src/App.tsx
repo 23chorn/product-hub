@@ -21,7 +21,7 @@ import { api } from './services/api';
 
 function App() {
   const { isDark, toggleTheme } = useThemeStore();
-  const { setAvailableModels } = useModelStore();
+  const { setAvailableModels, setAgentModels } = useModelStore();
   const { isOpen: isDLOpen, openDecisionLog } = useDecisionLogStore();
   const { isOpen: isCEOpen, openContextEditor } = useContextEditorStore();
   const { isOpen: isTEOpen, openTemplateEditor } = useTemplateEditorStore();
@@ -34,7 +34,10 @@ function App() {
   // Fetch app config, available models, and context status on mount
   useEffect(() => {
     api.getConfig().then(setConfig).catch(() => {});
-    api.getModels().then(({ models }) => setAvailableModels(models)).catch(() => {});
+    api.getModels().then(({ models, agentModels }) => {
+      setAvailableModels(models);
+      if (agentModels) setAgentModels(agentModels);
+    }).catch(() => {});
 
     // Workflow mode is always on — force it and restore any in-progress workflow
     useWorkflowStore.getState().setWorkflowMode(true);

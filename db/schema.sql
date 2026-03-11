@@ -193,6 +193,7 @@ CREATE TABLE checkpoints (
                      CHECK(status IN ('pending','approved','rejected','revised')),
   human_feedback     TEXT,
   coordinator_action TEXT,   -- JSON blob
+  token_usage        TEXT,   -- JSON: { specialist: TokenUsage, critic?: TokenUsage }
   created_at         INTEGER NOT NULL,
   resolved_at        INTEGER
 );

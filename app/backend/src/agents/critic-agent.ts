@@ -32,6 +32,80 @@ export interface CriticReview {
   fullText: string;
 }
 
+// ── Stage-specific review guidance ────────────────────────────────────────────
+
+/**
+ * Returns a block of stage-specific instructions injected into the dynamic
+ * (uncached) portion of the critic's system prompt.
+ *
+ * Analyst: source/citation questions belong in Issues (agent-resolvable), NOT
+ *   in Questions for the PM. The PM cannot verify research provenance.
+ *
+ * PRD / Backlog: questions should focus on scope, expected behaviour,
+ *   functionality, and acceptance criteria — things only the PM can decide.
+ */
+function buildStageInstructions(stage?: string): string {
+  switch (stage) {
+    case 'analyst':
+      return `## Stage Context: Research Brief
+
+**Critical rule — source questions are Issues, not PM questions:**
+Any uncertainty you have about where a data point came from, whether a statistic is real, or whether a URL is authentic MUST be raised as a \`[MAJOR]\` Issue — not as a Question for the PM.
+The PM is not able to verify research sources. Instead, instruct the agent to take one of these actions:
+1. Find a verifiable citation and add the correct \`[N]\` reference, OR
+2. Add an explicit \`[Assumption — no source found]\` caveat inline, OR
+3. Remove the unsupported claim entirely.
+
+**Questions for the PM on this artifact** are limited to methodology scope questions only — e.g. "Should this cover the APAC market specifically?" or "Was a cost-comparison to legacy systems required?" Not anything about data provenance.
+
+`;
+
+    case 'pm_prd':
+      return `## Stage Context: Product Requirements Document
+
+**Questions for the PM** should focus on things only the PM can decide:
+- **Scope**: What is explicitly in scope vs out of scope for this version?
+- **Expected behaviour**: How should the system behave in specific edge cases — errors, empty states, permission boundaries, concurrent actions?
+- **Functionality**: What exactly happens when the user does X? What triggers Y?
+- **Business logic**: Are acceptance criteria specific enough to test? What does "success" look like for an ambiguous requirement?
+- **Ownership**: Who decides if a requirement is satisfied? Who signs off on edge case behaviour?
+
+Do NOT ask about technical implementation — that belongs in the architecture stage.
+
+`;
+
+    case 'solution_architect':
+      return `## Stage Context: Architecture Document
+
+**Questions for the PM** should cover only business or product constraints that affect architecture choices:
+- Scale expectations or SLA requirements not stated in the PRD
+- Compliance or regulatory constraints that affect data handling
+- Feature priority that affects which services to build first vs later
+- Unclear requirements that lead to two equally valid but incompatible designs
+
+Do NOT ask about technology choices or implementation details — those are in the architect's domain.
+
+`;
+
+    case 'pm_backlog':
+      return `## Stage Context: Product Backlog
+
+**Questions for the PM** should focus on:
+- **Story scope**: Is this story too large to deliver in a single sprint? Should it be split?
+- **Acceptance criteria**: Are the Given/When/Then conditions unambiguous and independently testable?
+- **Dependencies**: Can story X genuinely be delivered before story Y, or is there a hidden dependency?
+- **Business value**: What user outcome does this feature enable? Is it clear from the story title?
+- **Edge cases**: What happens when the user hits an error state, empty state, or permission boundary within this story?
+
+Do NOT ask about technical implementation within stories — that is for the engineer to decide.
+
+`;
+
+    default:
+      return '';
+  }
+}
+
 // ── CriticAgent ───────────────────────────────────────────────────────────────
 
 export class CriticAgent {
@@ -48,18 +122,20 @@ export class CriticAgent {
    * @param artifactContent  Full text of the artifact to review.
    * @param artifactType     Human-readable type label, e.g. "PRD", "Research Brief".
    * @param model            Optional model override.
+   * @param stage            Workflow stage name — used to inject stage-specific review guidance.
    */
   async review(
     artifactContent: string,
     artifactType: string,
     model?: string,
-    onTokens?: (usage: TokenUsage) => void
+    onTokens?: (usage: TokenUsage) => void,
+    stage?: string,
+    priorIssues?: string[]
   ): Promise<CriticReview> {
     const resolvedModel = resolveModelId(model);
 
     // Split prompt for caching: persona is stable (cached across reviews),
-    // artifact is dynamic (changes each call). This saves ~90% of persona
-    // input tokens on subsequent reviews.
+    // artifact + stage instructions are dynamic (vary per call).
     const providerNote = getActiveProvider() !== 'anthropic'
       ? `\n\n**IMPORTANT — No web search available:** The analyst did NOT have access to web search for this document. It was produced using the model's prior knowledge only. Therefore:
 - Do NOT flag missing citations, unsourced claims, or lack of references as issues
@@ -74,7 +150,25 @@ export class CriticAgent {
 
 Review the document provided below according to your persona and output format. Produce Issues, Questions for the PM, Strengths, and Verdict sections.`;
 
-    const dynamic = `## Document Under Review
+    const stageInstructions = buildStageInstructions(stage);
+
+    const revisionContext = (priorIssues && priorIssues.length > 0)
+      ? `## This Is a Revision
+
+The specialist has already revised this document in response to a previous review. The issues raised in that review were:
+
+${priorIssues.map((issue, i) => `${i + 1}. ${issue}`).join('\n')}
+
+**Your job on this revision:**
+- Check whether each prior issue has been adequately addressed. If it has, do NOT re-raise it.
+- Only flag issues that are genuinely unresolved from the prior list, or new CRITICAL/MAJOR problems introduced by the revision itself.
+- Do not invent new MAJOR issues simply because you are looking closely. If the revised document is substantially improved, approve it.
+- Apply the same proportionate calibration as usual — the bar for CRITICAL/MAJOR has not changed.
+
+`
+      : '';
+
+    const dynamic = `${revisionContext}${stageInstructions}## Document Under Review
 
 **Type:** ${artifactType}
 

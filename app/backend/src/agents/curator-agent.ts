@@ -123,6 +123,8 @@ export class ContextCuratorAgent {
       : '(no context files exist yet — do not propose any changes)';
 
     // ── Build prompt ────────────────────────────────────────────────────────
+    // Plain string — curator runs once per workflow so there's no subsequent cache
+    // read to recoup the cache_write surcharge. Split prompt not beneficial here.
     const systemPrompt = this.persona;
 
     const userMessage =

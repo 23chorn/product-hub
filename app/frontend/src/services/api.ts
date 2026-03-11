@@ -52,7 +52,7 @@ class APIClient {
     return response.data;
   }
 
-  async getModels(): Promise<{ provider: string; models: ModelOption[] }> {
+  async getModels(): Promise<{ provider: string; models: ModelOption[]; agentModels: Record<string, string> }> {
     const response = await axios.get(`${this.baseURL}/api/config/models`);
     return response.data;
   }
@@ -341,10 +341,12 @@ class APIClient {
     goal: string,
     enrichedContext?: string,
     stageSequence?: string[],
-    policyOverrides?: Record<string, string>
+    policyOverrides?: Record<string, string>,
+    planningSessionId?: string | null
   ): Promise<{ workflowId: string; stage: string | null; sessionId: string | null; complete: boolean; stages: string[] }> {
     const response = await axios.post(`${this.baseURL}/api/workflow/start`, {
       itemId, goal, enrichedContext, stageSequence, policyOverrides,
+      ...(planningSessionId ? { planningSessionId } : {}),
     });
     return response.data;
   }
