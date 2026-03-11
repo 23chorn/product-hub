@@ -227,10 +227,13 @@ export class AzureDevOpsClient {
   }
 
   /**
-   * Create entire backlog structure from a backlog plan
+   * Create entire backlog structure from a backlog plan.
+   * MVP features go under the main epic.
+   * Phase 2 / Post-launch features are grouped by phase and each phase gets its own epic.
    */
   async createBacklog(structure: BacklogStructure): Promise<{
     epicId: number;
+    extraEpicIds: number[];
     featureIds: number[];
     storyIds: number[];
     taskIds: number[];
@@ -240,35 +243,26 @@ export class AzureDevOpsClient {
     const featureIds: number[] = [];
     const storyIds: number[] = [];
     const taskIds: number[] = [];
+    const extraEpicIds: number[] = [];
 
-    try {
-      // 1. Create Epic
-      const epic = await this.createWorkItem({
-        type: this.workItemTypes.epic as any,
-        title: structure.epic.title,
-        description: structure.epic.description,
-      });
-
-      // 2. Create Features under Epic
-      for (const featureData of structure.features) {
+    /** Create ADO features + stories under a given parent epic ID */
+    const createFeaturesUnderEpic = async (features: BacklogStructure['features'], parentId: number) => {
+      for (const featureData of features) {
         const feature = await this.createWorkItem({
           type: this.workItemTypes.feature as any,
           title: featureData.title,
           description: featureData.description,
-          parentId: epic.id,
+          parentId,
         });
         featureIds.push(feature.id!);
 
-        // 3. Create Stories under Feature
         for (const storyData of featureData.stories) {
-          // Description: persona/goal/benefit as HTML user story
           const storyDescription = [
             `<b>As a</b> ${escapeHtml(storyData.persona)}`,
             `<b>I want</b> ${escapeHtml(storyData.goal)}`,
             `<b>So that</b> ${escapeHtml(storyData.benefit)}`,
           ].join('<br>');
 
-          // Acceptance Criteria: formatted with Given/When/Then on separate lines, keywords bolded
           let acceptanceCriteriaHtml: string | undefined;
           if (storyData.acceptanceCriteria && storyData.acceptanceCriteria.length > 0) {
             acceptanceCriteriaHtml = storyData.acceptanceCriteria
@@ -288,20 +282,52 @@ export class AzureDevOpsClient {
             parentId: feature.id,
           });
           storyIds.push(story.id!);
+        }
+      }
+    };
 
+    try {
+      // Split features by phase
+      const mvpFeatures = structure.features.filter(f => f.phase?.toLowerCase() === 'mvp');
+      const laterPhases = new Map<string, typeof structure.features>();
+      for (const f of structure.features) {
+        if (f.phase?.toLowerCase() !== 'mvp') {
+          const key = f.phase || 'Phase 2';
+          if (!laterPhases.has(key)) laterPhases.set(key, []);
+          laterPhases.get(key)!.push(f);
+        }
+      }
+
+      // If there are no MVP features, skip the phase split — everything goes under one epic
+      const splitByPhase = mvpFeatures.length > 0 && laterPhases.size > 0;
+
+      // 1. Main epic — MVP features only (or all features if not splitting)
+      const epic = await this.createWorkItem({
+        type: this.workItemTypes.epic as any,
+        title: structure.epic.title,
+        description: structure.epic.description,
+      });
+      await createFeaturesUnderEpic(splitByPhase ? mvpFeatures : structure.features, epic.id!);
+
+      // 2. One extra epic per non-MVP phase (only when there's also an MVP epic)
+      if (splitByPhase) {
+        for (const [phase, features] of laterPhases) {
+          const phaseEpic = await this.createWorkItem({
+            type: this.workItemTypes.epic as any,
+            title: `[${phase}] ${structure.epic.title}`,
+            description: `${phase} scope for: ${structure.epic.description}`,
+          });
+          extraEpicIds.push(phaseEpic.id!);
+          await createFeaturesUnderEpic(features, phaseEpic.id!);
+          logger.info(`Created ${phase} epic #${phaseEpic.id} with ${features.length} feature(s)`);
         }
       }
 
       logger.info(
-        `Created backlog: Epic #${epic.id}, ${featureIds.length} features, ${storyIds.length} stories, ${taskIds.length} tasks`
+        `Created backlog: Epic #${epic.id}${extraEpicIds.length ? ` + ${extraEpicIds.length} phase epic(s)` : ''}, ${featureIds.length} features, ${storyIds.length} stories`
       );
 
-      return {
-        epicId: epic.id!,
-        featureIds,
-        storyIds,
-        taskIds,
-      };
+      return { epicId: epic.id!, extraEpicIds, featureIds, storyIds, taskIds };
     } catch (error: any) {
       logger.error('Failed to create backlog structure', error);
       throw error;

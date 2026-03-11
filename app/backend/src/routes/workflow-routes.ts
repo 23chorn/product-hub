@@ -653,11 +653,16 @@ workflowRoutes.post('/:id/push-to-board', async (req: Request, res: Response) =>
       const client = new AzureDevOpsClient();
       const result = await client.createBacklog(backlog);
       const epicUrl = client.getEpicUrl(result.epicId);
+      const extraEpicUrls = (result.extraEpicIds ?? []).map((id: number) => ({
+        id,
+        url: client.getEpicUrl(id),
+      }));
 
-      logger.info(`Pushed backlog to ADO: Epic #${result.epicId}, ${result.featureIds.length} features, ${result.storyIds.length} stories`);
+      logger.info(`Pushed backlog to ADO: Epic #${result.epicId}${result.extraEpicIds?.length ? ` + ${result.extraEpicIds.length} phase epic(s)` : ''}, ${result.featureIds.length} features, ${result.storyIds.length} stories`);
       return res.json({
         epicId: result.epicId,
         epicUrl,
+        extraEpics: extraEpicUrls,
         featureCount: result.featureIds.length,
         storyCount: result.storyIds.length,
       });

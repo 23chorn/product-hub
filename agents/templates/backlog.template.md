@@ -6,7 +6,8 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
     "title": "Short epic name",
     "description": "One sentence: what capability this epic delivers",
     "businessValue": "Why this matters to the business",
-    "prdLink": "Initiative name or URL"
+    "prdLink": "Initiative name or URL",
+    "definitionOfDone": "Provided by the agent context"
   },
   "features": [
     {
@@ -23,7 +24,16 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
             "Given [context] When [action] Then [result]",
             "Given [context] When [action] Then [result]"
           ],
-          "agentContext": "FR numbers this covers, user journey served, technical constraints, definition of done",
+          "prdRef": {
+            "functionalRequirements": ["FR-01", "FR-03"],
+            "userJourney": "Onboarding · Step 3 — First login"
+          },
+          "technical": {
+            "constraints": ["string"],
+            "affectedComponents": ["string"],
+            "dataChanges": "string | null",
+            "apiChanges": "string | null"
+          },
           "effort": 3
         }
       ]
