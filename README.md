@@ -227,7 +227,3 @@ Schema in `db/schema.sql`, mirrored in `app/backend/src/data/database.ts`. Twelv
 | `policies` | Governance rules injected into Coordinator prompt |
 | `staged_decisions` | Candidate ADR entries |
 | `context_loads` | Context audit trail (schema only) |
-
-## License
-
-Internal use only — xCube
