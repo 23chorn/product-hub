@@ -356,10 +356,9 @@ Your responses have a token ceiling. A document that is cut off is always worse 
   // --- Private helpers ---
 
   /**
-   * Load user-identity fields from _bmad/bmm/config.yaml.
+   * Load user-identity fields from agents/config.yaml.
    * Only reads non-path keys (user_name, communication_language, etc.).
-   * Path variables like {planning_artifacts} are intentionally left unresolved
-   * because this app manages artifact output via DB + data/sessions/ — not _bmad-output/.
+   * If config.yaml is missing, copy config.example.yaml and customise it.
    */
   private async loadUserConfig(): Promise<Record<string, string>> {
     if (this.userConfig) return this.userConfig;
@@ -378,7 +377,7 @@ Your responses have a token ceiling. A document that is cut off is always worse 
       }
       logger.info('Loaded user config from agents/config.yaml');
     } catch {
-      logger.warn('Could not load agents/config.yaml — using defaults');
+      logger.warn('Could not load agents/config.yaml — using defaults. Copy config.example.yaml to config.yaml to customise.');
     }
 
     this.userConfig = result;
