@@ -21,7 +21,7 @@ const PERSONA_PATH = path.join(PROJECT_ROOT, 'agents', 'personas', 'coordinator.
  */
 const STAGE_OUTPUT_FORMATS: Record<string, { label: string; format: string }> = {
   analyst: {
-    label: 'Research Brief',
+    label: 'Research Brief (Sage)',
     format: `Produce a comprehensive market research document in markdown following the research output template injected into your system prompt. Use web search to find and verify facts before writing each section.
 
 **CITATION FORMAT — MANDATORY:**
@@ -36,7 +36,7 @@ Depth guide: each section should be as long as the evidence warrants. Do not pad
   },
 
   pm_prd: {
-    label: 'Product Requirements Document',
+    label: 'Product Requirements Document (Rex)',
     format: `Produce a PRD in markdown with these required sections:
 
 ## Problem Statement
@@ -54,11 +54,14 @@ The 2–3 most important user journeys as step-by-step narratives.
 ## Functional Requirements
 FR-numbered list (FR1, FR2, …) of capabilities the feature must have. Each FR states WHAT the system does, not HOW. Aim for 10–20 FRs.
 
+## Open Questions & Risks
+Up to 10 unresolved questions or identified risks ranked by impact. Each entry has: Type (Question/Risk), description, Impact (High/Med/Low), Owner, Status (Open). If more than 10 exist, include the top 10 and note the rest belong in a separate risk sheet.
+
 Do not include non-functional requirements, domain compliance, innovation patterns, or appendices in the default output — those go in a separate extended document only if requested.`,
   },
 
   solution_architect: {
-    label: 'Architecture Document',
+    label: 'Architecture Document (Atlas)',
     format: `Produce a solution architecture document in markdown following the architecture output template injected into your system prompt. The template defines the exact section structure — fill every section with specific, implementation-ready content. Key requirements:
 
 - **Key Technology Decisions**: Name specific products, versions, and pricing tiers. State alternatives and tradeoffs in the table.
@@ -72,7 +75,7 @@ If a context/tech-stack.md file was provided, align all choices with the existin
   },
 
   pm_backlog: {
-    label: 'Backlog JSON',
+    label: 'Backlog JSON (Pip)',
     format: `Produce a single valid JSON object wrapped in a \`\`\`json code block with this exact structure:
 
 {
@@ -105,7 +108,7 @@ Constraints: max 6 features per epic, max 8 stories per feature. Each story must
   },
 
   critic: {
-    label: 'Critic Review',
+    label: 'Critic Review — Flint',
     format: `Produce a structured review in markdown with these sections:
 
 ## Overall Assessment
@@ -123,7 +126,7 @@ Concrete, specific changes required before this artifact should be approved. Be 
   },
 
   curator: {
-    label: 'Context Diff',
+    label: 'Context Diff (Ivy)',
     format: `Produce one or more unified diffs for files in the context/ directory.
 Format each diff block as:
 
@@ -415,12 +418,12 @@ Nothing may follow the JSON line. By your 3rd message you must include COORDINAT
       `You are planning a new product workflow. Analyse the goal below and decide which stages are needed.\n\n` +
       `**Goal:** ${goal}\n\n` +
       `Available stages (in typical order):\n` +
-      `- analyst              — research, problem space analysis\n` +
-      `- pm_prd               — Product Requirements Document\n` +
-      `- solution_architect   — system architecture, tech decisions, data model, API design\n` +
-      `- pm_backlog           — backlog of epics/stories\n` +
-      `- critic               — adversarial review of the above artifacts\n` +
-      `- curator              — update project context files with learnings\n\n` +
+      `- analyst              — Sage, research & problem space analysis\n` +
+      `- pm_prd               — Rex, Product Requirements Document\n` +
+      `- solution_architect   — Atlas, system architecture, tech decisions, data model, API design\n` +
+      `- pm_backlog           — Pip, backlog of epics/stories\n` +
+      `- critic               — Flint, adversarial review of the above artifacts\n` +
+      `- curator              — Ivy, update project context files with learnings\n\n` +
       `Explain your reasoning briefly, then output the chosen stage sequence as a JSON array in a \`\`\`stages code block.\n\n` +
       `Example:\n\`\`\`stages\n["analyst", "pm_prd", "pm_backlog"]\n\`\`\``;
 

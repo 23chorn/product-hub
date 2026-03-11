@@ -26,6 +26,11 @@ const CANONICAL_TEMPLATES: CanonicalTemplate[] = [
     description: 'Output format for the PM PRD stage — problem statement, personas, journeys, requirements',
   },
   {
+    fileName: 'architecture.template.md',
+    label: 'Solution Architecture',
+    description: 'Output format for the Architect stage — tech decisions, data model, API surface, infrastructure',
+  },
+  {
     fileName: 'backlog.template.md',
     label: 'Backlog (Epics & Stories)',
     description: 'Output format for the PM Backlog stage — JSON structure for epics, features, and user stories',

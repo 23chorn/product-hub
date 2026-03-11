@@ -5,24 +5,25 @@ import remarkBreaks from 'remark-breaks';
 import { useWorkflowStore, type WorkflowEvent, type CoordinatorMessage } from '../stores/workflowStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { ContextDiffPanel } from './ContextDiffPanel';
+import { CriticQuestionForm } from './CriticQuestionForm';
 import { api } from '../services/api';
 
 const STAGE_LABELS: Record<string, string> = {
-  analyst:            'Analyst (Sage)',
-  pm_prd:             'PM Strategy (Rex)',
-  solution_architect: 'Architect (Atlas)',
-  pm_backlog:         'Backlog Agent (Pip)',
-  critic:             'Critic',
-  curator:            'Context Curator',
+  analyst:            'Analyst — Sage',
+  pm_prd:             'Product Requirements — Rex',
+  solution_architect: 'Architect — Atlas',
+  pm_backlog:         'Backlog — Pip',
+  critic:             'Critic — Flint',
+  curator:            'Curator — Ivy',
 };
 
 // Stages available for user toggle at workflow start (order matters)
 const TOGGLEABLE_STAGES: Array<{ key: string; label: string; short: string }> = [
-  { key: 'analyst',            label: 'Research',     short: 'Research' },
-  { key: 'pm_prd',             label: 'PRD',          short: 'PRD' },
-  { key: 'solution_architect', label: 'Architecture', short: 'Arch' },
-  { key: 'pm_backlog',         label: 'Backlog',      short: 'Backlog' },
-  { key: 'curator',            label: 'Context Update', short: 'Context' },
+  { key: 'analyst',            label: 'Analyst — Sage',     short: 'Sage' },
+  { key: 'pm_prd',             label: 'Requirements — Rex', short: 'Rex' },
+  { key: 'solution_architect', label: 'Architect — Atlas',  short: 'Atlas' },
+  { key: 'pm_backlog',         label: 'Backlog — Pip',      short: 'Pip' },
+  { key: 'curator',            label: 'Curator — Ivy',      short: 'Ivy' },
 ];
 
 // Strip the COORDINATOR_READY marker from displayed coordinator text
@@ -42,14 +43,38 @@ function extractEnrichedContext(text: string): string | null {
   }
 }
 
+// Parse critic data from checkpoint coordinator_action JSON
+function parseCriticData(checkpoint: any): { questions: string[]; issues: Array<{ severity: string; description: string }>; verdict: string } | null {
+  try {
+    const parsed = checkpoint?.coordinator_action
+      ? JSON.parse(checkpoint.coordinator_action)?.critic
+      : null;
+    return parsed ?? null;
+  } catch { return null; }
+}
+
+// Build a 1-line critic summary for display in the chat
+function criticSummaryLine(criticData: ReturnType<typeof parseCriticData>): string | null {
+  if (!criticData) return null;
+  const { verdict, issues = [], questions = [] } = criticData;
+  const majorCount = issues.filter((i: any) => i.severity === 'critical' || i.severity === 'major').length;
+  const questionCount = questions.length;
+  if (verdict === 'approve') {
+    const minorCount = issues.filter((i: any) => i.severity === 'minor').length;
+    return minorCount > 0 ? `Flint approved with ${minorCount} minor note${minorCount !== 1 ? 's' : ''}` : 'Flint approved — no issues found';
+  }
+  const parts: string[] = [];
+  if (majorCount > 0) parts.push(`${majorCount} major issue${majorCount !== 1 ? 's' : ''}`);
+  if (questionCount > 0) parts.push(`${questionCount} question${questionCount !== 1 ? 's' : ''}`);
+  return parts.length > 0 ? `Flint flagged ${parts.join(' and has ')}` : 'Flint flagged issues';
+}
+
 // Inline approve/reject for checkpoints that have no artifact (e.g. stuck stages)
 function InlineCheckpointActions({
-  checkpointId,
-  stage,
+  checkpoint,
   onResolved,
 }: {
-  checkpointId: number;
-  stage: string;
+  checkpoint: { id: number; stage: string; coordinator_action?: string | null };
   onResolved: (result: any) => void;
 }) {
   const [showRevise, setShowRevise] = useState(false);
@@ -57,11 +82,14 @@ function InlineCheckpointActions({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const criticData = parseCriticData(checkpoint);
+  const hasQuestions = (criticData?.questions?.length ?? 0) > 0;
+
   async function resolve(status: 'approved' | 'rejected' | 'revised', fb?: string) {
     setLoading(true);
     setError(null);
     try {
-      const result = await api.resolveCheckpoint(checkpointId, status, fb);
+      const result = await api.resolveCheckpoint(checkpoint.id, status, fb);
       onResolved({ ...result, status });
     } catch (err: any) {
       setError(err.response?.data?.error ?? err.message ?? 'Failed');
@@ -74,31 +102,40 @@ function InlineCheckpointActions({
     <div className="pt-2 space-y-2">
       {error && <p className="text-xs text-red-500">{error}</p>}
       {showRevise ? (
-        <div className="space-y-2">
-          <textarea
-            value={feedback}
-            onChange={(e) => setFeedback(e.target.value)}
-            placeholder="What needs to change?"
-            rows={2}
-            className="w-full text-sm resize-none rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+        hasQuestions ? (
+          <CriticQuestionForm
+            questions={criticData!.questions}
+            onSubmit={(fb) => resolve('revised', fb)}
+            onCancel={() => { setShowRevise(false); setFeedback(''); }}
+            loading={loading}
           />
-          <div className="flex gap-2">
-            <button
-              onClick={() => resolve('revised', feedback)}
-              disabled={!feedback.trim() || loading}
-              className="px-2.5 py-1 text-xs bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white rounded-md transition-colors"
-            >
-              {loading ? 'Sending...' : 'Send Revision'}
-            </button>
-            <button onClick={() => { setShowRevise(false); setFeedback(''); }} className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
-              Cancel
-            </button>
+        ) : (
+          <div className="space-y-2">
+            <textarea
+              value={feedback}
+              onChange={(e) => setFeedback(e.target.value)}
+              placeholder="What needs to change?"
+              rows={2}
+              className="w-full text-sm resize-none rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => resolve('revised', feedback)}
+                disabled={!feedback.trim() || loading}
+                className="px-2.5 py-1 text-xs bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white rounded-md transition-colors"
+              >
+                {loading ? 'Sending...' : 'Send Revision'}
+              </button>
+              <button onClick={() => { setShowRevise(false); setFeedback(''); }} className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                Cancel
+              </button>
+            </div>
           </div>
-        </div>
+        )
       ) : (
         <div className="flex items-center gap-2">
           <span className="text-xs text-gray-400 dark:text-gray-500 mr-1">
-            {STAGE_LABELS[stage] ?? stage}:
+            {STAGE_LABELS[checkpoint.stage] ?? checkpoint.stage}:
           </span>
           <button
             onClick={() => resolve('approved')}
@@ -687,26 +724,33 @@ export function CoordinatorChat() {
         {isAtCheckpoint && (() => {
           const pending = checkpoints.find(c => c.status === 'pending');
           if (!pending) return null;
+          const pendingCriticData = parseCriticData(pending);
+          const summary = criticSummaryLine(pendingCriticData);
+
           if (pending.artifact_id) {
             return (
-              <div className="flex items-center gap-2 pt-2">
-                <button
-                  onClick={() => setViewingArtifactId(pending.artifact_id!)}
-                  className="text-xs px-2.5 py-1 rounded-md border border-blue-300 dark:border-blue-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-                >
-                  Review output
-                </button>
-                <span className="text-xs text-gray-400 dark:text-gray-500">
-                  Approve, revise, or reject from the artifact viewer
-                </span>
+              <div className="pt-2 space-y-1">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setViewingArtifactId(pending.artifact_id!)}
+                    className="text-xs px-2.5 py-1 rounded-md border border-blue-300 dark:border-blue-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                  >
+                    Review output
+                  </button>
+                  <span className="text-xs text-gray-400 dark:text-gray-500">
+                    Approve, revise, or reject from the artifact viewer
+                  </span>
+                </div>
+                {summary && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 italic pl-0.5">{summary}</p>
+                )}
               </div>
             );
           }
           // No artifact — show inline approve/reject buttons
           return (
             <InlineCheckpointActions
-              checkpointId={pending.id}
-              stage={pending.stage}
+              checkpoint={pending}
               onResolved={(result) => {
                 applyWorkflowStatus(result.workflow);
                 addCoordinatorMessage({

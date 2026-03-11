@@ -771,6 +771,8 @@ async function runAutonomousStage(
         inline_review: true,
         reviewed_stage: stage,
         critic_artifact_id: criticArtifactId,
+        questions: review.questions,
+        issues: review.issues.slice(0, 10),
       };
 
       if (review.verdict === 'approve') {
@@ -1143,12 +1145,12 @@ export async function reiterateFromStage(
 }
 
 const STAGE_LABELS_INTERNAL: Record<string, string> = {
-  analyst:            'Research',
-  pm_prd:             'PRD',
-  solution_architect: 'Architecture',
-  pm_backlog:         'Backlog',
-  critic:             'Critic',
-  curator:            'Curator',
+  analyst:            'Analyst — Sage',
+  pm_prd:             'Requirements — Rex',
+  solution_architect: 'Architect — Atlas',
+  pm_backlog:         'Backlog — Pip',
+  critic:             'Critic — Flint',
+  curator:            'Curator — Ivy',
 };
 
 /**

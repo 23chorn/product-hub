@@ -3,14 +3,15 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useWorkflowStore } from '../stores/workflowStore';
 import { api } from '../services/api';
+import { CriticQuestionForm, CriticIssuesPanel } from './CriticQuestionForm';
 
 const STAGE_LABELS: Record<string, string> = {
-  analyst:            'Analyst Research',
-  pm_prd:             'Product Requirements Document',
-  solution_architect: 'Solution Architecture',
-  pm_backlog:         'Backlog',
-  critic:             'Critic Review',
-  curator:            'Context Curation',
+  analyst:            'Analyst — Sage',
+  pm_prd:             'Product Requirements — Rex',
+  solution_architect: 'Architect — Atlas',
+  pm_backlog:         'Backlog — Pip',
+  critic:             'Critic — Flint',
+  curator:            'Curator — Ivy',
 };
 
 // ── Backlog JSON types ──────────────────────────────────────────────────────
@@ -199,6 +200,7 @@ export function ArtifactViewer() {
   const [feedback, setFeedback] = useState('');
   const [showReviseForm, setShowReviseForm] = useState(false);
   const [showRejectConfirm, setShowRejectConfirm] = useState(false);
+  const [showIssuesPanel, setShowIssuesPanel] = useState(false);
   const [resolveLoading, setResolveLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -260,6 +262,17 @@ export function ArtifactViewer() {
     }
   }
 
+  // Parse critic data once for layout decisions
+  const criticData = (() => {
+    try {
+      return pendingCheckpoint?.coordinator_action
+        ? JSON.parse(pendingCheckpoint.coordinator_action)?.critic ?? null
+        : null;
+    } catch { return null; }
+  })();
+  const showSidePanel = showReviseForm && criticData?.questions?.length > 0;
+  const hasIssues = (criticData?.issues?.length ?? 0) > 0;
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       {/* Backdrop */}
@@ -268,130 +281,197 @@ export function ArtifactViewer() {
         onClick={() => setViewingArtifactId(null)}
       />
 
-      {/* Drawer */}
-      <div className="relative w-full max-w-2xl bg-white dark:bg-gray-800 shadow-xl flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between flex-shrink-0">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-              {STAGE_LABELS[artifactType] ?? (artifactType || 'Artifact')}
-            </h2>
-            {pendingCheckpoint && (
-              <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
-                Awaiting your review
-              </p>
-            )}
-          </div>
-          <button
-            onClick={() => setViewingArtifactId(null)}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto px-4 py-4">
-          {loading ? (
-            <p className="text-sm text-gray-400 animate-pulse">Loading...</p>
-          ) : content ? (() => {
-            // Try to render backlog as structured view
-            if (artifactType === 'backlog') {
-              const backlogData = tryParseBacklog(content);
-              if (backlogData) return <BacklogView data={backlogData} />;
-            }
-            // Default: markdown
-            return (
-              <div className="prose prose-sm dark:prose-invert max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      {/* Side-by-side container — expands as panels are opened */}
+      <div className={`relative flex h-full overflow-hidden transition-all duration-200 ${
+        showSidePanel && showIssuesPanel ? 'w-full max-w-[90rem]'
+          : showSidePanel ? 'w-full max-w-[72rem]'
+          : 'w-full max-w-2xl'
+      }`}>
+        {/* Issues panel — far left, toggled from review header */}
+        {showSidePanel && showIssuesPanel && hasIssues && (
+          <div className="w-[340px] flex-shrink-0 bg-white dark:bg-gray-800 shadow-xl flex flex-col border-r border-gray-200 dark:border-gray-700">
+            <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex-shrink-0 flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  Issues Flagged
+                </h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  {criticData.issues.length} issue{criticData.issues.length !== 1 ? 's' : ''}
+                </p>
               </div>
-            );
-          })() : error ? (
-            <p className="text-sm text-red-500">{error}</p>
-          ) : (
-            <p className="text-sm text-gray-400 italic">No content available.</p>
-          )}
-        </div>
-
-        {/* Action buttons (only for pending checkpoints) */}
-        {pendingCheckpoint && (
-          <div className="px-4 pb-4 pt-3 border-t border-gray-200 dark:border-gray-700 flex-shrink-0 space-y-2">
-            {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
-
-            {showReviseForm ? (
-              <div className="space-y-2">
-                <textarea
-                  value={feedback}
-                  onChange={(e) => setFeedback(e.target.value)}
-                  placeholder="What needs to change? Be specific."
-                  rows={3}
-                  className="w-full text-sm resize-none rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                />
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => resolve('revised', feedback)}
-                    disabled={!feedback.trim() || resolveLoading}
-                    className="flex-1 py-2 px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors"
-                  >
-                    {resolveLoading ? 'Sending...' : 'Send Revision'}
-                  </button>
-                  <button
-                    onClick={() => { setShowReviseForm(false); setFeedback(''); }}
-                    disabled={resolveLoading}
-                    className="py-2 px-3 text-sm text-gray-500 hover:text-gray-700 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : showRejectConfirm ? (
-              <div className="space-y-2">
-                <p className="text-xs text-red-600">Rejecting will end the workflow. Are you sure?</p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => resolve('rejected')}
-                    disabled={resolveLoading}
-                    className="flex-1 py-2 px-3 bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg transition-colors"
-                  >
-                    {resolveLoading ? 'Rejecting...' : 'Yes, Reject'}
-                  </button>
-                  <button
-                    onClick={() => setShowRejectConfirm(false)}
-                    className="py-2 px-3 text-sm text-gray-500 hover:text-gray-700 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex gap-2">
-                <button
-                  onClick={() => resolve('approved')}
-                  disabled={resolveLoading}
-                  className="flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg transition-colors"
-                >
-                  Approve
-                </button>
-                <button
-                  onClick={() => setShowReviseForm(true)}
-                  disabled={resolveLoading}
-                  className="flex-1 py-2 px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg transition-colors"
-                >
-                  Revise
-                </button>
-                <button
-                  onClick={() => setShowRejectConfirm(true)}
-                  disabled={resolveLoading}
-                  className="flex-1 py-2 px-3 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 text-red-700 dark:text-red-400 text-sm font-medium rounded-lg transition-colors"
-                >
-                  Reject
-                </button>
-              </div>
-            )}
+              <button
+                onClick={() => setShowIssuesPanel(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
+              <CriticIssuesPanel issues={criticData.issues} />
+            </div>
           </div>
         )}
+
+        {/* Review panel — questions, left of artifact */}
+        {showSidePanel && (
+          <div className="w-[520px] flex-shrink-0 bg-gray-50 dark:bg-gray-900 shadow-xl flex flex-col border-r border-gray-200 dark:border-gray-700">
+            <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex-shrink-0 flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  Flint's Review
+                </h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  {criticData.questions.length} question{criticData.questions.length !== 1 ? 's' : ''} to answer
+                </p>
+              </div>
+              {hasIssues && !showIssuesPanel && (
+                <button
+                  onClick={() => setShowIssuesPanel(true)}
+                  className="text-xs px-2.5 py-1 rounded-md border border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"
+                >
+                  View {criticData.issues.length} issue{criticData.issues.length !== 1 ? 's' : ''}
+                </button>
+              )}
+            </div>
+            <div className="flex-1 min-h-0 px-4 py-3 flex flex-col">
+              <CriticQuestionForm
+                questions={criticData.questions}
+                onSubmit={(fb) => resolve('revised', fb)}
+                onCancel={() => { setShowReviseForm(false); setShowIssuesPanel(false); setFeedback(''); }}
+                loading={resolveLoading}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Artifact drawer — right side (or only panel) */}
+        <div className="flex-1 bg-white dark:bg-gray-800 shadow-xl flex flex-col overflow-hidden">
+          {/* Header */}
+          <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between flex-shrink-0">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                {STAGE_LABELS[artifactType] ?? (artifactType || 'Artifact')}
+              </h2>
+              {pendingCheckpoint && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                  Awaiting your review
+                </p>
+              )}
+            </div>
+            <button
+              onClick={() => setViewingArtifactId(null)}
+              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto px-4 py-4">
+            {loading ? (
+              <p className="text-sm text-gray-400 animate-pulse">Loading...</p>
+            ) : content ? (() => {
+              // Try to render backlog as structured view
+              if (artifactType === 'backlog') {
+                const backlogData = tryParseBacklog(content);
+                if (backlogData) return <BacklogView data={backlogData} />;
+              }
+              // Default: markdown
+              return (
+                <div className="prose prose-sm dark:prose-invert max-w-none">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+                </div>
+              );
+            })() : error ? (
+              <p className="text-sm text-red-500">{error}</p>
+            ) : (
+              <p className="text-sm text-gray-400 italic">No content available.</p>
+            )}
+          </div>
+
+          {/* Action buttons (only for pending checkpoints) */}
+          {pendingCheckpoint && (
+            <div className="px-4 pb-4 pt-3 border-t border-gray-200 dark:border-gray-700 flex-shrink-0 space-y-2">
+              {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+
+              {showReviseForm && !showSidePanel ? (
+                /* Plain textarea fallback for checkpoints without critic questions */
+                <div className="space-y-2">
+                  <textarea
+                    value={feedback}
+                    onChange={(e) => setFeedback(e.target.value)}
+                    placeholder="What needs to change? Be specific."
+                    rows={3}
+                    className="w-full text-sm resize-none rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => resolve('revised', feedback)}
+                      disabled={!feedback.trim() || resolveLoading}
+                      className="flex-1 py-2 px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors"
+                    >
+                      {resolveLoading ? 'Sending...' : 'Send Revision'}
+                    </button>
+                    <button
+                      onClick={() => { setShowReviseForm(false); setFeedback(''); }}
+                      disabled={resolveLoading}
+                      className="py-2 px-3 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : showRejectConfirm ? (
+                <div className="space-y-2">
+                  <p className="text-xs text-red-600">Rejecting will end the workflow. Are you sure?</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => resolve('rejected')}
+                      disabled={resolveLoading}
+                      className="flex-1 py-2 px-3 bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg transition-colors"
+                    >
+                      {resolveLoading ? 'Rejecting...' : 'Yes, Reject'}
+                    </button>
+                    <button
+                      onClick={() => setShowRejectConfirm(false)}
+                      className="py-2 px-3 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : !showSidePanel ? (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => resolve('approved')}
+                    disabled={resolveLoading}
+                    className="flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg transition-colors"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    onClick={() => setShowReviseForm(true)}
+                    disabled={resolveLoading}
+                    className="flex-1 py-2 px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg transition-colors"
+                  >
+                    Revise
+                  </button>
+                  <button
+                    onClick={() => setShowRejectConfirm(true)}
+                    disabled={resolveLoading}
+                    className="flex-1 py-2 px-3 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 text-red-700 dark:text-red-400 text-sm font-medium rounded-lg transition-colors"
+                  >
+                    Reject
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

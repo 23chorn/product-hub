@@ -3,12 +3,12 @@ import { useWorkflowStore, type StageStatus } from '../stores/workflowStore';
 import { api } from '../services/api';
 
 const STAGE_LABELS: Record<string, string> = {
-  analyst:            'Analyst',
-  pm_prd:             'PM — PRD',
-  solution_architect: 'Architect',
-  pm_backlog:         'PM — Backlog',
-  critic:             'Critic',
-  curator:            'Curator',
+  analyst:            'Analyst — Sage',
+  pm_prd:             'Requirements — Rex',
+  solution_architect: 'Architect — Atlas',
+  pm_backlog:         'Backlog — Pip',
+  critic:             'Critic — Flint',
+  curator:            'Curator — Ivy',
 };
 
 function stageIcon(status: StageStatus) {
@@ -159,7 +159,7 @@ export function WorkflowStageTracker() {
                         {checkpoint.coordinator_action && (() => {
                           try {
                             const action = JSON.parse(checkpoint.coordinator_action);
-                            if (action.critic_verdict) return ` — Critic: ${action.critic_verdict}`;
+                            if (action.critic_verdict) return ` — Flint: ${action.critic_verdict}`;
                           } catch { /* ignore */ }
                           return '';
                         })()}

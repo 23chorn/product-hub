@@ -61,3 +61,20 @@
 
 - [What this version deliberately does not include]
 - [Deferred items for a future phase]
+
+---
+
+## Open Questions & Risks
+
+List up to 10 unresolved questions or identified risks. These are items that could not be fully answered during the PRD process and must be tracked. Rank by impact (highest first).
+
+| # | Type | Question / Risk | Impact | Owner | Status |
+|---|------|-----------------|--------|-------|--------|
+| 1 | Question | [Unanswered question that affects scope or implementation] | High/Med/Low | [Who should answer] | Open |
+| 2 | Risk | [Identified risk or assumption that has not been validated] | High/Med/Low | [Who owns mitigation] | Open |
+
+**Guidance:**
+- **Question** — something unknown that needs an answer before or during implementation (e.g. "What is the expected data volume for the first year?")
+- **Risk** — a known uncertainty that could derail the plan (e.g. "Third-party API rate limits may not support peak load")
+- Items marked **Open** here will be carried forward into a separate Risk & Open Questions document for tracking
+- If more than 10 items exist, include the top 10 here and note that the full list is in the risk sheet
