@@ -11,8 +11,8 @@ You talk to one agent: the **Coordinator** (Chief of Staff). It gathers requirem
 - **PM Strategy (Rex)** — PRD with user personas, journeys, and requirements
 - **Architect (Atlas)** — solution architecture aligned to your tech stack
 - **Backlog Agent (Pip)** — epics, features, and stories with acceptance criteria
-- **Critic** — adversarial quality review after each specialist stage
-- **Context Curator** — proposes updates to project knowledge files based on workflow outputs
+- **Critic (Flint)** — adversarial quality review after each specialist stage
+- **Context Curator (Ivy)** — proposes updates to project knowledge files based on workflow outputs
 
 ## Architecture
 
@@ -148,9 +148,9 @@ AIRTABLE_BASE_ID=app...
 
 # Work items (Azure DevOps or Jira)
 WORK_ITEMS_INTEGRATION=ado|jira|none
-ADO_ORG_URL=...
-ADO_PROJECT=...
-ADO_PAT=...
+AZURE_DEVOPS_ORG=...
+AZURE_DEVOPS_PROJECT=...
+AZURE_DEVOPS_PAT=...
 
 # Knowledge base (Notion)
 KNOWLEDGE_BASE_INTEGRATION=notion|none
