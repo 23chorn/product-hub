@@ -9,6 +9,8 @@
     "app/shared"
   ],
   "scripts": {
+    "postinstall": "npm run build --workspace=app/shared",
+    "predev": "npm run build --workspace=app/shared",
     "dev:backend": "cd app/backend && npm run dev",
     "dev:frontend": "cd app/frontend && npm run dev",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",

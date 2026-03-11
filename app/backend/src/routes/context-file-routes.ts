@@ -34,25 +34,25 @@ const CANONICAL_FILES: CanonicalFile[] = [
     fileName: 'tech-stack.md',
     label: 'Tech Stack',
     description: 'Frontend, backend, infrastructure, key integrations',
-    hasTemplate: false,
+    hasTemplate: true,
   },
   {
     fileName: 'db-schema.md',
     label: 'Database Schema',
     description: 'Tables, columns, key relationships',
-    hasTemplate: false,
+    hasTemplate: true,
   },
   {
     fileName: 'process.md',
     label: 'Development Process',
     description: 'Sprint cadence, definition of ready/done, release process',
-    hasTemplate: false,
+    hasTemplate: true,
   },
   {
     fileName: 'current-state.md',
     label: 'Current State',
     description: 'What is live, active work, known debt, recent decisions',
-    hasTemplate: false,
+    hasTemplate: true,
   },
 ];
 

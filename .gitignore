@@ -51,13 +51,11 @@ context/*.md
 !context/README.md
 !context/*.example.md
 
-!app/backend/src/data
-
 # Runtime database (schema.sql is tracked, the .db file is not)
 db/product-ops.db
 db/product-ops.db-shm
 db/product-ops.db-wal
 
-
-data/
+# Data exports directory (gitignored), but NOT app/backend/src/data/
+/data/
 

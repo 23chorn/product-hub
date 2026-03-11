@@ -9,7 +9,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { streamAI, resolveModelId, type SystemPrompt, type TokenUsage } from '../utils/ai-provider';
+import { streamAI, resolveModelId, getActiveProvider, type SystemPrompt, type TokenUsage } from '../utils/ai-provider';
 import Logger from '../utils/logger';
 
 const logger = new Logger('CRITIC');
@@ -60,7 +60,15 @@ export class CriticAgent {
     // Split prompt for caching: persona is stable (cached across reviews),
     // artifact is dynamic (changes each call). This saves ~90% of persona
     // input tokens on subsequent reviews.
-    const stable = `${this.persona}
+    const providerNote = getActiveProvider() !== 'anthropic'
+      ? `\n\n**IMPORTANT — No web search available:** The analyst did NOT have access to web search for this document. It was produced using the model's prior knowledge only. Therefore:
+- Do NOT flag missing citations, unsourced claims, or lack of references as issues
+- Do NOT flag "[Unverified]" markers as defects — they are expected and correct behaviour
+- Do NOT flag the absence of a References section as a problem
+- Focus your review on the quality of analysis, reasoning, structure, completeness, and actionability of the content itself`
+      : '';
+
+    const stable = `${this.persona}${providerNote}
 
 ---
 
@@ -97,16 +105,26 @@ ${artifactContent}`;
  */
 function extractSection(text: string, sectionName: string): string {
   // Try markdown headings: ## Issues, ### Issues, #### Issues
+  // Stop at next heading, horizontal rule (---), or end of string.
+  // Using greedy match with explicit boundary alternatives avoids $ end-of-line issues.
   const headingPattern = new RegExp(
-    `^#{2,4}\\s*${sectionName}[^\\n]*\\n([\\s\\S]*?)(?=^#{2,4}\\s|$)`,
+    `^#{2,4}\\s*${sectionName}[^\\n]*\\n([\\s\\S]*?)(?=\\n#{2,4}\\s|\\n---\\s*\\n|\\n---\\s*$)`,
     'im'
   );
   const headingMatch = text.match(headingPattern);
   if (headingMatch?.[1]?.trim()) return headingMatch[1];
 
+  // Fallback: heading is near end of string — grab everything after it
+  const headingFallback = new RegExp(
+    `^#{2,4}\\s*${sectionName}[^\\n]*\\n([\\s\\S]*)$`,
+    'im'
+  );
+  const fallbackMatch = text.match(headingFallback);
+  if (fallbackMatch?.[1]?.trim()) return fallbackMatch[1];
+
   // Try bold headings: **Issues** or **Issues:**
   const boldPattern = new RegExp(
-    `\\*\\*${sectionName}[^*]*\\*\\*:?\\s*\\n([\\s\\S]*?)(?=\\*\\*[A-Z]|^#{2,4}\\s|$)`,
+    `\\*\\*${sectionName}[^*]*\\*\\*:?\\s*\\n([\\s\\S]*?)(?=\\n\\*\\*[A-Z]|\\n#{2,4}\\s|\\n---\\s*\\n|\\n---\\s*$)`,
     'im'
   );
   const boldMatch = text.match(boldPattern);
@@ -129,9 +147,13 @@ function parseReview(text: string): CriticReview {
   const issuesText = extractSection(text, 'Issues');
   const issues: CriticIssue[] = parseBulletList(issuesText)
     .map(clean => {
-      const severityMatch = clean.match(/^\[(critical|major|minor)\]/i);
+      // Handle severity tags with optional backticks and/or bold:
+      // `[MAJOR]`, [MAJOR], **[MAJOR]**, `[MAJOR]` **desc**, etc.
+      const severityMatch = clean.match(/^[`*]*\[(critical|major|minor)\][`*]*\s*/i);
       const severity = (severityMatch?.[1]?.toLowerCase() ?? 'minor') as CriticIssue['severity'];
-      const description = clean.replace(/^\[(critical|major|minor)\]\s*/i, '').trim();
+      const description = severityMatch
+        ? clean.slice(severityMatch[0].length).replace(/^\*\*\s*/, '').replace(/\*\*\s*$/, '').trim()
+        : clean;
       return { severity, description };
     })
     .filter(i => i.description.length > 0 && !/^no (issues|problems) found/i.test(i.description) && !/^none$/i.test(i.description));

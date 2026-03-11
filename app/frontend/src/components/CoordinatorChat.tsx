@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import { useWorkflowStore, type WorkflowEvent, type CoordinatorMessage } from '../stores/workflowStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { ContextDiffPanel } from './ContextDiffPanel';
 import { api } from '../services/api';
 
 const STAGE_LABELS: Record<string, string> = {
@@ -147,6 +148,7 @@ export function CoordinatorChat() {
   const [enabledStages, setEnabledStages] = useState<Record<string, boolean>>(
     () => Object.fromEntries(TOGGLEABLE_STAGES.map(s => [s.key, true]))
   );
+  const [showDiffPanel, setShowDiffPanel] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const replyRef = useRef<HTMLTextAreaElement>(null);
@@ -165,10 +167,23 @@ export function CoordinatorChat() {
   const isGathering = planningPhase === 'gathering';
   const isLaunching = planningPhase === 'launching';
 
-  // Scroll to bottom whenever messages change
+  const { pendingDiffCount, setPendingDiffCount } = useWorkflowStore();
+
+  // When workflow completes, check for pending context diffs from the curator
+  useEffect(() => {
+    if (!isComplete) return;
+    api.getPendingContextDiffs()
+      .then(({ diffs }) => {
+        setPendingDiffCount(diffs.length);
+        if (diffs.length > 0) setShowDiffPanel(true);
+      })
+      .catch(() => {});
+  }, [isComplete]);
+
+  // Scroll to bottom whenever messages or checkpoint state change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [coordinatorMessages]);
+  }, [coordinatorMessages, activeWorkflow?.status, checkpoints]);
 
   // Track which pending checkpoint we've already auto-opened, to avoid re-opening after user closes
   const autoOpenedCheckpointRef = useRef<number | null>(null);
@@ -215,8 +230,8 @@ export function CoordinatorChat() {
       const currentWorkflow = useWorkflowStore.getState().activeWorkflow;
       if (currentWorkflow?.status === 'complete') return;
 
+      // 1. Fetch new events
       try {
-        // 1. Fetch new events
         const { events } = await api.getWorkflowEvents(currentId, lastEventIdRef.current);
 
         if (!cancelled && events.length > 0) {
@@ -244,13 +259,19 @@ export function CoordinatorChat() {
           setLastEventId(maxId);
           lastEventIdRef.current = maxId;
         }
+      } catch (err) {
+        console.warn('[POLL] Event fetch failed:', err);
+      }
 
-        // 2. Always refresh workflow status
+      // 2. Always refresh workflow status (independent of events — don't let event errors block status updates)
+      try {
         if (cancelled) return;
         const status = await api.getWorkflowStatus(currentId);
         if (cancelled) return;
         applyWorkflowStatus(status);
-      } catch { /* ignore transient errors */ }
+      } catch (err) {
+        console.warn('[POLL] Status fetch failed:', err);
+      }
     };
 
     // Poll immediately, then every 2 seconds for more responsive updates
@@ -698,9 +719,36 @@ export function CoordinatorChat() {
           );
         })()}
 
+        {/* Context Diff Review Panel */}
+        {showDiffPanel && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 dark:bg-black/50">
+            <ContextDiffPanel onClose={() => {
+              setShowDiffPanel(false);
+              // Refresh count after reviewing
+              api.getPendingContextDiffs()
+                .then(({ diffs }) => setPendingDiffCount(diffs.length))
+                .catch(() => {});
+            }} />
+          </div>
+        )}
+
         {/* Completion: reiteration options */}
         {isComplete && (
           <div className="pt-4 space-y-3">
+            {/* Context updates button */}
+            {pendingDiffCount > 0 && (
+              <div className="flex justify-center">
+                <button
+                  onClick={() => setShowDiffPanel(true)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
+                >
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-500 text-white text-xs font-bold">
+                    {pendingDiffCount}
+                  </span>
+                  Review Context Updates
+                </button>
+              </div>
+            )}
             {!reiterateStage && (
               <>
                 <p className="text-xs text-gray-500 dark:text-gray-400 text-center">

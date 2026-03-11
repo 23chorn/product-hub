@@ -745,7 +745,7 @@ async function runAutonomousStage(
 
     // ── Inline critic review for specialist stages ────────────────────────────
     // After each specialist produces an artifact, the critic reviews it.
-    // If issues are found, auto-revise up to 2 times. If still unresolved,
+    // If issues are found, auto-revise once. If still unresolved,
     // pause and ask the human for input.
     const specialistStages = new Set(['analyst', 'pm_prd', 'solution_architect', 'pm_backlog']);
     const policies = loadGlobalPolicies();
@@ -791,16 +791,21 @@ async function runAutonomousStage(
         return;
       }
 
-      // Critic wants revisions — auto-revise up to MAX_INLINE_REVISIONS times
-      const MAX_INLINE_REVISIONS = 2;
+      // Critic wants revisions — auto-revise once, then ask the human.
+      // Keeps agents from looping on issues a human can resolve quickly.
+      const MAX_INLINE_REVISIONS = 1;
 
       // Check how many times we've already revised this stage in this workflow
       const priorRevisions = stmts.getCheckpointsByWorkflow.all(workflowId)
         .filter(c => c.stage === stage && c.status === 'revised').length;
 
       if (priorRevisions < MAX_INLINE_REVISIONS) {
-        // Auto-revise: rerun the specialist with critic feedback
-        const feedbackText = review.issues.map(i => `[${i.severity.toUpperCase()}] ${i.description}`).join('\n');
+        // Auto-revise: rerun the specialist with critic feedback (issues + questions)
+        const issueFeedback = review.issues.map(i => `[${i.severity.toUpperCase()}] ${i.description}`).join('\n');
+        const questionFeedback = review.questions.length > 0
+          ? '\n\nQuestions to address:\n' + review.questions.map(q => `- ${q}`).join('\n')
+          : '';
+        const feedbackText = issueFeedback + questionFeedback;
         const now = Date.now();
         stmts.insertCheckpoint.run(
           workflowId, stage, artifactId, 'revised',

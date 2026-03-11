@@ -1,5 +1,5 @@
 import { AgentType, AppMode, BmadPersona } from '@pap/shared';
-import { streamAI, resolveModelId, type SystemPrompt, type TokenUsage } from '../utils/ai-provider';
+import { streamAI, resolveModelId, getActiveProvider, type SystemPrompt, type TokenUsage } from '../utils/ai-provider';
 import Logger from '../utils/logger';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -228,7 +228,8 @@ The full document is assembled at export. Mid-conversation your job is to gather
       stable += `\n\n## Active Workflow Instructions\nFollow these workflow instructions to guide the conversation:\n\n${workflowContext}`;
     }
 
-    if (this.agentType === 'analyst') {
+    if (this.agentType === 'analyst' && getActiveProvider() === 'anthropic') {
+      // Web search is available — enforce strict citation discipline
       stable += `\n\n## Source Citation Requirements
 You are producing cited research. Citation accuracy is paramount — a fabricated or mismatched reference is worse than no reference at all and destroys the reader's trust.
 
@@ -267,9 +268,24 @@ Every [N] used inline must appear here. Every entry here must be used inline. No
 - Never cite a source you did not actually find via web search in this conversation.
 - If no source exists for a claim, mark it: "[Assumption — no source found]" — this is always preferable to a fabricated citation.
 - If a web search returns limited results, say so explicitly: "Limited sources available for this topic."
-- When in doubt, under-cite rather than over-cite. Three verified references are worth more than ten fabricated ones.
+- When in doubt, under-cite rather than over-cite. Three verified references are worth more than ten fabricated ones.`;
+    } else if (this.agentType === 'analyst') {
+      // No web search available (Bedrock/Ollama) — use prior knowledge, no fake citations
+      stable += `\n\n## Source & Citation Policy (No Web Search Available)
+You do NOT have access to web search in this session. Do not pretend to search or fabricate URLs.
 
-## Output Formatting & Completeness
+**Rules:**
+- Use your training knowledge to produce substantive, well-reasoned analysis
+- Do NOT include a References section with URLs — you have no way to verify them
+- Do NOT use [N] inline citation markers pointing to fabricated sources
+- Instead of citations, use qualitative attribution where relevant: "Industry analysts generally estimate…", "According to widely reported figures…"
+- When a claim is based on your general knowledge and may need verification, mark it: *"[Unverified — recommend manual confirmation]"*
+- Be direct and confident about well-established facts; flag speculative or rapidly-changing data points
+- Focus on the quality and depth of analysis rather than the appearance of sourcing`;
+    }
+
+    if (this.agentType === 'analyst') {
+      stable += `\n\n## Output Formatting & Completeness
 Your responses have a token ceiling. A document that is cut off is always worse than a complete one.
 
 **Use rich formatting throughout:**
@@ -284,10 +300,9 @@ Your responses have a token ceiling. A document that is cut off is always worse 
 **Mandatory completion order — never deviate from this:**
 1. Complete the current section you are writing
 2. Continue through all remaining sections at appropriate depth
-3. ⚠️ Write the COMPLETE ## References section — every source, no omissions
-4. Write the closing summary
+3. Write the closing summary
 
-**If you are approaching your token limit:** tighten prose in remaining sections, but never skip the References section. An incomplete References section is a critical failure.`;
+**If you are approaching your token limit:** tighten prose in remaining sections but never skip or truncate sections.`;
     }
 
     // Item context is small (~200 tokens) and changes per initiative, so it goes
@@ -311,7 +326,9 @@ Your responses have a token ceiling. A document that is cut off is always worse 
     onTokens?: (usage: TokenUsage) => void
   ): AsyncGenerator<string, void, unknown> {
     const model = modelOverride || this.model;
-    const webSearch = this.agentType === 'analyst';
+    // Web search is only available on Anthropic (built-in tool). Bedrock/Ollama
+    // will get Tavily support later — until then, disable to prevent fabricated citations.
+    const webSearch = this.agentType === 'analyst' && getActiveProvider() === 'anthropic';
     // Autonomous mode always needs full document output — use the same ceiling as analyst.
     // ai-provider caps this to the actual model limit so no API error is thrown.
     const maxTokens = (this.agentType === 'analyst' || this.isAutonomous) ? 32_000 : 8_192;

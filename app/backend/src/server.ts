@@ -41,10 +41,15 @@ app.use(cors({
   credentials: true,
 }));
 
-// Rate limiting
+// Rate limiting — generous limit for single-user local tool.
+// Polling endpoints (events, status) fire every 2s and would exhaust a tight cap.
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: 1000,
+  skip: (req) => {
+    // Exempt high-frequency polling endpoints from rate limiting
+    return /\/api\/workflow\/[^/]+\/(events|status)/.test(req.originalUrl);
+  },
 });
 app.use('/api/', limiter);
 

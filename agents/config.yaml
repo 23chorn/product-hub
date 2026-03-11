@@ -9,8 +9,8 @@ communication_language: English
 document_output_language: English
 
 # Your product / project name (used in document titles and context)
-project_name: My Product
+project_name: xCube
 
 # Your experience level — affects how much context agents provide
 # Options: beginner, intermediate, expert
-user_skill_level: intermediate
+user_skill_level: expert
