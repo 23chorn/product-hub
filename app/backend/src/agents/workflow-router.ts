@@ -23,8 +23,27 @@ import Logger from '../utils/logger';
 import type { AppMode, AgentType } from '@pap/shared';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
+const AGENTS_ROOT = path.join(PROJECT_ROOT, 'agents');
 
 const logger = new Logger('WORKFLOW-ROUTER');
+
+/** Read team_size and velocity_per_member from agents/config.yaml. Falls back to defaults. */
+async function loadSprintConfig(): Promise<{ teamSize: number; velocityPerMember: number }> {
+  try {
+    const raw = await fsAsync.readFile(path.join(AGENTS_ROOT, 'config.yaml'), 'utf-8');
+    let teamSize = 5;
+    let velocityPerMember = 5;
+    for (const line of raw.split('\n')) {
+      const m = line.match(/^(\w+):\s*(\d+)/);
+      if (!m) continue;
+      if (m[1] === 'team_size') teamSize = parseInt(m[2], 10);
+      if (m[1] === 'velocity_per_member') velocityPerMember = parseInt(m[2], 10);
+    }
+    return { teamSize, velocityPerMember };
+  } catch {
+    return { teamSize: 5, velocityPerMember: 5 };
+  }
+}
 
 /**
  * Stages that run silently with no human review gate.
@@ -228,13 +247,13 @@ const STAGE_SESSION_MAP: Record<string, { mode: AppMode; agentType: AgentType }>
 };
 
 // Per-stage output token ceiling. Backlog gets more headroom because the JSON
-// scales with story count (6 features × 8 stories at max = ~15k tokens).
+// scales with story count (6 features × 12 stories at max = ~22k tokens).
 // All Claude 4.x models support 64k output, so these are safe upper bounds.
 const STAGE_MAX_OUTPUT_TOKENS: Record<string, number> = {
   analyst:            12_000,
   pm_prd:             12_000,
   solution_architect: 12_000,
-  pm_backlog:         24_000,
+  pm_backlog:         32_000,
 };
 
 // Maps stage name to the artifact.type value stored in the DB.
@@ -908,7 +927,32 @@ async function runAutonomousStage(
     let artifactContent: string;
     if (stage === 'pm_backlog') {
       // Strip markdown code fences from JSON output
-      artifactContent = fullResponse.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+      const stripped = fullResponse.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+      // Inject sprint estimate into epic object
+      try {
+        const parsed = JSON.parse(stripped);
+        const totalEffort: number = (parsed.features ?? [])
+          .flatMap((f: any) => f.stories ?? [])
+          .reduce((sum: number, s: any) => sum + (Number(s.effort) || 0), 0);
+        const { teamSize, velocityPerMember } = await loadSprintConfig();
+        const sprintVelocity = teamSize * velocityPerMember;
+        const sprintsRequired = sprintVelocity > 0
+          ? Math.round((totalEffort / sprintVelocity) * 10) / 10
+          : null;
+        parsed.epic = {
+          ...parsed.epic,
+          totalEffort,
+          sprintsRequired,
+          sprintVelocity,
+          teamSize,
+          velocityPerMember,
+        };
+        artifactContent = JSON.stringify(parsed, null, 2);
+        logger.info(`Backlog sprint estimate: ${totalEffort} pts / ${sprintVelocity} velocity = ${sprintsRequired} sprints`);
+      } catch {
+        // If JSON parse fails, save as-is and let downstream error handling catch it
+        artifactContent = stripped;
+      }
     } else {
       // Strip any preamble before the first markdown heading (e.g. "Here's the research brief:")
       const match = fullResponse.match(/^# /m);

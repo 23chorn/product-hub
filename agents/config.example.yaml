@@ -15,3 +15,9 @@ project_name: My Product
 # Your experience level — affects how much context agents provide
 # Options: beginner, intermediate, expert
 user_skill_level: intermediate
+
+# Sprint planning — used to estimate sprints required at the epic level
+# team_size: total number of engineers working on the epic (dev + QA + all roles combined)
+# velocity_per_member: story points one engineer delivers per 2-week sprint
+team_size: 5
+velocity_per_member: 5

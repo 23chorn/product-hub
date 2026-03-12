@@ -105,7 +105,7 @@ If a context/tech-stack.md file was provided, align all choices with the existin
   ]
 }
 
-Constraints: max 6 features per epic, max 8 stories per feature. Each story must be independently deliverable in a single sprint. Stories within a feature must be in dependency order — no story may depend on a later story.`,
+Constraints: max 6 features per epic, max 12 stories per feature. Each story must be independently deliverable in a single sprint. Stories within a feature must be in dependency order — no story may depend on a later story.`,
   },
 
   critic: {
