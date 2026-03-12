@@ -17,7 +17,10 @@ project_name: My Product
 user_skill_level: intermediate
 
 # Sprint planning — used to estimate sprints required at the epic level
-# team_size: total number of engineers working on the epic (dev + QA + all roles combined)
-# velocity_per_member: story points one engineer delivers per 2-week sprint
-team_size: 5
-velocity_per_member: 5
+# sprint_velocity: total story points your team can complete per 2-week sprint at full capacity.
+# capacity_factor: proportion of each sprint available for planned feature work (0.0–1.0).
+#   Accounts for prod issues, BAU, meetings, unplanned work, etc.
+#   e.g. 0.7 means 30% of sprint capacity is consumed by non-feature work.
+# Effective feature velocity = sprint_velocity × capacity_factor
+sprint_velocity: 25
+capacity_factor: 0.7

@@ -27,22 +27,20 @@ const AGENTS_ROOT = path.join(PROJECT_ROOT, 'agents');
 
 const logger = new Logger('WORKFLOW-ROUTER');
 
-/** Read team_size and velocity_per_member from agents/config.yaml. Falls back to defaults. */
-async function loadSprintConfig(): Promise<{ teamSize: number; velocityPerMember: number }> {
+/** Read sprint_velocity and capacity_factor from agents/config.yaml. Falls back to safe defaults. */
+async function loadSprintConfig(): Promise<{ sprintVelocity: number; capacityFactor: number }> {
+  let sprintVelocity = 25;
+  let capacityFactor = 0.7;
   try {
     const raw = await fsAsync.readFile(path.join(AGENTS_ROOT, 'config.yaml'), 'utf-8');
-    let teamSize = 5;
-    let velocityPerMember = 5;
     for (const line of raw.split('\n')) {
-      const m = line.match(/^(\w+):\s*(\d+)/);
-      if (!m) continue;
-      if (m[1] === 'team_size') teamSize = parseInt(m[2], 10);
-      if (m[1] === 'velocity_per_member') velocityPerMember = parseInt(m[2], 10);
+      const intMatch = line.match(/^sprint_velocity:\s*(\d+)/);
+      if (intMatch) sprintVelocity = parseInt(intMatch[1], 10);
+      const floatMatch = line.match(/^capacity_factor:\s*([\d.]+)/);
+      if (floatMatch) capacityFactor = parseFloat(floatMatch[1]);
     }
-    return { teamSize, velocityPerMember };
-  } catch {
-    return { teamSize: 5, velocityPerMember: 5 };
-  }
+  } catch { /* fall through */ }
+  return { sprintVelocity, capacityFactor };
 }
 
 /**
@@ -934,21 +932,21 @@ async function runAutonomousStage(
         const totalEffort: number = (parsed.features ?? [])
           .flatMap((f: any) => f.stories ?? [])
           .reduce((sum: number, s: any) => sum + (Number(s.effort) || 0), 0);
-        const { teamSize, velocityPerMember } = await loadSprintConfig();
-        const sprintVelocity = teamSize * velocityPerMember;
-        const sprintsRequired = sprintVelocity > 0
-          ? Math.round((totalEffort / sprintVelocity) * 10) / 10
+        const { sprintVelocity, capacityFactor } = await loadSprintConfig();
+        const effectiveVelocity = Math.round(sprintVelocity * capacityFactor * 10) / 10;
+        const sprintsRequired = effectiveVelocity > 0
+          ? Math.round((totalEffort / effectiveVelocity) * 10) / 10
           : null;
         parsed.epic = {
           ...parsed.epic,
           totalEffort,
           sprintsRequired,
           sprintVelocity,
-          teamSize,
-          velocityPerMember,
+          capacityFactor,
+          effectiveVelocity,
         };
         artifactContent = JSON.stringify(parsed, null, 2);
-        logger.info(`Backlog sprint estimate: ${totalEffort} pts / ${sprintVelocity} velocity = ${sprintsRequired} sprints`);
+        logger.info(`Backlog sprint estimate: ${totalEffort} pts / ${effectiveVelocity} effective velocity (${sprintVelocity} × ${capacityFactor}) = ${sprintsRequired} sprints`);
       } catch {
         // If JSON parse fails, save as-is and let downstream error handling catch it
         artifactContent = stripped;
