@@ -49,7 +49,13 @@ The primary user types. Bullet list, 2–4 personas max.
 The 2–3 most important user journeys as step-by-step narratives.
 
 ## Success Metrics
-3–5 measurable outcomes that define success (include how each is measured).
+Three tables as defined in the template:
+- **Primary metric** — the single number that defines success. Must include baseline, target, timeframe, and how it is measured.
+- **Secondary metrics** — 2–3 supporting signals with the same fields.
+- **Counter-metrics** — 1–2 metrics that must not regress, with an acceptable floor value. These are as important as the primary metric — omitting them is a quality failure.
+
+## Non-Functional Requirements
+NFR-numbered table covering only the categories relevant to this initiative: performance (with specific thresholds), scalability, security, accessibility, data retention, availability. Each NFR must have a measurable threshold and a priority (Must / Should / Nice-to-have). Omit categories that genuinely do not apply.
 
 ## Functional Requirements
 FR-numbered list (FR1, FR2, …) of capabilities the feature must have. Each FR states WHAT the system does, not HOW. Aim for 10–20 FRs.

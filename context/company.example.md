@@ -5,34 +5,37 @@
 
 ## Mission
 
-Acme SaaS Co. helps operations teams at mid-market manufacturers eliminate manual data entry between their ERP and warehouse management systems.
+Baraka Capital makes professional-grade investing accessible to retail investors across the GCC, starting with the UAE — enabling anyone to build a diversified portfolio with confidence, transparency, and local market expertise.
 
 ## Products
 
-**Acme Sync** — our core product. A no-code integration platform that connects ERP systems (SAP, NetSuite, Dynamics 365) to WMS systems (Manhattan, Blue Yonder, Fishbowl) via pre-built connectors and a drag-and-drop mapping UI.
+**Baraka Invest (mobile app)** — our core product. A retail brokerage app for iOS and Android offering trading in local GCC-listed equities (DFM, ADX, Tadawul, Boursa Kuwait), US equities, and ETFs. Includes fractional shares, a curated discovery feed, and basic portfolio analytics.
 
-**Acme Insights** (beta) — a reporting layer on top of Sync data, providing real-time inventory and order dashboards.
+**Baraka Advisory** (in development) — a professional advisor-led investment advice layer within the app. Licensed advisors build and manage model portfolios; clients can follow an advisor's portfolio, receive personalised recommendations, and book consultation sessions.
 
 ## Target users
 
-- **Primary:** Operations managers and supply chain analysts at manufacturers with 50–500 employees
-- **Secondary:** IT administrators who configure and maintain the integrations
-- **Not our user:** Developers who would build custom integrations themselves (they use competitors like MuleSoft)
+- **Primary:** Retail investors in the UAE aged 25–45, financially active but underserved by traditional brokers (high minimums, poor UX, no Arabic support)
+- **Secondary:** GCC nationals in KSA, Kuwait, Qatar, and Bahrain — served via web initially, mobile expansion planned
+- **Advisor segment:** Licensed financial advisors and wealth managers looking for a digital client management platform
+- **Not our user (yet):** Institutional traders, high-frequency traders, or users outside the GCC/MENA region
 
 ## Business model
 
-- SaaS subscription, priced per connected system pair (connector seat)
-- Average contract: $24,000 ARR
-- 18-month average sales cycle for new logos; expansion ARR from adding connector seats is fast (2–4 weeks)
-- Current ARR: $3.2M | Customers: 68 | NRR: 112%
+- **Commission per trade** — zero-commission on US equities, fee-per-trade on GCC-listed securities (competitive with regional incumbents)
+- **Advisory subscription** — monthly fee for access to an advisor's model portfolio and recommendations
+- **Premium tier (planned)** — advanced analytics, priority execution, extended market hours notifications
+- **Current stage:** Early growth — live in UAE, regulatory approvals in progress for KSA and Kuwait
 
 ## Team
 
-- 2 PMs, 8 engineers, 3 sales, 2 CS, 1 design (22 total including founders)
-- Fully remote, UTC-8 to UTC+2
+- 3 PMs (core app, advisory, growth), 18 engineers (iOS, Android, backend, web), 2 designers, compliance & legal embedded in product
+- Headquarters: Dubai, DIFC
+- Engineering: hybrid Dubai + remote (MENA timezone)
 
 ## Key differentiators
 
-1. Pre-built connector library (140+ connectors) — competitors take 3–6 months to build custom; we go live in days
-2. No-code mapping UI — ops teams configure without IT involvement
-3. Real-time sync (sub-60s latency) vs. nightly batch jobs offered by incumbent tools
+1. **GCC-first UX** — Arabic language support, local market depth (DFM, ADX, Tadawul), and familiarity with regional investment culture (Zakat-compliant filtering, Sukuk)
+2. **Advisor layer** — bridges the gap between DIY trading and full wealth management; unique in the regional retail brokerage space
+3. **Regulatory posture** — DFSA-regulated (UAE), pursuing SAMA (KSA) and CMA (Kuwait) licensing; compliance built into the product architecture from day one
+4. **Fractional shares** — lowers the minimum investment barrier for high-priced local stocks (e.g. Aramco)
