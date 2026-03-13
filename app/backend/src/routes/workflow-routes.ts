@@ -643,18 +643,24 @@ workflowRoutes.post('/:id/push-to-board', async (req: Request, res: Response) =>
       return res.status(400).json({ error: 'Backlog artifact is not valid JSON' });
     }
 
-    if (!backlog?.epic || (!Array.isArray(backlog?.features) && !Array.isArray(backlog?.epic?.stories))) {
-      return res.status(400).json({ error: 'Backlog JSON does not have the expected epic/features or epic/stories structure' });
+    // Normalise all tiers into epic + features[] for downstream ADO push
+    if (backlog?.story) {
+      // Tier 1: single story → wrap in feature → wrap in epic
+      backlog.epic = { title: backlog.story.title, description: backlog.story.goal || '' };
+      backlog.features = [{ title: backlog.story.title, description: backlog.story.goal || '', phase: 'MVP', stories: [backlog.story] }];
+      delete backlog.story;
+    } else if (backlog?.feature) {
+      // Tier 2: single feature → wrap in epic
+      backlog.epic = { title: backlog.feature.title, description: backlog.feature.description || '' };
+      backlog.features = [backlog.feature];
+      delete backlog.feature;
+    } else if (backlog?.epic && !backlog?.features && Array.isArray(backlog?.epic?.stories)) {
+      // Legacy flat stories on epic → wrap in feature
+      backlog.features = [{ title: backlog.epic.title, description: backlog.epic.description, phase: 'MVP', stories: backlog.epic.stories }];
     }
 
-    // Normalise flat stories into a single feature so downstream ADO push works unchanged
-    if (!backlog.features && Array.isArray(backlog.epic.stories)) {
-      backlog.features = [{
-        title: backlog.epic.title,
-        description: backlog.epic.description,
-        phase: 'MVP',
-        stories: backlog.epic.stories,
-      }];
+    if (!backlog?.epic || !Array.isArray(backlog?.features)) {
+      return res.status(400).json({ error: 'Backlog JSON does not have a recognised structure (story, feature, or epic/features)' });
     }
 
     // Push to the configured provider

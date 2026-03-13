@@ -76,35 +76,19 @@ If a context/tech-stack.md file was provided, align all choices with the existin
 
   pm_backlog: {
     label: 'Backlog JSON (Pip)',
-    format: `Produce a single valid JSON object wrapped in a \`\`\`json code block. Right-size the output:
-- Single ticket (1 story): place story in epic.stories, no features array
-- Small feature (2–5 stories): place stories in epic.stories, no features array
-- Multi-feature epic (6+ stories spanning distinct capabilities): use features array
+    format: `Produce a single valid JSON object wrapped in a \`\`\`json code block. Use the minimum structure that fits:
 
-Multi-feature structure:
-{
-  "epic": { "title": "string", "description": "string", "businessValue": "string", "prdLink": "string" },
-  "features": [
-    {
-      "title": "string", "description": "string", "phase": "string",
-      "stories": [
-        { "title": "string", "persona": "string", "goal": "string", "benefit": "string",
-          "acceptanceCriteria": ["Given … When … Then …"],
-          "agentContext": "string — implementation context a developer agent needs",
-          "effort": "number — Fibonacci estimate (1, 2, 3, 5, 8, 13)" }
-      ]
-    }
-  ]
-}
+Tier 1 — Single story (1 deliverable):
+{ "story": { "title": "string", "persona": "string", "goal": "string", "benefit": "string", "acceptanceCriteria": ["Given … When … Then …"], "effort": number } }
 
-Small scope structure (no features array):
-{
-  "epic": { "title": "string", "description": "string", "businessValue": "string",
-    "stories": [ { "...same story structure as above..." } ]
-  }
-}
+Tier 2 — Single feature (2–8 related stories, one capability):
+{ "feature": { "title": "string", "description": "string", "phase": "string", "stories": [ { ...story fields... } ] } }
 
-Constraints: max 6 features per epic, max 12 stories per feature. Each story must be independently deliverable in a single sprint. Stories within a feature must be in dependency order.`,
+Tier 3 — Epic with features (multiple distinct capabilities, 2+ features):
+{ "epic": { "title": "string", "description": "string", "businessValue": "string", "prdLink": "string" }, "features": [ { "title": "string", "description": "string", "phase": "string", "stories": [ { ...story fields... } ] } ] }
+
+Decision: 1 story → Tier 1. Multiple stories, one capability → Tier 2. Multiple distinct capabilities → Tier 3.
+Constraints: max 6 features per epic, max 12 stories per feature. Each story independently deliverable in a single sprint. Stories in dependency order.`,
   },
 
   critic: {

@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface CriticQuestionFormProps {
   questions: string[];
@@ -64,9 +66,12 @@ export function CriticQuestionForm({ questions, onSubmit, onCancel, loading }: C
           {questions.map((question, idx) => (
             <div key={idx} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 space-y-2">
               <div className="flex items-start justify-between gap-2">
-                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                  Q{idx + 1}: {question}
-                </p>
+                <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                  <span className="text-gray-500 dark:text-gray-400 mr-1">Q{idx + 1}:</span>
+                  <div className="inline prose prose-sm dark:prose-invert max-w-none [&_p]:my-0.5 [&_p:first-child]:inline">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{question}</ReactMarkdown>
+                  </div>
+                </div>
                 <label className="flex items-center gap-1 flex-shrink-0 cursor-pointer">
                   <input
                     type="checkbox"
@@ -157,7 +162,9 @@ export function CriticIssuesPanel({ issues }: { issues: Array<{ severity: string
       {issues.map((issue, i) => (
         <div key={i} className={`text-sm px-3 py-2 rounded-lg border ${SEVERITY_STYLES[issue.severity] ?? SEVERITY_STYLES.minor}`}>
           <span className="font-semibold uppercase text-[11px] tracking-wide">{issue.severity}</span>
-          <p className="mt-0.5 text-gray-800 dark:text-gray-200">{issue.description}</p>
+          <div className="mt-1 text-gray-800 dark:text-gray-200 prose prose-sm dark:prose-invert max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{issue.description}</ReactMarkdown>
+          </div>
         </div>
       ))}
     </div>

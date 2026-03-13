@@ -930,10 +930,16 @@ async function runAutonomousStage(
       // Inject sprint estimate into epic object
       try {
         const parsed = JSON.parse(stripped);
-        // Normalise: stories can live in features[].stories or epic.stories (flat structure)
+        // Normalise: stories can live in features[].stories, feature.stories, epic.stories, or as a single story
         const allStories: any[] = parsed.features
           ? (parsed.features as any[]).flatMap((f: any) => f.stories ?? [])
-          : (parsed.epic?.stories ?? []);
+          : parsed.feature?.stories
+          ? (parsed.feature.stories as any[])
+          : parsed.epic?.stories
+          ? (parsed.epic.stories as any[])
+          : parsed.story
+          ? [parsed.story]
+          : [];
         const totalEffort: number = allStories
           .reduce((sum: number, s: any) => sum + (Number(s.effort) || 0), 0);
         const { sprintVelocity, capacityFactor } = await loadSprintConfig();
@@ -941,14 +947,15 @@ async function runAutonomousStage(
         const sprintsRequired = effectiveVelocity > 0
           ? Math.round((totalEffort / effectiveVelocity) * 10) / 10
           : null;
-        parsed.epic = {
-          ...parsed.epic,
-          totalEffort,
-          sprintsRequired,
-          sprintVelocity,
-          capacityFactor,
-          effectiveVelocity,
-        };
+        // Inject sprint metadata into the appropriate top-level object
+        const sprintMeta = { totalEffort, sprintsRequired, sprintVelocity, capacityFactor, effectiveVelocity };
+        if (parsed.epic) {
+          parsed.epic = { ...parsed.epic, ...sprintMeta };
+        } else if (parsed.feature) {
+          parsed.feature = { ...parsed.feature, ...sprintMeta };
+        } else if (parsed.story) {
+          parsed.story = { ...parsed.story, ...sprintMeta };
+        }
         artifactContent = JSON.stringify(parsed, null, 2);
         logger.info(`Backlog sprint estimate: ${totalEffort} pts / ${effectiveVelocity} effective velocity (${sprintVelocity} × ${capacityFactor}) = ${sprintsRequired} sprints`);
       } catch {
@@ -1390,6 +1397,16 @@ export async function reiterateFromStage(
   const stageLabel = STAGE_LABELS_INTERNAL[fromStage] ?? fromStage;
   insertEvent(workflowId, 'reiteration', fromStage,
     `Re-entering at ${stageLabel}: ${feedback.slice(0, 200)}`);
+
+  // Mark existing approved checkpoints for fromStage and all downstream stages
+  // as 'revised' so they no longer count as completed in the UI
+  const downstreamStages = sequence.slice(idx);
+  for (const stage of downstreamStages) {
+    db.prepare(`
+      UPDATE checkpoints SET status = 'revised'
+      WHERE workflow_id = ? AND stage = ? AND status = 'approved'
+    `).run(workflowId, stage);
+  }
 
   // Set current_stage to fromStage so the UI shows the correct active stage
   // and retryCurrentStage can recover if the server restarts mid-run
