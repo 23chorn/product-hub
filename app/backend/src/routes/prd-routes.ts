@@ -43,6 +43,30 @@ router.get('/items/needingPRD', async (req: Request, res: Response) => {
   try {
     const client = getAirtableClient();
     const items = await client.getItemsNeedingPRD();
+
+    // Enrich with latest workflow status per item
+    if (items.length > 0) {
+      const wfRows = db.prepare(`
+        SELECT w.item_id, w.id, w.status, w.current_stage, w.summary
+        FROM workflows w
+        INNER JOIN (
+          SELECT item_id, MAX(created_at) as max_created
+          FROM workflows GROUP BY item_id
+        ) latest ON w.item_id = latest.item_id AND w.created_at = latest.max_created
+        WHERE w.item_id IN (${items.map(() => '?').join(',')})
+      `).all(...items.map(i => i.id)) as { item_id: string; id: string; status: string; current_stage: string | null; summary: string | null }[];
+
+      const wfMap = new Map(wfRows.map(wf => [wf.item_id, wf]));
+
+      const enriched = items.map(item => {
+        const wf = wfMap.get(item.id);
+        return wf
+          ? { ...item, workflow: { id: wf.id, status: wf.status, currentStage: wf.current_stage, summary: wf.summary } }
+          : item;
+      });
+      return res.json(enriched);
+    }
+
     res.json(items);
   } catch (error: any) {
     logger.error('Failed to get items needing PRD', error);

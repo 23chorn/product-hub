@@ -261,8 +261,16 @@ export function CoordinatorChat() {
   }, [isComplete]);
 
   // Scroll to bottom whenever messages or checkpoint state change
+  // Use instant scroll on initial load, smooth for subsequent updates
+  const hasInitialScrolled = useRef(false);
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!coordinatorMessages.length) {
+      hasInitialScrolled.current = false;
+      return;
+    }
+    const behavior = hasInitialScrolled.current ? 'smooth' : 'instant';
+    messagesEndRef.current?.scrollIntoView({ behavior });
+    hasInitialScrolled.current = true;
   }, [coordinatorMessages, activeWorkflow?.status, checkpoints]);
 
   // Track which pending checkpoint we've already auto-opened, to avoid re-opening after user closes
@@ -383,6 +391,57 @@ export function CoordinatorChat() {
           content += `\n\n> ${details.excerpt.slice(0, 150)}${details.excerpt.length > 150 ? '...' : ''}`;
         }
       } catch { /* ignore */ }
+    }
+
+    // Format critic verdict with structured issues
+    if (event.event_type === 'critic_verdict' && event.details) {
+      try {
+        const details = JSON.parse(event.details);
+        const verdict = details.critic_verdict;
+        const stage = STAGE_LABELS[details.reviewed_stage ?? event.stage] ?? event.stage;
+        const parts: string[] = [];
+
+        if (verdict === 'approve') {
+          const minorCount = details.issue_count - (details.critical_issues ?? 0) - (details.major_issues ?? 0);
+          parts.push(`**Quality Review — ${stage}** ✓`);
+          if (minorCount > 0) {
+            parts.push(`Passed with ${minorCount} minor note${minorCount !== 1 ? 's' : ''} (resolved internally).`);
+          } else {
+            parts.push('No issues found.');
+          }
+        } else {
+          parts.push(`**Quality Review — ${stage}**`);
+          if (details.issue_count) {
+            const counts: string[] = [];
+            if (details.critical_issues) counts.push(`${details.critical_issues} critical`);
+            if (details.major_issues) counts.push(`${details.major_issues} major`);
+            const minorCount = details.issue_count - (details.critical_issues ?? 0) - (details.major_issues ?? 0);
+            if (minorCount > 0) counts.push(`${minorCount} minor`);
+            parts.push(`**${details.issue_count} issue${details.issue_count !== 1 ? 's' : ''}** flagged (${counts.join(', ')})`);
+          }
+
+          // Format individual issues as a bulleted list
+          if (details.issues_summary) {
+            const issues = details.issues_summary.split('; ').filter((s: string) => s.trim());
+            if (issues.length > 0) {
+              parts.push('');
+              for (const issue of issues) {
+                // Format [SEVERITY] — description
+                const match = issue.match(/^\[(\w+)\]\s*[—-]?\s*(.*)/s);
+                if (match) {
+                  const sev = match[1].toLowerCase();
+                  const icon = sev === 'critical' ? '🔴' : sev === 'major' ? '🟠' : '🟡';
+                  parts.push(`${icon} **${match[1]}**: ${match[2]}`);
+                } else {
+                  parts.push(`- ${issue}`);
+                }
+              }
+            }
+          }
+        }
+
+        content = parts.join('\n');
+      } catch { /* fall through to raw summary */ }
     }
 
     // Show curator reasoning log

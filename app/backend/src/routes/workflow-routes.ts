@@ -643,8 +643,18 @@ workflowRoutes.post('/:id/push-to-board', async (req: Request, res: Response) =>
       return res.status(400).json({ error: 'Backlog artifact is not valid JSON' });
     }
 
-    if (!backlog?.epic || !Array.isArray(backlog?.features)) {
-      return res.status(400).json({ error: 'Backlog JSON does not have the expected epic/features structure' });
+    if (!backlog?.epic || (!Array.isArray(backlog?.features) && !Array.isArray(backlog?.epic?.stories))) {
+      return res.status(400).json({ error: 'Backlog JSON does not have the expected epic/features or epic/stories structure' });
+    }
+
+    // Normalise flat stories into a single feature so downstream ADO push works unchanged
+    if (!backlog.features && Array.isArray(backlog.epic.stories)) {
+      backlog.features = [{
+        title: backlog.epic.title,
+        description: backlog.epic.description,
+        phase: 'MVP',
+        stories: backlog.epic.stories,
+      }];
     }
 
     // Push to the configured provider

@@ -66,12 +66,34 @@ const stmts = {
 
 /**
  * GET /api/initiatives
- * List all local initiatives as AirtableItem shape (compatible with existing frontend).
+ * List all local initiatives enriched with latest workflow status.
  */
 router.get('/', (_req: Request, res: Response) => {
   try {
     const rows = stmts.list.all() as InitiativeRow[];
-    res.json(rows.map(toAirtableItem));
+
+    // Batch-fetch latest workflow per item
+    const workflowMap = new Map<string, { id: string; status: string; current_stage: string | null; summary: string | null }>();
+    const wfRows = db.prepare(`
+      SELECT w.item_id, w.id, w.status, w.current_stage, w.summary
+      FROM workflows w
+      INNER JOIN (
+        SELECT item_id, MAX(created_at) as max_created
+        FROM workflows GROUP BY item_id
+      ) latest ON w.item_id = latest.item_id AND w.created_at = latest.max_created
+      WHERE w.item_id IN (${rows.map(() => '?').join(',')})
+    `).all(...rows.map(r => r.id)) as { item_id: string; id: string; status: string; current_stage: string | null; summary: string | null }[];
+    for (const wf of wfRows) workflowMap.set(wf.item_id, wf);
+
+    const items = rows.map(r => {
+      const wf = workflowMap.get(r.id);
+      return {
+        ...toAirtableItem(r),
+        workflow: wf ? { id: wf.id, status: wf.status, currentStage: wf.current_stage, summary: wf.summary } : undefined,
+      };
+    });
+
+    res.json(items);
   } catch (error: any) {
     logger.error('Failed to list initiatives', error);
     res.status(500).json({ error: error.message || 'Failed to list initiatives' });

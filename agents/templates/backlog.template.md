@@ -1,5 +1,10 @@
 Produce a single valid JSON object wrapped in a ```json code block with this exact structure. No prose before or after — just the JSON block.
 
+Right-size the output based on scope:
+- **Single ticket**: If the work fits in 1 story, omit the `features` array and place the story directly in `epic.stories`
+- **Small feature**: If the work needs 2–5 related stories, use `epic.stories` (no feature wrapper needed)
+- **Multi-feature epic**: If the work spans multiple distinct capabilities, use the `features` array with stories nested inside each feature
+
 ```json
 {
   "epic": {
@@ -18,8 +23,8 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
         {
           "title": "Story title",
           "persona": "Which persona from the PRD",
-          "goal": "what I want to do",
-          "benefit": "so that [outcome]",
+          "goal": "what the persona wants to achieve in their own words — must be written from the user's point of view, never from a developer/system perspective. E.g. 'view my pending requests and their status' NOT 'implement a pending request queue'",
+          "benefit": "so that [outcome for the persona]",
           "acceptanceCriteria": [
             "Given [context] When [action] Then [result]",
             "Given [context] When [action] Then [result]"
@@ -39,6 +44,18 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
       ]
     }
   ]
+}
+```
+
+Alternative structure for small scope (use `stories` directly on the epic, no `features` array):
+```json
+{
+  "epic": {
+    "title": "Short epic name",
+    "description": "One sentence",
+    "businessValue": "Why this matters",
+    "stories": [ { "...same story structure as above..." } ]
+  }
 }
 ```
 

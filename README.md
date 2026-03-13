@@ -33,7 +33,8 @@ product-agent/
 ├── agents/
 │   ├── personas/      Agent persona markdown files (coordinator, analyst, pm, architect, critic, curator)
 │   ├── templates/     Output templates (research, prd, backlog)
-│   └── config.yaml    User identity and preferences
+│   ├── config.example.yaml  Template for user config (tracked)
+│   └── config.yaml    User identity and preferences (gitignored)
 ├── context/           Project context files injected into every agent prompt
 │   └── README.md      Guidelines for filling in context files
 ├── db/
@@ -93,20 +94,40 @@ See [docs/setup/llm-providers.md](docs/setup/llm-providers.md) for detailed prov
 | Research | Analyst (Sage) | Market research brief with cited sources |
 | PRD | PM Strategy (Rex) | Product Requirements Document |
 | Architecture | Architect (Atlas) | Solution architecture document |
-| Backlog | Backlog Agent (Pip) | Structured epics, features, and stories (JSON) |
-| Quality Review | Critic | Inline after each specialist — auto-revises up to 2× |
+| Backlog | Backlog Agent (Pip) | Right-sized backlog: single stories, small features, or full epic/feature/story hierarchy (JSON) |
+| Quality Review | Critic | Inline after each specialist — auto-revises once, then asks the human |
 | Context Update | Curator | Proposed updates to `context/*.md` files |
 
 ### Checkpoints
 
 Every specialist stage pauses for human review. At each checkpoint you can:
 - **Approve** — move to the next stage
-- **Revise** — provide feedback; the stage reruns with your corrections
+- **Revise** — provide feedback; the stage reruns with your corrections (critic is skipped — the human is now the reviewer)
 - **Reject** — end the workflow
 
 After a workflow completes, you can **redo from any stage** — provide a reason, and that stage plus all downstream stages rerun.
 
+### Sprint Estimation
+
+The backlog stage automatically calculates sprint estimates using your team's velocity and capacity factor (configured in `agents/config.yaml`):
+- **Epic level** — total story points divided by effective velocity
+- **Feature level** — per-feature sprint estimates shown in the backlog preview
+- Used for comparing initiatives and prioritising which epics to build first
+
 ## UI Features
+
+### Artifact Viewer
+Review specialist outputs in a slide-out panel with fullscreen mode. The backlog preview shows structured epics, features, and stories with:
+- Sprint estimates at epic and feature level
+- Expandable stories with formatted acceptance criteria (Given/When/Then)
+- Persona summary panel (fullscreen) showing which personas are covered and their story references
+- **Push to Board** button (after workflow completes) to export the backlog to Azure DevOps or Jira
+
+### Initiative List
+The left sidebar shows local initiatives and Airtable roadmap items (when configured). Each initiative displays its workflow status (active/paused/done) and clicking one restores the full workflow state.
+
+### Workflow History
+Past workflows show stage badges (Research, PRD, Arch, Backlog) indicating which agent steps were enabled, along with status and date.
 
 ### Context Editor
 Edit the 6 canonical project context files directly from the UI. Click **Context** in the header. Changes are picked up immediately by the next agent request — no server restart needed. Files with templates show a "Load template" button.
@@ -151,6 +172,7 @@ WORK_ITEMS_INTEGRATION=ado|jira|none
 AZURE_DEVOPS_ORG=...
 AZURE_DEVOPS_PROJECT=...
 AZURE_DEVOPS_PAT=...
+AZURE_DEVOPS_STORY_TYPE=User Story  # or "Product Backlog Item" for Scrum template
 
 # Knowledge base (Notion)
 KNOWLEDGE_BASE_INTEGRATION=notion|none
@@ -168,7 +190,8 @@ See `docs/integrations/` for detailed setup guides.
 | Per-stage template injection | Only the relevant output template is injected per stage — avoids wasting tokens |
 | Critic split prompt | Persona cached separately from the document under review |
 | Inline critic | Quality review runs after each specialist stage, not as a separate workflow stage |
-| Auto-revision | Critic issues trigger up to 2 automatic revisions before asking the human |
+| Auto-revision | Critic issues trigger 1 automatic revision before asking the human |
+| Human revision bypass | Human-initiated revisions skip the critic — direct human ↔ specialist loop |
 | Per-workflow cost tracking | Cumulative USD cost tracked in the DB and displayed in the UI |
 
 Token usage and estimated cost are logged on every request:

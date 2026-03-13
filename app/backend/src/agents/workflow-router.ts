@@ -776,7 +776,8 @@ async function runAutonomousStage(
   autoApprove: boolean,
   priorCriticIssues?: string[],
   priorDraftContent?: string,
-  priorRunsCost?: number
+  priorRunsCost?: number,
+  skipCritic?: boolean
 ): Promise<void> {
   const stageMap = STAGE_SESSION_MAP[stage];
   if (!stageMap) {
@@ -929,8 +930,11 @@ async function runAutonomousStage(
       // Inject sprint estimate into epic object
       try {
         const parsed = JSON.parse(stripped);
-        const totalEffort: number = (parsed.features ?? [])
-          .flatMap((f: any) => f.stories ?? [])
+        // Normalise: stories can live in features[].stories or epic.stories (flat structure)
+        const allStories: any[] = parsed.features
+          ? (parsed.features as any[]).flatMap((f: any) => f.stories ?? [])
+          : (parsed.epic?.stories ?? []);
+        const totalEffort: number = allStories
           .reduce((sum: number, s: any) => sum + (Number(s.effort) || 0), 0);
         const { sprintVelocity, capacityFactor } = await loadSprintConfig();
         const effectiveVelocity = Math.round(sprintVelocity * capacityFactor * 10) / 10;
@@ -999,7 +1003,7 @@ async function runAutonomousStage(
     const policies = loadGlobalPolicies();
     const criticEnabled = policies.get('require_critic_review') !== 'false' && policies.get('require_critic_review') !== (false as any);
 
-    if (specialistStages.has(stage) && criticEnabled) {
+    if (specialistStages.has(stage) && criticEnabled && !skipCritic) {
       insertEvent(workflowId, 'stage_completed', stage, `${stageLabel} draft complete.`,
         { excerpt, artifact_id: artifactId });
 
@@ -1316,22 +1320,25 @@ export async function propagateFeedback(checkpointId: number, feedback: string):
   const workflow = stmts.getWorkflow.get(checkpoint.workflow_id);
   if (!workflow) throw new Error(`Workflow not found: ${checkpoint.workflow_id}`);
 
-  // Include a summary of the previous output alongside the human feedback
-  // so the specialist can see what to improve, not just the critique.
-  const artifactSummary = checkpoint.artifact_id
-    ? loadArtifactSummary(checkpoint.artifact_id)
+  // Load the full prior artifact so the specialist can revise in-place
+  const priorDraft = checkpoint.artifact_id
+    ? loadFullArtifact(checkpoint.artifact_id)
     : undefined;
 
-  const previousContext = artifactSummary
-    ? `Previous output summary:\n${artifactSummary}\n\n**Human feedback requiring revision:** ${feedback}`
-    : `**Human feedback requiring revision:** ${feedback}`;
-
-  // Generate a new brief that incorporates the feedback as context.
-  const brief = await getCoordinator().generateStageBrief(
-    checkpoint.workflow_id,
-    checkpoint.stage,
-    previousContext
-  );
+  // Use the revision brief which includes the full prior draft and explicit
+  // instructions to revise rather than rewrite from scratch
+  const brief = priorDraft
+    ? getCoordinator().generateRevisionBrief(
+        checkpoint.workflow_id,
+        checkpoint.stage,
+        priorDraft,
+        [`[HUMAN FEEDBACK] ${feedback}`]
+      )
+    : await getCoordinator().generateStageBrief(
+        checkpoint.workflow_id,
+        checkpoint.stage,
+        `**Human feedback requiring revision:** ${feedback}`
+      );
 
   // Mark the old checkpoint as revised.
   const now = Date.now();
@@ -1353,7 +1360,8 @@ export async function propagateFeedback(checkpointId: number, feedback: string):
 
   const shouldAutoApprove = SILENT_STAGES.has(checkpoint.stage);
 
-  runAutonomousStage(session.id, checkpoint.workflow_id, checkpoint.stage, workflow.item_id, brief, shouldAutoApprove)
+  // Skip critic on human-initiated revisions — the human is now the reviewer
+  runAutonomousStage(session.id, checkpoint.workflow_id, checkpoint.stage, workflow.item_id, brief, shouldAutoApprove, undefined, undefined, undefined, true)
     .catch(err => logger.error(`Revision re-run for stage "${checkpoint.stage}" failed: ${err.message}`));
 
   logger.info(`Revision re-run started — session ${session.id} for stage "${checkpoint.stage}" in workflow ${checkpoint.workflow_id}`);
@@ -1383,14 +1391,16 @@ export async function reiterateFromStage(
   insertEvent(workflowId, 'reiteration', fromStage,
     `Re-entering at ${stageLabel}: ${feedback.slice(0, 200)}`);
 
-  // Reset current_stage to the stage before fromStage (or null if idx=0)
-  // so advanceStage will enter fromStage next
-  const prevStage = idx > 0 ? sequence[idx - 1] : null;
+  // Set current_stage to fromStage so the UI shows the correct active stage
+  // and retryCurrentStage can recover if the server restarts mid-run
   const now = Date.now();
-  stmts.updateWorkflowStageAndStatus.run(prevStage, 'active', now, workflowId);
+  stmts.updateWorkflowStageAndStatus.run(fromStage, 'active', now, workflowId);
 
-  // Generate a brief incorporating the user's feedback
-  const brief = await getCoordinator().generateStageBrief(workflowId, fromStage, feedback);
+  // Load the prior artifact so the specialist can revise in-place
+  const priorDraft = loadLatestArtifactForStage(workflow.item_id, fromStage);
+  const brief = priorDraft
+    ? getCoordinator().generateRevisionBrief(workflowId, fromStage, priorDraft, [`[HUMAN FEEDBACK] ${feedback}`])
+    : await getCoordinator().generateStageBrief(workflowId, fromStage, feedback);
 
   // Create a new specialist session
   const stageMap = STAGE_SESSION_MAP[fromStage] ?? { mode: 'analyst' as AppMode, agentType: 'analyst' as AgentType };
@@ -1399,8 +1409,8 @@ export async function reiterateFromStage(
 
   const shouldAutoApprove = SILENT_STAGES.has(fromStage);
 
-  // Fire the autonomous stage — the existing chain handles all downstream stages
-  runAutonomousStage(session.id, workflowId, fromStage, workflow.item_id, brief, shouldAutoApprove)
+  // Fire the autonomous stage — skip critic since this is human-initiated
+  runAutonomousStage(session.id, workflowId, fromStage, workflow.item_id, brief, shouldAutoApprove, undefined, undefined, undefined, true)
     .catch(err => logger.error(`Reiteration re-run for stage "${fromStage}" failed: ${err.message}`));
 
   logger.info(`Reiteration started — session ${session.id} for stage "${fromStage}" in workflow ${workflowId}`);
@@ -1537,6 +1547,35 @@ export function deleteWorkflow(workflowId: string): void {
   db.prepare('DELETE FROM workflows WHERE id = ?').run(workflowId);
 
   logger.info(`Deleted workflow ${workflowId} — ${deletedFiles} file(s) removed, ${sessionIds.size} session(s) deleted`);
+}
+
+function loadLatestArtifactForStage(itemId: string, stage: string): string | undefined {
+  const artifactType = STAGE_ARTIFACT_TYPE[stage];
+  if (!artifactType) return undefined;
+  const row = db.prepare<[string, string], { file_path: string }>(`
+    SELECT a.file_path FROM artifacts a
+    JOIN sessions s ON a.session_id = s.id
+    WHERE s.item_id = ? AND a.type = ?
+    ORDER BY a.created_at DESC LIMIT 1
+  `).get(itemId, artifactType);
+  if (!row?.file_path) return undefined;
+  try {
+    return fs.readFileSync(row.file_path, 'utf-8');
+  } catch {
+    return undefined;
+  }
+}
+
+function loadFullArtifact(artifactId: number): string | undefined {
+  const row = db.prepare<[number], { file_path: string }>(
+    'SELECT file_path FROM artifacts WHERE id = ?'
+  ).get(artifactId);
+  if (!row?.file_path) return undefined;
+  try {
+    return fs.readFileSync(row.file_path, 'utf-8');
+  } catch {
+    return undefined;
+  }
 }
 
 function loadArtifactSummary(artifactId: number): string | undefined {

@@ -15,6 +15,13 @@ interface WorkflowListItem {
   checkpoint_count: number;
 }
 
+const STAGE_SHORT_LABELS: Record<string, string> = {
+  analyst: 'Research',
+  pm_prd: 'PRD',
+  solution_architect: 'Arch',
+  pm_backlog: 'Backlog',
+};
+
 export function WorkflowHistory() {
   const { applyWorkflowStatus } = useWorkflowStore();
   const [workflows, setWorkflows] = useState<WorkflowListItem[]>([]);
@@ -114,9 +121,13 @@ export function WorkflowHistory() {
                           {w.status === 'complete' ? 'done' : w.status === 'paused_at_checkpoint' ? 'paused' : w.status}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 mt-1 text-xs text-gray-400 dark:text-gray-500">
-                        <span>{date.toLocaleDateString()}</span>
-                        <span>{stages.length} stage{stages.length !== 1 ? 's' : ''}</span>
+                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                        {stages.filter(s => s !== 'curator').map(s => (
+                          <span key={s} className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">
+                            {STAGE_SHORT_LABELS[s] ?? s}
+                          </span>
+                        ))}
+                        <span className="text-[10px] text-gray-400 dark:text-gray-500 ml-0.5">{date.toLocaleDateString()}</span>
                       </div>
                     </button>
                     <button

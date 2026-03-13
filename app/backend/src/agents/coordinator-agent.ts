@@ -76,36 +76,35 @@ If a context/tech-stack.md file was provided, align all choices with the existin
 
   pm_backlog: {
     label: 'Backlog JSON (Pip)',
-    format: `Produce a single valid JSON object wrapped in a \`\`\`json code block with this exact structure:
+    format: `Produce a single valid JSON object wrapped in a \`\`\`json code block. Right-size the output:
+- Single ticket (1 story): place story in epic.stories, no features array
+- Small feature (2–5 stories): place stories in epic.stories, no features array
+- Multi-feature epic (6+ stories spanning distinct capabilities): use features array
 
+Multi-feature structure:
 {
-  "epic": {
-    "title": "string",
-    "description": "string",
-    "businessValue": "string",
-    "prdLink": "string"
-  },
+  "epic": { "title": "string", "description": "string", "businessValue": "string", "prdLink": "string" },
   "features": [
     {
-      "title": "string",
-      "description": "string",
-      "phase": "string",
+      "title": "string", "description": "string", "phase": "string",
       "stories": [
-        {
-          "title": "string",
-          "persona": "string",
-          "goal": "string",
-          "benefit": "string",
+        { "title": "string", "persona": "string", "goal": "string", "benefit": "string",
           "acceptanceCriteria": ["Given … When … Then …"],
           "agentContext": "string — implementation context a developer agent needs",
-          "effort": "number — Fibonacci estimate (1, 2, 3, 5, 8, 13) for implementation complexity"
-        }
+          "effort": "number — Fibonacci estimate (1, 2, 3, 5, 8, 13)" }
       ]
     }
   ]
 }
 
-Constraints: max 6 features per epic, max 12 stories per feature. Each story must be independently deliverable in a single sprint. Stories within a feature must be in dependency order — no story may depend on a later story.`,
+Small scope structure (no features array):
+{
+  "epic": { "title": "string", "description": "string", "businessValue": "string",
+    "stories": [ { "...same story structure as above..." } ]
+  }
+}
+
+Constraints: max 6 features per epic, max 12 stories per feature. Each story must be independently deliverable in a single sprint. Stories within a feature must be in dependency order.`,
   },
 
   critic: {

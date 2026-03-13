@@ -40,8 +40,12 @@ interface BacklogData {
     description?: string;
     businessValue?: string;
     prdLink?: string;
+    totalEffort?: number;
+    sprintsRequired?: number;
+    effectiveVelocity?: number;
+    stories?: BacklogStory[];
   };
-  features: BacklogFeature[];
+  features?: BacklogFeature[];
 }
 
 function tryParseBacklog(content: string): BacklogData | null {
@@ -49,7 +53,8 @@ function tryParseBacklog(content: string): BacklogData | null {
     // Strip code fences if present
     const cleaned = content.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
     const parsed = JSON.parse(cleaned);
-    if (parsed?.epic && Array.isArray(parsed?.features)) return parsed as BacklogData;
+    // Accept either features array or stories directly on epic
+    if (parsed?.epic && (Array.isArray(parsed?.features) || Array.isArray(parsed?.epic?.stories))) return parsed as BacklogData;
     return null;
   } catch {
     return null;
@@ -67,8 +72,17 @@ function BacklogView({ data }: { data: BacklogData }) {
     });
   };
 
-  const totalStories = data.features.reduce((sum, f) => sum + f.stories.length, 0);
-  const totalEffort = data.features.reduce((sum, f) => sum + f.stories.reduce((s, st) => s + (st.effort ?? 0), 0), 0);
+  // Normalise: stories can be in features[].stories or directly in epic.stories
+  const features = data.features ?? [];
+  const flatStories = data.epic.stories ?? [];
+  const hasFeatures = features.length > 0;
+
+  const totalStories = hasFeatures
+    ? features.reduce((sum, f) => sum + f.stories.length, 0)
+    : flatStories.length;
+  const totalEffort = hasFeatures
+    ? features.reduce((sum, f) => sum + f.stories.reduce((s, st) => s + (st.effort ?? 0), 0), 0)
+    : flatStories.reduce((s, st) => s + (st.effort ?? 0), 0);
 
   return (
     <div className="space-y-4">
@@ -78,8 +92,11 @@ function BacklogView({ data }: { data: BacklogData }) {
           <span className="text-xs font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-400">Epic</span>
           <span className="text-xs text-gray-400">·</span>
           <span className="text-xs text-gray-500 dark:text-gray-400">
-            {data.features.length} feature{data.features.length !== 1 ? 's' : ''} · {totalStories} stor{totalStories !== 1 ? 'ies' : 'y'}
+            {hasFeatures && <>{features.length} feature{features.length !== 1 ? 's' : ''} · </>}{totalStories} stor{totalStories !== 1 ? 'ies' : 'y'}
             {totalEffort > 0 && <> · {totalEffort} pts</>}
+            {data.epic.sprintsRequired != null && (
+              <> · {data.epic.sprintsRequired} sprints</>
+            )}
           </span>
         </div>
         <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100">{data.epic.title}</h3>
@@ -91,122 +108,210 @@ function BacklogView({ data }: { data: BacklogData }) {
         )}
       </div>
 
-      {/* Features */}
-      {data.features.map((feature, fi) => {
-        const featureEffort = feature.stories.reduce((s, st) => s + (st.effort ?? 0), 0);
-        return (
-        <div key={fi} className="rounded-lg border border-gray-200 dark:border-gray-700">
-          {/* Feature header */}
-          <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-700 rounded-t-lg">
-            <div className="flex items-center gap-2 mb-0.5">
-              <span className="text-xs font-semibold uppercase tracking-wide text-blue-500 dark:text-blue-400">Feature</span>
-              {feature.phase && (
-                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                  feature.phase === 'MVP'
-                    ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
-                }`}>
-                  {feature.phase}
-                </span>
-              )}
-              {featureEffort > 0 && (
-                <span className="text-xs text-gray-400 dark:text-gray-500">{featureEffort} pts</span>
-              )}
-            </div>
-            <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{feature.title}</h4>
-            {feature.description && (
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{feature.description}</p>
-            )}
-          </div>
+      {/* Stories renderer — shared between feature-wrapped and flat modes */}
+      {(() => {
+        const renderStory = (story: BacklogStory, si: number, prefix: string) => {
+          const key = `${prefix}-${si}`;
+          const isExpanded = expandedStories.has(key);
+          return (
+            <div key={si} className="px-4 py-2.5">
+              <button
+                onClick={() => toggleStory(key)}
+                className="w-full text-left flex items-start gap-2 group"
+              >
+                <svg
+                  className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                  fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-gray-400 dark:text-gray-500">S{prefix}.{si + 1}</span>
+                    <span className="text-sm text-gray-900 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                      {story.title}
+                    </span>
+                    {story.effort != null && (
+                      <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                        story.effort >= 8 ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                          : story.effort >= 5 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                          : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                      }`}>
+                        {story.effort}
+                      </span>
+                    )}
+                  </div>
+                  {story.persona && !isExpanded && (
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 truncate">{story.persona}</p>
+                  )}
+                </div>
+              </button>
 
-          {/* Stories */}
-          <div className="divide-y divide-gray-100 dark:divide-gray-700">
-            {feature.stories.map((story, si) => {
-              const key = `${fi}-${si}`;
-              const isExpanded = expandedStories.has(key);
-
-              return (
-                <div key={si} className="px-4 py-2.5">
-                  <button
-                    onClick={() => toggleStory(key)}
-                    className="w-full text-left flex items-start gap-2 group"
-                  >
-                    <svg
-                      className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-                      fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-medium text-gray-400 dark:text-gray-500">S{fi + 1}.{si + 1}</span>
-                        <span className="text-sm text-gray-900 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                          {story.title}
-                        </span>
-                        {story.effort != null && (
-                          <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                            story.effort >= 8 ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                              : story.effort >= 5 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
-                              : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                          }`}>
-                            {story.effort}
-                          </span>
-                        )}
-                      </div>
-                      {story.persona && !isExpanded && (
-                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 truncate">{story.persona}</p>
-                      )}
+              {isExpanded && (
+                <div className="ml-5.5 mt-2 space-y-2 pl-4 border-l-2 border-gray-100 dark:border-gray-700">
+                  {story.persona && (
+                    <div>
+                      <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Persona: </span>
+                      <span className="text-xs text-gray-700 dark:text-gray-300">{story.persona}</span>
                     </div>
-                  </button>
-
-                  {isExpanded && (
-                    <div className="ml-5.5 mt-2 space-y-2 pl-4 border-l-2 border-gray-100 dark:border-gray-700">
-                      {story.persona && (
-                        <div>
-                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Persona: </span>
-                          <span className="text-xs text-gray-700 dark:text-gray-300">{story.persona}</span>
-                        </div>
-                      )}
-                      {story.goal && (
-                        <div>
-                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Goal: </span>
-                          <span className="text-xs text-gray-700 dark:text-gray-300">{story.goal}</span>
-                        </div>
-                      )}
-                      {story.benefit && (
-                        <div>
-                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Benefit: </span>
-                          <span className="text-xs text-gray-700 dark:text-gray-300">{story.benefit}</span>
-                        </div>
-                      )}
-                      {story.acceptanceCriteria && story.acceptanceCriteria.length > 0 && (
-                        <div>
-                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Acceptance Criteria:</p>
-                          <ul className="space-y-1">
-                            {story.acceptanceCriteria.map((ac, ai) => (
-                              <li key={ai} className="text-xs text-gray-700 dark:text-gray-300 flex items-start gap-1.5">
-                                <span className="text-green-500 mt-px flex-shrink-0">✓</span>
-                                <span>{ac}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {story.agentContext && (
-                        <div className="bg-gray-50 dark:bg-gray-800 rounded p-2 mt-1">
-                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5">Agent Context:</p>
-                          <p className="text-xs text-gray-600 dark:text-gray-400">{story.agentContext}</p>
-                        </div>
-                      )}
+                  )}
+                  {story.goal && (
+                    <div>
+                      <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Goal: </span>
+                      <span className="text-xs text-gray-700 dark:text-gray-300">{story.goal}</span>
+                    </div>
+                  )}
+                  {story.benefit && (
+                    <div>
+                      <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Benefit: </span>
+                      <span className="text-xs text-gray-700 dark:text-gray-300">{story.benefit}</span>
+                    </div>
+                  )}
+                  {story.acceptanceCriteria && story.acceptanceCriteria.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Acceptance Criteria:</p>
+                      <ul className="space-y-1">
+                        {story.acceptanceCriteria.map((ac, ai) => (
+                          <li key={ai} className="text-xs text-gray-700 dark:text-gray-300 flex items-start gap-1.5">
+                            <span className="text-green-500 mt-px flex-shrink-0">✓</span>
+                            <span>{ac.split(/\b(Given|When|Then|And|But)\b/gi).map((part, pi) =>
+                              /^(Given|When|Then|And|But)$/i.test(part)
+                                ? <span key={pi}>{pi > 1 && <br />}<strong>{part}</strong></span>
+                                : <span key={pi}>{part}</span>
+                            )}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {story.agentContext && (
+                    <div className="bg-gray-50 dark:bg-gray-800 rounded p-2 mt-1">
+                      <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5">Agent Context:</p>
+                      <p className="text-xs text-gray-600 dark:text-gray-400">{story.agentContext}</p>
                     </div>
                   )}
                 </div>
-              );
-            })}
+              )}
+            </div>
+          );
+        };
+
+        if (hasFeatures) {
+          return features.map((feature, fi) => {
+            const featureEffort = feature.stories.reduce((s, st) => s + (st.effort ?? 0), 0);
+            return (
+              <div key={fi} className="rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-700 rounded-t-lg">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-blue-500 dark:text-blue-400">Feature</span>
+                    {feature.phase && (
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                        feature.phase === 'MVP'
+                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                          : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+                      }`}>
+                        {feature.phase}
+                      </span>
+                    )}
+                    {featureEffort > 0 && (
+                      <span className="text-xs text-gray-400 dark:text-gray-500">
+                        {featureEffort} pts
+                        {data.epic.effectiveVelocity && data.epic.effectiveVelocity > 0 && (
+                          <> · {Math.round((featureEffort / data.epic.effectiveVelocity) * 10) / 10} sprints</>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                  <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{feature.title}</h4>
+                  {feature.description && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{feature.description}</p>
+                  )}
+                </div>
+                <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                  {feature.stories.map((story, si) => renderStory(story, si, `${fi + 1}`))}
+                </div>
+              </div>
+            );
+          });
+        }
+
+        // Flat stories — no feature wrapper
+        return (
+          <div className="rounded-lg border border-gray-200 dark:border-gray-700">
+            <div className="divide-y divide-gray-100 dark:divide-gray-700">
+              {flatStories.map((story, si) => renderStory(story, si, '1'))}
+            </div>
           </div>
-        </div>
         );
-      })}
+      })()}
+    </div>
+  );
+}
+
+/** Extract personas from backlog data for the sidebar panel */
+function extractPersonas(data: BacklogData) {
+  const map = new Map<string, { count: number; stories: { feature: string; title: string; goal?: string; benefit?: string }[] }>();
+  const addStory = (s: BacklogStory, featureTitle: string) => {
+    if (s.persona) {
+      const entry = map.get(s.persona) ?? { count: 0, stories: [] };
+      entry.count++;
+      entry.stories.push({ feature: featureTitle, title: s.title, goal: s.goal, benefit: s.benefit });
+      map.set(s.persona, entry);
+    }
+  };
+  if (data.features) {
+    for (const f of data.features) {
+      for (const s of f.stories) addStory(s, f.title);
+    }
+  }
+  if (data.epic.stories) {
+    for (const s of data.epic.stories) addStory(s, data.epic.title);
+  }
+  return Array.from(map.entries()).sort((a, b) => b[1].count - a[1].count);
+}
+
+function PersonaPanel({ personas }: { personas: ReturnType<typeof extractPersonas> }) {
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  return (
+    <div className="rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20 p-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-purple-500 dark:text-purple-400 mb-2">
+        Personas ({personas.length})
+      </p>
+      <div className="space-y-1">
+        {personas.map(([name, info]) => (
+          <div key={name}>
+            <button
+              onClick={() => setExpanded(expanded === name ? null : name)}
+              className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded hover:bg-purple-100 dark:hover:bg-purple-900/40 transition-colors"
+            >
+              <div className="flex items-center gap-1.5 min-w-0">
+                <svg
+                  className={`w-3 h-3 flex-shrink-0 text-purple-400 transition-transform ${expanded === name ? 'rotate-90' : ''}`}
+                  fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                <span className="text-xs text-gray-700 dark:text-gray-300 text-left">{name}</span>
+              </div>
+              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 flex-shrink-0">
+                {info.count}
+              </span>
+            </button>
+            {expanded === name && (
+              <div className="ml-5 mt-1 mb-2 space-y-1.5">
+                {info.stories.map((s, i) => (
+                  <div key={i} className="text-xs border-l-2 border-purple-200 dark:border-purple-700 pl-2">
+                    <p className="font-medium text-gray-700 dark:text-gray-300">{s.title}</p>
+                    <p className="text-gray-400 dark:text-gray-500">{s.feature}</p>
+                    {s.goal && <p className="text-gray-500 dark:text-gray-400 italic mt-0.5">I want {s.goal}</p>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -225,6 +330,7 @@ export function ArtifactViewer() {
   const [pushLoading, setPushLoading] = useState(false);
   const [pushResult, setPushResult] = useState<{ epicUrl: string; featureCount: number; storyCount: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Find the pending checkpoint that has this artifact
   const pendingCheckpoint = checkpoints.find(
@@ -286,9 +392,10 @@ export function ArtifactViewer() {
 
   const workItemsEnabled = config?.integrations?.workItems && config.integrations.workItems !== 'none';
   const isBacklog = artifactType === 'backlog';
-  // Show push button for approved backlogs or pending backlog checkpoints
+  // Show push button only when workflow is complete and backlog was approved
   const backlogApproved = isBacklog && checkpoints.some(c => c.stage === 'pm_backlog' && c.status === 'approved');
-  const showPushButton = isBacklog && workItemsEnabled && backlogApproved;
+  const workflowComplete = activeWorkflow?.status === 'complete';
+  const showPushButton = isBacklog && workItemsEnabled && backlogApproved && workflowComplete;
 
   async function pushToBoard() {
     if (!activeWorkflow) return;
@@ -325,12 +432,13 @@ export function ArtifactViewer() {
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/30 dark:bg-black/50"
-        onClick={() => setViewingArtifactId(null)}
+        onClick={() => { setViewingArtifactId(null); setIsFullscreen(false); }}
       />
 
       {/* Side-by-side container — expands as panels are opened */}
       <div className={`relative flex h-full overflow-hidden transition-all duration-200 ${
-        showSidePanel && showIssuesPanel ? 'w-full max-w-[90rem]'
+        isFullscreen ? 'w-full'
+          : showSidePanel && showIssuesPanel ? 'w-full max-w-[90rem]'
           : showSidePanel ? 'w-full max-w-[72rem]'
           : 'w-full max-w-2xl'
       }`}>
@@ -446,7 +554,22 @@ export function ArtifactViewer() {
                 </a>
               )}
               <button
-                onClick={() => setViewingArtifactId(null)}
+                onClick={() => setIsFullscreen(f => !f)}
+                className="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+              >
+                {isFullscreen ? (
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9L4 4m0 0v4m0-4h4m6 6l5 5m0 0v-4m0 4h-4M9 15l-5 5m0 0v-4m0 4h4m6-6l5-5m0 0v4m0-4h-4" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5h-4m4 0v-4m0 4l-5-5" />
+                  </svg>
+                )}
+              </button>
+              <button
+                onClick={() => { setViewingArtifactId(null); setIsFullscreen(false); }}
                 className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -457,31 +580,40 @@ export function ArtifactViewer() {
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto px-4 py-4">
-            {loading ? (
-              <p className="text-sm text-gray-400 animate-pulse">Loading...</p>
-            ) : content ? (() => {
-              // Try to render backlog as structured view
-              if (artifactType === 'backlog') {
-                const backlogData = tryParseBacklog(content);
-                if (backlogData) return <BacklogView data={backlogData} />;
-              }
-              // Default: markdown
-              return (
-                <div className="prose prose-sm dark:prose-invert max-w-none">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+          {(() => {
+            const backlogData = content && artifactType === 'backlog' ? tryParseBacklog(content) : null;
+            const showPersonaPanel = isFullscreen && backlogData && extractPersonas(backlogData).length > 0;
+
+            return (
+              <div className={`flex-1 min-h-0 flex ${showPersonaPanel ? '' : 'flex-col'}`}>
+                <div className={`flex-1 overflow-y-auto px-4 py-4 ${isFullscreen ? 'mx-auto w-full max-w-4xl' : ''}`}>
+                  {loading ? (
+                    <p className="text-sm text-gray-400 animate-pulse">Loading...</p>
+                  ) : content ? (() => {
+                    if (backlogData) return <BacklogView data={backlogData} />;
+                    return (
+                      <div className="prose prose-sm dark:prose-invert max-w-none">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+                      </div>
+                    );
+                  })() : error ? (
+                    <p className="text-sm text-red-500">{error}</p>
+                  ) : (
+                    <p className="text-sm text-gray-400 italic">No content available.</p>
+                  )}
                 </div>
-              );
-            })() : error ? (
-              <p className="text-sm text-red-500">{error}</p>
-            ) : (
-              <p className="text-sm text-gray-400 italic">No content available.</p>
-            )}
-          </div>
+                {showPersonaPanel && (
+                  <div className="w-80 flex-shrink-0 overflow-y-auto border-l border-gray-200 dark:border-gray-700 p-3">
+                    <PersonaPanel personas={extractPersonas(backlogData)} />
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Action buttons (only for pending checkpoints) */}
           {pendingCheckpoint && (
-            <div className="px-4 pb-4 pt-3 border-t border-gray-200 dark:border-gray-700 flex-shrink-0 space-y-2">
+            <div className={`px-4 pb-4 pt-3 border-t border-gray-200 dark:border-gray-700 flex-shrink-0 space-y-2 ${isFullscreen ? 'mx-auto w-full max-w-4xl' : ''}`}>
               {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
 
               {showReviseForm && !showSidePanel ? (

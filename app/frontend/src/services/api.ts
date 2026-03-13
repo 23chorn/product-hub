@@ -66,7 +66,7 @@ class APIClient {
   // Local Initiatives (roadmap=none mode)
   // ============================================
 
-  async getInitiatives(): Promise<AirtableItem[]> {
+  async getInitiatives(): Promise<(AirtableItem & { workflow?: { id: string; status: string; currentStage: string | null; summary: string | null } })[]> {
     const response = await axios.get(`${this.baseURL}/api/initiatives`);
     return response.data;
   }

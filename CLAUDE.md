@@ -40,7 +40,8 @@ app/
 agents/
   personas/  Agent persona .md files (coordinator, analyst, pm, architect, critic, curator)
   templates/ Output templates (research.template.md, prd.template.md, backlog.template.md)
-  config.yaml  User identity and preferences
+  config.example.yaml  Template for user config (tracked)
+  config.yaml  User identity and preferences (gitignored)
 context/     Project context files loaded into every agent system prompt
 db/          SQLite database (product-ops.db) + schema.sql — db file is gitignored
 data/        Artifact exports — gitignored
@@ -116,11 +117,12 @@ There is one flow: the Coordinator-driven workflow. There is no direct-access mo
 5. Default stage sequence: `['analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'curator']`.
 6. For each specialist stage (analyst, pm_prd, solution_architect, pm_backlog):
    - `runAutonomousStage()` creates a session, builds a stage brief via the Coordinator, runs the specialist with its output template injected, collects the full response, saves an artifact.
-   - Inline critic reviews the output. If issues found, auto-revises up to 2×. If still unresolved, pauses for human.
+   - Inline critic reviews the output. If issues found, auto-revises once. If still unresolved, pauses for human.
    - If critic passes (or after max revisions), creates a `pending` checkpoint. Workflow status → `paused_at_checkpoint`.
-   - Human reviews: **Approve** → next stage; **Revise** → rerun with feedback; **Reject** → workflow ends.
+   - Human reviews: **Approve** → next stage; **Revise** → rerun with feedback (skips critic — human is now the reviewer); **Reject** → workflow ends.
+   - Human revisions use `generateRevisionBrief()` which injects the full prior draft so the specialist revises in-place rather than regenerating from scratch.
 7. Curator stage runs automatically, writes `context_diffs` rows, workflow completes.
-8. After completion, user can **redo from any stage** with feedback — that stage and all downstream stages rerun.
+8. After completion, user can **redo from any stage** with feedback — that stage and all downstream stages rerun (critic skipped).
 
 #### Key files
 
@@ -172,7 +174,26 @@ Zustand stores:
 - `stores/contextEditorStore.ts` — open/close state for Context Editor modal.
 - `stores/templateEditorStore.ts` — open/close state for Template Editor modal.
 
-Two-column layout in `App.tsx`: left sidebar (stage tracker or workflow history) + main chat (CoordinatorChat). Header has model selector, Context/Templates/Decision Log buttons, and theme toggle.
+Two-column layout in `App.tsx`: left sidebar (stage tracker, workflow history, or initiative list) + main chat (CoordinatorChat). Header has model selector, Context/Templates/Decision Log buttons, and theme toggle.
+
+#### Artifact viewer
+`ArtifactViewer.tsx` renders specialist outputs in a right-side drawer panel:
+- **Fullscreen toggle** — expands panel to fill screen; content constrained to `max-w-4xl` for readability
+- **Backlog preview** — structured view with epic header (sprint estimate), features (per-feature sprint estimate), expandable stories with AC formatting (Given/When/Then on separate lines, keywords bolded)
+- **Persona panel** — fullscreen-only sidebar showing unique personas with story counts, expandable to see which stories reference each persona
+- **Push to Board** — shown only when workflow is complete and backlog approved; pushes to ADO/Jira
+- Supports both flat stories (`epic.stories`) and feature-wrapped stories (`features[].stories`)
+
+#### Initiative list
+`AirtableItemList.tsx` shows local initiatives (always) and Airtable roadmap items (when configured):
+- Workflow status badges (active/paused/done) on both local and roadmap items
+- Selecting an initiative with an existing workflow restores full workflow state
+- AI-generated workflow summary shown as the initiative display name
+
+#### Workflow history
+`WorkflowHistory.tsx` shows past workflows with:
+- Status badges (done/paused/active)
+- Stage badges showing which agent steps were enabled (Research, PRD, Arch, Backlog)
 
 ### Project context (`context/`)
 Markdown files injected into every agent's system prompt under `## Project & Company Context`. Any `.md` file in the folder is picked up automatically. Cached in memory; cache invalidated automatically when files are saved via the UI or when context diffs are approved.
@@ -182,12 +203,21 @@ Six canonical files (see `context/README.md`):
 - `tech-stack.md`, `db-schema.md`, `process.md`, `current-state.md` — create to enable
 
 ### Output templates (`agents/templates/`)
-Three template files define the structure specialists follow:
+Four template files define the structure specialists follow:
 - `research.template.md` — Analyst output format
 - `prd.template.md` — PRD output format
-- `backlog.template.md` — Backlog output format (max 6 features/epic, max 8 stories/feature)
+- `architecture.template.md` — Architecture output format
+- `backlog.template.md` — Backlog output format. Right-sizes output based on scope: single story (no feature wrapper), small feature (2–5 stories flat on epic), or multi-feature epic (max 6 features, max 12 stories/feature)
 
 Editable from the UI (Templates button in header). Changes require double-confirmation. Templates are read from disk per-stage, so edits take effect on the next stage run.
+
+#### Sprint estimation
+After the backlog specialist produces output, `workflow-router.ts` parses the JSON and injects sprint estimates:
+- Reads `sprint_velocity` and `capacity_factor` from `agents/config.yaml`
+- `effectiveVelocity = sprintVelocity × capacityFactor`
+- `sprintsRequired = totalEffort / effectiveVelocity` (rounded to 1 decimal)
+- Sprint estimates are calculated at both **epic level** (total) and displayed per **feature** in the UI
+- The frontend uses `Math.ceil()` for stakeholder-facing display, raw decimals for internal comparison
 
 ### Integration providers
 Configured via `app/backend/src/config/app-config.ts`:
@@ -196,6 +226,15 @@ Configured via `app/backend/src/config/app-config.ts`:
 - `KNOWLEDGE_BASE_INTEGRATION=notion|none` — external knowledge
 
 Provider implementations in `app/backend/src/integrations/`.
+
+#### Azure DevOps integration
+`integrations/azure-devops.ts` pushes approved backlogs to ADO:
+- Creates Epic → Feature → Story hierarchy using JSON Patch operations
+- Story descriptions use `As a / I want / So that` format in HTML
+- Acceptance criteria use `Given/When/Then` format with bolded keywords and line breaks
+- Story point estimates mapped to `Microsoft.VSTS.Scheduling.Effort`
+- Story type configurable via `AZURE_DEVOPS_STORY_TYPE` env var (default: "User Story"; Scrum template uses "Product Backlog Item")
+- Flat backlog structure (no features) is normalised into a single feature before pushing
 
 ### Mock data
 Set `USE_MOCK_DATA=true` in `.env` to bypass Airtable and use fixture data. Useful for development without a live Airtable connection.
