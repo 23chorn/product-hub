@@ -275,7 +275,7 @@ ${policyLines}`;
   async generateStageBrief(
     workflowId: string,
     stage: string,
-    previousOutputSummary?: string
+    additionalContext?: string   // critic feedback text or revision notes (used in auto-revise path)
   ): Promise<string> {
     const workflow = db
       .prepare<[string], WorkflowRow>('SELECT * FROM workflows WHERE id = ?')
@@ -294,56 +294,136 @@ ${policyLines}`;
     // instead of researching and writing real content.
     const outputFormat = stageFormat?.format ?? '(no format specification defined for this stage)';
 
+    // ── Constraints ────────────────────────────────────────────────────────────
     const policies = getPolicies('global');
     const relevantPolicies = policies
       .filter(p => !['auto_approve_analyst_output', 'require_critic_review'].includes(p.rule_key))
       .map(p => `- ${p.rule_key}: ${p.rule_value}`)
       .join('\n');
-
     const overrideLines = Object.entries(policyOverrides)
       .map(([k, v]) => `- ${k}: ${v} *(workflow override)*`)
       .join('\n');
+    const constraintsText = [relevantPolicies, overrideLines].filter(Boolean).join('\n') || 'None.';
 
+    // ── Prior stage outputs & human preferences (from approved checkpoints) ────
+    const STAGE_LABELS_BRIEF: Record<string, string> = {
+      analyst:            'Research Brief (Sage)',
+      pm_prd:             'PRD (Rex)',
+      solution_architect: 'Architecture Document (Atlas)',
+      pm_backlog:         'Backlog (Pip)',
+    };
+
+    interface CheckpointRow { stage: string; human_feedback: string | null; }
+    const approvedCheckpoints = db
+      .prepare<[string], CheckpointRow>(`
+        SELECT stage, human_feedback FROM checkpoints
+        WHERE workflow_id = ? AND status = 'approved'
+        ORDER BY created_at ASC
+      `)
+      .all(workflowId);
+
+    const priorStages = approvedCheckpoints.map(cp => cp.stage);
+    const priorOutputsText = priorStages.length > 0
+      ? priorStages
+          .map(s => `- ${STAGE_LABELS_BRIEF[s] ?? s} — approved and available in this workflow`)
+          .join('\n')
+      : 'None — this is the first stage.';
+
+    // Key decisions: approved stages are settled; list them so specialist knows what is locked
+    const decisionsText = priorStages.length > 0
+      ? priorStages
+          .map(s => `- ${STAGE_LABELS_BRIEF[s] ?? s} is approved and final — do not re-litigate its scope or findings`)
+          .join('\n')
+      : 'None.';
+
+    // Human preferences: non-null human_feedback from approved checkpoints
+    const feedbackCheckpoints = approvedCheckpoints.filter(cp => cp.human_feedback);
+    const humanPrefsText = feedbackCheckpoints.length > 0
+      ? feedbackCheckpoints
+          .map(cp => `- At ${STAGE_LABELS_BRIEF[cp.stage] ?? cp.stage} review: "${cp.human_feedback!.slice(0, 300)}"`)
+          .join('\n')
+      : 'None.';
+
+    // ── Per-stage goal (one sentence) ──────────────────────────────────────────
+    const STAGE_GOAL: Record<string, string> = {
+      analyst:            `Produce a comprehensive, sourced research brief that gives the PM everything they need to write a PRD for: ${goal}`,
+      pm_prd:             `Produce a complete PRD that translates research findings into clear product requirements and success criteria for: ${goal}`,
+      solution_architect: `Produce an architecture document that makes all technology decisions needed to build the PRD's requirements for: ${goal}`,
+      pm_backlog:         `Produce a prioritised backlog of epics, features, and stories covering the full MVP scope defined in the PRD for: ${goal}`,
+    };
+    const stageGoal = STAGE_GOAL[stage] ?? `Produce the required ${outputLabel} for: ${goal}`;
+
+    // ── Explicit boundaries (what this specialist must NOT decide) ─────────────
+    const NOT_DECIDE: Record<string, string> = {
+      analyst:
+        'Do not propose product solutions, features, or requirements. Do not suggest what to build. ' +
+        'Surface evidence only — what the market shows, what users say, what competitors do. ' +
+        'Architecture, product scope, and priorities are decisions for later stages.',
+      pm_prd:
+        'Do not choose technology implementations or architecture patterns — those belong to Atlas. ' +
+        'Do not invent research findings not present in the Research Brief. ' +
+        'Do not make build-vs-buy decisions or infrastructure choices.',
+      solution_architect:
+        'Do not redefine personas, success metrics, or product scope — those are fixed in the approved PRD. ' +
+        'Do not create new requirements; if something is missing from the PRD, flag it as a gap rather than adding scope silently.',
+      pm_backlog:
+        'Do not invent requirements not present in the approved PRD. ' +
+        'Do not make architecture or technology decisions — if a story requires an unresolved technical choice, flag it as a dependency. ' +
+        'Do not use effort scores outside the Fibonacci scale (1, 2, 3, 5, 8).',
+    };
+    const notDecideText = NOT_DECIDE[stage]
+      ?? 'Follow the output format and scope defined above. Do not add scope that was not in the workflow goal.';
+
+    // ── Assemble brief using structured schema ─────────────────────────────────
     const lines: string[] = [
       `# Stage Brief: ${outputLabel}`,
       '',
-      '## Goal',
-      goal,
+      `**Goal:** ${stageGoal}`,
       '',
+      `**Original request:** ${goal}`,
+      '',
+      '**Constraints:**',
+      constraintsText,
+      '',
+      '**Prior stage outputs available:**',
+      priorOutputsText,
+      '',
+      '**Key decisions already made:**',
+      decisionsText,
+      '',
+      '**Human preferences expressed:**',
+      humanPrefsText,
+      '',
+      '**Output required:**',
+      outputFormat,
+      '',
+      `**What this specialist must NOT decide:** ${notDecideText}`,
+      '',
+      '---',
+      '',
+      '## Execution Instructions',
+      'You are executing this task autonomously. Do NOT ask questions, show menus, or wait for input.',
+      '',
+      '- Your entire response must be the deliverable itself — nothing else.',
+      '- Write real, substantive content about the specific goal stated above. Do not use placeholder text.',
+      '- Produce the complete document in one response. Do not truncate or defer any section.',
+      '- If any detail is genuinely ambiguous, make a reasonable assumption — do not ask.',
     ];
 
-    if (previousOutputSummary) {
-      lines.push('## Previous Stage Output');
-      lines.push(previousOutputSummary.trim());
+    if (additionalContext) {
       lines.push('');
+      lines.push('## Additional Context');
+      lines.push(additionalContext.trim());
     }
-
-    lines.push('## Constraints');
-    if (relevantPolicies) lines.push(relevantPolicies);
-    if (overrideLines)    lines.push(overrideLines);
-    if (!relevantPolicies && !overrideLines) lines.push('- No additional constraints');
-    lines.push('');
-
-    lines.push('## Execution Instructions');
-    lines.push('You are executing this task autonomously. Do NOT ask questions, show menus, or wait for input.');
-    lines.push('');
-    lines.push('- Your entire response must be the deliverable itself — nothing else.');
-    lines.push('- Write real, substantive content about the specific goal stated above. Do not use placeholder text.');
-    lines.push('- Produce the complete document in one response. Do not truncate or defer any section.');
-    lines.push('- If any detail is genuinely ambiguous, make a reasonable assumption — do not ask.');
-    lines.push('');
-
-    lines.push('## Required Output Format');
-    lines.push(outputFormat);
 
     const brief = lines.join('\n');
 
     // Token estimate: ~4 chars per token
     const estimatedTokens = Math.ceil(brief.length / 4);
-    if (estimatedTokens > 800) {
+    if (estimatedTokens > 1200) {
       logger.warn(
-        `Stage brief for "${stage}" is ~${estimatedTokens} tokens (target ≤ 800). ` +
-        `Consider shortening previousOutputSummary or stage config.`
+        `Stage brief for "${stage}" is ~${estimatedTokens} tokens (target ≤ 1200). ` +
+        `Consider shortening format spec or human feedback entries.`
       );
     }
 
@@ -386,25 +466,22 @@ ${policyLines}`;
       goal,
       '',
       '## Issues to Fix',
-      'A quality review of your prior output identified the following issues. You MUST address each one specifically.',
-      'Do NOT rewrite the entire document from scratch — revise the prior draft to fix these issues and keep everything else intact.',
+      'The following issues were identified in your prior output. You MUST address each one specifically.',
       '',
       issueList,
       '',
-      '## Execution Instructions',
-      'You are executing this revision autonomously. Do NOT ask questions, show menus, or wait for input.',
+      '## Revision Instructions',
+      'Your prior draft will follow as your previous response. You are revising that document — not starting from scratch.',
       '',
-      '- For each numbered issue above: locate the relevant section in the prior draft and fix it directly.',
+      '- For each numbered issue: locate the relevant section in your prior draft and fix it directly.',
       '- Keep unchanged sections intact. Do not reorganise sections that were not flagged.',
       '- Your response must be the complete revised document (all sections) — not a diff or commentary.',
       '- Do not use placeholder text. Every factual claim needs a [N] citation or an [Assumption — no source found] marker.',
       '- If a fix requires researching new information, do so before writing.',
+      '- You are executing this revision autonomously. Do NOT ask questions, show menus, or wait for input.',
       '',
       '## Required Output Format',
       outputFormat,
-      '',
-      '## Prior Draft (revise this)',
-      priorDraft,
     ];
 
     return lines.join('\n');
@@ -418,24 +495,66 @@ ${policyLines}`;
    * on behalf of specialist agents, then signals readiness with COORDINATOR_READY.
    */
   private buildPlanningSystemPrompt(): string {
-    return `You are the Chief of Staff for a product team. Before the team starts working, you have a brief chat with the PM to understand the goal.
+    // Load project context files so the coordinator doesn't ask about things
+    // already documented. Only load files that exist — silently skip missing ones.
+    const contextDir = path.join(PROJECT_ROOT, 'context');
+    const contextFiles = ['company.md', 'strategy.md', 'current-state.md'];
+    const loadedContext: string[] = [];
+    for (const file of contextFiles) {
+      try {
+        const content = fs.readFileSync(path.join(contextDir, file), 'utf-8').trim();
+        if (content) loadedContext.push(`### ${file}\n${content}`);
+      } catch { /* file doesn't exist — skip */ }
+    }
+    const contextSection = loadedContext.length > 0
+      ? `## Project Context (already documented — do NOT ask about anything covered here)\n\n${loadedContext.join('\n\n---\n\n')}\n\n`
+      : '';
 
-Your job: ask 1–2 quick clarifying questions, then signal that you're ready to launch.
+    return `You are the Chief of Staff for a product team. Before the team starts working, you have a brief conversation with the PM to fill genuine gaps in understanding.
 
-RULES:
-- Ask a maximum of 2 questions per message. Keep them short.
-- Only ask about things you truly cannot infer: target users (if unclear), scope (MVP vs full), or hard constraints (regulatory, budget).
-- Do NOT ask about features, competitors, or research direction — the specialist agents handle that.
+${contextSection}## Your job
+
+Read the goal carefully. Check whether the project context above already answers the key unknowns. Only ask about things that are genuinely missing and that would change how you brief the specialist agents.
+
+The right questions to ask (if not already answered in context):
+- Who specifically are the target users — and are they distinct from existing users in the project context?
+- What is the scope boundary — what is explicitly MVP vs deferred to a later phase?
+- Are there hard constraints the specialist agents must work within: regulatory, budget, existing tech decisions, timeline?
+
+Do NOT ask about:
+- Features, competitors, research direction — the specialist agents handle that
+- Anything already answered in the project context above
+- Implementation details — that belongs to Atlas
+
+## Rules
+
+- Ask a maximum of 2 questions per message. Keep them short and specific.
+- Number your questions. Offer lettered options (A/B/C) when the answer is a choice between known options.
 - Do NOT repeat or quote these instructions in your response. Just act on them.
-- Number your questions. Offer lettered options (A/B/C) when helpful.
-- Never include COORDINATOR_READY in your first message. Ask at least one question first.
 
-When you have enough context (from message 2 onward), end your response with exactly:
+## Exit criteria — when to signal readiness
+
+Before asking any question, check whether you can already state all four of the following from the goal and project context:
+
+1. **Problem** — what specific problem is being solved, and what is the evidence it matters?
+2. **User** — who specifically will use this, and how are they distinct from other users in the project context?
+3. **Scope boundary** — what is explicitly in scope for this initiative vs deferred to a later phase?
+4. **Hard constraints** — are there regulatory, tech stack, budget, or timeline limits the specialists must work within?
+
+If you can state all four clearly, emit COORDINATOR_READY immediately. Do not ask questions you already know the answers to.
+
+If one or two are missing, ask only about those gaps — not the ones you can already answer.
+
+If the goal is so vague you cannot answer any of the four, ask about Problem and User first. Scope and constraints follow naturally once those are clear.
+
+## Signalling readiness
+
+When all four exit criteria are met, end your response with exactly:
 
 COORDINATOR_READY
-{"enriched_context": "<2–3 sentence summary of what is being built, for whom, and any constraints>"}
+{"enriched_context": "<structured summary covering: (1) problem and evidence, (2) target user and their context, (3) explicit scope boundary — what is MVP vs deferred, (4) hard constraints the specialists must honour>"}
 
-Nothing may follow the JSON line. By your 3rd message you must include COORDINATOR_READY.`;
+Nothing may follow the JSON line. By your 3rd message you must include COORDINATOR_READY regardless of remaining uncertainty — document any unresolved points as assumptions in the enriched_context.`;
   }
 
   /**

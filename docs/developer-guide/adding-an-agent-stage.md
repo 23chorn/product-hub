@@ -302,9 +302,9 @@ Open `agents/personas/coordinator.md`. Add the new stage to the list of availabl
 ```typescript
 interface StageOutputFormat {
   label: string;    // Human-readable name used in stage briefs and logs
-  format: string;   // Full markdown prompt injected under "## Required Output Format"
-                    // in the stage brief. Should specify exact sections, structure,
-                    // and constraints (max word counts, required fields, etc.)
+  format: string;   // Full markdown prompt injected under the "**Output required:**"
+                    // field of the structured stage brief. Should specify exact
+                    // sections, structure, and constraints.
 }
 ```
 
@@ -312,11 +312,24 @@ interface StageOutputFormat {
 - Be prescriptive. Vague format specs produce vague outputs.
 - Include hard constraints: max word counts, required section names, forbidden content.
 - For structured data (JSON, YAML), include the exact schema with a concrete example.
-- Keep the format string under ~800 tokens (~3200 characters) — it's injected inside a larger prompt.
-- If the format requires the agent to reference previous stage output, note it explicitly: `"Using the PRD provided above, produce a backlog..."`.
+- Keep the format string under ~1000 tokens — it's one field inside a larger 8-field brief.
+- If the format requires the agent to reference previous stage output, note it explicitly.
 
 **Where it's used:**
-`generateStageBrief(workflowId, stage, previousOutputSummary?)` reads this config and injects it as the `## Required Output Format` section of the handoff brief that becomes the first user message in the specialist's session.
+`generateStageBrief(workflowId, stage, additionalContext?)` reads this config and injects it as the `**Output required:**` field in a structured 8-field handoff brief. The full brief schema is:
+
+| Field | Content |
+|-------|---------|
+| `**Goal:**` | One sentence — what this stage must produce and why |
+| `**Original request:**` | The workflow goal verbatim |
+| `**Constraints:**` | Active policies and workflow policy overrides |
+| `**Prior stage outputs available:**` | Approved artifacts from earlier stages |
+| `**Key decisions already made:**` | Approved stages listed as final/locked |
+| `**Human preferences expressed:**` | Non-null `human_feedback` from approved checkpoints |
+| `**Output required:**` | The `format` string from `STAGE_OUTPUT_FORMATS` |
+| `**What this specialist must NOT decide:**` | Hardcoded per-stage boundary (e.g. Rex must not make architecture choices) |
+
+The `additionalContext` parameter (optional) appends an `## Additional Context` section — used by the auto-revise path to pass critic feedback when rerunning a stage.
 
 ---
 

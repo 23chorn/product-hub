@@ -885,9 +885,37 @@ async function runAutonomousStage(
     }
 
     const systemPrompt = await agent.buildSystemPrompt(persona, undefined, itemContext, true, stage);
-    const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
-      { role: 'user', content: brief },
-    ];
+
+    // For revision runs: construct a conversation thread so the specialist sees its
+    // prior output as its own assistant turn and makes targeted edits rather than
+    // rewriting from scratch. The brief contains revision instructions only (no
+    // embedded prior draft). The prior draft is injected as the assistant turn.
+    const STAGE_ARTIFACT_LABEL: Record<string, string> = {
+      analyst: 'Research Brief',
+      pm_prd: 'PRD',
+      solution_architect: 'Architecture Document',
+      pm_backlog: 'Backlog',
+    };
+    const messages: Array<{ role: 'user' | 'assistant'; content: string }> = priorDraftContent
+      ? (() => {
+          const artifactLabel = STAGE_ARTIFACT_LABEL[stage] ?? 'document';
+          const issueLines = priorCriticIssues && priorCriticIssues.length > 0
+            ? `\n\nThe specific issues to address:\n${priorCriticIssues.map((issue, i) => `${i + 1}. ${issue}`).join('\n')}`
+            : '';
+          const revisionDirective =
+            `Please revise the ${artifactLabel} above based on the issues listed in the revision instructions.${issueLines}\n\n` +
+            `Make targeted changes only — locate and fix the flagged sections directly. ` +
+            `Do not rewrite, restructure, or modify any section that was not flagged. ` +
+            `Return the complete revised ${artifactLabel} with all sections included.`;
+          return [
+            { role: 'user' as const, content: brief },
+            { role: 'assistant' as const, content: priorDraftContent },
+            { role: 'user' as const, content: revisionDirective },
+          ];
+        })()
+      : [
+          { role: 'user', content: brief },
+        ];
 
     let fullResponse = '';
     let lastReportedSection = '';
@@ -1127,7 +1155,7 @@ async function runAutonomousStage(
     const now = Date.now();
     const cpResult3 = stmts.insertCheckpoint.run(
       workflowId, stage, artifactId, checkpointStatus,
-      JSON.stringify({ session_id: sessionId, autonomous: true, auto_approved: autoApprove }),
+      JSON.stringify({ session_id: sessionId, autonomous: true, auto_approved: autoApprove, ...(diffArtifactId ? { diff_artifact_id: diffArtifactId } : {}) }),
       now
     );
     if (specialistTokenData) {
@@ -1327,13 +1355,12 @@ export async function propagateFeedback(checkpointId: number, feedback: string):
   const workflow = stmts.getWorkflow.get(checkpoint.workflow_id);
   if (!workflow) throw new Error(`Workflow not found: ${checkpoint.workflow_id}`);
 
-  // Load the full prior artifact so the specialist can revise in-place
+  // Load the full prior artifact — passed as the assistant turn in the conversation thread
   const priorDraft = checkpoint.artifact_id
     ? loadFullArtifact(checkpoint.artifact_id)
     : undefined;
 
-  // Use the revision brief which includes the full prior draft and explicit
-  // instructions to revise rather than rewrite from scratch
+  // Build the revision brief (instructions only — prior draft goes into the message thread)
   const brief = priorDraft
     ? getCoordinator().generateRevisionBrief(
         checkpoint.workflow_id,
@@ -1368,7 +1395,8 @@ export async function propagateFeedback(checkpointId: number, feedback: string):
   const shouldAutoApprove = SILENT_STAGES.has(checkpoint.stage);
 
   // Skip critic on human-initiated revisions — the human is now the reviewer
-  runAutonomousStage(session.id, checkpoint.workflow_id, checkpoint.stage, workflow.item_id, brief, shouldAutoApprove, undefined, undefined, undefined, true)
+  // Pass priorDraft so runAutonomousStage threads it as the assistant turn
+  runAutonomousStage(session.id, checkpoint.workflow_id, checkpoint.stage, workflow.item_id, brief, shouldAutoApprove, undefined, priorDraft, undefined, true)
     .catch(err => logger.error(`Revision re-run for stage "${checkpoint.stage}" failed: ${err.message}`));
 
   logger.info(`Revision re-run started — session ${session.id} for stage "${checkpoint.stage}" in workflow ${checkpoint.workflow_id}`);
@@ -1427,7 +1455,8 @@ export async function reiterateFromStage(
   const shouldAutoApprove = SILENT_STAGES.has(fromStage);
 
   // Fire the autonomous stage — skip critic since this is human-initiated
-  runAutonomousStage(session.id, workflowId, fromStage, workflow.item_id, brief, shouldAutoApprove, undefined, undefined, undefined, true)
+  // Pass priorDraft so runAutonomousStage threads it as the assistant turn
+  runAutonomousStage(session.id, workflowId, fromStage, workflow.item_id, brief, shouldAutoApprove, undefined, priorDraft, undefined, true)
     .catch(err => logger.error(`Reiteration re-run for stage "${fromStage}" failed: ${err.message}`));
 
   logger.info(`Reiteration started — session ${session.id} for stage "${fromStage}" in workflow ${workflowId}`);

@@ -47,57 +47,49 @@ export interface CriticReview {
 function buildStageInstructions(stage?: string): string {
   switch (stage) {
     case 'analyst':
-      return `## Stage Context: Research Brief
+      return `## Artifact Stage: Research Brief (Sage)
 
-**Critical rule — source questions are Issues, not PM questions:**
-Any uncertainty you have about where a data point came from, whether a statistic is real, or whether a URL is authentic MUST be raised as a \`[MAJOR]\` Issue — not as a Question for the PM.
-The PM is not able to verify research sources. Instead, instruct the agent to take one of these actions:
-1. Find a verifiable citation and add the correct \`[N]\` reference, OR
-2. Add an explicit \`[Assumption — no source found]\` caveat inline, OR
-3. Remove the unsupported claim entirely.
-
-**Questions for the PM on this artifact** are limited to methodology scope questions only — e.g. "Should this cover the APAC market specifically?" or "Was a cost-comparison to legacy systems required?" Not anything about data provenance.
+Apply the **Research Brief** stage-specific checks from your persona. Key enforcement reminder:
+- Source/citation questions are **Issues**, never PM Questions. The PM cannot verify research provenance.
+- Risks must be domain-specific — generic risks are **MAJOR**.
+- PM Questions are limited to methodology scope only (geography, segments, depth requested).
 
 `;
 
     case 'pm_prd':
-      return `## Stage Context: Product Requirements Document
+      return `## Artifact Stage: PRD (Rex)
 
-**Questions for the PM** should focus on things only the PM can decide:
-- **Scope**: What is explicitly in scope vs out of scope for this version?
-- **Expected behaviour**: How should the system behave in specific edge cases — errors, empty states, permission boundaries, concurrent actions?
-- **Functionality**: What exactly happens when the user does X? What triggers Y?
-- **Business logic**: Are acceptance criteria specific enough to test? What does "success" look like for an ambiguous requirement?
-- **Ownership**: Who decides if a requirement is satisfied? Who signs off on edge case behaviour?
-
-Do NOT ask about technical implementation — that belongs in the architecture stage.
+Apply the **PRD** stage-specific checks from your persona. Key enforcement reminders:
+- Every FR must trace to a user problem. Solution-first requirements are **MAJOR**.
+- Success metrics without a baseline, target, timeframe, or measurement method are **MAJOR**.
+- Counter-metrics missing entirely is **MAJOR**.
+- Empty or missing Out of Scope section is **MAJOR**.
+- PM Questions cover scope, edge case behaviour, and business logic — not implementation.
 
 `;
 
     case 'solution_architect':
-      return `## Stage Context: Architecture Document
+      return `## Artifact Stage: Architecture Document (Atlas)
 
-**Questions for the PM** should cover only business or product constraints that affect architecture choices:
-- Scale expectations or SLA requirements not stated in the PRD
-- Compliance or regulatory constraints that affect data handling
-- Feature priority that affects which services to build first vs later
-- Unclear requirements that lead to two equally valid but incompatible designs
-
-Do NOT ask about technology choices or implementation details — those are in the architect's domain.
+Apply the **Architecture Document** stage-specific checks from your persona. Key enforcement reminders:
+- Unresolved technology choices are **CRITICAL** (core path) or **MAJOR** (non-critical).
+- Every NFR from the PRD must be addressed — silence is **MAJOR**.
+- Missing cost estimates are **MAJOR**.
+- Silent introduction of technologies not in the existing tech stack is **MAJOR**.
+- PM Questions cover business constraints only — not technology choices.
 
 `;
 
     case 'pm_backlog':
-      return `## Stage Context: Product Backlog
+      return `## Artifact Stage: Backlog (Pip)
 
-**Questions for the PM** should focus on:
-- **Story scope**: Is this story too large to deliver in a single sprint? Should it be split?
-- **Acceptance criteria**: Are the Given/When/Then conditions unambiguous and independently testable?
-- **Dependencies**: Can story X genuinely be delivered before story Y, or is there a hidden dependency?
-- **Business value**: What user outcome does this feature enable? Is it clear from the story title?
-- **Edge cases**: What happens when the user hits an error state, empty state, or permission boundary within this story?
-
-Do NOT ask about technical implementation within stories — that is for the engineer to decide.
+Apply the **Backlog** stage-specific checks from your persona. Key enforcement reminders:
+- ACs written as "system shall..." without Given/When/Then are **MAJOR**.
+- Stories scored above 8 that haven't been decomposed are **MAJOR**.
+- Inconsistent effort scoring across similar-complexity stories is **MAJOR**.
+- PRD functional requirements with no corresponding story are **MAJOR** — scope has been silently dropped.
+- Phase tags contradicting the PRD's Out of Scope section are **CRITICAL**.
+- PM Questions cover scope ambiguity — not estimation or AC format.
 
 `;
 

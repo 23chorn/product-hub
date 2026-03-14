@@ -110,17 +110,17 @@ Twelve tables (defined in `db/schema.sql`, mirrored in `database.ts`):
 
 There is one flow: the Coordinator-driven workflow. There is no direct-access mode.
 
-1. User types a goal in `CoordinatorChat` — Coordinator asks 1–3 rounds of clarifying questions.
+1. User types a goal in `CoordinatorChat` — Coordinator reads `company.md`, `strategy.md`, and `current-state.md` from `context/` before asking any questions, and skips topics already covered there. It emits `COORDINATOR_READY` as soon as it can state: (1) what problem is being solved, (2) who the target user is, (3) the scope boundary (MVP vs deferred), and (4) any hard constraints. No more than 3 message rounds regardless of remaining ambiguity.
 2. When ready, Coordinator emits `COORDINATOR_READY` with enriched context JSON.
 3. User can toggle which stages to include (at least one required) before workflow launches.
 4. `POST /api/workflow/start` creates a `workflows` row. `advanceStage()` begins the first stage.
 5. Default stage sequence: `['analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'curator']`.
 6. For each specialist stage (analyst, pm_prd, solution_architect, pm_backlog):
    - `runAutonomousStage()` creates a session, builds a stage brief via the Coordinator, runs the specialist with its output template injected, collects the full response, saves an artifact.
-   - Inline critic reviews the output. If issues found, auto-revises once. If still unresolved, pauses for human.
+   - Inline critic reviews the output. If issues found, auto-revises **up to 2×** using conversation threading: the prior draft is injected as the assistant turn in a 3-message array `[user: brief, assistant: prior draft, user: revision directive]`, causing targeted edits rather than a full regeneration. If still unresolved after 2 revisions, pauses for human.
    - If critic passes (or after max revisions), creates a `pending` checkpoint. Workflow status → `paused_at_checkpoint`.
-   - Human reviews: **Approve** → next stage; **Revise** → rerun with feedback (skips critic — human is now the reviewer); **Reject** → workflow ends.
-   - Human revisions use `generateRevisionBrief()` which injects the full prior draft so the specialist revises in-place rather than regenerating from scratch.
+   - Human reviews: **Approve** → next stage; **Revise** → rerun with feedback; **Reject** → workflow ends.
+   - Human feedback is classified before routing: **output correction** → routed to specialist for revision (using the same conversation threading: `[user: brief, assistant: prior draft, user: revision directive]`); **scope change** → workflow stops and confirms with human before proceeding; **upstream gap** → flags the earlier stage and offers to redo from there.
 7. Curator stage runs automatically, writes `context_diffs` rows, workflow completes.
 8. After completion, user can **redo from any stage** with feedback — that stage and all downstream stages rerun (critic skipped).
 
@@ -129,7 +129,7 @@ There is one flow: the Coordinator-driven workflow. There is no direct-access mo
 | File | Role |
 |------|------|
 | `agents/coordinator-agent.ts` | `CoordinatorAgent` class. Planning sessions, stage briefs, mid-workflow chat. Split `{ stable, dynamic }` prompt. |
-| `agents/critic-agent.ts` | `CriticAgent` class. Single-shot review with split prompt for caching. Parses Issues/Strengths/Verdict. |
+| `agents/critic-agent.ts` | `CriticAgent` class. Single-shot review with split prompt for caching. Parses Issues/Strengths/Verdict. Uses **stage-specific review criteria**: `buildStageInstructions(stage)` injects enforcement reminders per stage (analyst, pm_prd, solution_architect, pm_backlog), each with specific CRITICAL/MAJOR/MINOR rules for that artifact type. Full rules live in `agents/personas/critic.md` under `## Stage-Specific Checks`. |
 | `agents/curator-agent.ts` | `ContextCuratorAgent` class. Fetches artifacts, reads context files, proposes diffs. |
 | `agents/bmad-agent.ts` | `BmadAgent` class. Persona loading, project context injection, per-stage template injection, streaming. |
 | `agents/workflow-router.ts` | Core state machine. `createWorkflow()`, `advanceStage()`, `runAutonomousStage()`, `resolveCheckpoint()`, `propagateFeedback()`, `reiterateFromStage()`, cost tracking. |
@@ -148,7 +148,7 @@ There is one flow: the Coordinator-driven workflow. There is no direct-access mo
 Only the relevant template is injected into the system prompt for each stage. Templates are read from disk each time — no caching, so UI edits take effect on the next stage run.
 
 #### Stage output format specifications
-`STAGE_OUTPUT_FORMATS` in `coordinator-agent.ts` defines inline format specs injected into `generateStageBrief()`. When adding a new stage, add entries in both `STAGE_OUTPUT_FORMATS` and `STAGE_TEMPLATE_MAP`.
+`STAGE_OUTPUT_FORMATS` in `coordinator-agent.ts` defines inline format specs injected into `generateStageBrief()`. `generateStageBrief()` now produces a **structured 8-field brief schema** rather than flat sections. The fields are: Goal, Original request, Constraints, Prior stage outputs available, Key decisions already made, Human preferences expressed, Output required, What this specialist must NOT decide. The parameter previously named `previousOutputSummary` has been renamed to `additionalContext` (used for critic feedback on the auto-revise path). When adding a new stage, add entries in both `STAGE_OUTPUT_FORMATS` and `STAGE_TEMPLATE_MAP`.
 
 #### Policies (governance)
 The `policies` DB table stores key-value rules. Loaded at runtime — no restart needed. Key policies:
@@ -235,6 +235,7 @@ Provider implementations in `app/backend/src/integrations/`.
 - Story point estimates mapped to `Microsoft.VSTS.Scheduling.Effort`
 - Story type configurable via `AZURE_DEVOPS_STORY_TYPE` env var (default: "User Story"; Scrum template uses "Product Backlog Item")
 - Flat backlog structure (no features) is normalised into a single feature before pushing
+- Phase 2+ features are grouped into **separate epics** per phase (e.g. "Phase 2 — [Epic Title]"), but only when MVP features also exist alongside them. If all features are in the same phase, a single epic is created.
 
 ### Mock data
 Set `USE_MOCK_DATA=true` in `.env` to bypass Airtable and use fixture data. Useful for development without a live Airtable connection.

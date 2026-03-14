@@ -44,7 +44,7 @@ In the centre panel, type what you want to achieve. Include:
 
 ### Step 3 — Answer clarifying questions
 
-The Chief of Staff will ask 1–3 rounds of focused questions to fill in gaps. Answer concisely — it makes reasonable inferences from terse replies.
+Before asking anything, the Chief of Staff reads your project context files (Company Overview, Strategy, Current State) so it already knows your company, product, and tech landscape. It asks questions only to fill gaps on four specific criteria: the **problem** being solved, the **target user**, the **scope boundary** (MVP vs. deferred), and any **hard constraints**. Once it can answer all four, it signals readiness immediately — often after a single round. Maximum 3 rounds regardless. Answer concisely — it makes reasonable inferences from terse replies.
 
 ### Step 4 — Choose your stages
 
@@ -74,6 +74,8 @@ The quality of your goal directly affects everything the pipeline produces.
 > Redesign the onboarding flow for enterprise customers who purchase via our sales team. The current flow assumes self-serve signup and fails for accounts that need SSO, multi-team provisioning, and admin-first setup. We want to cut time-to-first-value from 14 days to under 5. Budget: $80k, target launch in 8 weeks.
 
 The more constraints and context you include, the fewer revision rounds you'll need.
+
+**If your context files are filled in:** You don't need to repeat company or product background in your goal — the agents already know it from the Context Editor files. Focus your goal on what's new or different about this initiative. A brief anchor phrase like "building on our current tech stack" or "for our enterprise customer segment" is enough to confirm shared context.
 
 ---
 
@@ -114,6 +116,18 @@ You want changes before moving on. Type your feedback — be specific. The syste
 
 Specific, numbered instructions produce specific revisions.
 
+### How the Chief of Staff handles revision feedback
+
+When you submit revision feedback, the Chief of Staff classifies it before acting:
+
+| Type | What it means | What happens |
+|------|--------------|--------------|
+| **Output correction** | Something in the artifact is wrong or missing | Routed directly to the specialist for a targeted revision |
+| **Scope change** | You're changing what should be built | The Chief of Staff pauses, names which stages are affected, and confirms before proceeding |
+| **Upstream gap** | The feedback reveals a problem in an earlier stage | Flagged explicitly — you're offered the choice to redo from that earlier stage or proceed with a documented assumption |
+
+This classification ensures corrections are fast while scope changes and upstream problems get the attention they deserve instead of silently compounding.
+
 ### Reject
 The workflow ends. Use this if the direction is fundamentally wrong and you want to start over.
 
@@ -126,6 +140,8 @@ The Critic runs automatically after each specialist stage — you don't interact
 - **Passes** — no issues found, the checkpoint is created for your review
 - **Auto-revises** — issues found, the specialist reruns with the feedback (up to 2 times)
 - **Escalates** — after 2 revision attempts, pauses for your input with the issues listed
+
+The Critic applies stage-specific checks tailored to each artifact type — Research Briefs are evaluated on market coverage and evidence quality, PRDs on problem framing and requirement completeness, Architecture Documents on technical soundness and stack alignment, and Backlogs on story granularity and testability. Each stage has its own CRITICAL and MAJOR rules suited to what matters at that stage.
 
 The Critic's review details (issue counts, severity) are shown in the narration thread.
 
@@ -286,7 +302,7 @@ Policies are stored in the database. Contact your developer to adjust them.
 ## Troubleshooting
 
 **The Coordinator keeps asking questions instead of launching.**
-After 3 rounds of questions it will launch automatically. You can also provide more detail upfront to reduce Q&A rounds.
+The Chief of Staff launches as soon as it can answer four criteria: problem, target user, scope boundary, and constraints. This often happens after a single round. If it keeps asking, your goal likely lacks scope specificity or a named user segment. Add a sentence addressing what's in scope for this initiative and who it's for. If your context files are filled in, include a brief reference to them in your goal (e.g. "building on our current tech stack" or "for our existing enterprise customers") so the coordinator can confirm what it already knows rather than asking to verify it.
 
 **An agent produces output about the wrong topic.**
 The context files may describe a different product than what you're building. Update them via the Context Editor.
