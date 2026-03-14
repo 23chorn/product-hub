@@ -21,6 +21,8 @@ const STAGE_TEMPLATE_MAP: Record<string, string> = {
   pm_prd:               'prd.template.md',
   solution_architect:   'architecture.template.md',
   pm_backlog:           'backlog.template.md',
+  gtm_strategy:         'gtm.template.md',
+  feature_marketing:    'feature_marketing.template.md',
 };
 
 /**
@@ -47,6 +49,8 @@ const MODE_AGENT_MAP: Record<AppMode, AgentType> = {
   architecture: 'architect',
   'decision-log': 'decision-log',
   context: 'context-keeper',
+  gtm: 'gtm',
+  feature_marketing: 'marketer',
 };
 
 

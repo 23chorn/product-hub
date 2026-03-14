@@ -236,12 +236,14 @@ async function saveCriticArtifact(
 // ── Stage → specialist session mapping ────────────────────────────────────────
 
 const STAGE_SESSION_MAP: Record<string, { mode: AppMode; agentType: AgentType }> = {
-  analyst:              { mode: 'analyst',       agentType: 'analyst' },
-  pm_prd:               { mode: 'prd',           agentType: 'pm' },
-  solution_architect:   { mode: 'architecture',  agentType: 'architect' },
-  pm_backlog:           { mode: 'backlog',       agentType: 'pm' },
-  critic:               { mode: 'analyst',       agentType: 'analyst' },
-  curator:              { mode: 'analyst',       agentType: 'analyst' },
+  analyst:              { mode: 'analyst',           agentType: 'analyst' },
+  pm_prd:               { mode: 'prd',               agentType: 'pm' },
+  solution_architect:   { mode: 'architecture',      agentType: 'architect' },
+  pm_backlog:           { mode: 'backlog',           agentType: 'pm' },
+  gtm_strategy:         { mode: 'gtm',               agentType: 'gtm' },
+  feature_marketing:    { mode: 'feature_marketing', agentType: 'marketer' },
+  critic:               { mode: 'analyst',           agentType: 'analyst' },
+  curator:              { mode: 'analyst',           agentType: 'analyst' },
 };
 
 // Per-stage output token ceiling. Backlog gets more headroom because the JSON
@@ -252,6 +254,8 @@ const STAGE_MAX_OUTPUT_TOKENS: Record<string, number> = {
   pm_prd:             12_000,
   solution_architect: 12_000,
   pm_backlog:         32_000,
+  gtm_strategy:       12_000,
+  feature_marketing:  12_000,
 };
 
 // Maps stage name to the artifact.type value stored in the DB.
@@ -261,6 +265,8 @@ const STAGE_ARTIFACT_TYPE: Record<string, string> = {
   pm_prd:             'prd',
   solution_architect: 'architecture',
   pm_backlog:         'backlog',
+  gtm_strategy:       'gtm',
+  feature_marketing:  'feature_marketing',
 };
 
 // ── Policy helpers ─────────────────────────────────────────────────────────────
@@ -669,6 +675,8 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
     pm_prd:             'Rex is writing the Product Requirements Document based on the research brief.',
     solution_architect: 'Atlas is designing the solution architecture based on the PRD.',
     pm_backlog:         'Pip is creating the backlog with epics, features, and stories.',
+    gtm_strategy:       'Quinn is developing the Go-to-Market strategy based on the approved PRD.',
+    feature_marketing:  'Milo is writing the feature marketing content pack based on the GTM strategy and PRD.',
   };
   insertEvent(workflowId, 'stage_started', nextStage,
     STAGE_NARRATION[nextStage] ?? `Starting ${nextStage}...`);
@@ -882,6 +890,33 @@ async function runAutonomousStage(
         } catch { /* ignore */ }
       }
       if (parts.length > 0) itemContext = parts.join('\n\n---\n\n');
+    } else if (stage === 'gtm_strategy') {
+      const parts: string[] = [];
+      const prdPath = sessionManager.getLatestPrdArtifactPath(itemId);
+      if (prdPath) {
+        try {
+          const content = fs.readFileSync(prdPath, 'utf-8');
+          parts.push(`**PRD Document (use as the source of truth for personas, scope, and success metrics — do not redefine these):**\n\n${content}`);
+        } catch { /* ignore */ }
+      }
+      if (parts.length > 0) itemContext = parts.join('\n\n---\n\n');
+    } else if (stage === 'feature_marketing') {
+      const parts: string[] = [];
+      const prdPath = sessionManager.getLatestPrdArtifactPath(itemId);
+      if (prdPath) {
+        try {
+          const content = fs.readFileSync(prdPath, 'utf-8');
+          parts.push(`**PRD Document (use to verify that all copy references only approved capabilities):**\n\n${content}`);
+        } catch { /* ignore */ }
+      }
+      const gtmPath = getLatestArtifactPathByType(itemId, 'gtm');
+      if (gtmPath) {
+        try {
+          const content = fs.readFileSync(gtmPath, 'utf-8');
+          parts.push(`**GTM Strategy (use as the source of positioning, messaging hierarchy, and channel direction):**\n\n${content}`);
+        } catch { /* ignore */ }
+      }
+      if (parts.length > 0) itemContext = parts.join('\n\n---\n\n');
     }
 
     const systemPrompt = await agent.buildSystemPrompt(persona, undefined, itemContext, true, stage);
@@ -895,6 +930,8 @@ async function runAutonomousStage(
       pm_prd: 'PRD',
       solution_architect: 'Architecture Document',
       pm_backlog: 'Backlog',
+      gtm_strategy: 'GTM Strategy',
+      feature_marketing: 'Feature Marketing Content Pack',
     };
     const messages: Array<{ role: 'user' | 'assistant'; content: string }> = priorDraftContent
       ? (() => {
@@ -1028,13 +1065,13 @@ async function runAutonomousStage(
 
     // Log stage completion event with excerpt
     const excerpt = fullResponse.slice(0, 200).replace(/\n+/g, ' ').trim();
-    const stageLabel = stage === 'analyst' ? 'Research' : stage === 'pm_prd' ? 'PRD' : stage === 'solution_architect' ? 'Architecture' : stage === 'pm_backlog' ? 'Backlog' : stage;
+    const stageLabel = stage === 'analyst' ? 'Research' : stage === 'pm_prd' ? 'PRD' : stage === 'solution_architect' ? 'Architecture' : stage === 'pm_backlog' ? 'Backlog' : stage === 'gtm_strategy' ? 'GTM Strategy' : stage === 'feature_marketing' ? 'Feature Marketing' : stage;
 
     // ── Inline critic review for specialist stages ────────────────────────────
     // After each specialist produces an artifact, the critic reviews it.
     // If issues are found, auto-revise once. If still unresolved,
     // pause and ask the human for input.
-    const specialistStages = new Set(['analyst', 'pm_prd', 'solution_architect', 'pm_backlog']);
+    const specialistStages = new Set(['analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'gtm_strategy', 'feature_marketing']);
     const policies = loadGlobalPolicies();
     const criticEnabled = policies.get('require_critic_review') !== 'false' && policies.get('require_critic_review') !== (false as any);
 
@@ -1047,7 +1084,51 @@ async function runAutonomousStage(
 
       insertEvent(workflowId, 'stage_progress', stage, 'Running quality review...');
 
-      const review = await getCritic().review(fullResponse, artifactType, resolveAgentModel('critic'), criticTokenCallback, stage, priorCriticIssues);
+      // Load reference documents so the critic can cross-check completeness.
+      // pm_backlog: needs PRD (FR coverage) + architecture (story scoping)
+      // solution_architect: needs PRD (NFR traceability)
+      // gtm_strategy: needs PRD (persona/scope consistency)
+      // feature_marketing: needs PRD + GTM strategy (copy scope verification)
+      let criticReferenceDocuments: string | undefined;
+      if (stage === 'pm_backlog' || stage === 'solution_architect' || stage === 'gtm_strategy') {
+        const refParts: string[] = [];
+        const prdPath = sessionManager.getLatestPrdArtifactPath(itemId);
+        if (prdPath) {
+          try {
+            const content = fs.readFileSync(prdPath, 'utf-8');
+            refParts.push(`### PRD Document\n\n${content}`);
+          } catch { /* ignore */ }
+        }
+        if (stage === 'pm_backlog') {
+          const archPath = getLatestArchitectureArtifactPath(itemId);
+          if (archPath) {
+            try {
+              const content = fs.readFileSync(archPath, 'utf-8');
+              refParts.push(`### Architecture Document\n\n${content}`);
+            } catch { /* ignore */ }
+          }
+        }
+        if (refParts.length > 0) criticReferenceDocuments = refParts.join('\n\n---\n\n');
+      } else if (stage === 'feature_marketing') {
+        const refParts: string[] = [];
+        const prdPath = sessionManager.getLatestPrdArtifactPath(itemId);
+        if (prdPath) {
+          try {
+            const content = fs.readFileSync(prdPath, 'utf-8');
+            refParts.push(`### PRD Document\n\n${content}`);
+          } catch { /* ignore */ }
+        }
+        const gtmPath = getLatestArtifactPathByType(itemId, 'gtm');
+        if (gtmPath) {
+          try {
+            const content = fs.readFileSync(gtmPath, 'utf-8');
+            refParts.push(`### GTM Strategy\n\n${content}`);
+          } catch { /* ignore */ }
+        }
+        if (refParts.length > 0) criticReferenceDocuments = refParts.join('\n\n---\n\n');
+      }
+
+      const review = await getCritic().review(fullResponse, artifactType, resolveAgentModel('critic'), criticTokenCallback, stage, priorCriticIssues, criticReferenceDocuments);
       insertEvent(workflowId, 'stage_progress', stage, 'Quality review complete. Processing results...');
 
       // Save full critic review as artifact .md file
@@ -1212,6 +1293,21 @@ function getLatestArchitectureArtifactPath(itemId: string): string | null {
     WHERE s.item_id = ? AND s.mode = 'architecture'
     ORDER BY a.created_at DESC LIMIT 1
   `).get(itemId);
+  return row?.file_path ?? null;
+}
+
+/**
+ * Get the file path of the most recent artifact of a given type for an item.
+ * Used to load reference documents for the critic (e.g. GTM strategy when reviewing feature marketing).
+ */
+function getLatestArtifactPathByType(itemId: string, artifactType: string): string | null {
+  const row = db.prepare<[string, string], { file_path: string }>(`
+    SELECT a.file_path
+    FROM artifacts a
+    JOIN sessions s ON a.session_id = s.id
+    WHERE s.item_id = ? AND a.type = ?
+    ORDER BY a.created_at DESC LIMIT 1
+  `).get(itemId, artifactType);
   return row?.file_path ?? null;
 }
 
@@ -1463,6 +1559,73 @@ export async function reiterateFromStage(
 }
 
 /**
+ * Extend a completed workflow by appending new stages.
+ *
+ * New stages are inserted before 'curator' (if present), so the curator runs
+ * last after all new content has been produced. The workflow is re-activated
+ * and advanceStage() fires the first new stage immediately.
+ *
+ * Rules:
+ * - Workflow must be 'complete'.
+ * - Stages must be known and not already in the sequence.
+ * - At least one stage required.
+ */
+export async function extendWorkflow(workflowId: string, stagesToAdd: string[]): Promise<void> {
+  const workflow = stmts.getWorkflow.get(workflowId);
+  if (!workflow) throw new Error(`Workflow not found: ${workflowId}`);
+  if (workflow.status !== 'complete') {
+    throw new Error(`Workflow ${workflowId} is not complete (status: ${workflow.status}) — only completed workflows can be extended`);
+  }
+  if (!stagesToAdd.length) throw new Error('At least one stage is required');
+
+  const sequence: string[] = JSON.parse(workflow.stage_sequence);
+
+  // Reject stages that are already in the sequence
+  const duplicates = stagesToAdd.filter(s => sequence.includes(s));
+  if (duplicates.length) {
+    throw new Error(`Stage(s) already in workflow: ${duplicates.join(', ')}`);
+  }
+
+  // Insert new stages before curator (if present), otherwise append
+  const curatorIdx = sequence.indexOf('curator');
+  const newSequence = curatorIdx >= 0
+    ? [...sequence.slice(0, curatorIdx), ...stagesToAdd, ...sequence.slice(curatorIdx)]
+    : [...sequence, ...stagesToAdd];
+
+  const firstNewStage = stagesToAdd[0];
+  const now = Date.now();
+
+  // If curator had an approved checkpoint, mark it revised so it will re-run
+  if (curatorIdx >= 0) {
+    db.prepare(`
+      UPDATE checkpoints SET status = 'revised'
+      WHERE workflow_id = ? AND stage = 'curator' AND status = 'approved'
+    `).run(workflowId);
+  }
+
+  // Set current_stage to the stage BEFORE firstNewStage so advanceStage()
+  // naturally advances into firstNewStage first. Without this, advanceStage
+  // would advance FROM firstNewStage TO the second new stage, skipping the first.
+  const firstNewIdx = newSequence.indexOf(firstNewStage);
+  const stageBeforeFirst = firstNewIdx > 0 ? newSequence[firstNewIdx - 1] : null;
+
+  // Persist the new sequence and re-activate the workflow
+  db.prepare(`
+    UPDATE workflows SET stage_sequence = ?, current_stage = ?, status = 'active', updated_at = ?
+    WHERE id = ?
+  `).run(JSON.stringify(newSequence), stageBeforeFirst, now, workflowId);
+
+  const addedLabels = stagesToAdd.map(s => STAGE_LABELS_INTERNAL[s] ?? s).join(', ');
+  insertEvent(workflowId, 'reiteration', firstNewStage,
+    `Workflow extended with new stage${stagesToAdd.length > 1 ? 's' : ''}: ${addedLabels}`);
+
+  logger.info(`Workflow ${workflowId} extended with [${stagesToAdd.join(', ')}] — new sequence: ${newSequence.join(' → ')}`);
+
+  // Kick off the first new stage
+  await advanceStage(workflowId);
+}
+
+/**
  * Retry the current stage of an active workflow that appears stuck.
  * Only allowed when status is 'active' and there's a current_stage set.
  * Re-generates the stage brief and starts a fresh specialist session.
@@ -1509,6 +1672,8 @@ const STAGE_LABELS_INTERNAL: Record<string, string> = {
   pm_prd:             'Requirements — Rex',
   solution_architect: 'Architect — Atlas',
   pm_backlog:         'Backlog — Pip',
+  gtm_strategy:       'GTM Strategy — Quinn',
+  feature_marketing:  'Feature Marketing — Milo',
   critic:             'Critic — Flint',
   curator:            'Curator — Ivy',
 };

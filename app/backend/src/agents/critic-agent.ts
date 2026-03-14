@@ -84,12 +84,49 @@ Apply the **Architecture Document** stage-specific checks from your persona. Key
       return `## Artifact Stage: Backlog (Pip)
 
 Apply the **Backlog** stage-specific checks from your persona. Key enforcement reminders:
+- The PRD document is provided above in the Reference Documents section. Use it to verify that every functional requirement has a corresponding story — do not flag FR coverage as unverifiable.
 - ACs written as "system shall..." without Given/When/Then are **MAJOR**.
 - Stories scored above 8 that haven't been decomposed are **MAJOR**.
 - Inconsistent effort scoring across similar-complexity stories is **MAJOR**.
 - PRD functional requirements with no corresponding story are **MAJOR** — scope has been silently dropped.
 - Phase tags contradicting the PRD's Out of Scope section are **CRITICAL**.
 - PM Questions cover scope ambiguity — not estimation or AC format.
+
+`;
+
+    case 'gtm_strategy':
+      return `## Artifact Stage: GTM Strategy (Quinn)
+
+Apply the **GTM Strategy** stage-specific checks. Key enforcement reminders:
+- **CRITICAL**: Any new features or scope not present in the approved PRD introduced here.
+- **MAJOR**: Positioning statement does not follow the Geoffrey Moore template exactly.
+- **MAJOR**: Target segments table missing channel or rationale for any segment.
+- **MAJOR**: Launch timeline missing any of the three required phases (Pre-launch, Launch Week, Post-Launch).
+- **MAJOR**: GTM success metrics missing measurement method for any metric.
+- **MAJOR**: Any target segment that contradicts the PRD's defined personas.
+- **MINOR**: Specific budget figures included (out of scope for this document).
+- **MINOR**: A single phase has activities but no success signal.
+- PM Questions cover strategic tradeoffs only — not product scope or feature decisions.
+
+`;
+
+    case 'feature_marketing':
+      return `## Artifact Stage: Feature Marketing Content Pack (Milo)
+
+Apply the **Feature Marketing** stage-specific checks. Key enforcement reminders:
+- **CRITICAL**: Any copy referencing features or benefits not present in the approved PRD or GTM strategy.
+- **CRITICAL**: Any product change proposed or capability invented.
+- **MAJOR**: Value proposition sentence exceeds 20 words or is feature-descriptive rather than benefit-focused.
+- **MAJOR**: Generic superlatives (amazing, revolutionary, best-in-class) in the headline or value proposition sentence.
+- **MAJOR**: App Store / Play Store copy exceeds 170 characters.
+- **MAJOR**: Twitter / X post exceeds 280 characters.
+- **MAJOR**: Any channel block missing entirely — all six channel types are required (App Store, website hero, email, LinkedIn, X/Twitter, short-form social strategy with Instagram and TikTok coverage).
+- **MAJOR**: Fewer than 5 FAQ pairs in the Internal FAQ section.
+- **MAJOR**: More than 2 FAQ answers containing implementation detail.
+- **MINOR**: LinkedIn post exceeds 150 words.
+- **MINOR**: Any FAQ answer exceeds 3 sentences.
+- **MINOR**: Generic superlatives in supporting bullets only (not headline or VP sentence).
+- PM Questions cover brand or audience tradeoffs only — not product or feature decisions.
 
 `;
 
@@ -122,7 +159,8 @@ export class CriticAgent {
     model?: string,
     onTokens?: (usage: TokenUsage) => void,
     stage?: string,
-    priorIssues?: string[]
+    priorIssues?: string[],
+    referenceDocuments?: string
   ): Promise<CriticReview> {
     const resolvedModel = resolveModelId(model);
 
@@ -160,7 +198,11 @@ ${priorIssues.map((issue, i) => `${i + 1}. ${issue}`).join('\n')}
 `
       : '';
 
-    const dynamic = `${revisionContext}${stageInstructions}## Document Under Review
+    const referenceSection = referenceDocuments
+      ? `## Reference Documents\n\nThe following documents were used to produce the artifact below. Use them to verify completeness and consistency — for example, confirming every PRD functional requirement has a corresponding story in the backlog.\n\n${referenceDocuments}\n\n---\n\n`
+      : '';
+
+    const dynamic = `${revisionContext}${stageInstructions}${referenceSection}## Document Under Review
 
 **Type:** ${artifactType}
 

@@ -20,6 +20,7 @@ import {
   getWorkflowEvents,
   reiterateFromStage,
   retryCurrentStage,
+  extendWorkflow,
   deleteWorkflow,
   costTracker,
 } from '../agents/workflow-router';
@@ -123,7 +124,7 @@ function cleanCoordinatorResponse(text: string): string {
   return cleaned;
 }
 
-const KNOWN_STAGES = new Set(['analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'critic', 'curator']);
+const KNOWN_STAGES = new Set(['analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'gtm_strategy', 'feature_marketing', 'critic', 'curator']);
 
 /**
  * Validate a candidate stage sequence.
@@ -577,6 +578,37 @@ workflowRoutes.post('/:id/reiterate', async (req: Request, res: Response) => {
   } catch (err: any) {
     if (err.message.includes('not found')) return res.status(404).json({ error: err.message });
     logger.error('Failed to reiterate workflow', err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ── POST /api/workflow/:id/extend ─────────────────────────────────────────────
+
+/**
+ * POST /api/workflow/:id/extend
+ * Appends new stages to a completed workflow and re-activates it.
+ * Body: { stages: string[] }  — ordered list of stage keys to add.
+ * Stages are inserted before 'curator' (if present) so curator re-runs last.
+ */
+workflowRoutes.post('/:id/extend', async (req: Request, res: Response) => {
+  const { stages } = req.body as { stages?: unknown };
+  if (!Array.isArray(stages) || stages.length === 0) {
+    return res.status(400).json({ error: 'stages must be a non-empty array' });
+  }
+  const unknownStages = (stages as unknown[]).filter(
+    (s): s is string => typeof s !== 'string' || !KNOWN_STAGES.has(s)
+  );
+  if (unknownStages.length) {
+    return res.status(400).json({ error: `Unknown stage(s): ${unknownStages.join(', ')}` });
+  }
+
+  try {
+    await extendWorkflow(req.params.id, stages as string[]);
+    const status = getWorkflowStatus(req.params.id);
+    res.json(status);
+  } catch (err: any) {
+    if (err.message.includes('not found')) return res.status(404).json({ error: err.message });
+    logger.error('Failed to extend workflow', err);
     res.status(400).json({ error: err.message });
   }
 });

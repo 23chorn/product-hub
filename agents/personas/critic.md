@@ -173,3 +173,57 @@ Apply the relevant section below based on which artifact you are reviewing. Gene
 - You do not propose new features or scope.
 - You do not explain what a good version would look like — only what is wrong with the current version.
 - You do not hedge. Each issue is either a CRITICAL, MAJOR, or MINOR. Pick one.
+
+### GTM Strategy (Quinn)
+
+**Positioning statement:**
+- The positioning statement must follow the Geoffrey Moore template exactly: "For [segment] who [need], [product] is [category] that [benefit]. Unlike [alternative], [product] [differentiator]." Any deviation from this structure — paraphrased, split into bullets, or missing a field — is **MAJOR**.
+
+**Scope integrity:**
+- Any new feature, capability, or product scope not present in the approved PRD introduced in the GTM strategy is **CRITICAL**. The GTM strategy must work with the product as defined, not as Quinn wishes it were.
+
+**Target segments & channels:**
+- Every target segment must have a channel recommendation and a rationale. A segment row with no channel or no rationale is **MAJOR**.
+- Any segment that contradicts the personas defined in the approved PRD is **MAJOR**.
+
+**Launch timeline:**
+- The timeline must include all three required phases: Pre-launch, Launch Week, and Post-Launch. A missing phase is **MAJOR**.
+- Each phase must have a success signal, not just activities. A phase with activities but no success signal is **MINOR** (for a single phase) or **MAJOR** (if two or more phases are missing signals).
+
+**GTM success metrics:**
+- Every metric must have a target value and a measurement method. A metric without either is **MAJOR**.
+- Leading and lagging indicators must be clearly distinguished.
+
+**Budget:**
+- Specific budget figures in the GTM strategy are out of scope — **MINOR**. Budget is a business decision, not a GTM planning decision.
+
+**PM Questions on a GTM Strategy** should cover strategic tradeoffs — segment prioritisation, channel mix, competitive positioning choices. Not product scope or feature decisions.
+
+---
+
+### Feature Marketing (Milo)
+
+**Scope integrity:**
+- Any copy that references a feature, capability, or benefit not present in the approved PRD or GTM strategy is **CRITICAL**. Milo must not invent product claims.
+- Any product change proposed or implied in the copy is **CRITICAL**.
+
+**Value proposition sentence:**
+- The VP sentence must be ≤20 words and benefit-first (describes what changes for the user, not what the feature does). A VP sentence that exceeds 20 words or describes the feature rather than the outcome is **MAJOR**.
+
+**Headlines and copy:**
+- Generic superlatives (revolutionary, best-in-class, game-changing, amazing, industry-leading) in the headline or VP sentence are **MAJOR**. In supporting bullets only, they are **MINOR**.
+
+**Channel format constraints:**
+- App Store / Play Store copy exceeding 170 characters is **MAJOR** — it will be truncated in the store listing.
+- Twitter / X post exceeding 280 characters is **MAJOR** — the post will fail to publish.
+- Any channel block missing entirely is **MAJOR**. All six channel types are required: App Store, website hero, email announcement, LinkedIn post, X / Twitter, and short-form social strategy (covering both Instagram and TikTok). Absence of the short-form social strategy section, or a section that only covers one platform, is **MAJOR**.
+
+**Internal FAQ:**
+- Fewer than 5 FAQ pairs is **MAJOR**. The brief specifies exactly 5.
+- More than 2 FAQ answers containing implementation detail (how the feature works technically) is **MAJOR**.
+- A FAQ answer exceeding 3 sentences is **MINOR**.
+
+**LinkedIn:**
+- A LinkedIn post exceeding 150 words is **MINOR**.
+
+**PM Questions on Feature Marketing** should cover brand or audience tradeoffs — tone mismatches with the target audience, whether a channel is appropriate for the segment. Not product or feature decisions.

@@ -115,6 +115,39 @@ At least one BLOCKER must be present to recommend rejection.
 Concrete, specific changes required before this artifact should be approved. Be prescriptive — "add X to section Y" not "consider improving Z".`,
   },
 
+  gtm_strategy: {
+    label: 'GTM Strategy (Quinn)',
+    format: `Produce a GTM Strategy document in markdown following the GTM output template injected into your system prompt. Key requirements:
+
+- **Positioning Statement**: Use the Geoffrey Moore template exactly: "For [segment] who [need], [product] is [category] that [benefit]. Unlike [alternative], [product] [differentiator]."
+- **Target Segments & Channels**: Ranked table with columns: Segment | Description | Priority | Channels | Rationale | Cost-to-Reach. Every segment must have a channel and a rationale.
+- **Messaging Framework**: Headline (≤8 words), sub-headline (≤25 words), 3 supporting bullets (each starting with a bold outcome word, ≤15 words each).
+- **Launch Timeline**: Phases table with columns: Phase | Duration | Key Activities | Success Signal. Must include Pre-launch, Launch Week, and Post-Launch phases — each with a success signal.
+- **Competitive Positioning**: We-win / We-lose table (3–5 rows each) plus a response playbook paragraph for the top competitive threat.
+- **GTM Success Metrics**: Two tables — leading indicators (tracked weekly in first 30 days) and lagging indicators (at 30/60/90 days). Each metric must have a target and measurement method.
+
+Do not propose budget figures. Do not redefine personas or success metrics from the PRD. Do not propose new features.`,
+  },
+
+  feature_marketing: {
+    label: 'Feature Marketing Content Pack (Milo)',
+    format: `Produce a Feature Marketing Content Pack in markdown following the feature marketing output template injected into your system prompt. Key requirements:
+
+- **Feature Name & Tagline**: Recommended name + tagline, plus Alternative A and Alternative B — each with a one-sentence rationale.
+- **Value Proposition Sentence**: ≤20 words, benefit-first (not a feature description). This is the north star all channel copy must trace back to.
+- **Messaging Hierarchy**: Headline (≤8 words) → sub-headline (≤25 words) → 3 supporting bullets.
+- **Channel Copy Pack** (all channels required):
+  - App Store / Play Store: ≤170 chars, plain text, no markdown
+  - Website hero: headline + 2-sentence body
+  - Email announcement: subject line + 3-paragraph body
+  - LinkedIn post: ≤150 words, ends with a question
+  - X / Twitter: ≤280 chars + one hashtag
+  - Short-form social strategy: Instagram and TikTok — hook concept, format, caption style, hashtag approach (this is a strategy section, not copy)
+- **Internal FAQ**: Exactly 5 Q&A pairs. Real sales/support questions with 2–3 sentence answers. No implementation detail.
+
+Do not reference features or capabilities not in the approved PRD or GTM strategy. Do not suggest product changes.`,
+  },
+
   curator: {
     label: 'Context Diff (Ivy)',
     format: `Produce one or more unified diffs for files in the context/ directory.
@@ -311,6 +344,8 @@ ${policyLines}`;
       pm_prd:             'PRD (Rex)',
       solution_architect: 'Architecture Document (Atlas)',
       pm_backlog:         'Backlog (Pip)',
+      gtm_strategy:       'GTM Strategy (Quinn)',
+      feature_marketing:  'Feature Marketing Content Pack (Milo)',
     };
 
     interface CheckpointRow { stage: string; human_feedback: string | null; }
@@ -350,6 +385,8 @@ ${policyLines}`;
       pm_prd:             `Produce a complete PRD that translates research findings into clear product requirements and success criteria for: ${goal}`,
       solution_architect: `Produce an architecture document that makes all technology decisions needed to build the PRD's requirements for: ${goal}`,
       pm_backlog:         `Produce a prioritised backlog of epics, features, and stories covering the full MVP scope defined in the PRD for: ${goal}`,
+      gtm_strategy:       `Produce a complete Go-to-Market strategy covering positioning, target segments, messaging, launch timeline, competitive positioning, and success metrics for: ${goal}`,
+      feature_marketing:  `Produce a ready-to-use feature marketing content pack with channel copy and internal FAQ based on the approved PRD and GTM strategy for: ${goal}`,
     };
     const stageGoal = STAGE_GOAL[stage] ?? `Produce the required ${outputLabel} for: ${goal}`;
 
@@ -370,6 +407,16 @@ ${policyLines}`;
         'Do not invent requirements not present in the approved PRD. ' +
         'Do not make architecture or technology decisions — if a story requires an unresolved technical choice, flag it as a dependency. ' +
         'Do not use effort scores outside the Fibonacci scale (1, 2, 3, 5, 8).',
+      gtm_strategy:
+        'Do not redefine personas, success metrics, or product scope from the PRD — those are fixed. ' +
+        'Do not propose new features or scope expansions. ' +
+        'Do not commit to specific budget figures — produce a plan actionable at any spend level. ' +
+        'Pricing decisions belong to the PM, not this document.',
+      feature_marketing:
+        'Do not invent capabilities or benefits not present in the approved PRD or GTM strategy. ' +
+        'Do not make product decisions or suggest feature changes. ' +
+        'Do not write technical documentation — user-facing benefits only. ' +
+        'Brand guidelines and final copy approval belong to the marketing team.',
     };
     const notDecideText = NOT_DECIDE[stage]
       ?? 'Follow the output format and scope defined above. Do not add scope that was not in the workflow goal.';

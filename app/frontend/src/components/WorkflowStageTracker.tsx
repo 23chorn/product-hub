@@ -9,6 +9,8 @@ const STAGE_LABELS: Record<string, string> = {
   pm_prd:             'Requirements — Rex',
   solution_architect: 'Architect — Atlas',
   pm_backlog:         'Backlog — Pip',
+  gtm_strategy:       'GTM Strategy — Quinn',
+  feature_marketing:  'Feature Marketing — Milo',
   critic:             'Critic — Flint',
   curator:            'Curator — Ivy',
 };

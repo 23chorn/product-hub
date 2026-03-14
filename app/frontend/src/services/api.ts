@@ -414,6 +414,11 @@ class APIClient {
     return response.data;
   }
 
+  async extendWorkflow(workflowId: string, stages: string[]) {
+    const response = await axios.post(`${this.baseURL}/api/workflow/${workflowId}/extend`, { stages });
+    return response.data;
+  }
+
   async retryWorkflowStage(workflowId: string) {
     const response = await axios.post(`${this.baseURL}/api/workflow/${workflowId}/retry`);
     return response.data;

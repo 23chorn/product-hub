@@ -89,6 +89,8 @@ export const ANTHROPIC_AGENT_MODELS: Record<string, string> = {
   pm_prd:             'claude-sonnet-4-5-20250929',
   solution_architect: 'claude-sonnet-4-5-20250929',
   pm_backlog:         'claude-haiku-4-5-20251001',
+  gtm_strategy:       'claude-sonnet-4-5-20250929',
+  feature_marketing:  'claude-sonnet-4-5-20250929',
   critic:             'claude-haiku-4-5-20251001',
   curator:            'claude-haiku-4-5-20251001',
 };
