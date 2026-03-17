@@ -4,6 +4,9 @@ import { streamAI, resolveAgentModel } from '../utils/ai-provider';
 import type { SystemPrompt, TokenUsage } from '../utils/ai-provider';
 import { getPolicies } from '../data/database';
 import db from '../data/database';
+import { appConfig } from '../config/app-config';
+import { getKnowledgeBaseProvider } from '../integrations/knowledge-base';
+import { STAGE_LABELS_BRIEF, stageGoal, stageNotDecide } from './stage-metadata';
 import Logger from '../utils/logger';
 
 const logger = new Logger('COORDINATOR');
@@ -202,6 +205,11 @@ export class CoordinatorAgent {
     logger.info('Coordinator persona loaded');
   }
 
+  /** Whether a knowledge base integration (GitBook, Notion) is configured. */
+  private hasKnowledgeBase(): boolean {
+    return appConfig.integrations.knowledgeBase !== 'none';
+  }
+
   // ── Prompt construction ──────────────────────────────────────────────────
 
   /**
@@ -334,21 +342,12 @@ ${policyLines}`;
       .map(p => `- ${p.rule_key}: ${p.rule_value}`)
       .join('\n');
     const overrideLines = Object.entries(policyOverrides)
+      .filter(([k]) => k !== 'kb_queries')
       .map(([k, v]) => `- ${k}: ${v} *(workflow override)*`)
       .join('\n');
     const constraintsText = [relevantPolicies, overrideLines].filter(Boolean).join('\n') || 'None.';
 
     // ── Prior stage outputs & human preferences (from approved checkpoints) ────
-    const STAGE_LABELS_BRIEF: Record<string, string> = {
-      analyst:            'Research Brief (Sage)',
-      pm_prd:             'PRD (Rex)',
-      solution_architect: 'Architecture Document (Atlas)',
-      pm_backlog:         'Backlog (Pip)',
-      gtm_strategy:       'GTM Strategy (Quinn)',
-      feature_marketing:  'Feature Marketing Content Pack (Milo)',
-    };
-
-    interface CheckpointRow { stage: string; human_feedback: string | null; }
     const approvedCheckpoints = db
       .prepare<[string], CheckpointRow>(`
         SELECT stage, human_feedback FROM checkpoints
@@ -380,52 +379,16 @@ ${policyLines}`;
       : 'None.';
 
     // ── Per-stage goal (one sentence) ──────────────────────────────────────────
-    const STAGE_GOAL: Record<string, string> = {
-      analyst:            `Produce a comprehensive, sourced research brief that gives the PM everything they need to write a PRD for: ${goal}`,
-      pm_prd:             `Produce a complete PRD that translates research findings into clear product requirements and success criteria for: ${goal}`,
-      solution_architect: `Produce an architecture document that makes all technology decisions needed to build the PRD's requirements for: ${goal}`,
-      pm_backlog:         `Produce a prioritised backlog of epics, features, and stories covering the full MVP scope defined in the PRD for: ${goal}`,
-      gtm_strategy:       `Produce a complete Go-to-Market strategy covering positioning, target segments, messaging, launch timeline, competitive positioning, and success metrics for: ${goal}`,
-      feature_marketing:  `Produce a ready-to-use feature marketing content pack with channel copy and internal FAQ based on the approved PRD and GTM strategy for: ${goal}`,
-    };
-    const stageGoal = STAGE_GOAL[stage] ?? `Produce the required ${outputLabel} for: ${goal}`;
+    const stageGoalText = stageGoal(stage, goal);
 
     // ── Explicit boundaries (what this specialist must NOT decide) ─────────────
-    const NOT_DECIDE: Record<string, string> = {
-      analyst:
-        'Do not propose product solutions, features, or requirements. Do not suggest what to build. ' +
-        'Surface evidence only — what the market shows, what users say, what competitors do. ' +
-        'Architecture, product scope, and priorities are decisions for later stages.',
-      pm_prd:
-        'Do not choose technology implementations or architecture patterns — those belong to Atlas. ' +
-        'Do not invent research findings not present in the Research Brief. ' +
-        'Do not make build-vs-buy decisions or infrastructure choices.',
-      solution_architect:
-        'Do not redefine personas, success metrics, or product scope — those are fixed in the approved PRD. ' +
-        'Do not create new requirements; if something is missing from the PRD, flag it as a gap rather than adding scope silently.',
-      pm_backlog:
-        'Do not invent requirements not present in the approved PRD. ' +
-        'Do not make architecture or technology decisions — if a story requires an unresolved technical choice, flag it as a dependency. ' +
-        'Do not use effort scores outside the Fibonacci scale (1, 2, 3, 5, 8).',
-      gtm_strategy:
-        'Do not redefine personas, success metrics, or product scope from the PRD — those are fixed. ' +
-        'Do not propose new features or scope expansions. ' +
-        'Do not commit to specific budget figures — produce a plan actionable at any spend level. ' +
-        'Pricing decisions belong to the PM, not this document.',
-      feature_marketing:
-        'Do not invent capabilities or benefits not present in the approved PRD or GTM strategy. ' +
-        'Do not make product decisions or suggest feature changes. ' +
-        'Do not write technical documentation — user-facing benefits only. ' +
-        'Brand guidelines and final copy approval belong to the marketing team.',
-    };
-    const notDecideText = NOT_DECIDE[stage]
-      ?? 'Follow the output format and scope defined above. Do not add scope that was not in the workflow goal.';
+    const notDecideText = stageNotDecide(stage);
 
     // ── Assemble brief using structured schema ─────────────────────────────────
     const lines: string[] = [
       `# Stage Brief: ${outputLabel}`,
       '',
-      `**Goal:** ${stageGoal}`,
+      `**Goal:** ${stageGoalText}`,
       '',
       `**Original request:** ${goal}`,
       '',
@@ -461,6 +424,46 @@ ${policyLines}`;
       lines.push('');
       lines.push('## Additional Context');
       lines.push(additionalContext.trim());
+    }
+
+    // ── Knowledge base search (coordinator-controlled) ──────────────────────
+    // Only search for the analyst stage — its findings propagate to later stages
+    // via the artifact chain. Queries are set by the coordinator at COORDINATOR_READY.
+    const kbQueriesRaw = policyOverrides.kb_queries;
+    if (stage === 'analyst' && kbQueriesRaw) {
+      try {
+        const kbQueries: string[] = JSON.parse(kbQueriesRaw);
+        if (kbQueries.length > 0) {
+          const kb = getKnowledgeBaseProvider();
+          const allResults = await Promise.all(
+            kbQueries.map(q => kb.search(q, 3))
+          );
+          // Deduplicate by title
+          const seen = new Set<string>();
+          const uniqueResults = allResults.flat().filter(r => {
+            if (seen.has(r.title)) return false;
+            seen.add(r.title);
+            return true;
+          });
+
+          if (uniqueResults.length > 0) {
+            lines.push('');
+            lines.push('## Relevant Existing Documentation');
+            lines.push('The following documents were found in the knowledge base and may provide useful background. Use them as reference — do not copy them verbatim.');
+            lines.push('');
+            for (const [i, r] of uniqueResults.entries()) {
+              const snippet = r.body.length > 1500 ? r.body.slice(0, 1500) + '...' : r.body;
+              const urlLine = r.url ? ` — ${r.url}` : '';
+              lines.push(`### ${i + 1}. ${r.title}${urlLine}`);
+              lines.push(snippet);
+              lines.push('');
+            }
+            logger.info(`Injected ${uniqueResults.length} KB result(s) into analyst brief from ${kbQueries.length} query/queries`);
+          }
+        }
+      } catch (err) {
+        logger.warn('Knowledge base search failed during brief generation — continuing without results', err);
+      }
     }
 
     const brief = lines.join('\n');
@@ -599,8 +602,14 @@ If the goal is so vague you cannot answer any of the four, ask about Problem and
 When all four exit criteria are met, end your response with exactly:
 
 COORDINATOR_READY
-{"enriched_context": "<structured summary covering: (1) problem and evidence, (2) target user and their context, (3) explicit scope boundary — what is MVP vs deferred, (4) hard constraints the specialists must honour>"}
-
+{"enriched_context": "<structured summary covering: (1) problem and evidence, (2) target user and their context, (3) explicit scope boundary — what is MVP vs deferred, (4) hard constraints the specialists must honour>"${this.hasKnowledgeBase() ? ', "kb_queries": ["<search term 1>", "<search term 2>"]' : ''}}
+${this.hasKnowledgeBase() ? `
+**kb_queries rules:**
+- Include 1–3 short, specific search queries that would find relevant existing documentation (PRDs, architecture docs, research) to give specialists useful background.
+- Focus on the domain, feature area, or related past initiatives — not the exact goal text.
+- If the goal is entirely novel with no likely prior documentation, set kb_queries to an empty array [].
+- Example: for "Add SSO support for enterprise customers" → ["SSO", "enterprise authentication", "identity provider integration"]
+` : ''}
 Nothing may follow the JSON line. By your 3rd message you must include COORDINATOR_READY regardless of remaining uncertainty — document any unresolved points as assumptions in the enriched_context.`;
   }
 

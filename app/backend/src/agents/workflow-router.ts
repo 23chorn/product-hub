@@ -21,33 +21,23 @@ import { BmadAgent } from './bmad-agent';
 import { streamAI, resolveModelId, resolveAgentModel, type TokenUsage } from '../utils/ai-provider'; // resolveModelId used for workflow summary generation
 import Logger from '../utils/logger';
 import type { AppMode, AgentType } from '@pap/shared';
+import { computeRevisionDiff } from '../utils/revision-diff';
+import { injectSprintEstimates } from './sprint-estimation';
+import {
+  STAGE_SESSION_MAP, STAGE_MAX_OUTPUT_TOKENS, STAGE_ARTIFACT_TYPE,
+  STAGE_ARTIFACT_LABEL, STAGE_LABELS_INTERNAL,
+} from './stage-metadata';
+import {
+  saveCriticArtifact, getLatestArchitectureArtifactPath,
+  getLatestArtifactPathByType, loadLatestArtifactForItem,
+  loadLatestArtifactForStage, loadFullArtifact, loadArtifactSummary,
+} from './artifact-helpers';
+import { deleteWorkflow as deleteWorkflowImpl, recoverStaleWorkflows as recoverStaleWorkflowsImpl, startStaleRecoveryTimer } from './workflow-lifecycle';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
-const AGENTS_ROOT = path.join(PROJECT_ROOT, 'agents');
 
 const logger = new Logger('WORKFLOW-ROUTER');
 
-/** Read sprint_velocity and capacity_factor from agents/config.yaml. Falls back to safe defaults. */
-async function loadSprintConfig(): Promise<{ sprintVelocity: number; capacityFactor: number }> {
-  let sprintVelocity = 25;
-  let capacityFactor = 0.7;
-  try {
-    const raw = await fsAsync.readFile(path.join(AGENTS_ROOT, 'config.yaml'), 'utf-8');
-    for (const line of raw.split('\n')) {
-      const intMatch = line.match(/^sprint_velocity:\s*(\d+)/);
-      if (intMatch) sprintVelocity = parseInt(intMatch[1], 10);
-      const floatMatch = line.match(/^capacity_factor:\s*([\d.]+)/);
-      if (floatMatch) capacityFactor = parseFloat(floatMatch[1]);
-    }
-  } catch { /* fall through */ }
-  return { sprintVelocity, capacityFactor };
-}
-
-/**
- * Stages that run silently with no human review gate.
- * After completing, the workflow auto-advances to the next stage.
- * Human interaction only occurs at Checkpoint A (analyst) and Checkpoint C (critic).
- */
 /**
  * Stages that run silently with no human review gate.
  * Currently empty — every stage pauses for human approval.
@@ -64,10 +54,6 @@ const SILENT_STAGES = new Set<string>([]);
  * Can also be overridden per-workflow via policy_overrides:
  *   { "model:analyst": "claude-opus-4-6", "model:pm_prd": "claude-sonnet-4-6" }
  */
-// Model selection is centralised in resolveAgentModel() (ai-provider.ts).
-// Per-workflow overrides are still supported via policy_overrides JSON on the workflow row:
-//   { "model:analyst": "claude-opus-4-6", "model:pm_prd": "claude-sonnet-4-5-20250929" }
-
 // Lazy singletons — avoids reading persona files at import time
 let _coordinator: CoordinatorAgent | null = null;
 function getCoordinator(): CoordinatorAgent {
@@ -124,150 +110,6 @@ export interface WorkflowStatus {
   pendingStage: string | null;
   currentSessionId: string | null;
 }
-
-// ── Line diff utility ──────────────────────────────────────────────────────────
-
-/**
- * Compute a unified-style diff between two texts and return a markdown document.
- * Uses LCS (Myers-style backtrack) on lines. Practical for typical LLM outputs
- * of up to ~2 000 lines — beyond that it falls back to a stats-only summary.
- */
-function computeRevisionDiff(oldText: string, newText: string, stageLabel: string): string {
-  const oldLines = oldText.split('\n');
-  const newLines = newText.split('\n');
-  const m = oldLines.length;
-  const n = newLines.length;
-
-  // Safety cap: fall back to stats only for very large documents
-  if (m * n > 2_000_000) {
-    return `# Revision Diff — ${stageLabel}\n\n_Document too large for line-by-line diff._\n\n- Original: ${m} lines\n- Revised: ${n} lines\n`;
-  }
-
-  // Build LCS DP table
-  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      dp[i][j] = oldLines[i - 1] === newLines[j - 1]
-        ? dp[i - 1][j - 1] + 1
-        : Math.max(dp[i - 1][j], dp[i][j - 1]);
-    }
-  }
-
-  // Backtrack to produce edit operations
-  type Op = { op: '+' | '-' | '='; line: string };
-  const ops: Op[] = [];
-  let i = m, j = n;
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
-      ops.push({ op: '=', line: oldLines[i - 1] }); i--; j--;
-    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
-      ops.push({ op: '+', line: newLines[j - 1] }); j--;
-    } else {
-      ops.push({ op: '-', line: oldLines[i - 1] }); i--;
-    }
-  }
-  ops.reverse();
-
-  // Emit unified diff with 3-line context windows
-  const CONTEXT = 3;
-  const chunks: string[] = [];
-  let k = 0;
-  while (k < ops.length) {
-    if (ops[k].op === '=') { k++; continue; }
-    // Found a changed region — collect context around it
-    const start = Math.max(0, k - CONTEXT);
-    let end = k;
-    while (end < ops.length && (ops[end].op !== '=' || end - k < CONTEXT)) end++;
-    end = Math.min(ops.length, end + CONTEXT);
-
-    const block: string[] = [];
-    for (let x = start; x < end; x++) {
-      const { op, line } = ops[x];
-      block.push(op === '+' ? `+ ${line}` : op === '-' ? `- ${line}` : `  ${line}`);
-    }
-    chunks.push(block.join('\n'));
-    k = end;
-  }
-
-  const added   = ops.filter(o => o.op === '+').length;
-  const removed = ops.filter(o => o.op === '-').length;
-
-  if (chunks.length === 0) {
-    return `# Revision Diff — ${stageLabel}\n\n_No line-level changes detected between drafts._\n`;
-  }
-
-  return [
-    `# Revision Diff — ${stageLabel}`,
-    '',
-    `_${added} line${added !== 1 ? 's' : ''} added · ${removed} line${removed !== 1 ? 's' : ''} removed_`,
-    '',
-    '```diff',
-    chunks.join('\n~~\n'),
-    '```',
-  ].join('\n');
-}
-
-// ── Save critic review as artifact ─────────────────────────────────────────────
-
-/**
- * Saves the critic's full markdown review to disk and inserts an artifact row.
- * Returns the artifact row ID.
- */
-async function saveCriticArtifact(
-  itemId: string,
-  stage: string,
-  fullText: string,
-  sessionId?: string | null
-): Promise<number> {
-  const artifactDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, 'critic', 'artifacts');
-  await fsAsync.mkdir(artifactDir, { recursive: true });
-  const artifactPath = path.join(artifactDir, `${Date.now()}-critic-${stage}.md`);
-  await fsAsync.writeFile(artifactPath, fullText, 'utf-8');
-
-  const result = db.prepare(`
-    INSERT INTO artifacts (session_id, type, file_path, created_at)
-    VALUES (?, ?, ?, ?)
-  `).run(sessionId ?? null, 'critic_review', artifactPath, Date.now());
-
-  logger.info(`Saved critic review artifact for stage "${stage}" → ${artifactPath}`);
-  return result.lastInsertRowid as number;
-}
-
-// ── Stage → specialist session mapping ────────────────────────────────────────
-
-const STAGE_SESSION_MAP: Record<string, { mode: AppMode; agentType: AgentType }> = {
-  analyst:              { mode: 'analyst',           agentType: 'analyst' },
-  pm_prd:               { mode: 'prd',               agentType: 'pm' },
-  solution_architect:   { mode: 'architecture',      agentType: 'architect' },
-  pm_backlog:           { mode: 'backlog',           agentType: 'pm' },
-  gtm_strategy:         { mode: 'gtm',               agentType: 'gtm' },
-  feature_marketing:    { mode: 'feature_marketing', agentType: 'marketer' },
-  critic:               { mode: 'analyst',           agentType: 'analyst' },
-  curator:              { mode: 'analyst',           agentType: 'analyst' },
-};
-
-// Per-stage output token ceiling. Backlog gets more headroom because the JSON
-// scales with story count (6 features × 12 stories at max = ~22k tokens).
-// All Claude 4.x models support 64k output, so these are safe upper bounds.
-const STAGE_MAX_OUTPUT_TOKENS: Record<string, number> = {
-  analyst:            12_000,
-  pm_prd:             12_000,
-  solution_architect: 12_000,
-  pm_backlog:         32_000,
-  gtm_strategy:       12_000,
-  feature_marketing:  12_000,
-};
-
-// Maps stage name to the artifact.type value stored in the DB.
-// Must match what getLatestPrdArtifact / getLatestAnalystArtifact query for.
-const STAGE_ARTIFACT_TYPE: Record<string, string> = {
-  analyst:            'analyst',
-  pm_prd:             'prd',
-  solution_architect: 'architecture',
-  pm_backlog:         'backlog',
-  gtm_strategy:       'gtm',
-  feature_marketing:  'feature_marketing',
-};
 
 // ── Policy helpers ─────────────────────────────────────────────────────────────
 
@@ -925,14 +767,6 @@ async function runAutonomousStage(
     // prior output as its own assistant turn and makes targeted edits rather than
     // rewriting from scratch. The brief contains revision instructions only (no
     // embedded prior draft). The prior draft is injected as the assistant turn.
-    const STAGE_ARTIFACT_LABEL: Record<string, string> = {
-      analyst: 'Research Brief',
-      pm_prd: 'PRD',
-      solution_architect: 'Architecture Document',
-      pm_backlog: 'Backlog',
-      gtm_strategy: 'GTM Strategy',
-      feature_marketing: 'Feature Marketing Content Pack',
-    };
     const messages: Array<{ role: 'user' | 'assistant'; content: string }> = priorDraftContent
       ? (() => {
           const artifactLabel = STAGE_ARTIFACT_LABEL[stage] ?? 'document';
@@ -992,37 +826,9 @@ async function runAutonomousStage(
     if (stage === 'pm_backlog') {
       // Strip markdown code fences from JSON output
       const stripped = fullResponse.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-      // Inject sprint estimate into epic object
       try {
         const parsed = JSON.parse(stripped);
-        // Normalise: stories can live in features[].stories, feature.stories, epic.stories, or as a single story
-        const allStories: any[] = parsed.features
-          ? (parsed.features as any[]).flatMap((f: any) => f.stories ?? [])
-          : parsed.feature?.stories
-          ? (parsed.feature.stories as any[])
-          : parsed.epic?.stories
-          ? (parsed.epic.stories as any[])
-          : parsed.story
-          ? [parsed.story]
-          : [];
-        const totalEffort: number = allStories
-          .reduce((sum: number, s: any) => sum + (Number(s.effort) || 0), 0);
-        const { sprintVelocity, capacityFactor } = await loadSprintConfig();
-        const effectiveVelocity = Math.round(sprintVelocity * capacityFactor * 10) / 10;
-        const sprintsRequired = effectiveVelocity > 0
-          ? Math.round((totalEffort / effectiveVelocity) * 10) / 10
-          : null;
-        // Inject sprint metadata into the appropriate top-level object
-        const sprintMeta = { totalEffort, sprintsRequired, sprintVelocity, capacityFactor, effectiveVelocity };
-        if (parsed.epic) {
-          parsed.epic = { ...parsed.epic, ...sprintMeta };
-        } else if (parsed.feature) {
-          parsed.feature = { ...parsed.feature, ...sprintMeta };
-        } else if (parsed.story) {
-          parsed.story = { ...parsed.story, ...sprintMeta };
-        }
-        artifactContent = JSON.stringify(parsed, null, 2);
-        logger.info(`Backlog sprint estimate: ${totalEffort} pts / ${effectiveVelocity} effective velocity (${sprintVelocity} × ${capacityFactor}) = ${sprintsRequired} sprints`);
+        artifactContent = await injectSprintEstimates(parsed);
       } catch {
         // If JSON parse fails, save as-is and let downstream error handling catch it
         artifactContent = stripped;
@@ -1279,56 +1085,6 @@ async function runAutonomousStage(
       now
     );
     stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
-  }
-}
-
-/**
- * Get the file path of the most recent architecture artifact for an item.
- */
-function getLatestArchitectureArtifactPath(itemId: string): string | null {
-  const row = db.prepare<[string], { file_path: string }>(`
-    SELECT a.file_path
-    FROM artifacts a
-    JOIN sessions s ON a.session_id = s.id
-    WHERE s.item_id = ? AND s.mode = 'architecture'
-    ORDER BY a.created_at DESC LIMIT 1
-  `).get(itemId);
-  return row?.file_path ?? null;
-}
-
-/**
- * Get the file path of the most recent artifact of a given type for an item.
- * Used to load reference documents for the critic (e.g. GTM strategy when reviewing feature marketing).
- */
-function getLatestArtifactPathByType(itemId: string, artifactType: string): string | null {
-  const row = db.prepare<[string, string], { file_path: string }>(`
-    SELECT a.file_path
-    FROM artifacts a
-    JOIN sessions s ON a.session_id = s.id
-    WHERE s.item_id = ? AND a.type = ?
-    ORDER BY a.created_at DESC LIMIT 1
-  `).get(itemId, artifactType);
-  return row?.file_path ?? null;
-}
-
-/**
- * Load the most recently created artifact for an item, across all sessions.
- * Used by the critic stage to find the document to review.
- */
-function loadLatestArtifactForItem(itemId: string): { content: string; type: string } {
-  const row = db.prepare<[string], { file_path: string; type: string }>(`
-    SELECT a.file_path, a.type
-    FROM artifacts a
-    JOIN sessions s ON a.session_id = s.id
-    WHERE s.item_id = ? AND s.mode IN ('prd', 'analyst', 'architecture', 'backlog')
-    ORDER BY a.created_at DESC LIMIT 1
-  `).get(itemId);
-
-  if (!row?.file_path) return { content: '(no artifact found)', type: 'document' };
-  try {
-    return { content: fs.readFileSync(row.file_path, 'utf-8'), type: row.type };
-  } catch {
-    return { content: '(artifact file unreadable)', type: row.type };
   }
 }
 
@@ -1667,190 +1423,8 @@ export async function retryCurrentStage(workflowId: string): Promise<{ stage: st
   return { stage };
 }
 
-const STAGE_LABELS_INTERNAL: Record<string, string> = {
-  analyst:            'Analyst — Sage',
-  pm_prd:             'Requirements — Rex',
-  solution_architect: 'Architect — Atlas',
-  pm_backlog:         'Backlog — Pip',
-  gtm_strategy:       'GTM Strategy — Quinn',
-  feature_marketing:  'Feature Marketing — Milo',
-  critic:             'Critic — Flint',
-  curator:            'Curator — Ivy',
-};
+// Start stale workflow recovery timer (runs on module load and every 5 minutes)
+startStaleRecoveryTimer();
 
-/**
- * Delete a workflow and all associated data:
- * - Artifact files on disk (specialist outputs, critic reviews, diffs)
- * - Sessions created for this workflow (cascades messages + artifact rows)
- * - Checkpoints, context_diffs, workflow_events, coordinator_sessions
- * - The workflow row itself
- */
-export function deleteWorkflow(workflowId: string): void {
-  const workflow = stmts.getWorkflow.get(workflowId);
-  if (!workflow) throw new Error(`Workflow not found: ${workflowId}`);
-
-  // ── 1. Collect session IDs and artifact file paths from checkpoints ──────
-  const checkpoints = stmts.getCheckpointsByWorkflow.all(workflowId);
-
-  const sessionIds = new Set<string>();
-  const artifactIds = new Set<number>();
-
-  for (const cp of checkpoints) {
-    // Collect artifact IDs referenced by checkpoints
-    if (cp.artifact_id) artifactIds.add(cp.artifact_id);
-
-    // Parse coordinator_action for session_id and additional artifact IDs
-    if (cp.coordinator_action) {
-      try {
-        const action = JSON.parse(cp.coordinator_action);
-        if (action.session_id) sessionIds.add(action.session_id);
-        if (action.critic?.critic_artifact_id) artifactIds.add(action.critic.critic_artifact_id);
-        if (action.diff_artifact_id) artifactIds.add(action.diff_artifact_id);
-        // Also check nested critic object
-        if (action.critic_artifact_id) artifactIds.add(action.critic_artifact_id);
-      } catch { /* ignore malformed JSON */ }
-    }
-  }
-
-  // ── 2. Resolve artifact file paths from DB ───────────────────────────────
-  const filePaths: string[] = [];
-  for (const id of artifactIds) {
-    const row = db.prepare<[number], { file_path: string }>(
-      'SELECT file_path FROM artifacts WHERE id = ?'
-    ).get(id);
-    if (row?.file_path) filePaths.push(row.file_path);
-  }
-
-  // Also collect file paths for all artifacts owned by these sessions
-  // (catches any artifacts not directly referenced by checkpoints)
-  for (const sessionId of sessionIds) {
-    const rows = db.prepare<[string], { file_path: string }>(
-      'SELECT file_path FROM artifacts WHERE session_id = ?'
-    ).all(sessionId);
-    for (const row of rows) {
-      if (row.file_path) filePaths.push(row.file_path);
-    }
-  }
-
-  // ── 3. Delete artifact files from disk ───────────────────────────────────
-  let deletedFiles = 0;
-  for (const filePath of filePaths) {
-    try {
-      fs.unlinkSync(filePath);
-      deletedFiles++;
-    } catch (err: any) {
-      if (err.code !== 'ENOENT') {
-        logger.warn(`Could not delete artifact file ${filePath}: ${err.message}`);
-      }
-    }
-  }
-
-  // ── 4. Delete sessions (cascades to messages, artifacts, staged_decisions) ─
-  for (const sessionId of sessionIds) {
-    db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
-  }
-
-  // ── 5. Delete workflow child rows and the workflow itself ─────────────────
-  db.prepare('DELETE FROM checkpoints WHERE workflow_id = ?').run(workflowId);
-  db.prepare('DELETE FROM context_diffs WHERE workflow_id = ?').run(workflowId);
-  db.prepare('DELETE FROM workflow_events WHERE workflow_id = ?').run(workflowId);
-  db.prepare('DELETE FROM coordinator_sessions WHERE workflow_id = ?').run(workflowId);
-  db.prepare('DELETE FROM workflows WHERE id = ?').run(workflowId);
-
-  logger.info(`Deleted workflow ${workflowId} — ${deletedFiles} file(s) removed, ${sessionIds.size} session(s) deleted`);
-}
-
-function loadLatestArtifactForStage(itemId: string, stage: string): string | undefined {
-  const artifactType = STAGE_ARTIFACT_TYPE[stage];
-  if (!artifactType) return undefined;
-  const row = db.prepare<[string, string], { file_path: string }>(`
-    SELECT a.file_path FROM artifacts a
-    JOIN sessions s ON a.session_id = s.id
-    WHERE s.item_id = ? AND a.type = ?
-    ORDER BY a.created_at DESC LIMIT 1
-  `).get(itemId, artifactType);
-  if (!row?.file_path) return undefined;
-  try {
-    return fs.readFileSync(row.file_path, 'utf-8');
-  } catch {
-    return undefined;
-  }
-}
-
-function loadFullArtifact(artifactId: number): string | undefined {
-  const row = db.prepare<[number], { file_path: string }>(
-    'SELECT file_path FROM artifacts WHERE id = ?'
-  ).get(artifactId);
-  if (!row?.file_path) return undefined;
-  try {
-    return fs.readFileSync(row.file_path, 'utf-8');
-  } catch {
-    return undefined;
-  }
-}
-
-function loadArtifactSummary(artifactId: number): string | undefined {
-  const row = db.prepare<[number], { file_path: string }>(
-    'SELECT file_path FROM artifacts WHERE id = ?'
-  ).get(artifactId);
-  if (!row?.file_path) return undefined;
-  try {
-    const content = fs.readFileSync(row.file_path, 'utf-8');
-    return content.slice(0, 500) + (content.length > 500 ? '\n[…truncated]' : '');
-  } catch {
-    return undefined;
-  }
-}
-
-// ── Stale workflow recovery ─────────────────────────────────────────────────
-
-const STALE_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes with no update = stale
-
-interface StaleWorkflowRow {
-  id: string;
-  current_stage: string | null;
-  updated_at: number;
-}
-
-/**
- * Recover workflows stuck in 'active' status with no recent updates.
- * Creates an error checkpoint so the user can retry or dismiss.
- * Safe to call on startup and periodically.
- */
-export function recoverStaleWorkflows(): number {
-  const cutoff = Date.now() - STALE_THRESHOLD_MS;
-  const stale = db.prepare<[number], StaleWorkflowRow>(
-    `SELECT id, current_stage, updated_at FROM workflows
-     WHERE status = 'active' AND updated_at < ?`
-  ).all(cutoff);
-
-  let recovered = 0;
-  for (const wf of stale) {
-    const stage = wf.current_stage ?? 'unknown';
-    const staleMinutes = Math.round((Date.now() - wf.updated_at) / 60_000);
-    const now = Date.now();
-
-    insertEvent(wf.id, 'error', stage,
-      `Stage "${stage}" appears stuck (no activity for ${staleMinutes} minutes). You can retry or dismiss this stage.`,
-      { error: 'stale_workflow_recovery', stale_minutes: staleMinutes });
-
-    stmts.insertCheckpoint.run(
-      wf.id, stage, null, 'pending',
-      JSON.stringify({ error: `Stage stalled after ${staleMinutes} minutes of inactivity`, autonomous: true, stale_recovery: true }),
-      now
-    );
-    stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, wf.id);
-
-    logger.warn(`Recovered stale workflow ${wf.id} — stage "${stage}" stuck for ${staleMinutes}m`);
-    recovered++;
-  }
-
-  if (recovered > 0) {
-    logger.info(`Stale workflow recovery: ${recovered} workflow(s) recovered`);
-  }
-  return recovered;
-}
-
-// Run stale recovery on module load (server startup) and every 5 minutes
-recoverStaleWorkflows();
-setInterval(recoverStaleWorkflows, 5 * 60 * 1000);
+// Re-exports for backwards compatibility
+export { deleteWorkflowImpl as deleteWorkflow, recoverStaleWorkflowsImpl as recoverStaleWorkflows };

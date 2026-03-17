@@ -60,7 +60,9 @@ product-agent/
 
 ```bash
 # First-time setup (installs deps, builds shared types, creates .env)
-./scripts/setup.sh
+./scripts/setup.sh           # macOS / Linux
+# or
+powershell -ExecutionPolicy Bypass -File scripts\setup.ps1   # Windows
 
 # Or manually:
 npm install
@@ -174,10 +176,12 @@ AZURE_DEVOPS_PROJECT=...
 AZURE_DEVOPS_PAT=...
 AZURE_DEVOPS_STORY_TYPE=User Story  # or "Product Backlog Item" for Scrum template
 
-# Knowledge base (Notion)
-KNOWLEDGE_BASE_INTEGRATION=notion|none
+# Knowledge base (Notion or GitBook)
+KNOWLEDGE_BASE_INTEGRATION=notion|gitbook|none
 NOTION_API_KEY=...
 NOTION_DATABASE_ID=...
+GITBOOK_API_TOKEN=...
+GITBOOK_SPACE_ID=...
 ```
 
 See `docs/integrations/` for detailed setup guides.

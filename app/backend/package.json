@@ -11,7 +11,7 @@
     "test:airtable": "tsx ../../tests/integration/test-airtable.ts",
     "test:gitbook": "tsx ../../tests/integration/test-gitbook.ts",
     "test:ado": "tsx ../../tests/integration/test-ado.ts",
-    "test:claude": "tsx ../../tests/integration/test-claude.ts",
+    "test:bedrock": "tsx ../../tests/integration/test-bedrock.ts",
     "validate-env": "tsx src/utils/validate-env.ts",
     "verify-schema": "tsx ../../scripts/verify-schema.ts",
     "test": "vitest run"

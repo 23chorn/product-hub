@@ -1,4 +1,4 @@
-import { KnowledgeBaseProvider, KnowledgeBasePage } from '@pap/shared';
+import { KnowledgeBaseProvider, KnowledgeBasePage, KnowledgeBaseSearchResult } from '@pap/shared';
 import Logger from '../../utils/logger';
 
 const logger = new Logger('NOTION');
@@ -79,6 +79,34 @@ export class NotionKnowledgeBaseProvider implements KnowledgeBaseProvider {
     } catch (error: any) {
       logger.error(`Failed to get Notion page ${id}`, error);
       throw new Error(`Notion API error: ${error.response?.data?.message || error.message}`);
+    }
+  }
+
+  async search(query: string, limit: number = 5): Promise<KnowledgeBaseSearchResult[]> {
+    try {
+      const { default: axios } = await import('axios');
+      logger.debug(`Searching Notion for: "${query}"`);
+      const response = await axios.post(
+        `${this.baseUrl}/search`,
+        { query, page_size: limit, filter: { value: 'page', property: 'object' } },
+        { headers: this.headers }
+      );
+
+      const results: KnowledgeBaseSearchResult[] = [];
+      for (const page of response.data.results ?? []) {
+        const title = this.extractTitle(page);
+        const content = await this.fetchPageContent(page.id);
+        results.push({
+          title,
+          body: content.slice(0, 2000),
+          url: page.url ?? '',
+        });
+      }
+      logger.info(`Notion search returned ${results.length} result(s)`);
+      return results;
+    } catch (error: any) {
+      logger.error('Notion search failed', error.response?.data || error.message);
+      return [];
     }
   }
 

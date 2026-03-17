@@ -342,11 +342,13 @@ class APIClient {
     enrichedContext?: string,
     stageSequence?: string[],
     policyOverrides?: Record<string, string>,
-    planningSessionId?: string | null
+    planningSessionId?: string | null,
+    kbQueries?: string[]
   ): Promise<{ workflowId: string; stage: string | null; sessionId: string | null; complete: boolean; stages: string[] }> {
     const response = await axios.post(`${this.baseURL}/api/workflow/start`, {
       itemId, goal, enrichedContext, stageSequence, policyOverrides,
       ...(planningSessionId ? { planningSessionId } : {}),
+      ...(kbQueries && kbQueries.length > 0 ? { kbQueries } : {}),
     });
     return response.data;
   }

@@ -25,7 +25,7 @@ cd app/backend && npx tsc --noEmit
 npm run test:unit        # Vitest unit tests (from app/backend/)
 # Integration tests (hit real APIs):
 npm run test:airtable
-npm run test:claude
+npm run test:bedrock
 npm run test:ado
 ```
 
@@ -53,9 +53,9 @@ Frontend proxies `/api/*` to the backend via Vite config. The shared package mus
 ### AI provider
 `utils/ai-provider.ts` routes all LLM calls to Anthropic SDK, AWS Bedrock, or Ollama based on the `AI_PROVIDER` env var. The Anthropic client (`utils/anthropic-client.ts`) uses lazy initialization — it must not be instantiated at module load time because dotenv hasn't run yet.
 
-Switch providers by changing `AI_PROVIDER=anthropic|bedrock|ollama` in `.env`. Default models are defined in `PROVIDER_MODELS` in `ai-provider.ts`. **Model selection is done at runtime from the UI** — the user picks a model from the header dropdown and it persists to `localStorage` via `stores/modelStore.ts`.
+Switch providers by changing `AI_PROVIDER=anthropic|bedrock|ollama` in `.env`. Default models are defined in `PROVIDER_MODELS` in `utils/model-config.ts`. **Model selection is done at runtime from the UI** — the user picks a model from the header dropdown and it persists to `localStorage` via `stores/modelStore.ts`.
 
-To add models: edit `PROVIDER_MODELS` in `utils/ai-provider.ts` — the UI picks them up automatically on next server restart. Also add the model ID to `MODEL_MAX_OUTPUT_TOKENS` and `MODEL_PRICING` to enable cost logging.
+To add models: edit `PROVIDER_MODELS` in `utils/model-config.ts` — the UI picks them up automatically on next server restart. Also add the model ID to `MODEL_MAX_OUTPUT_TOKENS` and `MODEL_PRICING` in the same file to enable cost logging. Model config (pricing, token limits, per-agent assignments) is centralised in `utils/model-config.ts`; `ai-provider.ts` re-exports the key symbols for backwards compatibility.
 
 The config endpoint `GET /api/config/models` returns `{ provider, models }` — the frontend calls this once on app mount.
 
@@ -133,6 +133,12 @@ There is one flow: the Coordinator-driven workflow. There is no direct-access mo
 | `agents/curator-agent.ts` | `ContextCuratorAgent` class. Fetches artifacts, reads context files, proposes diffs. |
 | `agents/bmad-agent.ts` | `BmadAgent` class. Persona loading, project context injection, per-stage template injection, streaming. |
 | `agents/workflow-router.ts` | Core state machine. `createWorkflow()`, `advanceStage()`, `runAutonomousStage()`, `resolveCheckpoint()`, `propagateFeedback()`, `reiterateFromStage()`, cost tracking. |
+| `agents/stage-metadata.ts` | Stage constants: `STAGE_SESSION_MAP`, `STAGE_MAX_OUTPUT_TOKENS`, `STAGE_ARTIFACT_TYPE`, `STAGE_ARTIFACT_LABEL`, `STAGE_LABELS_INTERNAL`, `STAGE_LABELS_BRIEF`, `stageGoal()`, `stageNotDecide()`. Shared by workflow-router and coordinator-agent. |
+| `agents/artifact-helpers.ts` | DB/filesystem helpers for loading and saving artifacts: `saveCriticArtifact()`, `loadLatestArtifactForItem()`, `loadLatestArtifactForStage()`, `loadFullArtifact()`, `getLatestArchitectureArtifactPath()`, `getLatestArtifactPathByType()`. |
+| `agents/sprint-estimation.ts` | `loadSprintConfig()` reads `agents/config.yaml`; `injectSprintEstimates(parsed)` mutates a backlog JSON object with sprint metadata. Called from `runAutonomousStage()`. |
+| `agents/workflow-lifecycle.ts` | `deleteWorkflow()`, `recoverStaleWorkflows()`, `startStaleRecoveryTimer()`. Re-exported from workflow-router for backwards compatibility. |
+| `utils/model-config.ts` | All model/pricing config: `PROVIDER_MODELS`, `ANTHROPIC_AGENT_MODELS`, `MODEL_MAX_OUTPUT_TOKENS`, `MODEL_PRICING`, `estimateCost()`, `calculateCost()`. |
+| `utils/revision-diff.ts` | `computeRevisionDiff()` — pure LCS-based line diff used for revision artifacts. |
 | `routes/workflow-routes.ts` | Express router at `/api/workflow`. Coordinator planning SSE, workflow start, checkpoint resolve, mid-workflow message, events, history. |
 | `routes/context-diff-routes.ts` | `/api/context-diffs`. Approve/reject proposed context file changes. |
 | `routes/context-file-routes.ts` | `/api/context-files`. GET/PUT for editing context files from the UI. |
@@ -148,7 +154,7 @@ There is one flow: the Coordinator-driven workflow. There is no direct-access mo
 Only the relevant template is injected into the system prompt for each stage. Templates are read from disk each time — no caching, so UI edits take effect on the next stage run.
 
 #### Stage output format specifications
-`STAGE_OUTPUT_FORMATS` in `coordinator-agent.ts` defines inline format specs injected into `generateStageBrief()`. `generateStageBrief()` now produces a **structured 8-field brief schema** rather than flat sections. The fields are: Goal, Original request, Constraints, Prior stage outputs available, Key decisions already made, Human preferences expressed, Output required, What this specialist must NOT decide. The parameter previously named `previousOutputSummary` has been renamed to `additionalContext` (used for critic feedback on the auto-revise path). When adding a new stage, add entries in both `STAGE_OUTPUT_FORMATS` and `STAGE_TEMPLATE_MAP`.
+`STAGE_OUTPUT_FORMATS` in `coordinator-agent.ts` defines inline format specs injected into `generateStageBrief()`. `generateStageBrief()` now produces a **structured 8-field brief schema** rather than flat sections. The fields are: Goal, Original request, Constraints, Prior stage outputs available, Key decisions already made, Human preferences expressed, Output required, What this specialist must NOT decide. The parameter previously named `previousOutputSummary` has been renamed to `additionalContext` (used for critic feedback on the auto-revise path). When adding a new stage, add entries in `STAGE_OUTPUT_FORMATS`, `STAGE_TEMPLATE_MAP`, and the stage metadata maps in `agents/stage-metadata.ts` (`STAGE_SESSION_MAP`, `STAGE_ARTIFACT_TYPE`, `STAGE_ARTIFACT_LABEL`, `STAGE_LABELS_BRIEF`, `stageGoal()`, `stageNotDecide()`).
 
 #### Policies (governance)
 The `policies` DB table stores key-value rules. Loaded at runtime — no restart needed. Key policies:
@@ -176,11 +182,17 @@ Zustand stores:
 
 Two-column layout in `App.tsx`: left sidebar (stage tracker, workflow history, or initiative list) + main chat (CoordinatorChat). Header has model selector, Context/Templates/Decision Log buttons, and theme toggle.
 
+#### Shared frontend modules
+- `constants/stage-labels.ts` — `STAGE_LABELS`, `TOGGLEABLE_STAGES`, `STAGE_SHORT_LABELS`. Shared across `CoordinatorChat`, `ArtifactViewer`, `WorkflowStageTracker`, `WorkflowHistory`.
+- `utils/coordinator-helpers.ts` — `stripReadyMarker()`, `extractReadyPayload()`, `parseCriticData()`, `criticSummaryLine()`. Used by `CoordinatorChat` and `InlineCheckpointActions`.
+- `utils/backlog-helpers.ts` — Backlog JSON types (`BacklogData`, `BacklogStory`, `BacklogFeature`) and utilities (`tryParseBacklog()`, `getAllStories()`, etc.). Used by `ArtifactViewer`, `BacklogView`, `PersonaPanel`.
+- `components/InlineCheckpointActions.tsx` — extracted from `CoordinatorChat`; handles approve/revise/reject for inline checkpoints.
+
 #### Artifact viewer
 `ArtifactViewer.tsx` renders specialist outputs in a right-side drawer panel:
 - **Fullscreen toggle** — expands panel to fill screen; content constrained to `max-w-4xl` for readability
-- **Backlog preview** — structured view with epic header (sprint estimate), features (per-feature sprint estimate), expandable stories with AC formatting (Given/When/Then on separate lines, keywords bolded)
-- **Persona panel** — fullscreen-only sidebar showing unique personas with story counts, expandable to see which stories reference each persona
+- **Backlog preview** — `BacklogView.tsx` renders structured view with epic header (sprint estimate), features (per-feature sprint estimate), expandable stories with AC formatting (Given/When/Then on separate lines, keywords bolded). Types and utilities in `utils/backlog-helpers.ts`.
+- **Persona panel** — `PersonaPanel.tsx` renders fullscreen-only sidebar showing unique personas with story counts, expandable to see which stories reference each persona
 - **Push to Board** — shown only when workflow is complete and backlog approved; pushes to ADO/Jira
 - Supports both flat stories (`epic.stories`) and feature-wrapped stories (`features[].stories`)
 
@@ -212,7 +224,7 @@ Four template files define the structure specialists follow:
 Editable from the UI (Templates button in header). Changes require double-confirmation. Templates are read from disk per-stage, so edits take effect on the next stage run.
 
 #### Sprint estimation
-After the backlog specialist produces output, `workflow-router.ts` parses the JSON and injects sprint estimates:
+After the backlog specialist produces output, `agents/sprint-estimation.ts` parses the JSON and injects sprint estimates:
 - Reads `sprint_velocity` and `capacity_factor` from `agents/config.yaml`
 - `effectiveVelocity = sprintVelocity × capacityFactor`
 - `sprintsRequired = totalEffort / effectiveVelocity` (rounded to 1 decimal)

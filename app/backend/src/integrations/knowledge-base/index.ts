@@ -2,6 +2,7 @@ import { KnowledgeBaseProvider } from '@pap/shared';
 import { appConfig } from '../../config/app-config';
 import { NoneKnowledgeBaseProvider } from './none';
 import { NotionKnowledgeBaseProvider } from './notion';
+import { GitBookKnowledgeBaseProvider } from './gitbook';
 
 let _provider: KnowledgeBaseProvider | null = null;
 
@@ -10,6 +11,9 @@ export function getKnowledgeBaseProvider(): KnowledgeBaseProvider {
     switch (appConfig.integrations.knowledgeBase) {
       case 'notion':
         _provider = new NotionKnowledgeBaseProvider();
+        break;
+      case 'gitbook':
+        _provider = new GitBookKnowledgeBaseProvider();
         break;
       case 'none':
       default:

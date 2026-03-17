@@ -353,7 +353,7 @@ export interface ValidationResult {
 
 export type RoadmapIntegration = 'airtable' | 'none';
 export type WorkItemsIntegration = 'ado' | 'jira' | 'none';
-export type KnowledgeBaseIntegration = 'notion' | 'none';
+export type KnowledgeBaseIntegration = 'notion' | 'gitbook' | 'none';
 
 export interface AppConfig {
   ai: {
@@ -368,6 +368,9 @@ export interface AppConfig {
     roadmap: RoadmapIntegration;
     workItems: WorkItemsIntegration;
     knowledgeBase: KnowledgeBaseIntegration;
+  };
+  stages: {
+    enabledStages: Record<string, boolean>;
   };
   server: {
     nodeEnv: string;
@@ -470,7 +473,14 @@ export interface KnowledgeBasePage {
   content: string;
 }
 
+export interface KnowledgeBaseSearchResult {
+  title: string;
+  body: string;
+  url: string;
+}
+
 export interface KnowledgeBaseProvider {
   getPages(): Promise<KnowledgeBasePage[]>;
   getPage(id: string): Promise<KnowledgeBasePage>;
+  search(query: string, limit?: number): Promise<KnowledgeBaseSearchResult[]>;
 }

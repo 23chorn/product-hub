@@ -367,13 +367,14 @@ workflowRoutes.get('/coordinator/session/:id', (req: Request, res: Response) => 
  *   { workflowId, stage, sessionId, complete, stages }
  */
 workflowRoutes.post('/start', async (req: Request, res: Response) => {
-  let { itemId, goal, enrichedContext, stageSequence, policyOverrides, planningSessionId } = req.body as {
+  let { itemId, goal, enrichedContext, stageSequence, policyOverrides, planningSessionId, kbQueries } = req.body as {
     itemId?: string;
     goal?: string;
     enrichedContext?: string;
     stageSequence?: string[];
     policyOverrides?: Record<string, string>;
     planningSessionId?: string;
+    kbQueries?: string[];
   };
 
   if (!goal) {
@@ -404,6 +405,11 @@ workflowRoutes.post('/start', async (req: Request, res: Response) => {
     const fullGoal = enrichedContext
       ? `${goal}\n\n[Coordinator context]\n\n${enrichedContext}`
       : goal;
+
+    // Store coordinator's KB search queries in policy overrides so generateStageBrief can use them
+    if (kbQueries && Array.isArray(kbQueries) && kbQueries.length > 0) {
+      policyOverrides = { ...policyOverrides, kb_queries: JSON.stringify(kbQueries) };
+    }
 
     const workflow = createWorkflow(itemId!, fullGoal, stages, policyOverrides);
 

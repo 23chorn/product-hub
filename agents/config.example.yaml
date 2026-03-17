@@ -24,3 +24,25 @@ user_skill_level: intermediate
 # Effective feature velocity = sprint_velocity × capacity_factor
 sprint_velocity: 25
 capacity_factor: 0.7
+
+# Hours per story point — maps Fibonacci effort scores to estimated dev hours.
+# Used to calculate per-story and total hour estimates in the backlog preview.
+# Adjust to match your team's observed velocity. Non-linear because larger
+# stories carry more integration/testing overhead per point.
+hours_per_point:
+  1: 2
+  2: 4
+  3: 8
+  5: 16
+  8: 28
+
+# Enabled specialist stages — toggle agents on/off without code changes.
+# Set to false to hide a stage from the UI entirely.
+# Stages not listed here default to true.
+enabled_stages:
+  analyst: true
+  pm_prd: true
+  solution_architect: true
+  pm_backlog: true
+  gtm_strategy: true
+  feature_marketing: true

@@ -3,17 +3,7 @@ import ReactDOM from 'react-dom';
 import { useWorkflowStore, type StageStatus } from '../stores/workflowStore';
 import { useModelStore } from '../stores/modelStore';
 import { api } from '../services/api';
-
-const STAGE_LABELS: Record<string, string> = {
-  analyst:            'Analyst — Sage',
-  pm_prd:             'Requirements — Rex',
-  solution_architect: 'Architect — Atlas',
-  pm_backlog:         'Backlog — Pip',
-  gtm_strategy:       'GTM Strategy — Quinn',
-  feature_marketing:  'Feature Marketing — Milo',
-  critic:             'Critic — Flint',
-  curator:            'Curator — Ivy',
-};
+import { STAGE_LABELS } from '../constants/stage-labels';
 
 function formatTokens(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);

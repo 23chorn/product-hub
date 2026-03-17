@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useWorkflowStore } from '../stores/workflowStore';
 import { api } from '../services/api';
+import { STAGE_SHORT_LABELS } from '../constants/stage-labels';
 
 interface WorkflowListItem {
   id: string;
@@ -14,13 +15,6 @@ interface WorkflowListItem {
   updated_at: number;
   checkpoint_count: number;
 }
-
-const STAGE_SHORT_LABELS: Record<string, string> = {
-  analyst: 'Research',
-  pm_prd: 'PRD',
-  solution_architect: 'Arch',
-  pm_backlog: 'Backlog',
-};
 
 export function WorkflowHistory() {
   const { applyWorkflowStatus } = useWorkflowStore();

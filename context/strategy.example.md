@@ -5,7 +5,15 @@
 
 ## North star
 
-Become the most trusted retail investment platform in the GCC — the app every individual investor in the region uses to grow their wealth.
+Make confident, informed investing the default for the GCC's emerging retail investor — 
+the platform that turns first-time investors into self-directed, active participants
+in regional and global markets.
+
+## North Star Metric
+
+Monthly active investors — users who log in AND execute at least 
+one informed action (trade, watchlist update, portfolio review) 
+per month.
 
 ## Current period: Q1–Q2 2026
 

@@ -11,6 +11,14 @@ export interface GitBookPage {
   parent?: string; // Parent page ID
 }
 
+export interface GitBookSearchResult {
+  id: string;
+  title: string;
+  path: string;
+  body: string; // snippet / matched content
+  url: string;
+}
+
 export class GitBookClient {
   private baseUrl: string = 'https://api.gitbook.com/v1';
   private headers: Record<string, string>;
@@ -198,6 +206,42 @@ export class GitBookClient {
     } catch (error) {
       logger.error('Failed to update page', error);
       handleIntegrationError(error, 'GitBook');
+    }
+  }
+
+  /**
+   * Search pages in this GitBook space.
+   * Uses the GitBook Search API: GET /spaces/{spaceId}/search
+   * Returns up to `limit` results with title, path, and content snippets.
+   */
+  async searchPages(query: string, limit: number = 5): Promise<GitBookSearchResult[]> {
+    try {
+      logger.debug(`Searching GitBook space for: "${query}"`);
+      const response = await axios.get(
+        `${this.baseUrl}/spaces/${this.spaceId}/search`,
+        {
+          headers: this.headers,
+          params: { query, limit },
+        }
+      );
+
+      const items = response.data?.results ?? response.data?.items ?? [];
+      const results: GitBookSearchResult[] = items.slice(0, limit).map((item: any) => {
+        const pagePath = item.path ?? item.slug ?? '';
+        return {
+          id: item.id ?? '',
+          title: item.title ?? '(untitled)',
+          path: pagePath,
+          body: item.body ?? item.snippet ?? item.markdown ?? '',
+          url: pagePath ? `${this.publicUrl}/${pagePath}` : '',
+        };
+      });
+
+      logger.info(`GitBook search returned ${results.length} result(s) for: "${query}"`);
+      return results;
+    } catch (error: any) {
+      logger.error('GitBook search failed', error.response?.data || error.message);
+      return [];
     }
   }
 
