@@ -16,6 +16,11 @@ import {
   costTracker,
 } from '../agents/workflow-router';
 import { CoordinatorAgent } from '../agents/coordinator-agent';
+import {
+  linkCRArtifactVersion,
+  completeChangeRequest,
+  type ChangeRequestRow,
+} from '../agents/change-request';
 import db from '../data/database';
 import Logger from '../utils/logger';
 
@@ -494,6 +499,11 @@ workflowRoutes.post('/checkpoint/resolve', async (req: Request, res: Response) =
     const workflowId = cpRow.workflow_id;
 
     if (status === 'approved') {
+      // Read checkpoint stage + artifact before resolving
+      const cpDetail = db.prepare<[number], { stage: string; artifact_id: number | null }>(
+        'SELECT stage, artifact_id FROM checkpoints WHERE id = ?'
+      ).get(cpId);
+
       resolveCheckpoint(cpId, 'approved', feedback);
 
       // Fold stage-specific coordinator context into the workflow goal so the
@@ -510,6 +520,29 @@ workflowRoutes.post('/checkpoint/resolve', async (req: Request, res: Response) =
           .run(`\n\n${label}\n\n${enrichedContext}`, Date.now(), workflowId);
       }
 
+      // If there's an active CR, link the approved artifact as a new version
+      const activeCR = db.prepare<[string], ChangeRequestRow & { original_sequence?: string }>(
+        `SELECT * FROM change_requests WHERE workflow_id = ? AND status = 'in_progress' ORDER BY created_at DESC LIMIT 1`
+      ).get(workflowId);
+
+      if (activeCR && cpDetail?.artifact_id && cpDetail.stage) {
+        // Find parent artifact (latest artifact for this stage created BEFORE the CR)
+        const parentRow = db.prepare<[string, number, number], { id: number }>(`
+          SELECT a.id FROM artifacts a
+          JOIN sessions s ON a.session_id = s.id
+          JOIN (SELECT item_id FROM workflows WHERE id = ?) w ON s.item_id = w.item_id
+          WHERE a.type = (SELECT type FROM artifacts WHERE id = ?)
+            AND a.id != ?
+          ORDER BY a.created_at DESC LIMIT 1
+        `).get(workflowId, cpDetail.artifact_id!, cpDetail.artifact_id!);
+
+        try {
+          linkCRArtifactVersion(activeCR.id, cpDetail.stage, cpDetail.artifact_id, parentRow?.id ?? null);
+        } catch (err: any) {
+          logger.warn(`Failed to link CR artifact version: ${err.message}`);
+        }
+      }
+
       // Advance to the next stage asynchronously — don't block the response.
       // The checkpoint is already approved; the frontend polls for status updates.
       advanceStage(workflowId)
@@ -519,6 +552,17 @@ workflowRoutes.post('/checkpoint/resolve', async (req: Request, res: Response) =
         .catch(err => {
           if (err.message?.startsWith('WORKFLOW_COMPLETE:')) {
             logger.info(`Workflow ${workflowId} complete after checkpoint approval`);
+
+            // If there's an active CR, finalize it and restore the original stage sequence
+            if (activeCR) {
+              try {
+                const assessment = activeCR.impact_assessment ? JSON.parse(activeCR.impact_assessment) : null;
+                const originalSequence = assessment?.original_sequence ?? '[]';
+                completeChangeRequest(activeCR.id, workflowId, originalSequence);
+              } catch (crErr: any) {
+                logger.warn(`Failed to complete CR #${activeCR.id}: ${crErr.message}`);
+              }
+            }
           } else {
             logger.error(`advanceStage failed after checkpoint approval: ${err.message}`);
           }
@@ -694,12 +738,78 @@ workflowRoutes.post('/:id/push-to-board', async (req: Request, res: Response) =>
     if (appConfig.integrations.workItems === 'ado') {
       const { AzureDevOpsClient } = require('../integrations/azure-devops');
       const client = new AzureDevOpsClient();
+
+      // Check for existing ADO mappings
+      const existingMappings = db.prepare<[string], { local_key: string; ado_id: number; title: string }>(
+        'SELECT local_key, ado_id, title FROM ado_work_item_map WHERE workflow_id = ?'
+      ).all(workflowId);
+
+      // Find the latest backlog artifact ID for the mapping
+      const artifactRow = db.prepare<[string], { id: number }>(`
+        SELECT a.id FROM artifacts a
+        JOIN sessions s ON a.session_id = s.id
+        WHERE s.item_id = ? AND a.type = 'backlog'
+        ORDER BY a.created_at DESC LIMIT 1
+      `).get(workflow.item_id);
+      const artifactId = artifactRow?.id ?? 0;
+
+      if (existingMappings.length > 0) {
+        // UPDATE path — diff-based sync
+        const mapByKey = new Map(existingMappings.map(m => [m.local_key, m]));
+        const updateResult = await client.updateBacklog(backlog, mapByKey);
+
+        // Persist new mappings
+        const insertMapping = db.prepare(`
+          INSERT OR REPLACE INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, title, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        const now = Date.now();
+        for (const m of updateResult.newMappings) {
+          insertMapping.run(workflowId, artifactId, m.ado_id, m.ado_type, m.ado_url, m.local_key, m.title, now);
+        }
+
+        logger.info(`Synced backlog to ADO: ${updateResult.updated} updated, ${updateResult.created} created`);
+        return res.json({
+          epicId: updateResult.epicId,
+          epicUrl: client.getEpicUrl(updateResult.epicId),
+          created: updateResult.created,
+          updated: updateResult.updated,
+          synced: true,
+        });
+      }
+
+      // CREATE path — first push
       const result = await client.createBacklog(backlog);
       const epicUrl = client.getEpicUrl(result.epicId);
       const extraEpicUrls = (result.extraEpicIds ?? []).map((id: number) => ({
         id,
         url: client.getEpicUrl(id),
       }));
+
+      // Persist ADO mappings for future sync
+      const insertMapping = db.prepare(`
+        INSERT OR REPLACE INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, title, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      const now = Date.now();
+
+      // Map epic
+      insertMapping.run(workflowId, artifactId, result.epicId, 'epic', epicUrl, 'epic', backlog.epic.title, now);
+
+      // Map features and stories
+      let featureIdx = 0;
+      let storyIdx = 0;
+      for (let fi = 0; fi < backlog.features.length; fi++) {
+        const featureKey = `F${fi + 1}`;
+        const featureAdoId = result.featureIds[featureIdx++];
+        insertMapping.run(workflowId, artifactId, featureAdoId, 'feature', client.getEpicUrl(featureAdoId), featureKey, backlog.features[fi].title, now);
+
+        for (let si = 0; si < backlog.features[fi].stories.length; si++) {
+          const storyKey = `${featureKey}.S${si + 1}`;
+          const storyAdoId = result.storyIds[storyIdx++];
+          insertMapping.run(workflowId, artifactId, storyAdoId, 'story', client.getEpicUrl(storyAdoId), storyKey, backlog.features[fi].stories[si].title, now);
+        }
+      }
 
       logger.info(`Pushed backlog to ADO: Epic #${result.epicId}${result.extraEpicIds?.length ? ` + ${result.extraEpicIds.length} phase epic(s)` : ''}, ${result.featureIds.length} features, ${result.storyIds.length} stories`);
       return res.json({

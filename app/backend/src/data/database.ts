@@ -44,6 +44,7 @@ const schema = fs.readFileSync(SCHEMA_PATH, 'utf-8');
 // We convert CREATE TABLE / CREATE INDEX to IF NOT EXISTS variants.
 const safeSchema = schema
   .replace(/CREATE TABLE(?! IF NOT EXISTS)/g, 'CREATE TABLE IF NOT EXISTS')
+  .replace(/CREATE UNIQUE INDEX(?! IF NOT EXISTS)/g, 'CREATE UNIQUE INDEX IF NOT EXISTS')
   .replace(/CREATE INDEX(?! IF NOT EXISTS)/g, 'CREATE INDEX IF NOT EXISTS');
 
 db.exec(safeSchema);

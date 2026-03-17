@@ -278,3 +278,60 @@ CREATE TABLE policies (
   created_at  INTEGER NOT NULL,
   UNIQUE(scope, scope_value, rule_key)
 );
+
+-- ------------------------------------------------------------
+-- change_requests — Post-Completion Change Requests
+-- One CR per post-completion targeted change. CRs allow
+-- updating specific artifacts without full-stage reruns.
+-- ------------------------------------------------------------
+CREATE TABLE change_requests (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  workflow_id      TEXT    NOT NULL REFERENCES workflows(id),
+  type             TEXT    NOT NULL CHECK(type IN ('scope','direction','constraint','stakeholder','technical','correction')),
+  description      TEXT    NOT NULL,
+  impact_assessment TEXT,  -- JSON: { affected_stages, summary }
+  status           TEXT    NOT NULL DEFAULT 'pending'
+                   CHECK(status IN ('pending','assessed','in_progress','complete','cancelled')),
+  created_at       INTEGER NOT NULL,
+  updated_at       INTEGER NOT NULL
+);
+
+CREATE INDEX idx_change_requests_workflow ON change_requests(workflow_id);
+CREATE INDEX idx_change_requests_status   ON change_requests(status);
+
+-- ------------------------------------------------------------
+-- cr_artifact_versions — CR Artifact Lineage
+-- Links a change request to the new artifact it produced and
+-- its parent artifact for version tracking.
+-- ------------------------------------------------------------
+CREATE TABLE cr_artifact_versions (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  change_request_id  INTEGER NOT NULL REFERENCES change_requests(id),
+  stage              TEXT    NOT NULL,
+  artifact_id        INTEGER NOT NULL REFERENCES artifacts(id),
+  parent_artifact_id INTEGER REFERENCES artifacts(id),
+  version            INTEGER NOT NULL DEFAULT 1,
+  created_at         INTEGER NOT NULL
+);
+
+CREATE INDEX idx_cr_artifact_versions_cr ON cr_artifact_versions(change_request_id);
+
+-- ------------------------------------------------------------
+-- ado_work_item_map — ADO Work Item ID Persistence
+-- Maps local backlog structure keys to ADO work item IDs so
+-- push-to-board can update existing items instead of creating
+-- duplicates.
+-- ------------------------------------------------------------
+CREATE TABLE ado_work_item_map (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  workflow_id TEXT    NOT NULL REFERENCES workflows(id),
+  artifact_id INTEGER NOT NULL REFERENCES artifacts(id),
+  ado_id      INTEGER NOT NULL,
+  ado_type    TEXT    NOT NULL CHECK(ado_type IN ('epic','feature','story')),
+  ado_url     TEXT,
+  local_key   TEXT    NOT NULL,  -- "epic", "F1", "F1.S1", "F2.S3"
+  title       TEXT    NOT NULL,
+  created_at  INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX idx_ado_map_key ON ado_work_item_map(workflow_id, local_key);

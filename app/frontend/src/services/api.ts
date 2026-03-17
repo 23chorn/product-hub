@@ -409,11 +409,6 @@ class APIClient {
     await this.readSSEStream(response, onChunk, (content) => onComplete(content ?? ''), onError);
   }
 
-  async reiterateWorkflow(workflowId: string, fromStage: string, feedback: string) {
-    const response = await axios.post(`${this.baseURL}/api/workflow/${workflowId}/reiterate`, { fromStage, feedback });
-    return response.data;
-  }
-
   async extendWorkflow(workflowId: string, stages: string[]) {
     const response = await axios.post(`${this.baseURL}/api/workflow/${workflowId}/extend`, { stages });
     return response.data;
@@ -424,13 +419,108 @@ class APIClient {
     return response.data;
   }
 
-  async pushToBoard(workflowId: string): Promise<{ epicId: number; epicUrl: string; featureCount: number; storyCount: number }> {
+  async pushToBoard(workflowId: string): Promise<{
+    epicId: number; epicUrl: string;
+    featureCount?: number; storyCount?: number;
+    created?: number; updated?: number; synced?: boolean;
+  }> {
     const response = await axios.post(`${this.baseURL}/api/workflow/${workflowId}/push-to-board`);
     return response.data;
   }
 
+  async getAdoMappings(workflowId: string): Promise<{ hasMappings: boolean }> {
+    try {
+      const response = await axios.get(`${this.baseURL}/api/workflow/${workflowId}/ado-mappings`);
+      return response.data;
+    } catch {
+      return { hasMappings: false };
+    }
+  }
+
   async deleteWorkflow(workflowId: string): Promise<void> {
     await axios.delete(`${this.baseURL}/api/workflow/${workflowId}`);
+  }
+
+  // ============================================
+  // Change Requests
+  // ============================================
+
+  async createChangeRequest(workflowId: string, type: string, description: string) {
+    const response = await axios.post(`${this.baseURL}/api/workflow/${workflowId}/change-request`, { type, description });
+    return response.data;
+  }
+
+  async listChangeRequests(workflowId: string) {
+    const response = await axios.get(`${this.baseURL}/api/workflow/${workflowId}/change-requests`);
+    return response.data as { changeRequests: Array<{
+      id: number; workflow_id: string; type: string; description: string;
+      impact_assessment: string | null; status: string;
+      created_at: number; updated_at: number;
+    }> };
+  }
+
+  async getChangeRequest(crId: number) {
+    const response = await axios.get(`${this.baseURL}/api/change-request/${crId}`);
+    return response.data;
+  }
+
+  async assessChangeRequest(
+    crId: number,
+    onChunk: (content: string) => void,
+    onAssessment: (assessment: { affected_stages: string[]; summary: string }) => void,
+    onComplete: () => void,
+    onError: (error: string) => void,
+    onReplace?: (cleanedContent: string) => void
+  ): Promise<void> {
+    const response = await fetch(`${this.baseURL}/api/change-request/${crId}/assess`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error((err as any).error ?? `HTTP ${response.status}`);
+    }
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    if (!reader) throw new Error('No response body');
+    let lineBuffer = '';
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        lineBuffer += decoder.decode(value, { stream: true });
+        const lines = lineBuffer.split('\n');
+        lineBuffer = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.type === 'content') onChunk(data.content);
+            else if (data.type === 'replace') onReplace?.(data.content);
+            else if (data.type === 'assessment') onAssessment(data.assessment);
+            else if (data.type === 'done') onComplete();
+            else if (data.type === 'error') onError(data.error);
+          } catch { /* skip malformed */ }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  async executeChangeRequest(crId: number, stages: string[]) {
+    const response = await axios.post(`${this.baseURL}/api/change-request/${crId}/execute`, { stages });
+    return response.data;
+  }
+
+  async cancelChangeRequest(crId: number) {
+    const response = await axios.post(`${this.baseURL}/api/change-request/${crId}/cancel`);
+    return response.data;
+  }
+
+  async getArtifactVersionInfo(artifactId: number): Promise<{ change_request_id: number; version: number; stage: string } | null> {
+    const response = await axios.get(`${this.baseURL}/api/workflow/artifact/${artifactId}/version-info`);
+    return response.data?.versionInfo ?? null;
   }
 
   async getWorkflowCheckpoints(workflowId: string) {

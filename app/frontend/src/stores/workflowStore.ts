@@ -109,6 +109,11 @@ interface WorkflowStoreState {
   pendingDiffCount: number;
   setPendingDiffCount: (n: number) => void;
 
+  // Active change request
+  activeCR: { id: number; status: string; impactAssessment?: { affected_stages: string[]; summary: string } } | null;
+  setActiveCR: (cr: { id: number; status: string; impactAssessment?: { affected_stages: string[]; summary: string } } | null) => void;
+  clearActiveCR: () => void;
+
   // Update from a WorkflowStatus API response
   applyWorkflowStatus: (status: WorkflowStatus) => void;
 
@@ -171,6 +176,10 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
   pendingDiffCount: 0,
   setPendingDiffCount: (n) => set({ pendingDiffCount: n }),
 
+  activeCR: null,
+  setActiveCR: (cr) => set({ activeCR: cr }),
+  clearActiveCR: () => set({ activeCR: null }),
+
   applyWorkflowStatus: ({ workflow, checkpoints, currentStage, completedStages, pendingStage, currentSessionId }: WorkflowStatus & { currentSessionId?: string | null }) => {
     const stageSequence: string[] = JSON.parse(workflow.stage_sequence ?? '[]');
     localStorage.setItem('activeWorkflowId', workflow.id);
@@ -202,6 +211,7 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
       planningSessionId: null,
       lastEventId: 0,
       viewingArtifactId: null,
+      activeCR: null,
     });
   },
 }));

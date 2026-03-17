@@ -89,7 +89,7 @@ Both providers retry up to 3× with 15 s linear back-off:
 ### Database
 Single SQLite file at `db/product-ops.db` via `better-sqlite3` (synchronous). Schema defined in `db/schema.sql` and mirrored in `app/backend/src/data/database.ts` — keep both in sync on schema changes.
 
-Twelve tables (defined in `db/schema.sql`, mirrored in `database.ts`):
+Fifteen tables (defined in `db/schema.sql`, mirrored in `database.ts`):
 
 | Table | Purpose |
 |-------|---------|
@@ -105,6 +105,9 @@ Twelve tables (defined in `db/schema.sql`, mirrored in `database.ts`):
 | `policies` | Governance key-value rules injected into Coordinator system prompt |
 | `staged_decisions` | Candidate ADR entries written by agents |
 | `context_loads` | Audit trail of context files loaded per session (created, currently unused) |
+| `change_requests` | Post-completion change requests with impact assessment and status tracking |
+| `cr_artifact_versions` | Links CRs to new artifact versions and their parents |
+| `ado_work_item_map` | Maps local backlog keys to ADO work item IDs for sync |
 
 ### Coordinator workflow (the only mode)
 
@@ -137,6 +140,8 @@ There is one flow: the Coordinator-driven workflow. There is no direct-access mo
 | `agents/artifact-helpers.ts` | DB/filesystem helpers for loading and saving artifacts: `saveCriticArtifact()`, `loadLatestArtifactForItem()`, `loadLatestArtifactForStage()`, `loadFullArtifact()`, `getLatestArchitectureArtifactPath()`, `getLatestArtifactPathByType()`. |
 | `agents/sprint-estimation.ts` | `loadSprintConfig()` reads `agents/config.yaml`; `injectSprintEstimates(parsed)` mutates a backlog JSON object with sprint metadata. Called from `runAutonomousStage()`. |
 | `agents/workflow-lifecycle.ts` | `deleteWorkflow()`, `recoverStaleWorkflows()`, `startStaleRecoveryTimer()`. Re-exported from workflow-router for backwards compatibility. |
+| `agents/change-request.ts` | CR lifecycle: create, assess impact (streamed), execute targeted stages, link artifact versions. |
+| `routes/change-request-routes.ts` | REST endpoints for CRs: CRUD, assess (SSE), execute, version-info, ADO mappings. |
 | `utils/model-config.ts` | All model/pricing config: `PROVIDER_MODELS`, `ANTHROPIC_AGENT_MODELS`, `MODEL_MAX_OUTPUT_TOKENS`, `MODEL_PRICING`, `estimateCost()`, `calculateCost()`. |
 | `utils/revision-diff.ts` | `computeRevisionDiff()` — pure LCS-based line diff used for revision artifacts. |
 | `routes/workflow-routes.ts` | Express router at `/api/workflow`. Coordinator planning SSE, workflow start, checkpoint resolve, mid-workflow message, events, history. |
@@ -163,6 +168,41 @@ The `policies` DB table stores key-value rules. Loaded at runtime — no restart
 
 #### Context cache invalidation
 `bmad-agent.ts` holds a module-level `_projectContextCache`. `invalidateContextCache()` (exported) clears it. Called by `context-diff-routes.ts` and `context-file-routes.ts` after changes so the next agent request reloads from disk.
+
+### Change Request system
+
+After a workflow completes, targeted changes can be made without full-stage reruns via **Change Requests (CRs)**.
+
+#### Flow
+1. User clicks "Change Request" in the completion section → fills type + description
+2. `POST /api/workflow/:id/change-request` creates a `change_requests` row
+3. `POST /api/change-request/:crId/assess` streams a Coordinator impact assessment (SSE) → determines `affected_stages`
+4. User confirms which stages to update → `POST /api/change-request/:crId/execute`
+5. Only confirmed stages run (not all downstream). Each stage uses conversation threading (prior draft as assistant turn) via `reiterateFromStage()`. Checkpoints created for review.
+6. On completion → CR status → `complete`, original stage sequence restored.
+
+#### Key files
+| File | Role |
+|------|------|
+| `agents/change-request.ts` | CR lifecycle: `createChangeRequest()`, `assessImpact()`, `executeChangeRequest()`, `linkCRArtifactVersion()` |
+| `routes/change-request-routes.ts` | REST endpoints: create, list, assess (SSE), execute, cancel, version-info, ado-mappings |
+| `coordinator-agent.ts` | `generateCRBrief()` — builds CR-specific revision briefs |
+
+#### DB tables
+- `change_requests` — one row per CR with type, description, impact_assessment (JSON), status
+- `cr_artifact_versions` — links CR → new artifact → parent artifact with version number
+- `ado_work_item_map` — maps local backlog keys (F1, F1.S1) to ADO work item IDs for sync
+
+#### CR events
+`cr_created`, `cr_assessed`, `cr_stage_started`, `cr_stage_completed`, `cr_complete` — emitted via existing `insertEvent()`.
+
+### ADO sync
+
+`POST /api/workflow/:id/push-to-board` is now sync-aware:
+- First push: creates items and persists `ado_work_item_map` rows
+- Subsequent pushes: diff-based update via `AzureDevOpsClient.updateBacklog()` — updates changed items, creates new ones
+- Response includes `{ synced: true, created: N, updated: N }` when updating
+- Frontend shows "Sync to Board" button when mappings exist
 
 ### Agent patterns
 

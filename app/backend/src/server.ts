@@ -16,6 +16,7 @@ import contextRoutes from './routes/context-routes';
 import initiativesRoutes from './routes/initiatives-routes';
 import { workflowRouter } from './routes/workflow-router';
 import { workflowRoutes } from './routes/workflow-routes';
+import { changeRequestRoutes } from './routes/change-request-routes';
 import { contextDiffRouter } from './routes/context-diff-routes';
 import { contextFileRouter } from './routes/context-file-routes';
 import { templateFileRouter } from './routes/template-file-routes';
@@ -80,6 +81,7 @@ if (appConfig.features.workflowModeEnabled) {
     res.status(404).json({ error: 'Workflow mode is not enabled' });
   });
 }
+app.use('/api', changeRequestRoutes);
 app.use('/api/context-diffs', contextDiffRouter);
 app.use('/api/context-files', contextFileRouter);
 app.use('/api/template-files', templateFileRouter);

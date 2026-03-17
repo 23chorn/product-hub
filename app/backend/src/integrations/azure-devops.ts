@@ -4,6 +4,11 @@ import { BacklogStructure } from '@pap/shared';
 
 const logger = new Logger('AZURE-DEVOPS');
 
+/** Strip leading user-story prefixes that the model may have included in the JSON fields. */
+function stripStoryPrefix(text: string, prefix: RegExp): string {
+  return text.replace(prefix, '').trim();
+}
+
 /** Escape special HTML characters to prevent injection in ADO rich-text fields */
 function escapeHtml(text: string): string {
   return text
@@ -258,9 +263,9 @@ export class AzureDevOpsClient {
 
         for (const storyData of featureData.stories) {
           const storyDescription = [
-            `<b>As a</b> ${escapeHtml(storyData.persona)}`,
-            `<b>I want</b> ${escapeHtml(storyData.goal)}`,
-            `<b>So that</b> ${escapeHtml(storyData.benefit)}`,
+            `<b>As a</b> ${escapeHtml(stripStoryPrefix(storyData.persona, /^as an?\s+/i))}`,
+            `<b>I want</b> ${escapeHtml(stripStoryPrefix(storyData.goal, /^i want\s+(to\s+)?/i))}`,
+            `<b>So that</b> ${escapeHtml(stripStoryPrefix(storyData.benefit, /^so that\s+/i))}`,
           ].join('<br>');
 
           let acceptanceCriteriaHtml: string | undefined;
@@ -332,6 +337,174 @@ export class AzureDevOpsClient {
       logger.error('Failed to create backlog structure', error);
       throw error;
     }
+  }
+
+  /**
+   * Update an existing work item.
+   * Only patches the fields that are provided (non-undefined).
+   */
+  async updateWorkItem(
+    id: number,
+    updates: { title?: string; description?: string; effort?: number; acceptanceCriteria?: string }
+  ): Promise<WorkItem> {
+    logger.info(`Updating work item #${id}`);
+
+    const operations: any[] = [];
+
+    if (updates.title !== undefined) {
+      operations.push({ op: 'replace', path: '/fields/System.Title', value: updates.title });
+    }
+    if (updates.description !== undefined) {
+      operations.push({ op: 'replace', path: '/fields/System.Description', value: updates.description });
+    }
+    if (updates.effort !== undefined) {
+      operations.push({ op: 'replace', path: '/fields/Microsoft.VSTS.Scheduling.Effort', value: updates.effort });
+    }
+    if (updates.acceptanceCriteria !== undefined) {
+      operations.push({ op: 'replace', path: '/fields/Microsoft.VSTS.Common.AcceptanceCriteria', value: updates.acceptanceCriteria });
+    }
+
+    if (operations.length === 0) {
+      logger.info(`No updates for work item #${id} — skipping`);
+      return this.getWorkItem(id);
+    }
+
+    try {
+      const response = await this.client.patch(`/wit/workitems/${id}`, operations);
+      logger.info(`Updated work item #${id}: ${Object.keys(updates).filter(k => (updates as any)[k] !== undefined).join(', ')}`);
+      return response.data;
+    } catch (error: any) {
+      logger.error(`Failed to update work item #${id}`, error);
+      throw new Error(
+        `Azure DevOps API error: ${error.response?.data?.message || error.message}`
+      );
+    }
+  }
+
+  /**
+   * Update an existing backlog structure using a local_key → ado_id map.
+   * Updates changed items, creates new ones, returns counts.
+   */
+  async updateBacklog(
+    structure: BacklogStructure,
+    existingMap: Map<string, { ado_id: number; title: string }>
+  ): Promise<{
+    epicId: number;
+    created: number;
+    updated: number;
+    newMappings: Array<{ local_key: string; ado_id: number; ado_type: string; title: string; ado_url: string }>;
+  }> {
+    let created = 0;
+    let updated = 0;
+    const newMappings: Array<{ local_key: string; ado_id: number; ado_type: string; title: string; ado_url: string }> = [];
+
+    const epicMapping = existingMap.get('epic');
+    if (!epicMapping) {
+      throw new Error('No existing epic mapping found — cannot update');
+    }
+
+    const epicId = epicMapping.ado_id;
+
+    // Update epic title/description if changed
+    if (epicMapping.title !== structure.epic.title) {
+      await this.updateWorkItem(epicId, {
+        title: structure.epic.title,
+        description: structure.epic.description,
+      });
+      updated++;
+    }
+
+    // Process features and stories
+    for (let fi = 0; fi < structure.features.length; fi++) {
+      const featureData = structure.features[fi];
+      const featureKey = `F${fi + 1}`;
+      const featureMapping = existingMap.get(featureKey);
+
+      let featureAdoId: number;
+      if (featureMapping) {
+        // Update existing feature
+        if (featureMapping.title !== featureData.title) {
+          await this.updateWorkItem(featureMapping.ado_id, {
+            title: featureData.title,
+            description: featureData.description,
+          });
+          updated++;
+        }
+        featureAdoId = featureMapping.ado_id;
+      } else {
+        // Create new feature
+        const feature = await this.createWorkItem({
+          type: this.workItemTypes.feature as any,
+          title: featureData.title,
+          description: featureData.description,
+          parentId: epicId,
+        });
+        featureAdoId = feature.id!;
+        created++;
+        newMappings.push({
+          local_key: featureKey,
+          ado_id: featureAdoId,
+          ado_type: 'feature',
+          title: featureData.title,
+          ado_url: this.getEpicUrl(featureAdoId),
+        });
+      }
+
+      // Process stories
+      for (let si = 0; si < featureData.stories.length; si++) {
+        const storyData = featureData.stories[si];
+        const storyKey = `${featureKey}.S${si + 1}`;
+        const storyMapping = existingMap.get(storyKey);
+
+        const storyDescription = [
+          `<b>As a</b> ${escapeHtml(storyData.persona)}`,
+          `<b>I want</b> ${escapeHtml(storyData.goal)}`,
+          `<b>So that</b> ${escapeHtml(storyData.benefit)}`,
+        ].join('<br>');
+
+        let acceptanceCriteriaHtml: string | undefined;
+        if (storyData.acceptanceCriteria && storyData.acceptanceCriteria.length > 0) {
+          acceptanceCriteriaHtml = storyData.acceptanceCriteria
+            .map((ac, i) => {
+              const formatted = formatGivenWhenThen(escapeHtml(ac));
+              return `<b>AC ${i + 1}</b><br>${formatted}`;
+            })
+            .join('<br><br>');
+        }
+
+        if (storyMapping) {
+          // Update existing story
+          await this.updateWorkItem(storyMapping.ado_id, {
+            title: storyData.title,
+            description: storyDescription,
+            effort: storyData.effort,
+            acceptanceCriteria: acceptanceCriteriaHtml,
+          });
+          updated++;
+        } else {
+          // Create new story
+          const story = await this.createWorkItem({
+            type: this.workItemTypes.story as any,
+            title: storyData.title,
+            description: storyDescription,
+            acceptanceCriteria: acceptanceCriteriaHtml,
+            effort: storyData.effort,
+            parentId: featureAdoId,
+          });
+          created++;
+          newMappings.push({
+            local_key: storyKey,
+            ado_id: story.id!,
+            ado_type: 'story',
+            title: storyData.title,
+            ado_url: this.getEpicUrl(story.id!),
+          });
+        }
+      }
+    }
+
+    logger.info(`Updated backlog: ${updated} updated, ${created} created`);
+    return { epicId, created, updated, newMappings };
   }
 
   /**

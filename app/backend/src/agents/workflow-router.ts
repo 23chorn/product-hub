@@ -1164,9 +1164,11 @@ export function getWorkflowStatus(workflowId: string): WorkflowStatus {
 
   const checkpoints = stmts.getCheckpointsByWorkflow.all(workflowId);
 
-  const completedStages = checkpoints
-    .filter(c => c.status === 'approved')
-    .map(c => c.stage);
+  const completedStages = [...new Set(
+    checkpoints
+      .filter(c => c.status === 'approved')
+      .map(c => c.stage)
+  )];
 
   const pendingCheckpoint = checkpoints.find(c => c.status === 'pending');
 
@@ -1258,7 +1260,8 @@ export async function propagateFeedback(checkpointId: number, feedback: string):
 export async function reiterateFromStage(
   workflowId: string,
   fromStage: string,
-  feedback: string
+  feedback: string,
+  briefOverride?: string
 ): Promise<void> {
   const workflow = stmts.getWorkflow.get(workflowId);
   if (!workflow) throw new Error(`Workflow not found: ${workflowId}`);
@@ -1291,9 +1294,11 @@ export async function reiterateFromStage(
 
   // Load the prior artifact so the specialist can revise in-place
   const priorDraft = loadLatestArtifactForStage(workflow.item_id, fromStage);
-  const brief = priorDraft
-    ? getCoordinator().generateRevisionBrief(workflowId, fromStage, priorDraft, [`[HUMAN FEEDBACK] ${feedback}`])
-    : await getCoordinator().generateStageBrief(workflowId, fromStage, feedback);
+  const brief = briefOverride
+    ? briefOverride
+    : priorDraft
+      ? getCoordinator().generateRevisionBrief(workflowId, fromStage, priorDraft, [`[HUMAN FEEDBACK] ${feedback}`])
+      : await getCoordinator().generateStageBrief(workflowId, fromStage, feedback);
 
   // Create a new specialist session
   const stageMap = STAGE_SESSION_MAP[fromStage] ?? { mode: 'analyst' as AppMode, agentType: 'analyst' as AgentType };

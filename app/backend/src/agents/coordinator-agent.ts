@@ -537,6 +537,55 @@ ${policyLines}`;
     return lines.join('\n');
   }
 
+  // ── Change Request briefing ──────────────────────────────────────────────
+
+  /**
+   * Build a CR-specific revision brief for a specialist stage.
+   * Unlike generateRevisionBrief (which is driven by critic issues), this tells
+   * the specialist what changed via the CR and scopes modifications to affected
+   * sections only.
+   */
+  generateCRBrief(
+    workflowId: string,
+    stage: string,
+    crDescription: string,
+    priorDraft: string
+  ): string {
+    const workflow = db
+      .prepare<[string], WorkflowRow>('SELECT * FROM workflows WHERE id = ?')
+      .get(workflowId);
+
+    const goal = workflow?.goal ?? '(workflow goal not found)';
+    const stageFormat = STAGE_OUTPUT_FORMATS[stage];
+    const outputLabel = stageFormat?.label ?? stage;
+    const outputFormat = stageFormat?.format ?? '(no format specification defined for this stage)';
+
+    const lines: string[] = [
+      `# Change Request Revision: ${outputLabel}`,
+      '',
+      '## Goal',
+      goal,
+      '',
+      '## Change Request',
+      crDescription,
+      '',
+      '## Revision Instructions',
+      'A change request has been filed against this workflow. Your prior draft will follow as your previous response.',
+      'You are revising that document to incorporate the change described above — not starting from scratch.',
+      '',
+      '- Locate and modify ONLY the sections affected by this change request.',
+      '- Keep all unchanged sections intact. Do not reorganise or rewrite content that is not impacted.',
+      '- Your response must be the complete revised document (all sections) — not a diff or commentary.',
+      '- If the change affects downstream assumptions in other sections, update those too.',
+      '- You are executing this revision autonomously. Do NOT ask questions, show menus, or wait for input.',
+      '',
+      '## Required Output Format',
+      outputFormat,
+    ];
+
+    return lines.join('\n');
+  }
+
   // ── Pre-workflow planning conversation ───────────────────────────────────
 
   /**

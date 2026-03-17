@@ -22,10 +22,12 @@ export function ArtifactViewer() {
   const [showIssuesPanel, setShowIssuesPanel] = useState(false);
   const [resolveLoading, setResolveLoading] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
-  const [pushResult, setPushResult] = useState<{ epicUrl: string; featureCount: number; storyCount: number } | null>(null);
+  const [pushResult, setPushResult] = useState<{ epicUrl: string; featureCount?: number; storyCount?: number; created?: number; updated?: number; synced?: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showCriticFlyout, setShowCriticFlyout] = useState(false);
+  const [versionInfo, setVersionInfo] = useState<{ change_request_id: number; version: number } | null>(null);
+  const [hasAdoMappings, setHasAdoMappings] = useState(false);
 
   // Find the pending checkpoint that has this artifact
   const pendingCheckpoint = checkpoints.find(
@@ -33,11 +35,12 @@ export function ArtifactViewer() {
   );
 
   useEffect(() => {
-    if (!viewingArtifactId) { setContent(null); setError(null); return; }
+    if (!viewingArtifactId) { setContent(null); setError(null); setVersionInfo(null); return; }
 
     let stale = false;
     setLoading(true);
     setError(null);
+    setVersionInfo(null);
 
     api.getArtifactContent(viewingArtifactId)
       .then(({ content: c, type: t }) => {
@@ -51,6 +54,18 @@ export function ArtifactViewer() {
         }
       })
       .finally(() => { if (!stale) setLoading(false); });
+
+    // Fetch CR version info (non-blocking — badge is decorative)
+    api.getArtifactVersionInfo(viewingArtifactId)
+      .then((info) => { if (!stale) setVersionInfo(info); })
+      .catch(() => {});
+
+    // Check ADO mappings for sync button label
+    if (activeWorkflow) {
+      api.getAdoMappings(activeWorkflow.id)
+        .then(({ hasMappings }) => { if (!stale) setHasAdoMappings(hasMappings); })
+        .catch(() => {});
+    }
 
     return () => { stale = true; };
   }, [viewingArtifactId]);
@@ -99,9 +114,12 @@ export function ArtifactViewer() {
     try {
       const result = await api.pushToBoard(activeWorkflow.id);
       setPushResult(result);
+      const msg = result.synced
+        ? `Backlog synced to board: **${result.updated ?? 0} updated**, **${result.created ?? 0} created**. [View in Azure DevOps](${result.epicUrl})`
+        : `Backlog pushed to board: **Epic #${result.epicId}** with ${result.featureCount} features and ${result.storyCount} stories. [View in Azure DevOps](${result.epicUrl})`;
       addCoordinatorMessage({
         role: 'coordinator',
-        content: `Backlog pushed to board: **Epic #${result.epicId}** with ${result.featureCount} features and ${result.storyCount} stories. [View in Azure DevOps](${result.epicUrl})`,
+        content: msg,
         timestamp: Date.now(),
       });
     } catch (err: any) {
@@ -205,9 +223,16 @@ export function ArtifactViewer() {
           {/* Header */}
           <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between flex-shrink-0">
             <div>
-              <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                {STAGE_LABELS[artifactType] ?? (artifactType || 'Artifact')}
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  {STAGE_LABELS[artifactType] ?? (artifactType || 'Artifact')}
+                </h2>
+                {versionInfo && (
+                  <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400">
+                    v{versionInfo.version + 1} (CR #{versionInfo.change_request_id})
+                  </span>
+                )}
+              </div>
               {pendingCheckpoint && (
                 <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
                   Awaiting your review
@@ -234,7 +259,7 @@ export function ArtifactViewer() {
                       <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                       </svg>
-                      Push to Board
+                      {hasAdoMappings ? 'Sync to Board' : 'Push to Board'}
                     </>
                   )}
                 </button>
@@ -249,7 +274,10 @@ export function ArtifactViewer() {
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
-                  View in Board ({pushResult.featureCount}F / {pushResult.storyCount}S)
+                  {pushResult.synced
+                    ? `Synced (${pushResult.updated ?? 0} updated, ${pushResult.created ?? 0} new)`
+                    : `View in Board (${pushResult.featureCount}F / ${pushResult.storyCount}S)`
+                  }
                 </a>
               )}
               {hasCriticData && !showSidePanel && (

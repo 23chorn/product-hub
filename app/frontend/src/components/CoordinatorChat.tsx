@@ -34,8 +34,6 @@ export function CoordinatorChat() {
   const [pendingGoal, setPendingGoal] = useState('');
   const [reply, setReply] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [reiterateStage, setReiterateStage] = useState<string | null>(null);
-  const [reiterateFeedback, setReiterateFeedback] = useState('');
   const [showExtendPanel, setShowExtendPanel] = useState(false);
   const [extendStages, setExtendStages] = useState<Record<string, boolean>>({});
   const [enabledStages, setEnabledStages] = useState<Record<string, boolean>>(
@@ -43,6 +41,14 @@ export function CoordinatorChat() {
   );
   const [showDiffPanel, setShowDiffPanel] = useState(false);
   const [stageStale, setStageStale] = useState(false);
+  // Change request state
+  const [showCRForm, setShowCRForm] = useState(false);
+  const [crType, setCRType] = useState('correction');
+  const [crDescription, setCRDescription] = useState('');
+  const [crAssessment, setCRAssessment] = useState<{ affected_stages: string[]; summary: string } | null>(null);
+  const [crConfirmedStages, setCRConfirmedStages] = useState<Record<string, boolean>>({});
+  const [crLoading, setCRLoading] = useState(false);
+  const { activeCR, setActiveCR, clearActiveCR } = useWorkflowStore();
   const [retryLoading, setRetryLoading] = useState(false);
   const lastEventTimeRef = useRef(Date.now());
 
@@ -87,7 +93,7 @@ export function CoordinatorChat() {
     const behavior = hasInitialScrolled.current ? 'smooth' : 'instant';
     messagesEndRef.current?.scrollIntoView({ behavior });
     hasInitialScrolled.current = true;
-  }, [coordinatorMessages, activeWorkflow?.status, checkpoints]);
+  }, [coordinatorMessages, activeWorkflow?.status, checkpoints, showCRForm, crAssessment]);
 
   // Track which pending checkpoint we've already auto-opened, to avoid re-opening after user closes
   const autoOpenedCheckpointRef = useRef<number | null>(null);
@@ -764,64 +770,157 @@ export function CoordinatorChat() {
                 </button>
               </div>
             )}
-            {!reiterateStage && (
-              <>
-                <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
-                  Need to revisit a stage? Pick one to re-run it and all downstream stages.
-                </p>
-                <div className="flex flex-wrap gap-2 justify-center">
-                  {stageSequence
-                    .filter(s => s !== 'critic' && s !== 'curator')
-                    .map(stage => (
-                    <button
-                      key={stage}
-                      onClick={() => setReiterateStage(stage)}
-                      className="text-xs px-2.5 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:border-blue-300 dark:hover:border-blue-600 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                    >
-                      Redo from {STAGE_LABELS[stage] ?? stage}
-                    </button>
-                  ))}
-                </div>
-              </>
+            {/* Change Request button + form */}
+            {!showCRForm && !crAssessment && (
+              <div className="flex justify-center">
+                <button
+                  onClick={() => setShowCRForm(true)}
+                  className="text-xs px-3 py-1.5 rounded-md border border-purple-300 dark:border-purple-700 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors"
+                >
+                  Change Request
+                </button>
+              </div>
             )}
-            {reiterateStage && (
-              <div className="space-y-2 bg-gray-50 dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
-                <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                  Redo from {STAGE_LABELS[reiterateStage] ?? reiterateStage}
-                </p>
+
+            {/* CR form */}
+            {showCRForm && !crAssessment && (
+              <div className="space-y-2 bg-purple-50 dark:bg-purple-900/10 rounded-lg p-3 border border-purple-200 dark:border-purple-800">
+                <p className="text-xs font-medium text-purple-700 dark:text-purple-300">New Change Request</p>
+                <select
+                  value={crType}
+                  onChange={(e) => setCRType(e.target.value)}
+                  className="w-full rounded-md border border-purple-300 dark:border-purple-700 bg-white dark:bg-gray-900 px-2 py-1.5 text-xs text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="correction">Correction</option>
+                  <option value="scope">Scope Change</option>
+                  <option value="direction">Direction Change</option>
+                  <option value="constraint">New Constraint</option>
+                  <option value="stakeholder">Stakeholder Feedback</option>
+                  <option value="technical">Technical Change</option>
+                </select>
                 <textarea
-                  value={reiterateFeedback}
-                  onChange={(e) => setReiterateFeedback(e.target.value)}
-                  placeholder="What changed? Provide context for the re-run..."
+                  value={crDescription}
+                  onChange={(e) => setCRDescription(e.target.value)}
+                  placeholder="Describe what changed and why..."
                   rows={3}
-                  className="w-full resize-none rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full resize-none rounded-md border border-purple-300 dark:border-purple-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
                 <div className="flex gap-2">
                   <button
                     onClick={async () => {
-                      if (!reiterateFeedback.trim() || !activeWorkflow) return;
+                      if (!crDescription.trim() || !activeWorkflow) return;
+                      setCRLoading(true);
                       setError(null);
                       try {
-                        const result = await api.reiterateWorkflow(activeWorkflow.id, reiterateStage, reiterateFeedback.trim());
-                        applyWorkflowStatus(result);
-                        setReiterateStage(null);
-                        setReiterateFeedback('');
+                        // Create CR
+                        const cr = await api.createChangeRequest(activeWorkflow.id, crType, crDescription.trim());
+                        setActiveCR({ id: cr.id, status: cr.status });
+
+                        // Start assessment stream
                         addCoordinatorMessage({
                           role: 'coordinator',
-                          content: `Re-running from ${STAGE_LABELS[reiterateStage] ?? reiterateStage}. All downstream stages will be re-processed.`,
+                          content: '',
                           timestamp: Date.now(),
                         });
+                        setIsStreaming(true);
+                        await api.assessChangeRequest(
+                          cr.id,
+                          (chunk) => appendToLastCoordinatorMessage(chunk),
+                          (assessment) => {
+                            setCRAssessment(assessment);
+                            setCRConfirmedStages(
+                              Object.fromEntries(assessment.affected_stages.map(s => [s, true]))
+                            );
+                            setActiveCR({ id: cr.id, status: 'assessed', impactAssessment: assessment });
+                          },
+                          () => setIsStreaming(false),
+                          (err) => { setError(err); setIsStreaming(false); },
+                          (cleaned) => replaceLastCoordinatorMessage(cleaned),
+                        );
+                        setShowCRForm(false);
                       } catch (err: any) {
-                        setError(err.response?.data?.error ?? err.message ?? 'Failed to reiterate');
+                        setError(err.response?.data?.error ?? err.message ?? 'Failed to create change request');
+                      } finally {
+                        setCRLoading(false);
                       }
                     }}
-                    disabled={!reiterateFeedback.trim()}
-                    className="flex-1 py-1.5 px-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white text-xs font-medium rounded-md transition-colors"
+                    disabled={!crDescription.trim() || crLoading}
+                    className="flex-1 py-1.5 px-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white text-xs font-medium rounded-md transition-colors"
                   >
-                    Re-run
+                    {crLoading ? 'Assessing...' : 'Submit & Assess Impact'}
                   </button>
                   <button
-                    onClick={() => { setReiterateStage(null); setReiterateFeedback(''); }}
+                    onClick={() => { setShowCRForm(false); setCRDescription(''); setCRType('correction'); }}
+                    className="py-1.5 px-3 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* CR assessment result — stage selection */}
+            {crAssessment && activeCR && (
+              <div className="space-y-2 bg-purple-50 dark:bg-purple-900/10 rounded-lg p-3 border border-purple-200 dark:border-purple-800">
+                <p className="text-xs font-medium text-purple-700 dark:text-purple-300">
+                  Impact Assessment — {crAssessment.affected_stages.length} stage(s) affected
+                </p>
+                <p className="text-xs text-gray-600 dark:text-gray-400">{crAssessment.summary}</p>
+                <div className="flex flex-wrap gap-2">
+                  {crAssessment.affected_stages.map(stage => (
+                    <label key={stage} className="flex items-center gap-1.5 text-xs text-gray-700 dark:text-gray-300">
+                      <input
+                        type="checkbox"
+                        checked={crConfirmedStages[stage] ?? false}
+                        onChange={(e) => setCRConfirmedStages(prev => ({ ...prev, [stage]: e.target.checked }))}
+                        className="rounded border-gray-300 dark:border-gray-600 text-purple-600 focus:ring-purple-500"
+                      />
+                      {STAGE_LABELS[stage] ?? stage}
+                    </label>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={async () => {
+                      const stages = Object.entries(crConfirmedStages)
+                        .filter(([, v]) => v)
+                        .map(([k]) => k);
+                      if (stages.length === 0 || !activeWorkflow) return;
+                      setCRLoading(true);
+                      setError(null);
+                      try {
+                        await api.executeChangeRequest(activeCR.id, stages);
+                        const result = await api.getWorkflowStatus(activeWorkflow.id);
+                        applyWorkflowStatus(result);
+                        addCoordinatorMessage({
+                          role: 'coordinator',
+                          content: `Applying changes to ${stages.map(s => STAGE_LABELS[s] ?? s).join(', ')}. Checkpoints will appear for review.`,
+                          timestamp: Date.now(),
+                        });
+                        setCRAssessment(null);
+                        setCRConfirmedStages({});
+                        setCRDescription('');
+                      } catch (err: any) {
+                        setError(err.response?.data?.error ?? err.message ?? 'Failed to execute change request');
+                      } finally {
+                        setCRLoading(false);
+                      }
+                    }}
+                    disabled={crLoading || Object.values(crConfirmedStages).every(v => !v)}
+                    className="flex-1 py-1.5 px-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white text-xs font-medium rounded-md transition-colors"
+                  >
+                    {crLoading ? 'Applying...' : 'Apply Changes'}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (activeCR) {
+                        try { await api.cancelChangeRequest(activeCR.id); } catch { /* ignore */ }
+                      }
+                      setCRAssessment(null);
+                      setCRConfirmedStages({});
+                      setCRDescription('');
+                      clearActiveCR();
+                    }}
                     className="py-1.5 px-3 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
                   >
                     Cancel
@@ -831,7 +930,7 @@ export function CoordinatorChat() {
             )}
 
             {/* Add stages panel */}
-            {!reiterateStage && (() => {
+            {(() => {
               const existingSequence: string[] = stageSequence;
               const addableStages = availableStages.filter(
                 s => s.key !== 'curator' && !existingSequence.includes(s.key)
