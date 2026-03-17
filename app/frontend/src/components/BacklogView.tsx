@@ -159,7 +159,6 @@ export function BacklogView({ data }: { data: BacklogData }) {
                 </svg>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium text-gray-400 dark:text-gray-500">S{prefix}.{si + 1}</span>
                     <span className="text-sm text-gray-900 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                       {story.title}
                     </span>

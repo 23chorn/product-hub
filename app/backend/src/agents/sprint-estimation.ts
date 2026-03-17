@@ -4,7 +4,7 @@ import Logger from '../utils/logger';
 
 const logger = new Logger('SPRINT-ESTIMATION');
 
-const AGENTS_ROOT = path.resolve(__dirname, '../../../../../agents');
+const AGENTS_ROOT = path.resolve(__dirname, '../../../../agents');
 
 /** Default hours-per-point mapping (non-linear — larger stories have more overhead). */
 export const DEFAULT_HOURS_PER_POINT: Record<number, number> = { 1: 2, 2: 4, 3: 8, 5: 16, 8: 28 };
@@ -93,6 +93,53 @@ export async function injectSprintEstimates(parsed: any): Promise<string> {
     parsed.feature = { ...parsed.feature, ...sprintMeta };
   } else if (parsed.story) {
     parsed.story = { ...parsed.story, ...sprintMeta };
+  }
+
+  // ── Inject ordering into feature and story titles ─────────────────────────
+  // Prepends "F{n}: " to feature titles and "S{f}.{s}: " to story titles so
+  // the dependency order is explicit in the artifact and in exported work items.
+  if (parsed.features) {
+    for (let fi = 0; fi < parsed.features.length; fi++) {
+      const feature = parsed.features[fi];
+      feature.order = fi + 1;
+      const fPrefix = `F${fi + 1}`;
+      if (!feature.title.startsWith(fPrefix)) {
+        feature.title = `${fPrefix}: ${feature.title}`;
+      }
+      for (let si = 0; si < (feature.stories?.length ?? 0); si++) {
+        const story = feature.stories[si];
+        story.order = si + 1;
+        const sPrefix = `S${fi + 1}.${si + 1}`;
+        if (!story.title.startsWith(sPrefix)) {
+          story.title = `${sPrefix}: ${story.title}`;
+        }
+      }
+    }
+  } else if (parsed.feature?.stories) {
+    parsed.feature.order = 1;
+    for (let si = 0; si < parsed.feature.stories.length; si++) {
+      const story = parsed.feature.stories[si];
+      story.order = si + 1;
+      const sPrefix = `S1.${si + 1}`;
+      if (!story.title.startsWith(sPrefix)) {
+        story.title = `${sPrefix}: ${story.title}`;
+      }
+    }
+  } else if (parsed.epic?.stories) {
+    for (let si = 0; si < parsed.epic.stories.length; si++) {
+      const story = parsed.epic.stories[si];
+      story.order = si + 1;
+      const sPrefix = `S1.${si + 1}`;
+      if (!story.title.startsWith(sPrefix)) {
+        story.title = `${sPrefix}: ${story.title}`;
+      }
+    }
+  } else if (parsed.story) {
+    parsed.story.order = 1;
+    const sPrefix = 'S1.1';
+    if (!parsed.story.title.startsWith(sPrefix)) {
+      parsed.story.title = `${sPrefix}: ${parsed.story.title}`;
+    }
   }
 
   logger.info(`Backlog sprint estimate: ${totalEffort} pts (${totalHours}h) / ${effectiveVelocity} effective velocity (${sprintVelocity} × ${capacityFactor}) = ${sprintsRequired} sprints`);
