@@ -250,9 +250,7 @@ class APIClient {
     return response.data;
   }
 
-  // ============================================
-  // Workflow (Epic 4 + 7)
-  // ============================================
+  // ── Workflow ──────────────────────────────────────────────────────────────────
 
   // ============================================
   // Coordinator Planning (pre-workflow)
@@ -472,9 +470,7 @@ class APIClient {
     return response.data.messages ?? [];
   }
 
-  // ============================================
-  // Context Diffs (Story 6.2 + 7.4)
-  // ============================================
+  // ── Context Diffs ─────────────────────────────────────────────────────────────
 
   async getArtifactContent(artifactId: number): Promise<{ content: string; type: string }> {
     const response = await axios.get(`${this.baseURL}/api/workflow/artifact/${artifactId}/content`);

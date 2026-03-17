@@ -1,11 +1,3 @@
-/**
- * Story 6.2 — Context diff approval and application
- *
- * POST /api/context-diffs/:id/approve  — apply diff to context file, invalidate cache
- * POST /api/context-diffs/:id/reject   — mark rejected, no file change
- * GET  /api/context-diffs/pending      — list all pending diffs
- */
-
 import { Router, Request, Response } from 'express';
 import * as fs from 'fs';
 import * as os from 'os';

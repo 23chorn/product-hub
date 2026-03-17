@@ -378,9 +378,7 @@ export interface AppConfig {
   };
 }
 
-// ============================================
-// Workflow Engine Types (Epic 1+)
-// ============================================
+// ── Workflow Engine Types ──────────────────────────────────────────────────────
 
 export type WorkflowStatus = 'active' | 'paused_at_checkpoint' | 'complete';
 

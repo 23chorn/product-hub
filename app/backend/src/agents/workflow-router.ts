@@ -261,8 +261,6 @@ export function getWorkflowEvents(workflowId: string, sinceId?: number): Workflo
   return eventStmts.getAllEvents.all(workflowId);
 }
 
-// ── Story 3.1: Core functions ──────────────────────────────────────────────────
-
 /**
  * Create a new workflow for an item.
  * Applies stage-skip policies at creation time.
@@ -275,7 +273,6 @@ export function createWorkflow(
 ): WorkflowRow {
   const policies = loadGlobalPolicies();
 
-  // Story 3.2: Stage-skip at creation time
   let sequence = [...stageSequence];
 
   const requireCritic = policies.get('require_critic_review');
@@ -1193,7 +1190,6 @@ export function getWorkflowStatus(workflowId: string): WorkflowStatus {
   };
 }
 
-// ── Story 3.3: Feedback propagation ───────────────────────────────────────────
 
 /**
  * Propagate human feedback on a checkpoint back to the specialist session.

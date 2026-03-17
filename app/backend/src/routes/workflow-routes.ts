@@ -1,12 +1,3 @@
-/**
- * Epic 4 — New API Routes
- *
- * Story 4.1: POST /api/workflow/start           — SSE streaming workflow creation
- * Story 4.2: POST /api/workflow/checkpoint/resolve — approve / reject / revise a checkpoint
- * Story 4.3: GET  /api/workflow/:id/status       — workflow status
- *            GET  /api/workflow/:id/checkpoints  — checkpoints with artifact metadata
- */
-
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import {
@@ -471,8 +462,6 @@ workflowRoutes.post('/complete-stage', (req: Request, res: Response) => {
   }
 });
 
-// ── Story 4.2: POST /api/workflow/checkpoint/resolve ──────────────────────────
-
 /**
  * POST /api/workflow/checkpoint/resolve
  * Body: { checkpointId, status: 'approved'|'rejected'|'revised', feedback? }
@@ -840,8 +829,6 @@ workflowRoutes.get('/artifact/:id/content', (req: Request, res: Response) => {
     res.status(404).json({ error: 'Artifact file not found on disk' });
   }
 });
-
-// ── Story 4.3: Read-only workflow status routes ───────────────────────────────
 
 interface ArtifactRow {
   id: number;
