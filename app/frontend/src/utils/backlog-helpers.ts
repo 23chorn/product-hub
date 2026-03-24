@@ -9,6 +9,8 @@ export interface BacklogStory {
   agentContext?: string;
   effort?: number;
   estimatedHours?: number;
+  traditionalHours?: number;
+  aiEstimatedHours?: number;
 }
 
 export interface BacklogFeature {
@@ -23,6 +25,9 @@ export interface BacklogSprintMeta {
   totalHours?: number;
   sprintsRequired?: number;
   effectiveVelocity?: number;
+  aiAssisted?: boolean;
+  totalTraditionalHours?: number;
+  totalAiHours?: number;
 }
 
 export interface BacklogData {
@@ -54,9 +59,9 @@ export function backlogTier(data: BacklogData): 1 | 2 | 3 {
 export function getSprintMeta(data: BacklogData): BacklogSprintMeta | null {
   const source = data.epic ?? data.feature ?? data.story;
   if (!source) return null;
-  const { totalEffort, totalHours, sprintsRequired, effectiveVelocity } = source as BacklogSprintMeta;
+  const { totalEffort, totalHours, sprintsRequired, effectiveVelocity, aiAssisted, totalTraditionalHours, totalAiHours } = source as BacklogSprintMeta;
   if (totalEffort == null) return null;
-  return { totalEffort, totalHours, sprintsRequired, effectiveVelocity };
+  return { totalEffort, totalHours, sprintsRequired, effectiveVelocity, aiAssisted, totalTraditionalHours, totalAiHours };
 }
 
 /** Collect all stories regardless of tier. */

@@ -9,35 +9,60 @@ const AGENTS_ROOT = path.resolve(__dirname, '../../../../agents');
 /** Default hours-per-point mapping (non-linear — larger stories have more overhead). */
 export const DEFAULT_HOURS_PER_POINT: Record<number, number> = { 1: 2, 2: 4, 3: 8, 5: 16, 8: 28 };
 
-/** Read sprint_velocity, capacity_factor, and hours_per_point from agents/config.yaml. */
+/** Default AI-assisted hours-per-point mapping (AI accelerates routine work more than complex work). */
+export const DEFAULT_AI_HOURS_PER_POINT: Record<number, number> = { 1: 0.5, 2: 1.5, 3: 3, 5: 8, 8: 18 };
+
+/** Read sprint_velocity, capacity_factor, hours_per_point, and ai_assisted_development from agents/config.yaml. */
 export async function loadSprintConfig(): Promise<{
   sprintVelocity: number;
   capacityFactor: number;
   hoursPerPoint: Record<number, number>;
+  aiAssisted: boolean;
+  aiHoursPerPoint: Record<number, number>;
 }> {
   let sprintVelocity = 25;
   let capacityFactor = 0.7;
   const hoursPerPoint: Record<number, number> = { ...DEFAULT_HOURS_PER_POINT };
+  let aiAssisted = false;
+  const aiHoursPerPoint: Record<number, number> = { ...DEFAULT_AI_HOURS_PER_POINT };
   try {
     const raw = await fsAsync.readFile(path.join(AGENTS_ROOT, 'config.yaml'), 'utf-8');
     let inHoursPerPoint = false;
+    let inAiSection = false;
+    let inAiHoursPerPoint = false;
     for (const line of raw.split('\n')) {
       const intMatch = line.match(/^sprint_velocity:\s*(\d+)/);
-      if (intMatch) { sprintVelocity = parseInt(intMatch[1], 10); continue; }
+      if (intMatch) { sprintVelocity = parseInt(intMatch[1], 10); inHoursPerPoint = false; inAiSection = false; inAiHoursPerPoint = false; continue; }
       const floatMatch = line.match(/^capacity_factor:\s*([\d.]+)/);
-      if (floatMatch) { capacityFactor = parseFloat(floatMatch[1]); continue; }
-      if (/^hours_per_point:\s*$/.test(line)) { inHoursPerPoint = true; continue; }
+      if (floatMatch) { capacityFactor = parseFloat(floatMatch[1]); inHoursPerPoint = false; inAiSection = false; inAiHoursPerPoint = false; continue; }
+      if (/^hours_per_point:\s*$/.test(line)) { inHoursPerPoint = true; inAiSection = false; inAiHoursPerPoint = false; continue; }
+      if (/^ai_assisted_development:\s*$/.test(line)) { inAiSection = true; inHoursPerPoint = false; inAiHoursPerPoint = false; continue; }
       if (inHoursPerPoint) {
-        const hppMatch = line.match(/^\s+(\d+):\s*(\d+)/);
+        const hppMatch = line.match(/^\s+(\d+):\s*([\d.]+)/);
         if (hppMatch) {
-          hoursPerPoint[parseInt(hppMatch[1], 10)] = parseInt(hppMatch[2], 10);
+          hoursPerPoint[parseInt(hppMatch[1], 10)] = parseFloat(hppMatch[2]);
         } else if (/^\S/.test(line)) {
           inHoursPerPoint = false;
         }
       }
+      if (inAiSection) {
+        const enabledMatch = line.match(/^\s+enabled:\s*(true|false)/);
+        if (enabledMatch) { aiAssisted = enabledMatch[1] === 'true'; continue; }
+        if (/^\s+ai_hours_per_point:\s*$/.test(line)) { inAiHoursPerPoint = true; continue; }
+        if (inAiHoursPerPoint) {
+          const hppMatch = line.match(/^\s+(\d+):\s*([\d.]+)/);
+          if (hppMatch) {
+            aiHoursPerPoint[parseInt(hppMatch[1], 10)] = parseFloat(hppMatch[2]);
+          } else if (/^\S/.test(line)) {
+            inAiSection = false;
+            inAiHoursPerPoint = false;
+          }
+        }
+        if (/^\S/.test(line)) { inAiSection = false; inAiHoursPerPoint = false; }
+      }
     }
   } catch { /* fall through */ }
-  return { sprintVelocity, capacityFactor, hoursPerPoint };
+  return { sprintVelocity, capacityFactor, hoursPerPoint, aiAssisted, aiHoursPerPoint };
 }
 
 /**
@@ -55,38 +80,57 @@ export async function injectSprintEstimates(parsed: any): Promise<string> {
     : parsed.story
     ? [parsed.story]
     : [];
-  const { sprintVelocity, capacityFactor, hoursPerPoint } = await loadSprintConfig();
+  const { sprintVelocity, capacityFactor, hoursPerPoint, aiAssisted, aiHoursPerPoint } = await loadSprintConfig();
 
-  // Inject estimatedHours on each story based on effort → hours mapping
-  const pointToHours = (effort: number): number => {
-    if (hoursPerPoint[effort] != null) return hoursPerPoint[effort];
+  // Build hours-from-effort mapper for a given mapping table
+  const buildPointToHours = (mapping: Record<number, number>) => (effort: number): number => {
+    if (mapping[effort] != null) return mapping[effort];
     // Interpolate: find nearest lower and upper keys
-    const keys = Object.keys(hoursPerPoint).map(Number).sort((a, b) => a - b);
+    const keys = Object.keys(mapping).map(Number).sort((a, b) => a - b);
     const lower = keys.filter(k => k <= effort).pop();
     const upper = keys.find(k => k >= effort);
     if (lower != null && upper != null && lower !== upper) {
       const ratio = (effort - lower) / (upper - lower);
-      return Math.round(hoursPerPoint[lower] + ratio * (hoursPerPoint[upper] - hoursPerPoint[lower]));
+      return Math.round((mapping[lower] + ratio * (mapping[upper] - mapping[lower])) * 10) / 10;
     }
     // Fallback: linear extrapolation from highest known
     const highest = keys[keys.length - 1];
-    return Math.round((effort / highest) * hoursPerPoint[highest]);
+    return Math.round(((effort / highest) * mapping[highest]) * 10) / 10;
   };
+
+  const traditionalPointToHours = buildPointToHours(hoursPerPoint);
+  const aiPointToHours = buildPointToHours(aiHoursPerPoint);
+
+  // Inject estimatedHours on each story — use AI mapping when enabled, always include both
   for (const s of allStories) {
     const effort = Number(s.effort) || 0;
-    if (effort > 0) s.estimatedHours = pointToHours(effort);
+    if (effort > 0) {
+      const traditional = traditionalPointToHours(effort);
+      const ai = aiPointToHours(effort);
+      s.estimatedHours = aiAssisted ? ai : traditional;
+      // Always include both so the frontend can show the comparison
+      s.traditionalHours = traditional;
+      s.aiEstimatedHours = ai;
+    }
   }
 
   const totalEffort: number = allStories
     .reduce((sum: number, s: any) => sum + (Number(s.effort) || 0), 0);
   const totalHours: number = allStories
     .reduce((sum: number, s: any) => sum + (Number(s.estimatedHours) || 0), 0);
+  const totalTraditionalHours: number = allStories
+    .reduce((sum: number, s: any) => sum + (Number(s.traditionalHours) || 0), 0);
+  const totalAiHours: number = allStories
+    .reduce((sum: number, s: any) => sum + (Number(s.aiEstimatedHours) || 0), 0);
   const effectiveVelocity = Math.round(sprintVelocity * capacityFactor * 10) / 10;
   const sprintsRequired = effectiveVelocity > 0
     ? Math.round((totalEffort / effectiveVelocity) * 10) / 10
     : null;
   // Inject sprint metadata into the appropriate top-level object
-  const sprintMeta = { totalEffort, totalHours, sprintsRequired, sprintVelocity, capacityFactor, effectiveVelocity };
+  const sprintMeta = {
+    totalEffort, totalHours, sprintsRequired, sprintVelocity, capacityFactor, effectiveVelocity,
+    aiAssisted, totalTraditionalHours, totalAiHours,
+  };
   if (parsed.epic) {
     parsed.epic = { ...parsed.epic, ...sprintMeta };
   } else if (parsed.feature) {
@@ -142,7 +186,8 @@ export async function injectSprintEstimates(parsed: any): Promise<string> {
     }
   }
 
-  logger.info(`Backlog sprint estimate: ${totalEffort} pts (${totalHours}h) / ${effectiveVelocity} effective velocity (${sprintVelocity} × ${capacityFactor}) = ${sprintsRequired} sprints`);
+  const aiTag = aiAssisted ? ` [AI-assisted: ${totalAiHours}h vs traditional ${totalTraditionalHours}h]` : '';
+  logger.info(`Backlog sprint estimate: ${totalEffort} pts (${totalHours}h) / ${effectiveVelocity} effective velocity (${sprintVelocity} × ${capacityFactor}) = ${sprintsRequired} sprints${aiTag}`);
 
   return JSON.stringify(parsed, null, 2);
 }

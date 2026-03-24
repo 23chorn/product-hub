@@ -9,6 +9,7 @@ import { ContextDiffPanel } from './ContextDiffPanel';
 import { STAGE_LABELS, TOGGLEABLE_STAGES } from '../constants/stage-labels';
 import { stripReadyMarker, extractReadyPayload, parseCriticData, criticSummaryLine } from '../utils/coordinator-helpers';
 import { InlineCheckpointActions } from './InlineCheckpointActions';
+import { PrototypePreview, type PrototypeData } from './PrototypePreview';
 import { api } from '../services/api';
 
 export function CoordinatorChat() {
@@ -50,6 +51,10 @@ export function CoordinatorChat() {
   const [crLoading, setCRLoading] = useState(false);
   const { activeCR, setActiveCR, clearActiveCR } = useWorkflowStore();
   const [retryLoading, setRetryLoading] = useState(false);
+  // Prototype state
+  const [prototypeData, setPrototypeData] = useState<PrototypeData | null>(null);
+  const [protoLoading, setProtoLoading] = useState(false);
+  const [showPrototype, setShowPrototype] = useState(false);
   const lastEventTimeRef = useRef(Date.now());
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -70,6 +75,14 @@ export function CoordinatorChat() {
   const isLaunching = planningPhase === 'launching';
 
   const { pendingDiffCount, setPendingDiffCount } = useWorkflowStore();
+
+  // When workflow completes, check for existing prototype
+  useEffect(() => {
+    if (!isComplete || !activeWorkflow) return;
+    api.getPrototype(activeWorkflow.id).then(proto => {
+      if (proto) setPrototypeData(proto as PrototypeData);
+    });
+  }, [isComplete, activeWorkflow?.id]);
 
   // When workflow completes, check for pending context diffs from the curator
   useEffect(() => {
@@ -770,15 +783,58 @@ export function CoordinatorChat() {
                 </button>
               </div>
             )}
-            {/* Change Request button + form */}
+            {/* Change Request + Prototype buttons */}
             {!showCRForm && !crAssessment && (
-              <div className="flex justify-center">
+              <div className="flex justify-center gap-2">
                 <button
                   onClick={() => setShowCRForm(true)}
                   className="text-xs px-3 py-1.5 rounded-md border border-purple-300 dark:border-purple-700 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors"
                 >
                   Change Request
                 </button>
+                {prototypeData ? (
+                  <button
+                    onClick={() => setShowPrototype(true)}
+                    className="text-xs px-3 py-1.5 rounded-md border border-emerald-300 dark:border-emerald-700 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
+                  >
+                    View Prototype
+                  </button>
+                ) : (
+                  <button
+                    onClick={async () => {
+                      if (!activeWorkflow) return;
+                      setProtoLoading(true);
+                      addCoordinatorMessage({
+                        role: 'coordinator',
+                        content: '',
+                        timestamp: Date.now(),
+                      });
+                      setIsStreaming(true);
+                      try {
+                        await api.generatePrototype(activeWorkflow.id, undefined, {
+                          onContent: (text) => appendToLastCoordinatorMessage(text),
+                          onPrototype: (proto) => {
+                            setPrototypeData(proto);
+                            setShowPrototype(true);
+                          },
+                          onError: (err) => setError(err),
+                          onDone: () => {
+                            setIsStreaming(false);
+                            setProtoLoading(false);
+                          },
+                        });
+                      } catch (err: any) {
+                        setError(err.message ?? 'Failed to generate prototype');
+                        setIsStreaming(false);
+                        setProtoLoading(false);
+                      }
+                    }}
+                    disabled={protoLoading}
+                    className="text-xs px-3 py-1.5 rounded-md border border-emerald-300 dark:border-emerald-700 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 disabled:opacity-50 transition-colors"
+                  >
+                    {protoLoading ? 'Generating Prototype...' : 'Generate Prototype'}
+                  </button>
+                )}
               </div>
             )}
 
@@ -1038,6 +1094,15 @@ export function CoordinatorChat() {
             </button>
           </form>
         </div>
+      )}
+      {/* Prototype preview overlay */}
+      {showPrototype && prototypeData && (
+        <PrototypePreview
+          prototype={prototypeData}
+          workflowId={activeWorkflow!.id}
+          onClose={() => setShowPrototype(false)}
+          onUpdate={(updated) => setPrototypeData(updated)}
+        />
       )}
     </div>
   );

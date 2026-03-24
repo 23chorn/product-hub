@@ -682,6 +682,181 @@ class APIClient {
       reader.releaseLock();
     }
   }
+  // ============================================
+  // Prototypes
+  // ============================================
+
+  async getDesignSystem(): Promise<{ tokens: string; utilities: string; tailwindConfig: string } | null> {
+    try {
+      const response = await axios.get(`${this.baseURL}/api/prototype/design-system`);
+      return response.data;
+    } catch {
+      return null;
+    }
+  }
+
+  async getPrototype(workflowId: string): Promise<{
+    title: string; description: string; screens: string[];
+    entryScreen: string; files: Record<string, string>;
+  } | null> {
+    try {
+      const response = await axios.get(`${this.baseURL}/api/workflow/${workflowId}/prototype`);
+      return response.data;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Generate a prototype via SSE stream.
+   * Accumulates raw text and attempts client-side recovery if server parsing fails.
+   */
+  async generatePrototype(
+    workflowId: string,
+    scope: string | undefined,
+    callbacks: {
+      onContent: (text: string) => void;
+      onPrototype: (prototype: any) => void;
+      onError: (error: string) => void;
+      onDone: () => void;
+    }
+  ): Promise<void> {
+    const response = await fetch(`${this.baseURL}/api/workflow/${workflowId}/prototype/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scope }),
+    });
+
+    if (!response.ok || !response.body) {
+      callbacks.onError('Failed to start prototype generation');
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let rawAccumulator = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.type === 'content') {
+              rawAccumulator += event.content;
+              callbacks.onContent(event.content);
+            } else if (event.type === 'prototype') {
+              callbacks.onPrototype(event.prototype);
+            } else if (event.type === 'parse_failed') {
+              // Server couldn't parse — try client-side repair via server endpoint
+              try {
+                const repaired = await this.parsePrototypeRaw(workflowId, rawAccumulator);
+                if (repaired) {
+                  callbacks.onPrototype(repaired);
+                }
+              } catch {
+                // Repair also failed
+              }
+            } else if (event.type === 'error') {
+              callbacks.onError(event.error);
+            } else if (event.type === 'done') {
+              callbacks.onDone();
+            }
+          } catch {
+            // Skip malformed JSON
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  /**
+   * Revise a prototype with feedback. Same SSE pattern as generatePrototype.
+   */
+  async revisePrototype(
+    workflowId: string,
+    prototype: any,
+    feedback: string,
+    callbacks: {
+      onContent: (text: string) => void;
+      onPrototype: (prototype: any) => void;
+      onError: (error: string) => void;
+      onDone: () => void;
+    }
+  ): Promise<void> {
+    const response = await fetch(`${this.baseURL}/api/workflow/${workflowId}/prototype/revise`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prototype, feedback }),
+    });
+
+    if (!response.ok || !response.body) {
+      callbacks.onError('Failed to start prototype revision');
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let rawAccumulator = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.type === 'content') {
+              rawAccumulator += event.content;
+              callbacks.onContent(event.content);
+            } else if (event.type === 'prototype') {
+              callbacks.onPrototype(event.prototype);
+            } else if (event.type === 'parse_failed') {
+              try {
+                const repaired = await this.parsePrototypeRaw(workflowId, rawAccumulator);
+                if (repaired) callbacks.onPrototype(repaired);
+              } catch { /* repair failed */ }
+            } else if (event.type === 'error') {
+              callbacks.onError(event.error);
+            } else if (event.type === 'done') {
+              callbacks.onDone();
+            }
+          } catch { /* skip */ }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  /**
+   * Send raw streamed text to the server for JSON repair + parsing.
+   */
+  async parsePrototypeRaw(workflowId: string, raw: string): Promise<any | null> {
+    try {
+      const response = await axios.post(`${this.baseURL}/api/workflow/${workflowId}/prototype/parse`, { raw });
+      return response.data;
+    } catch {
+      return null;
+    }
+  }
 }
 
 export const api = new APIClient();

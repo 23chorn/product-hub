@@ -1,0 +1,196 @@
+/*
+ * Design Tokens — extracted from Figma "App Redesign" (node 65:15991)
+ * Source: https://www.figma.com/design/kQQGHTOPk2C7P3PkrL9VQX/App-Redesign
+ */
+
+:root {
+  /* ========================================
+     BRAND
+     ======================================== */
+  --color-brand-primary: #3C70FF;
+  --color-brand-primary-2: #10BAFF;
+  --color-brand-primary-3: #8103FF;
+
+  /* ========================================
+     INTERACTIVE
+     ======================================== */
+  --color-interactive-01: #5231F7;
+
+  /* ========================================
+     TEXT / BODY
+     ======================================== */
+  --color-text-01: #18171A;
+  --color-text-02: #616068;
+  --color-text-03: #7C7A82;
+  --color-text-04: #AFAEB5;
+  --color-text-05: #FFFFFF;
+  --color-text-06: #FFFFFF;
+  --color-text-dark: #000103;
+  --color-text-light: #60728B;
+  --color-text-error: #FF1A40;
+
+  /* ========================================
+     TEXT / CTA
+     ======================================== */
+  --color-cta-01: #FFFFFF;
+  --color-cta-01-alt: #5231F7;
+
+  /* ========================================
+     BACKGROUNDS
+     ======================================== */
+  --color-ui-01: #FFFFFF;
+  --color-ui-02: #F5F5F7;
+  --color-ui-03: #E4E3E8;
+  --color-ui-04: #CCCBD1;
+  --color-ui-background: #FFFFFF;
+  --color-ui-info-01: #F2F3FF;
+  --color-ui-error-01: #FFF2F4;
+  --color-overlay-01: #18171A;
+  --color-overlay-02: #18171A;
+  --color-notifications: #18171A;
+
+  /* ========================================
+     CORE UI
+     ======================================== */
+  --color-icons-01: #5231F7;
+  --color-icons-02: #18171A;
+  --color-icons-04: #FFFFFF;
+  --color-divider-01: #F5F5F7;
+  --color-focus-02: #FFFFFF;
+  --color-error-01: #FF1A40;
+  --color-success-02: #21D9BA;
+
+  /* ========================================
+     NEUTRAL
+     ======================================== */
+  --color-neutral-900: #18171A;
+  --color-neutral-0: #FFFFFF;
+
+  /* ========================================
+     DISABLED / INACTIVE
+     ======================================== */
+  --color-disabled-02: #E4E3E8;
+  --color-disabled-03: #CCCBD1;
+  --color-inactive-01: #939199;
+  --color-placeholder: #8C8C8C;
+
+  /* ========================================
+     SEMANTIC — GREEN
+     ======================================== */
+  --color-green: #51CB20;
+  --color-green-bright: #5ED92A;
+  --color-green-light: #DFF6D9;
+  --color-green-dark: #24650A;
+
+  /* ========================================
+     SEMANTIC — RED
+     ======================================== */
+  --color-red: #DF2935;
+  --color-red-bright: #FF4A4F;
+  --color-red-light: #FFD9D6;
+  --color-red-dark: #C2222D;
+
+  /* ========================================
+     SEMANTIC — YELLOW
+     ======================================== */
+  --color-yellow-dark: #C18F40;
+  --color-yellow-light: #FAECC4;
+
+  /* ========================================
+     BLUE SCALE
+     ======================================== */
+  --color-blue: #3C70FF;
+  --color-blue-light: #6190FF;
+  --color-blue-light-2: #87AEFF;
+  --color-blue-light-3: #AEC9FF;
+  --color-blue-light-4: #D6E4FF;
+  --color-blue-light-5: #EAF2FF;
+  --color-blue-dark: #3360DE;
+  --color-blue-dark-2: #2A51BE;
+  --color-blue-dark-3: #21439E;
+  --color-blue-dark-4: #193580;
+  --color-blue-dark-6: #0A1A48;
+
+  /* ========================================
+     GREY SCALE
+     ======================================== */
+  --color-grey-light-1: #E9EAEB;
+  --color-grey-light-2: #FAFAFA;
+  --color-grey-dark: #B3BBC6;
+
+  /* ========================================
+     WHITE VARIANTS
+     ======================================== */
+  --color-white-raised: #FFFFFF;
+  --color-anti-flash: #F7F8FB;
+  --color-anti-flash-2: #F4F8FB;
+  --color-anti-flash-3: #F2F5F7;
+
+  /* ========================================
+     TYPOGRAPHY
+     ======================================== */
+
+  /* Font families */
+  --font-primary: 'Poppins', system-ui, sans-serif;
+  --font-display: 'SF Pro Display', system-ui, sans-serif;
+  --font-body: 'SF Pro Text', system-ui, sans-serif;
+
+  /* H1 — SF Pro Display Semibold 32/41 */
+  --text-h1-size: 32px;
+  --text-h1-line-height: 41px;
+  --text-h1-weight: 600;
+  --text-h1-letter-spacing: 0.38px;
+
+  /* Body Bold — SF Pro Text Semibold 17/22 */
+  --text-body-bold-size: 17px;
+  --text-body-bold-line-height: 22px;
+  --text-body-bold-weight: 600;
+  --text-body-bold-letter-spacing: -0.41px;
+
+  /* Paragraph — Poppins SemiBold 16/24 */
+  --text-p-size: 16px;
+  --text-p-line-height: 24px;
+  --text-p-weight: 600;
+
+  /* Label — Poppins Medium 14/22 */
+  --text-label-size: 14px;
+  --text-label-line-height: 22px;
+  --text-label-weight: 500;
+
+  /* Label SemiBold — Poppins SemiBold 14/22 */
+  --text-label-semibold-size: 14px;
+  --text-label-semibold-line-height: 22px;
+  --text-label-semibold-weight: 600;
+
+  /* Tiny — Poppins Regular 12/20 */
+  --text-tiny-size: 12px;
+  --text-tiny-line-height: 20px;
+  --text-tiny-weight: 400;
+
+  /* ========================================
+     SPACING (base-8 scale from design)
+     ======================================== */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* ========================================
+     EFFECTS
+     ======================================== */
+  --shadow-card: 0 1px 3px rgba(51, 51, 51, 0.1);
+  --blur-default: blur(12px);
+
+  /* ========================================
+     BORDER RADIUS
+     ======================================== */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+}

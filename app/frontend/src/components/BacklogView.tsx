@@ -2,6 +2,26 @@ import { useState } from 'react';
 import type { BacklogData, BacklogStory } from '../utils/backlog-helpers';
 import { backlogTier, getSprintMeta, getAllStories, getAllFeatures } from '../utils/backlog-helpers';
 
+/** Render hours with AI comparison: "3h (was 8h)" or just "8h" when not AI-assisted. */
+function HoursDisplay({ story, aiAssisted }: { story: BacklogStory; aiAssisted: boolean }) {
+  if (!story.estimatedHours) return null;
+  if (aiAssisted && story.traditionalHours != null && story.traditionalHours !== story.estimatedHours) {
+    return <> · {story.estimatedHours}h <span className="line-through opacity-50">{story.traditionalHours}h</span></>;
+  }
+  return <> · {story.estimatedHours}h</>;
+}
+
+/** Render aggregate hours with optional AI savings line. */
+function AggregateHours({ hours, traditionalHours, aiAssisted }: { hours: number; traditionalHours?: number; aiAssisted: boolean }) {
+  if (hours <= 0) return null;
+  if (aiAssisted && traditionalHours != null && traditionalHours > 0 && traditionalHours !== hours) {
+    const saved = traditionalHours - hours;
+    const pct = Math.round((saved / traditionalHours) * 100);
+    return <> · {hours}h <span className="line-through opacity-50">{traditionalHours}h</span> <span className="text-emerald-600 dark:text-emerald-400">(-{pct}%)</span></>;
+  }
+  return <> · {hours}h</>;
+}
+
 export function BacklogView({ data }: { data: BacklogData }) {
   const [expandedStories, setExpandedStories] = useState<Set<string>>(new Set());
 
@@ -18,13 +38,23 @@ export function BacklogView({ data }: { data: BacklogData }) {
   const allStories = getAllStories(data);
   const features = getAllFeatures(data);
   const hasFeatures = tier === 3 && features.length > 0;
+  const aiAssisted = sprintMeta?.aiAssisted ?? false;
 
   const totalStories = allStories.length;
   const totalEffort = allStories.reduce((s, st) => s + (st.effort ?? 0), 0);
   const totalHours = allStories.reduce((s, st) => s + (st.estimatedHours ?? 0), 0);
+  const totalTraditionalHours = sprintMeta?.totalTraditionalHours ?? totalHours;
 
   return (
     <div className="space-y-4">
+      {/* AI-assisted badge */}
+      {aiAssisted && (
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
+          <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">AI-Assisted Estimates</span>
+          <span className="text-xs text-emerald-600 dark:text-emerald-500">Hours reflect AI-augmented development velocity</span>
+        </div>
+      )}
+
       {/* Epic header — only for Tier 3 */}
       {tier === 3 && data.epic && (
         <div className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/20 p-4">
@@ -34,7 +64,7 @@ export function BacklogView({ data }: { data: BacklogData }) {
             <span className="text-xs text-gray-500 dark:text-gray-400">
               {hasFeatures && <>{features.length} feature{features.length !== 1 ? 's' : ''} · </>}{totalStories} stor{totalStories !== 1 ? 'ies' : 'y'}
               {totalEffort > 0 && <> · {totalEffort} pts</>}
-              {totalHours > 0 && <> · {totalHours}h</>}
+              <AggregateHours hours={totalHours} traditionalHours={totalTraditionalHours} aiAssisted={aiAssisted} />
               {sprintMeta?.sprintsRequired != null && (
                 <> · {sprintMeta.sprintsRequired} sprints</>
               )}
@@ -68,7 +98,7 @@ export function BacklogView({ data }: { data: BacklogData }) {
             <span className="text-xs text-gray-500 dark:text-gray-400">
               {totalStories} stor{totalStories !== 1 ? 'ies' : 'y'}
               {totalEffort > 0 && <> · {totalEffort} pts</>}
-              {totalHours > 0 && <> · {totalHours}h</>}
+              <AggregateHours hours={totalHours} traditionalHours={totalTraditionalHours} aiAssisted={aiAssisted} />
               {sprintMeta?.sprintsRequired != null && (
                 <> · {sprintMeta.sprintsRequired} sprints</>
               )}
@@ -94,7 +124,7 @@ export function BacklogView({ data }: { data: BacklogData }) {
                     : story.effort >= 5 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
                     : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                 }`}>
-                  {story.effort} pts{story.estimatedHours ? ` · ${story.estimatedHours}h` : ''}
+                  {story.effort} pts<HoursDisplay story={story} aiAssisted={aiAssisted} />
                 </span>
               )}
               {sprintMeta?.sprintsRequired != null && (
@@ -168,7 +198,7 @@ export function BacklogView({ data }: { data: BacklogData }) {
                           : story.effort >= 5 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
                           : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                       }`}>
-                        {story.effort}{story.estimatedHours ? ` · ${story.estimatedHours}h` : ''}
+                        {story.effort}<HoursDisplay story={story} aiAssisted={aiAssisted} />
                       </span>
                     )}
                   </div>
@@ -232,6 +262,7 @@ export function BacklogView({ data }: { data: BacklogData }) {
           return features.map((feature, fi) => {
             const featureEffort = feature.stories.reduce((s, st) => s + (st.effort ?? 0), 0);
             const featureHours = feature.stories.reduce((s, st) => s + (st.estimatedHours ?? 0), 0);
+            const featureTraditionalHours = feature.stories.reduce((s, st) => s + (st.traditionalHours ?? st.estimatedHours ?? 0), 0);
             return (
               <div key={fi} className="rounded-lg border border-gray-200 dark:border-gray-700">
                 <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-700 rounded-t-lg">
@@ -249,7 +280,7 @@ export function BacklogView({ data }: { data: BacklogData }) {
                     {featureEffort > 0 && (
                       <span className="text-xs text-gray-400 dark:text-gray-500">
                         {featureEffort} pts
-                        {featureHours > 0 && <> · {featureHours}h</>}
+                        <AggregateHours hours={featureHours} traditionalHours={featureTraditionalHours} aiAssisted={aiAssisted} />
                         {ev && ev > 0 && (
                           <> · {Math.round((featureEffort / ev) * 10) / 10} sprints</>
                         )}

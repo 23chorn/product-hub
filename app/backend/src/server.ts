@@ -20,6 +20,7 @@ import { changeRequestRoutes } from './routes/change-request-routes';
 import { contextDiffRouter } from './routes/context-diff-routes';
 import { contextFileRouter } from './routes/context-file-routes';
 import { templateFileRouter } from './routes/template-file-routes';
+import { prototypeRoutes } from './routes/prototype-routes';
 
 const logger = new Logger('SERVER');
 
@@ -85,6 +86,7 @@ app.use('/api', changeRequestRoutes);
 app.use('/api/context-diffs', contextDiffRouter);
 app.use('/api/context-files', contextFileRouter);
 app.use('/api/template-files', templateFileRouter);
+app.use('/api', prototypeRoutes);
 
 app.get('/api', (req, res) => {
   res.json({

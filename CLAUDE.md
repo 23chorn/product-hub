@@ -142,6 +142,8 @@ There is one flow: the Coordinator-driven workflow. There is no direct-access mo
 | `agents/workflow-lifecycle.ts` | `deleteWorkflow()`, `recoverStaleWorkflows()`, `startStaleRecoveryTimer()`. Re-exported from workflow-router for backwards compatibility. |
 | `agents/change-request.ts` | CR lifecycle: create, assess impact (streamed), execute targeted stages, link artifact versions. |
 | `routes/change-request-routes.ts` | REST endpoints for CRs: CRUD, assess (SSE), execute, version-info, ADO mappings. |
+| `agents/prototype-agent.ts` | Prototype generation: loads workflow artifacts + design system tokens, streams React prototype JSON via AI. Saves as artifact. |
+| `routes/prototype-routes.ts` | REST endpoints: `POST /api/workflow/:id/prototype/generate` (SSE), `GET /api/workflow/:id/prototype`. |
 | `utils/model-config.ts` | All model/pricing config: `PROVIDER_MODELS`, `ANTHROPIC_AGENT_MODELS`, `MODEL_MAX_OUTPUT_TOKENS`, `MODEL_PRICING`, `estimateCost()`, `calculateCost()`. |
 | `utils/revision-diff.ts` | `computeRevisionDiff()` — pure LCS-based line diff used for revision artifacts. |
 | `routes/workflow-routes.ts` | Express router at `/api/workflow`. Coordinator planning SSE, workflow start, checkpoint resolve, mid-workflow message, events, history. |
@@ -204,6 +206,29 @@ After a workflow completes, targeted changes can be made without full-stage reru
 - Response includes `{ synced: true, created: N, updated: N }` when updating
 - Frontend shows "Sync to Board" button when mappings exist
 
+### Prototype builder
+
+After a workflow completes, users can generate interactive React prototypes to demonstrate the feature to stakeholders. The prototype agent reads all workflow artifacts (PRD, architecture, backlog) and the Figma-extracted design system to produce a self-contained React app rendered in-browser via Sandpack.
+
+#### Flow
+1. User clicks "Generate Prototype" on a completed workflow
+2. `POST /api/workflow/:id/prototype/generate` streams AI generation (SSE)
+3. Agent produces a JSON file-map: `App.tsx`, screen components, mock data, styles
+4. Frontend renders via `@codesandbox/sandpack-react` with live preview
+5. Device frame toggle: desktop / tablet / mobile (375×812 viewport)
+6. Prototype saved as artifact (type `prototype`) for reload without regeneration
+
+#### Key files
+| File | Role |
+|------|------|
+| `agents/personas/prototype-builder.md` | Proto agent persona — styling rules, output format, constraints |
+| `agents/templates/prototype.template.md` | JSON output schema the agent must follow |
+| `agents/templates/prototype/design-tokens.css` | Figma design system CSS custom properties |
+| `agents/templates/prototype/tailwind.config.js` | Tailwind config mapped to design tokens |
+| `agents/prototype-agent.ts` | Generation logic: artifact loading, prompt assembly, streaming, artifact save |
+| `routes/prototype-routes.ts` | REST endpoints: generate (SSE), load latest |
+| `components/PrototypePreview.tsx` | Sandpack wrapper with device frame toggle and code editor |
+
 ### Agent patterns
 
 Two agent patterns exist:
@@ -265,11 +290,13 @@ Editable from the UI (Templates button in header). Changes require double-confir
 
 #### Sprint estimation
 After the backlog specialist produces output, `agents/sprint-estimation.ts` parses the JSON and injects sprint estimates:
-- Reads `sprint_velocity` and `capacity_factor` from `agents/config.yaml`
+- Reads `sprint_velocity`, `capacity_factor`, `hours_per_point`, and `ai_assisted_development` from `agents/config.yaml`
 - `effectiveVelocity = sprintVelocity × capacityFactor`
 - `sprintsRequired = totalEffort / effectiveVelocity` (rounded to 1 decimal)
 - Sprint estimates are calculated at both **epic level** (total) and displayed per **feature** in the UI
 - The frontend uses `Math.ceil()` for stakeholder-facing display, raw decimals for internal comparison
+
+**AI-assisted development estimates:** When `ai_assisted_development.enabled: true` in config, hour estimates use `ai_hours_per_point` instead of `hours_per_point`. Both mappings are injected per-story (`estimatedHours`, `traditionalHours`, `aiEstimatedHours`) and aggregated at the sprint metadata level (`totalTraditionalHours`, `totalAiHours`, `aiAssisted`). The frontend shows a comparison with savings percentage when AI-assisted is enabled. The non-linear mapping reflects that AI accelerates routine work (1-2pt stories) more than complex integration work (8pt stories).
 
 ### Integration providers
 Configured via `app/backend/src/config/app-config.ts`:

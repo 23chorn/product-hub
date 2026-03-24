@@ -10,6 +10,7 @@
     "lint": "eslint src --ext .ts,.tsx"
   },
   "dependencies": {
+    "@codesandbox/sandpack-react": "^2.20.0",
     "@pap/shared": "file:../shared",
     "@tailwindcss/typography": "^0.5.19",
     "axios": "^1.6.5",
