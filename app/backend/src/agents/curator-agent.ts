@@ -1,7 +1,7 @@
 /**
  * Context Curator Agent — Context Archivist
  *
- * Standalone class (does NOT extend BmadAgent).
+ * Standalone class (does NOT extend SpecialistAgent).
  * Runs post-workflow: fetches artifacts, reads context files, calls LLM once
  * (non-streaming, output buffered), parses JSON output, stores context_diffs records.
  * No menu, no session, no streaming output to UI.

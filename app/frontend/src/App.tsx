@@ -1,12 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { AirtableItemList } from './components/AirtableItemList';
-import { DecisionLogPanel } from './components/DecisionLogPanel';
+import { AirtableItemList } from './components/sidebar';
+import { DecisionLogPanel } from './components/decision-log';
 import { ToastContainer } from './components/ToastContainer';
-import { ModelSelector } from './components/ModelSelector';
-import { CoordinatorChat } from './components/CoordinatorChat';
-import { WorkflowStageTracker } from './components/WorkflowStageTracker';
-import { WorkflowHistory } from './components/WorkflowHistory';
-import { ArtifactViewer } from './components/ArtifactViewer';
+import { CoordinatorChat } from './components/coordinator';
+import { WorkflowStageTracker, WorkflowHistory } from './components/workflow';
+import { ArtifactViewer } from './components/artifact';
 import { ContextEditorPanel } from './components/ContextEditorPanel';
 import { TemplateEditorPanel } from './components/TemplateEditorPanel';
 import { useThemeStore } from './stores/themeStore';
@@ -163,8 +161,6 @@ function App() {
               <span>Decision Log</span>
             </button>
 
-            {/* Model Selector */}
-            <ModelSelector />
 
             {/* Dark Mode Toggle */}
             <button

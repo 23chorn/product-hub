@@ -146,48 +146,12 @@ export interface QuickItem {
 }
 
 // ============================================
-// BMAD Agent Types
+// Specialist Agent Types
 // ============================================
 
 export type AppMode = 'prd' | 'backlog' | 'analyst' | 'architecture' | 'decision-log' | 'context' | 'gtm' | 'feature_marketing' | 'prototype';
-export type AgentType = 'pm' | 'analyst' | 'architect' | 'decision-log' | 'context-keeper' | 'gtm' | 'marketer';
+export type AgentType = 'pm' | 'analyst' | 'architect' | 'decision-log' | 'context-keeper' | 'gtm' | 'marketer' | 'prototype-builder';
 
-
-export interface BmadMenuItem {
-  code: string;
-  label: string;
-  description: string;
-  workflowPath?: string;
-}
-
-export interface BmadAgentInfoResponse {
-  agentName: string;
-  agentIcon: string;
-  agentTitle: string;
-  menu: BmadMenuItem[];
-  greeting: string;
-  // If an existing session is found, include resume data
-  existingSession?: {
-    sessionId: string;
-    messages: { role: string; content: string; timestamp?: number }[];
-    activeWorkflow: string | null;
-    latestArtifact?: string;
-  };
-}
-
-export interface BmadStartResponse {
-  sessionId: string;
-  agentName: string;
-  agentIcon: string;
-  agentTitle: string;
-  menu: BmadMenuItem[];
-  greeting: string;
-}
-
-export interface BmadMenuSelectResponse {
-  type: 'workflow_started' | 'chat';
-  content?: string;
-}
 
 // ============================================
 // Session Types
@@ -209,7 +173,7 @@ export interface Session {
   updatedAt: number;
   prdContent?: PRDContent;
   backlogStructure?: BacklogStructure;
-  // BMAD fields
+  // Agent fields
   agentType?: AgentType;
   agentId?: string;             // e.g. 'pm-prd' | 'pm-backlog' | 'analyst'
   mode?: AppMode;
@@ -250,19 +214,6 @@ export interface PublishPRDResponse {
 
 export interface StartBacklogSessionRequest {
   sessionId: string; // PRD session ID
-}
-
-export interface PublishBacklogRequest {
-  sessionId: string;
-}
-
-export interface PublishBacklogResponse {
-  success: boolean;
-  epicId: string;
-  featureIds: string[];
-  storyIds: string[];
-  airtableUpdated: boolean;
-  epicUrl?: string;
 }
 
 // ============================================

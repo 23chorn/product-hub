@@ -1,4 +1,4 @@
-import { Session, ChatMessage, PRDContent, BacklogStructure, AgentType, AppMode, QuickItem } from '@pap/shared';
+import { Session, ChatMessage, PRDContent, BacklogStructure, AgentType, AppMode } from '@pap/shared';
 import { sessionStore } from '../data/session-store';
 import Logger from '../utils/logger';
 
@@ -27,12 +27,12 @@ export class SessionManager {
   }
 
   /**
-   * Create a new BMAD session.
+   * Create a new specialist session.
    * Ensures an item row exists in the items table before creating the session.
    * For Airtable items, upserts using the Airtable record ID.
    * For quick_add items, the row already exists — no upsert needed.
    */
-  createBmadSession(itemId: string, mode: AppMode, agentType: AgentType, itemTitle?: string): Session {
+  createSpecialistSession(itemId: string, mode: AppMode, agentType: AgentType, itemTitle?: string): Session {
     const source = sessionStore.getItemSource(itemId);
     if (!source) {
       // Unknown item — assume Airtable item and upsert
@@ -164,26 +164,6 @@ export class SessionManager {
    */
   getStats() {
     return sessionStore.getStats();
-  }
-
-  // ---------------------------------------------------------------------------
-  // Quick Items
-  // ---------------------------------------------------------------------------
-
-  getQuickItems(): QuickItem[] {
-    return sessionStore.getQuickItems();
-  }
-
-  countQuickItems(): number {
-    return sessionStore.countQuickItems();
-  }
-
-  createQuickItem(): QuickItem {
-    return sessionStore.createQuickItem();
-  }
-
-  deleteQuickItem(itemId: string): boolean {
-    return sessionStore.deleteQuickItem(itemId);
   }
 
   getItemSource(itemId: string): string | null {

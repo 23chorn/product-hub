@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { AirtableItem, AppConfig, AppMode, BmadAgentInfoResponse, BmadStartResponse, LocalInitiative, ModelOption, PublishBacklogResponse, QuickItem, DecisionLogSession, MonthEntry, StatusChange, ContextChangeProposal, ContextStatusResponse } from '@pap/shared';
+import type { AirtableItem, AppConfig, LocalInitiative, ModelOption, DecisionLogSession, MonthEntry } from '@pap/shared';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -16,39 +16,6 @@ class APIClient {
 
   async getItemsNeedingPRD(): Promise<AirtableItem[]> {
     const response = await axios.get(`${this.baseURL}/api/prd/items/needingPRD`);
-    return response.data;
-  }
-
-  // ============================================
-  // BMAD Agent endpoints
-  // ============================================
-
-  async getAgentInfo(mode: AppMode, itemId?: string): Promise<BmadAgentInfoResponse> {
-    const response = await axios.get(`${this.baseURL}/api/bmad/agent-info`, {
-      params: { mode, itemId },
-    });
-    return response.data;
-  }
-
-  async startBmadSession(mode: AppMode, itemId?: string): Promise<BmadStartResponse & { resumed?: boolean; messages?: any[]; activeWorkflow?: string | null }> {
-    const response = await axios.post(`${this.baseURL}/api/bmad/start`, {
-      mode,
-      itemId,
-    });
-    return response.data;
-  }
-
-  async resetBmadSession(sessionId: string): Promise<void> {
-    await axios.delete(`${this.baseURL}/api/bmad/session/${sessionId}`);
-  }
-
-  async exportDocument(sessionId: string, content: string): Promise<{ filePath: string }> {
-    const response = await axios.post(`${this.baseURL}/api/bmad/export`, { sessionId, content });
-    return response.data;
-  }
-
-  async publishBacklog(sessionId: string, backlogJson: string): Promise<PublishBacklogResponse> {
-    const response = await axios.post(`${this.baseURL}/api/bmad/publish-backlog`, { sessionId, backlogJson });
     return response.data;
   }
 
@@ -76,84 +43,8 @@ class APIClient {
     return response.data;
   }
 
-  async updateInitiative(id: string, title: string, description?: string): Promise<LocalInitiative> {
-    const response = await axios.patch(`${this.baseURL}/api/initiatives/${id}`, { title, description });
-    return response.data;
-  }
-
   async deleteInitiative(id: string): Promise<void> {
     await axios.delete(`${this.baseURL}/api/initiatives/${id}`);
-  }
-
-  // ============================================
-  // Quick Sessions
-  // ============================================
-
-  async getQuickItems(): Promise<QuickItem[]> {
-    const response = await axios.get(`${this.baseURL}/api/bmad/quick-items`);
-    return response.data.items;
-  }
-
-  async createQuickItem(): Promise<QuickItem> {
-    const response = await axios.post(`${this.baseURL}/api/bmad/quick-items`);
-    return response.data;
-  }
-
-  async deleteQuickItem(itemId: string): Promise<void> {
-    await axios.delete(`${this.baseURL}/api/bmad/quick-items/${itemId}`);
-  }
-
-  async selectMenuItem(
-    sessionId: string,
-    menuCode: string,
-    onChunk: (content: string) => void,
-    onComplete: () => void,
-    onError: (error: string) => void,
-    model?: string
-  ): Promise<void> {
-    const response = await fetch(`${this.baseURL}/api/bmad/menu-select`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, menuCode, model }),
-    });
-
-    if (!response.ok) {
-      const err = await response.json();
-      throw new Error(err.error || `HTTP error! status: ${response.status}`);
-    }
-
-    const contentType = response.headers.get('content-type') || '';
-
-    if (contentType.includes('text/event-stream')) {
-      await this.readSSEStream(response, onChunk, onComplete, onError);
-    } else {
-      const data = await response.json();
-      if (data.type === 'chat') {
-        onComplete();
-      }
-    }
-  }
-
-  async sendBmadMessage(
-    sessionId: string,
-    message: string,
-    onChunk: (content: string) => void,
-    onComplete: (content?: string) => void,
-    onError: (error: string) => void,
-    skipHistory?: boolean,
-    model?: string
-  ): Promise<void> {
-    const response = await fetch(`${this.baseURL}/api/bmad/message`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, message, skipHistory, model }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    await this.readSSEStream(response, onChunk, (content) => onComplete(content), onError);
   }
 
   // ============================================
@@ -196,57 +87,8 @@ class APIClient {
     return response.data;
   }
 
-  async getDecisionLogIndex(): Promise<{ content: string | null }> {
-    const response = await axios.get(`${this.baseURL}/api/decision-log/index`);
-    return response.data;
-  }
-
   async getDecisionLogMonths(): Promise<{ months: MonthEntry[] }> {
     const response = await axios.get(`${this.baseURL}/api/decision-log/months`);
-    return response.data;
-  }
-
-  // ============================================
-  // Context Keeper
-  // ============================================
-
-  async getContextStatus(): Promise<ContextStatusResponse> {
-    const response = await axios.get(`${this.baseURL}/api/context/status`);
-    return response.data;
-  }
-
-  async checkContextChanges(): Promise<{ changes: StatusChange[]; pendingCount: number }> {
-    const response = await axios.post(`${this.baseURL}/api/context/check`);
-    return response.data;
-  }
-
-  async runContextReview(model?: string): Promise<{ sessionId: string; proposals: ContextChangeProposal[] }> {
-    const response = await axios.post(`${this.baseURL}/api/context/review`, { model });
-    return response.data;
-  }
-
-  async getContextProposals(): Promise<{ proposals: ContextChangeProposal[] }> {
-    const response = await axios.get(`${this.baseURL}/api/context/proposals`);
-    return response.data;
-  }
-
-  async confirmContextProposal(id: number, proposedText?: string): Promise<{ success: boolean; pendingCount: number }> {
-    const response = await axios.patch(`${this.baseURL}/api/context/proposal/${id}`, {
-      action: 'confirm',
-      proposedText,
-    });
-    return response.data;
-  }
-
-  async dismissContextProposal(id: number): Promise<{ success: boolean; pendingCount: number }> {
-    const response = await axios.patch(`${this.baseURL}/api/context/proposal/${id}`, {
-      action: 'dismiss',
-    });
-    return response.data;
-  }
-
-  async seedContextTestData(): Promise<{ seeded: number }> {
-    const response = await axios.post(`${this.baseURL}/api/context/seed-test-data`);
     return response.data;
   }
 
@@ -450,20 +292,6 @@ class APIClient {
     return response.data;
   }
 
-  async listChangeRequests(workflowId: string) {
-    const response = await axios.get(`${this.baseURL}/api/workflow/${workflowId}/change-requests`);
-    return response.data as { changeRequests: Array<{
-      id: number; workflow_id: string; type: string; description: string;
-      impact_assessment: string | null; status: string;
-      created_at: number; updated_at: number;
-    }> };
-  }
-
-  async getChangeRequest(crId: number) {
-    const response = await axios.get(`${this.baseURL}/api/change-request/${crId}`);
-    return response.data;
-  }
-
   async assessChangeRequest(
     crId: number,
     onChunk: (content: string) => void,
@@ -523,11 +351,6 @@ class APIClient {
     return response.data?.versionInfo ?? null;
   }
 
-  async getWorkflowCheckpoints(workflowId: string) {
-    const response = await axios.get(`${this.baseURL}/api/workflow/${workflowId}/checkpoints`);
-    return response.data;
-  }
-
   async resolveCheckpoint(
     checkpointId: number,
     status: 'approved' | 'rejected' | 'revised',
@@ -541,23 +364,6 @@ class APIClient {
       enrichedContext,
     });
     return response.data;
-  }
-
-  /**
-   * POST /api/workflow/complete-stage — submits the current stage for checkpoint review.
-   */
-  async completeStage(workflowId: string) {
-    const response = await axios.post(`${this.baseURL}/api/workflow/complete-stage`, { workflowId });
-    return response.data;
-  }
-
-  /**
-   * GET /api/bmad/session/:sessionId — fetch existing session messages.
-   */
-  async getSessionMessages(sessionId: string): Promise<Array<{ role: string; content: string; sequence: number }>> {
-    const response = await axios.get(`${this.baseURL}/api/bmad/session/${sessionId}`);
-    // The endpoint returns { session, messages } or similar — extract messages
-    return response.data.messages ?? [];
   }
 
   // ── Context Diffs ─────────────────────────────────────────────────────────────

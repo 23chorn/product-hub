@@ -47,7 +47,7 @@ export interface PrototypeResult {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function loadWorkflowArtifacts(itemId: string): string {
+export function loadWorkflowArtifacts(itemId: string): string {
   const stages = ['analyst', 'pm_prd', 'solution_architect'] as const;
   const labels: Record<string, string> = {
     analyst: 'Research Brief',
@@ -86,7 +86,7 @@ async function loadProjectContext(): Promise<string> {
 }
 
 /** Load local design system CSS files (fallback when Figma is not configured). */
-async function loadLocalDesignSystem(): Promise<string> {
+export async function loadLocalDesignSystem(): Promise<string> {
   const parts: string[] = [];
   try {
     const tokens = await fsAsync.readFile(path.join(PROTOTYPE_DIR, 'design-tokens.css'), 'utf-8');
@@ -121,7 +121,7 @@ function resolveFigmaDevMcpBin(): { command: string; args: string[] } {
  * Optionally connect to figma-developer-mcp and call get_figma_data on the design system file.
  * Returns a formatted string of design system context, or an empty string if not configured.
  */
-async function loadFigmaDesignSystem(statusCb: (msg: string) => void): Promise<string> {
+export async function loadFigmaDesignSystem(statusCb: (msg: string) => void): Promise<string> {
   const fileKey = process.env.FIGMA_DESIGN_SYSTEM_FILE;
   const token = process.env.FIGMA_API_KEY ?? process.env.FIGMA_ACCESS_TOKEN;
   if (!fileKey || !token) return '';

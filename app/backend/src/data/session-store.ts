@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import db from './database';
-import type { Session, ChatMessage, AppMode, QuickItem } from '@pap/shared';
+import type { Session, ChatMessage, AppMode } from '@pap/shared';
 
 // ---------------------------------------------------------------------------
 // Prepared statements
@@ -83,22 +83,6 @@ const stmts = {
     `INSERT INTO items (id, type, title, description, status, source, airtable_id, created_at, updated_at)
      VALUES (?, 'initiative', ?, NULL, 'active', ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET title = excluded.title, updated_at = excluded.updated_at`
-  ),
-
-  // Quick items
-  getQuickItems: db.prepare(
-    `SELECT id, title, created_at as createdAt, updated_at as updatedAt
-     FROM items WHERE source = 'quick_add' ORDER BY created_at DESC`
-  ),
-  countQuickItems: db.prepare(
-    `SELECT COUNT(*) as count FROM items WHERE source = 'quick_add'`
-  ),
-  insertQuickItem: db.prepare(
-    `INSERT INTO items (id, type, title, description, status, source, airtable_id, created_at, updated_at)
-     VALUES (?, 'initiative', ?, NULL, 'active', 'quick_add', NULL, ?, ?)`
-  ),
-  deleteQuickItem: db.prepare(
-    `DELETE FROM items WHERE id = ? AND source = 'quick_add'`
   ),
 
   // Stats
@@ -247,31 +231,6 @@ class SessionStore {
   getItemTitle(itemId: string): string | null {
     const row = stmts.getItem.get(itemId) as { id: string; source: string; title: string } | undefined;
     return row?.title ?? null;
-  }
-
-  // Quick items
-
-  getQuickItems(): QuickItem[] {
-    return stmts.getQuickItems.all() as QuickItem[];
-  }
-
-  countQuickItems(): number {
-    const row = stmts.countQuickItems.get() as { count: number };
-    return row.count;
-  }
-
-  createQuickItem(): QuickItem {
-    const id = uuidv4();
-    const now = Date.now();
-    const count = this.countQuickItems();
-    const title = `Quick Session ${count + 1}`;
-    stmts.insertQuickItem.run(id, title, now, now);
-    return { id, title, createdAt: now, updatedAt: now };
-  }
-
-  deleteQuickItem(itemId: string): boolean {
-    const result = stmts.deleteQuickItem.run(itemId);
-    return result.changes > 0;
   }
 
   // Stats

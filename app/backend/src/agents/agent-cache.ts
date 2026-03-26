@@ -1,19 +1,19 @@
 import { AgentType } from '@pap/shared';
-import { BmadAgent } from './bmad-agent';
+import { SpecialistAgent } from './specialist-agent';
 import Logger from '../utils/logger';
 
 const logger = new Logger('AGENT-CACHE');
 
 /**
- * Module-level cache of BmadAgent instances, keyed by AgentType.
+ * Module-level cache of SpecialistAgent instances, keyed by AgentType.
  * Shared across route files so that
  * clearAllContextCaches() invalidates the project context on every agent.
  */
-export const agentCache: Map<AgentType, BmadAgent> = new Map();
+export const agentCache: Map<AgentType, SpecialistAgent> = new Map();
 
-export async function getOrCreateAgent(agentType: AgentType): Promise<BmadAgent> {
+export async function getOrCreateAgent(agentType: AgentType): Promise<SpecialistAgent> {
   if (!agentCache.has(agentType)) {
-    const agent = new BmadAgent(agentType);
+    const agent = new SpecialistAgent(agentType);
     await agent.loadPersona();
     agentCache.set(agentType, agent);
   }

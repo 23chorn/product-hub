@@ -1,7 +1,7 @@
 /**
  * Critic Agent — Adversarial Reviewer
  *
- * Standalone class (does NOT extend BmadAgent).
+ * Standalone class (does NOT extend SpecialistAgent).
  * Single-shot reviewer: takes an artifact string, returns a structured review.
  * No menu, no session, no multi-turn conversation.
  * The artifact is injected into the system prompt, not passed as a user message.

@@ -7,10 +7,10 @@ const logger = new Logger('SPRINT-ESTIMATION');
 const AGENTS_ROOT = path.resolve(__dirname, '../../../../agents');
 
 /** Default hours-per-point mapping (non-linear — larger stories have more overhead). */
-export const DEFAULT_HOURS_PER_POINT: Record<number, number> = { 1: 2, 2: 4, 3: 8, 5: 16, 8: 28 };
+const DEFAULT_HOURS_PER_POINT: Record<number, number> = { 1: 2, 2: 4, 3: 8, 5: 16, 8: 28 };
 
 /** Default AI-assisted hours-per-point mapping (AI accelerates routine work more than complex work). */
-export const DEFAULT_AI_HOURS_PER_POINT: Record<number, number> = { 1: 0.5, 2: 1.5, 3: 3, 5: 8, 8: 18 };
+const DEFAULT_AI_HOURS_PER_POINT: Record<number, number> = { 1: 0.5, 2: 1.5, 3: 3, 5: 8, 8: 18 };
 
 /** Read sprint_velocity, capacity_factor, hours_per_point, and ai_assisted_development from agents/config.yaml. */
 export async function loadSprintConfig(): Promise<{

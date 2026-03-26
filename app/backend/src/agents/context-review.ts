@@ -1,4 +1,4 @@
-import { BmadAgent } from './bmad-agent';
+import { SpecialistAgent } from './specialist-agent';
 import { StatusChange } from '@pap/shared';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -80,7 +80,7 @@ Example format:
  * Accumulates the full streamed response before parsing.
  */
 export async function generateContextProposals(
-  agent: BmadAgent,
+  agent: SpecialistAgent,
   changes: StatusChange[],
   modelOverride?: string
 ): Promise<ProposalItem[]> {
