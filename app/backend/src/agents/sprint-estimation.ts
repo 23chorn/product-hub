@@ -19,12 +19,16 @@ export async function loadSprintConfig(): Promise<{
   hoursPerPoint: Record<number, number>;
   aiAssisted: boolean;
   aiHoursPerPoint: Record<number, number>;
+  testFraction: number;
+  aiTestReductionFactor: number;
 }> {
   let sprintVelocity = 25;
   let capacityFactor = 0.7;
   const hoursPerPoint: Record<number, number> = { ...DEFAULT_HOURS_PER_POINT };
   let aiAssisted = false;
   const aiHoursPerPoint: Record<number, number> = { ...DEFAULT_AI_HOURS_PER_POINT };
+  let testFraction = 0.25;
+  let aiTestReductionFactor = 0.10;
   try {
     const raw = await fsAsync.readFile(path.join(AGENTS_ROOT, 'config.yaml'), 'utf-8');
     let inHoursPerPoint = false;
@@ -49,6 +53,10 @@ export async function loadSprintConfig(): Promise<{
         const enabledMatch = line.match(/^\s+enabled:\s*(true|false)/);
         if (enabledMatch) { aiAssisted = enabledMatch[1] === 'true'; continue; }
         if (/^\s+ai_hours_per_point:\s*$/.test(line)) { inAiHoursPerPoint = true; continue; }
+        const testFractionMatch = line.match(/^\s+test_fraction:\s*([\d.]+)/);
+        if (testFractionMatch) { testFraction = parseFloat(testFractionMatch[1]); inAiHoursPerPoint = false; continue; }
+        const aiTestRedMatch = line.match(/^\s+ai_test_reduction_factor:\s*([\d.]+)/);
+        if (aiTestRedMatch) { aiTestReductionFactor = parseFloat(aiTestRedMatch[1]); inAiHoursPerPoint = false; continue; }
         if (inAiHoursPerPoint) {
           const hppMatch = line.match(/^\s+(\d+):\s*([\d.]+)/);
           if (hppMatch) {
@@ -62,7 +70,7 @@ export async function loadSprintConfig(): Promise<{
       }
     }
   } catch { /* fall through */ }
-  return { sprintVelocity, capacityFactor, hoursPerPoint, aiAssisted, aiHoursPerPoint };
+  return { sprintVelocity, capacityFactor, hoursPerPoint, aiAssisted, aiHoursPerPoint, testFraction, aiTestReductionFactor };
 }
 
 /**
@@ -80,7 +88,7 @@ export async function injectSprintEstimates(parsed: any): Promise<string> {
     : parsed.story
     ? [parsed.story]
     : [];
-  const { sprintVelocity, capacityFactor, hoursPerPoint, aiAssisted, aiHoursPerPoint } = await loadSprintConfig();
+  const { sprintVelocity, capacityFactor, hoursPerPoint, aiAssisted, aiHoursPerPoint, testFraction, aiTestReductionFactor } = await loadSprintConfig();
 
   // Build hours-from-effort mapper for a given mapping table
   const buildPointToHours = (mapping: Record<number, number>) => (effort: number): number => {
@@ -99,14 +107,19 @@ export async function injectSprintEstimates(parsed: any): Promise<string> {
   };
 
   const traditionalPointToHours = buildPointToHours(hoursPerPoint);
-  const aiPointToHours = buildPointToHours(aiHoursPerPoint);
+  const aiImplPointToHours = buildPointToHours(aiHoursPerPoint);
 
-  // Inject estimatedHours on each story — use AI mapping when enabled, always include both
+  // Inject estimatedHours on each story — use AI mapping when enabled, always include both.
+  // AI total = AI implementation hours + traditional test hours × (1 - aiTestReductionFactor).
+  // This reflects that AI speeds up implementation dramatically but manual testing overhead
+  // persists (first-round QA, exploratory testing, regression checks).
   for (const s of allStories) {
     const effort = Number(s.effort) || 0;
     if (effort > 0) {
-      const traditional = traditionalPointToHours(effort);
-      const ai = aiPointToHours(effort);
+      const traditional = parseFloat(traditionalPointToHours(effort).toFixed(1));
+      const aiImpl = parseFloat(aiImplPointToHours(effort).toFixed(1));
+      const testComponent = parseFloat((traditional * testFraction * (1 - aiTestReductionFactor)).toFixed(1));
+      const ai = parseFloat((aiImpl + testComponent).toFixed(1));
       s.estimatedHours = aiAssisted ? ai : traditional;
       // Always include both so the frontend can show the comparison
       s.traditionalHours = traditional;
@@ -186,7 +199,7 @@ export async function injectSprintEstimates(parsed: any): Promise<string> {
     }
   }
 
-  const aiTag = aiAssisted ? ` [AI-assisted: ${totalAiHours}h vs traditional ${totalTraditionalHours}h]` : '';
+  const aiTag = aiAssisted ? ` [AI-assisted: ${totalAiHours}h vs traditional ${totalTraditionalHours}h (test fraction ${testFraction}, test reduction ${aiTestReductionFactor})]` : '';
   logger.info(`Backlog sprint estimate: ${totalEffort} pts (${totalHours}h) / ${effectiveVelocity} effective velocity (${sprintVelocity} × ${capacityFactor}) = ${sprintsRequired} sprints${aiTag}`);
 
   return JSON.stringify(parsed, null, 2);

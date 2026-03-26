@@ -42,15 +42,21 @@ hours_per_point:
 # Set enabled: true to use ai_hours_per_point instead of hours_per_point.
 ai_assisted_development:
   enabled: false
-  # Hours per story point when developers are using AI coding agents.
-  # Lower than traditional because AI accelerates implementation, testing scaffolding,
-  # and boilerplate — but complex integration/architecture work sees less benefit.
+  # Hours per story point for AI-assisted implementation (coding, scaffolding, boilerplate).
+  # Does NOT include testing — test effort is calculated separately via test_fraction below.
   ai_hours_per_point:
     1: 0.5
     2: 1.5
     3: 3
     5: 8
     8: 18
+  # Fraction of traditional hours allocated to QA/testing (0.0–1.0).
+  # e.g. 0.25 means 25% of a story's traditional hours are testing time.
+  test_fraction: 0.25
+  # How much AI reduces the test component (0.0–1.0).
+  # AI accelerates test scaffolding slightly but manual exploratory testing,
+  # regression checks, and first-round QA persist. 0.10 = 10% reduction.
+  ai_test_reduction_factor: 0.10
 
 # Enabled specialist stages — toggle agents on/off without code changes.
 # Set to false to hide a stage from the UI entirely.

@@ -6,6 +6,7 @@ export const STAGE_SESSION_MAP: Record<string, { mode: AppMode; agentType: Agent
   analyst:              { mode: 'analyst',           agentType: 'analyst' },
   pm_prd:               { mode: 'prd',               agentType: 'pm' },
   solution_architect:   { mode: 'architecture',      agentType: 'architect' },
+  prototype:            { mode: 'prototype',          agentType: 'analyst' },
   pm_backlog:           { mode: 'backlog',           agentType: 'pm' },
   gtm_strategy:         { mode: 'gtm',               agentType: 'gtm' },
   feature_marketing:    { mode: 'feature_marketing', agentType: 'marketer' },
@@ -31,6 +32,7 @@ export const STAGE_ARTIFACT_TYPE: Record<string, string> = {
   analyst:            'analyst',
   pm_prd:             'prd',
   solution_architect: 'architecture',
+  prototype:          'prototype',
   pm_backlog:         'backlog',
   gtm_strategy:       'gtm',
   feature_marketing:  'feature_marketing',
@@ -41,6 +43,7 @@ export const STAGE_ARTIFACT_LABEL: Record<string, string> = {
   analyst: 'Research Brief',
   pm_prd: 'PRD',
   solution_architect: 'Architecture Document',
+  prototype: 'Prototype',
   pm_backlog: 'Backlog',
   gtm_strategy: 'GTM Strategy',
   feature_marketing: 'Feature Marketing Content Pack',
@@ -51,6 +54,7 @@ export const STAGE_LABELS_INTERNAL: Record<string, string> = {
   analyst:            'Analyst — Sage',
   pm_prd:             'Requirements — Rex',
   solution_architect: 'Architect — Atlas',
+  prototype:          'Prototype — Nova',
   pm_backlog:         'Backlog — Pip',
   gtm_strategy:       'GTM Strategy — Quinn',
   feature_marketing:  'Feature Marketing — Milo',
@@ -63,6 +67,7 @@ export const STAGE_LABELS_BRIEF: Record<string, string> = {
   analyst:            'Research Brief (Sage)',
   pm_prd:             'PRD (Rex)',
   solution_architect: 'Architecture Document (Atlas)',
+  prototype:          'Prototype (Nova)',
   pm_backlog:         'Backlog (Pip)',
   gtm_strategy:       'GTM Strategy (Quinn)',
   feature_marketing:  'Feature Marketing Content Pack (Milo)',
@@ -74,6 +79,7 @@ export function stageGoal(stage: string, goal: string): string {
     analyst:            `Produce a comprehensive, sourced research brief that gives the PM everything they need to write a PRD for: ${goal}`,
     pm_prd:             `Produce a complete PRD that translates research findings into clear product requirements and success criteria for: ${goal}`,
     solution_architect: `Produce an architecture document that makes all technology decisions needed to build the PRD's requirements for: ${goal}`,
+    prototype:          `Produce an interactive React prototype that demonstrates the key user journeys from the PRD and architecture document for: ${goal}`,
     pm_backlog:         `Produce a prioritised backlog of epics, features, and stories covering the full MVP scope defined in the PRD for: ${goal}`,
     gtm_strategy:       `Produce a complete Go-to-Market strategy covering positioning, target segments, messaging, launch timeline, competitive positioning, and success metrics for: ${goal}`,
     feature_marketing:  `Produce a ready-to-use feature marketing content pack with channel copy and internal FAQ based on the approved PRD and GTM strategy for: ${goal}`,
@@ -96,6 +102,10 @@ export function stageNotDecide(stage: string): string {
     solution_architect:
       'Do not redefine personas, success metrics, or product scope — those are fixed in the approved PRD. ' +
       'Do not create new requirements; if something is missing from the PRD, flag it as a gap rather than adding scope silently.',
+    prototype:
+      'Do not invent new features or requirements not present in the approved PRD. ' +
+      'Do not make architecture decisions — follow the architecture document. ' +
+      'Focus on demonstrating existing user journeys, not designing new ones.',
     pm_backlog:
       'Do not invent requirements not present in the approved PRD. ' +
       'Do not make architecture or technology decisions — if a story requires an unresolved technical choice, flag it as a dependency. ' +

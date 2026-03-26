@@ -83,6 +83,11 @@ Do not include non-functional requirements, domain compliance, innovation patter
 If a context/tech-stack.md file was provided, align all choices with the existing stack and explain any deviations. If no tech stack was provided, recommend specific technologies with tradeoffs for each choice.`,
   },
 
+  prototype: {
+    label: 'Prototype (Nova)',
+    format: `Generate an interactive React prototype demonstrating the key user journeys from the PRD and architecture document. The output is a JSON file-map rendered in-browser via Sandpack. The prototype should cover the primary screens and user flows described in the PRD — not implement full backend logic, but show realistic UI interactions and navigation. Focus on fidelity to the approved product design, not on inventing new features.`,
+  },
+
   pm_backlog: {
     label: 'Backlog JSON (Pip)',
     format: `Produce a single valid JSON object wrapped in a \`\`\`json code block. Use the minimum structure that fits:

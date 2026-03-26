@@ -116,7 +116,7 @@ export function CoordinatorChat() {
     autoOpenedCheckpointRef.current = null;
   }, [activeWorkflow?.id]);
 
-  // ── Auto-open artifact viewer when a pending checkpoint appears ─────────
+  // ── Auto-open viewer when a pending checkpoint appears ───────────────────
   // Reactive to store state — fires on initial restore (App.tsx), poll updates, or any status change
   useEffect(() => {
     if (activeWorkflow?.status !== 'paused_at_checkpoint') return;
@@ -124,8 +124,16 @@ export function CoordinatorChat() {
     if (!pending?.artifact_id) return;
     if (pending.id === autoOpenedCheckpointRef.current) return;
     autoOpenedCheckpointRef.current = pending.id;
-    setViewingArtifactId(pending.artifact_id);
-  }, [activeWorkflow?.status, checkpoints, setViewingArtifactId]);
+
+    if (pending.stage === 'prototype') {
+      // Auto-open the prototype preview
+      api.getPrototype(activeWorkflow!.id).then(data => {
+        if (data) { setPrototypeData(data as PrototypeData); setShowPrototype(true); }
+      }).catch(() => {});
+    } else {
+      setViewingArtifactId(pending.artifact_id);
+    }
+  }, [activeWorkflow?.status, activeWorkflow?.id, checkpoints, setViewingArtifactId]);
 
   // ── Event polling: fetch new workflow events and append narration ────────
   // Use refs for values the poll reads — avoids stale closures without causing effect recreation
@@ -678,6 +686,44 @@ export function CoordinatorChat() {
           if (!pending) return null;
           const pendingCriticData = parseCriticData(pending);
           const summary = criticSummaryLine(pendingCriticData);
+
+          // Prototype checkpoint: show View Prototype button + inline actions
+          if (pending.stage === 'prototype') {
+            return (
+              <div className="pt-2 space-y-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      try {
+                        const data = await api.getPrototype(activeWorkflow!.id);
+                        setPrototypeData(data);
+                        setShowPrototype(true);
+                      } catch {
+                        // prototype may still be generating; ignore
+                      }
+                    }}
+                    className="text-xs px-2.5 py-1 rounded-md border border-emerald-300 dark:border-emerald-700 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors"
+                  >
+                    View Prototype
+                  </button>
+                  <span className="text-xs text-gray-400 dark:text-gray-500">
+                    Review the prototype, then approve, revise, or reject below
+                  </span>
+                </div>
+                <InlineCheckpointActions
+                  checkpoint={pending}
+                  onResolved={(result) => {
+                    applyWorkflowStatus(result.workflow);
+                    addCoordinatorMessage({
+                      role: 'coordinator',
+                      content: `Prototype **${result.status === 'approved' ? 'approved' : result.status === 'rejected' ? 'rejected' : 'sent for revision'}.${result.complete ? ' Workflow complete.' : ''}`,
+                      timestamp: Date.now(),
+                    });
+                  }}
+                />
+              </div>
+            );
+          }
 
           if (pending.artifact_id) {
             return (

@@ -741,11 +741,9 @@ class APIClient {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop() ?? '';
-
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
           try {
@@ -756,23 +754,16 @@ class APIClient {
             } else if (event.type === 'prototype') {
               callbacks.onPrototype(event.prototype);
             } else if (event.type === 'parse_failed') {
-              // Server couldn't parse — try client-side repair via server endpoint
               try {
                 const repaired = await this.parsePrototypeRaw(workflowId, rawAccumulator);
-                if (repaired) {
-                  callbacks.onPrototype(repaired);
-                }
-              } catch {
-                // Repair also failed
-              }
+                if (repaired) callbacks.onPrototype(repaired);
+              } catch { /* repair failed */ }
             } else if (event.type === 'error') {
               callbacks.onError(event.error);
             } else if (event.type === 'done') {
               callbacks.onDone();
             }
-          } catch {
-            // Skip malformed JSON
-          }
+          } catch { /* skip */ }
         }
       }
     } finally {
@@ -814,11 +805,9 @@ class APIClient {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop() ?? '';
-
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
           try {
@@ -846,9 +835,6 @@ class APIClient {
     }
   }
 
-  /**
-   * Send raw streamed text to the server for JSON repair + parsing.
-   */
   async parsePrototypeRaw(workflowId: string, raw: string): Promise<any | null> {
     try {
       const response = await axios.post(`${this.baseURL}/api/workflow/${workflowId}/prototype/parse`, { raw });

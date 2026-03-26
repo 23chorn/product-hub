@@ -1,4 +1,4 @@
-import { AgentType, AppMode, BmadPersona } from '@pap/shared';
+import { AgentType } from '@pap/shared';
 import { streamAI, resolveModelId, getActiveProvider, type SystemPrompt, type TokenUsage } from '../utils/ai-provider';
 import Logger from '../utils/logger';
 import * as fs from 'fs/promises';
@@ -41,25 +41,11 @@ export function invalidateContextCache(): void {
   logger.info('Global project context cache invalidated — will reload on next request');
 }
 
-// Mode-to-agent mapping
-const MODE_AGENT_MAP: Record<AppMode, AgentType> = {
-  prd: 'pm',
-  backlog: 'pm',
-  analyst: 'analyst',
-  architecture: 'architect',
-  'decision-log': 'decision-log',
-  context: 'context-keeper',
-  gtm: 'gtm',
-  feature_marketing: 'marketer',
-};
-
-
 export class BmadAgent {
   private agentType: AgentType;
   private model: string;
-  private persona: BmadPersona | null = null;
+  private persona: string | null = null;
   private userConfig: Record<string, string> | null = null;
-  private projectContext: string | null = null;
   private isAutonomous = false;
 
   constructor(agentType: AgentType) {
@@ -67,45 +53,20 @@ export class BmadAgent {
     this.model = resolveModelId(undefined);
   }
 
-  static getAgentTypeForMode(mode: AppMode): AgentType {
-    return MODE_AGENT_MAP[mode];
-  }
-
   /**
-   * Load and parse the agent persona from the BMAD markdown file
+   * Load the agent persona markdown file as plain text.
+   * Strips YAML frontmatter if present.
    */
-  async loadPersona(): Promise<BmadPersona> {
+  async loadPersona(): Promise<string> {
     if (this.persona) return this.persona;
 
     const agentFilePath = path.join(AGENTS_ROOT, 'personas', `${this.agentType}.md`);
     logger.info(`Loading persona from: ${agentFilePath}`);
 
     const content = await fs.readFile(agentFilePath, 'utf-8');
-
-    // Extract XML agent block
-    const xmlMatch = content.match(/<agent[^>]*>([\s\S]*?)<\/agent>/);
-    if (!xmlMatch) {
-      throw new Error(`Failed to parse agent XML from ${agentFilePath}`);
-    }
-
-    const agentTag = content.match(/<agent([^>]*)>/);
-    const attrs = agentTag?.[1] || '';
-
-    // Parse agent tag attributes
-    const name = this.extractAttr(attrs, 'name') || 'Agent';
-    const backlogName = this.extractAttr(attrs, 'backlog-name') || undefined;
-    const title = this.extractAttr(attrs, 'title') || 'AI Agent';
-    const icon = this.extractAttr(attrs, 'icon') || '🤖';
-
-    // Parse persona XML tags
-    const xmlContent = xmlMatch[1];
-    const role = this.extractXmlTag(xmlContent, 'role') || '';
-    const identity = this.extractXmlTag(xmlContent, 'identity') || '';
-    const communicationStyle = this.extractXmlTag(xmlContent, 'communication_style') || '';
-    const principles = this.extractXmlTag(xmlContent, 'principles') || '';
-
-    this.persona = { name, backlogName, title, icon, role, identity, communicationStyle, principles };
-    logger.info(`Loaded persona: ${name} (${title})`);
+    // Strip YAML frontmatter (--- ... ---)
+    this.persona = content.replace(/^---[\s\S]*?---\s*\n?/, '').trim();
+    logger.info(`Loaded persona for agent type: ${this.agentType}`);
 
     return this.persona;
   }
@@ -138,7 +99,6 @@ export class BmadAgent {
       }
 
       _projectContextCache = contents.join('\n\n');
-      this.projectContext = _projectContextCache; // keep instance field in sync
       logger.info(`Loaded project context from ${mdFiles.length} file(s) in context/`);
     } catch (error: any) {
       logger.warn(`Could not load project context: ${error.message}`);
@@ -161,7 +121,7 @@ export class BmadAgent {
    * Callers pass the result directly to streamResponse(), which threads both
    * parts to the provider-specific streaming function.
    */
-  async buildSystemPrompt(persona: BmadPersona, workflowContext?: string, itemContext?: string, autonomous?: boolean, stage?: string): Promise<SystemPrompt> {
+  async buildSystemPrompt(persona: string, workflowContext?: string, itemContext?: string, autonomous?: boolean, stage?: string): Promise<SystemPrompt> {
     this.isAutonomous = autonomous ?? false;
     const config = await this.loadUserConfig();
     const userName = config.user_name ?? 'User';
@@ -169,12 +129,10 @@ export class BmadAgent {
     const skillLevel = config.user_skill_level ?? 'intermediate';
 
     let stable = autonomous
-      ? `You are a specialist ${persona.title} executing a document-production task.
+      ? `You are executing a document-production task as part of an automated workflow.
 
-## Expertise
-- **Role:** ${persona.role}
-- **Specialisation:** ${persona.identity}
-- **Principles:** ${persona.principles}
+## Your Persona
+${persona}
 
 ## Operating Mode
 You are running autonomously as part of a coordinator-driven workflow. There is no user interaction.
@@ -183,21 +141,16 @@ You are running autonomously as part of a coordinator-driven workflow. There is 
 - Write real, substantive content for the specific topic given — never use placeholder text
 - Produce the complete document in one response; do not truncate or defer any section
 - Use rich markdown formatting: headings, bullet lists, tables, bold for key terms`
-      : `You are ${persona.name}, a ${persona.title}.
+      : `## Your Persona
+${persona}
 
 ## User Context
 - **Name:** ${userName} (address them by name)
 - **Communication language:** ${language}
 - **Skill level:** ${skillLevel}
 
-## Your Persona
-- **Role:** ${persona.role}
-- **Identity:** ${persona.identity}
-- **Communication Style:** ${persona.communicationStyle}
-- **Principles:** ${persona.principles}
-
 ## Instructions
-Stay in character as ${persona.name} throughout the conversation. Be helpful, collaborative, and proactive. Use your communication style consistently.
+Stay in character throughout the conversation. Be helpful, collaborative, and proactive.
 
 ## Response Length
 Keep conversational responses short and focused to minimise output tokens:
@@ -354,7 +307,6 @@ Your responses have a token ceiling. A document that is cut off is always worse 
    * Call after writing a context file so the next AI message picks up the change.
    */
   clearContextCache(): void {
-    this.projectContext = null;
     _projectContextCache = null;
     logger.info('Project context cache cleared — will reload on next request');
   }
@@ -388,16 +340,6 @@ Your responses have a token ceiling. A document that is cut off is always worse 
 
     this.userConfig = result;
     return result;
-  }
-
-  private extractAttr(attrString: string, name: string): string | null {
-    const match = attrString.match(new RegExp(`${name}="([^"]*)"`));
-    return match ? match[1] : null;
-  }
-
-  private extractXmlTag(content: string, tagName: string): string | null {
-    const match = content.match(new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`));
-    return match ? match[1].trim() : null;
   }
 
 }

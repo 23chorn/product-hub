@@ -149,19 +149,9 @@ export interface QuickItem {
 // BMAD Agent Types
 // ============================================
 
-export type AppMode = 'prd' | 'backlog' | 'analyst' | 'architecture' | 'decision-log' | 'context' | 'gtm' | 'feature_marketing';
+export type AppMode = 'prd' | 'backlog' | 'analyst' | 'architecture' | 'decision-log' | 'context' | 'gtm' | 'feature_marketing' | 'prototype';
 export type AgentType = 'pm' | 'analyst' | 'architect' | 'decision-log' | 'context-keeper' | 'gtm' | 'marketer';
 
-export interface BmadPersona {
-  name: string;
-  backlogName?: string; // optional alternate name used in ad-hoc backlog mode
-  title: string;
-  icon: string;
-  role: string;
-  identity: string;
-  communicationStyle: string;
-  principles: string;
-}
 
 export interface BmadMenuItem {
   code: string;

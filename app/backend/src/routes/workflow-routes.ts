@@ -169,7 +169,7 @@ export const workflowRoutes = Router();
 
 // Critic no longer appears as a standalone stage — it runs inline after each specialist stage.
 // The curator runs at the end to update project context files.
-const DEFAULT_STAGES = ['analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'curator'];
+const DEFAULT_STAGES = ['analyst', 'pm_prd', 'solution_architect', 'prototype', 'pm_backlog', 'curator'];
 
 // ── Coordinator planning phase ─────────────────────────────────────────────────
 

@@ -33,6 +33,7 @@ import {
   loadLatestArtifactForStage, loadFullArtifact, loadArtifactSummary,
 } from './artifact-helpers';
 import { deleteWorkflow as deleteWorkflowImpl, recoverStaleWorkflows as recoverStaleWorkflowsImpl, startStaleRecoveryTimer } from './workflow-lifecycle';
+import { generatePrototype } from './prototype-agent';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
 
@@ -508,11 +509,84 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
     throw new Error(`WORKFLOW_COMPLETE:${workflowId}`);
   }
 
+  // ── Prototype stage: generate interactive prototype, pause for human review ─
+  if (nextStage === 'prototype') {
+    insertEvent(workflowId, 'stage_started', 'prototype',
+      'Nova is generating an interactive prototype from the workflow artifacts. This typically takes 2–3 minutes.');
+
+    let protoTokenData: StageTokenData['specialist'] | null = null;
+    const protoTokenCallback = (usage: TokenUsage) => {
+      protoTokenData = {
+        model: usage.model, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,
+        cacheReadTokens: usage.cacheReadTokens, cacheWriteTokens: usage.cacheWriteTokens,
+        searchCount: 0, estimatedCost: usage.estimatedCost,
+      };
+      addWorkflowCost(workflowId, usage.estimatedCost);
+    };
+
+    // Create a session so the artifact links to this workflow run
+    const session = sessionManager.createBmadSession(workflow.item_id, 'analyst', 'analyst');
+    sessionManager.updateWorkflow(session.id, workflowId, 'Generating prototype...');
+
+    // Run prototype generation as a background task
+    ;(async () => {
+      try {
+        const generator = generatePrototype(workflowId, undefined, protoTokenCallback);
+        let result = null;
+        while (true) {
+          const next = await generator.next();
+          if (next.done) { result = next.value; break; }
+        }
+
+        const elapsed = Math.round((Date.now() - now) / 1000);
+        logger.info(`Prototype generation complete (${elapsed}s)`);
+
+        // Find the artifact that was just saved
+        const artifactRow = db.prepare<[string], { id: number }>(`
+          SELECT a.id FROM artifacts a
+          LEFT JOIN sessions s ON a.session_id = s.id
+          WHERE (s.item_id = ? OR a.session_id IS NULL) AND a.type = 'prototype'
+          ORDER BY a.created_at DESC LIMIT 1
+        `).get(workflow.item_id);
+
+        const artifactId = artifactRow?.id ?? null;
+
+        insertEvent(workflowId, 'stage_completed', 'prototype',
+          result ? 'Prototype generated. Review it before proceeding to backlog.' : 'Prototype generation complete.',
+          artifactId ? { artifact_id: artifactId } : undefined);
+
+        const cpNow = Date.now();
+        const cpResult = stmts.insertCheckpoint.run(
+          workflowId, 'prototype', artifactId, 'pending',
+          JSON.stringify({ session_id: session.id, autonomous: true }),
+          cpNow
+        );
+        if (protoTokenData) {
+          setCheckpointTokenUsage(cpResult.lastInsertRowid as number, { specialist: protoTokenData });
+        }
+        stmts.updateWorkflowStatus.run('paused_at_checkpoint', cpNow, workflowId);
+        logger.info(`Prototype stage complete — paused at checkpoint for workflow ${workflowId}`);
+      } catch (err: any) {
+        logger.error(`Prototype stage failed: ${err.message}`);
+        const errorNow = Date.now();
+        stmts.insertCheckpoint.run(
+          workflowId, 'prototype', null, 'pending',
+          JSON.stringify({ session_id: session.id, error: err.message }),
+          errorNow
+        );
+        stmts.updateWorkflowStatus.run('paused_at_checkpoint', errorNow, workflowId);
+      }
+    })().catch(err => logger.error(`Prototype stage background task failed: ${err.message}`));
+
+    return { stage: nextStage, sessionId: session.id };
+  }
+
   // ── Regular specialist stage: run autonomously in the background ─────────
   const STAGE_NARRATION: Record<string, string> = {
     analyst:            'Sage is starting market research. This stage uses web search and typically takes 2–4 minutes.',
     pm_prd:             'Rex is writing the Product Requirements Document based on the research brief.',
     solution_architect: 'Atlas is designing the solution architecture based on the PRD.',
+    prototype:          'Nova is generating an interactive prototype from the workflow artifacts. This typically takes 2–3 minutes.',
     pm_backlog:         'Pip is creating the backlog with epics, features, and stories.',
     gtm_strategy:       'Quinn is developing the Go-to-Market strategy based on the approved PRD.',
     feature_marketing:  'Milo is writing the feature marketing content pack based on the GTM strategy and PRD.',
@@ -1205,6 +1279,67 @@ export async function propagateFeedback(checkpointId: number, feedback: string):
   const workflow = stmts.getWorkflow.get(checkpoint.workflow_id);
   if (!workflow) throw new Error(`Workflow not found: ${checkpoint.workflow_id}`);
 
+  // ── Prototype stage: re-run generatePrototype with feedback as scope ─────
+  if (checkpoint.stage === 'prototype') {
+    const now = Date.now();
+    stmts.updateCheckpoint.run(
+      'revised', feedback,
+      JSON.stringify({ action: 'revision_rerun', feedback_summary: feedback.slice(0, 200), acted_at: now }),
+      now, checkpointId
+    );
+    stmts.updateWorkflowStageAndStatus.run('prototype', 'active', now, checkpoint.workflow_id);
+    insertEvent(checkpoint.workflow_id, 'stage_started', 'prototype',
+      'Nova is revising the prototype based on your feedback...');
+
+    let protoTokenData: StageTokenData['specialist'] | null = null;
+    const protoTokenCallback = (usage: TokenUsage) => {
+      protoTokenData = {
+        model: usage.model, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,
+        cacheReadTokens: usage.cacheReadTokens, cacheWriteTokens: usage.cacheWriteTokens,
+        searchCount: 0, estimatedCost: usage.estimatedCost,
+      };
+      addWorkflowCost(checkpoint.workflow_id, usage.estimatedCost);
+    };
+
+    const session = sessionManager.createBmadSession(workflow.item_id, 'analyst', 'analyst');
+    sessionManager.updateWorkflow(session.id, checkpoint.workflow_id, 'Revising prototype...');
+
+    ;(async () => {
+      try {
+        const generator = generatePrototype(checkpoint.workflow_id, feedback, protoTokenCallback);
+        while (true) {
+          const next = await generator.next();
+          if (next.done) break;
+        }
+        const artifactRow = db.prepare<[string], { id: number }>(`
+          SELECT a.id FROM artifacts a
+          LEFT JOIN sessions s ON a.session_id = s.id
+          WHERE (s.item_id = ? OR a.session_id IS NULL) AND a.type = 'prototype'
+          ORDER BY a.created_at DESC LIMIT 1
+        `).get(workflow.item_id);
+        const artifactId = artifactRow?.id ?? null;
+        const cpNow = Date.now();
+        insertEvent(checkpoint.workflow_id, 'stage_completed', 'prototype', 'Prototype revised. Review it before proceeding.');
+        const cpResult = stmts.insertCheckpoint.run(
+          checkpoint.workflow_id, 'prototype', artifactId, 'pending',
+          JSON.stringify({ session_id: session.id, autonomous: true }),
+          cpNow
+        );
+        if (protoTokenData) setCheckpointTokenUsage(cpResult.lastInsertRowid as number, { specialist: protoTokenData });
+        stmts.updateWorkflowStatus.run('paused_at_checkpoint', cpNow, checkpoint.workflow_id);
+      } catch (err: any) {
+        logger.error(`Prototype revision failed: ${err.message}`);
+        const errorNow = Date.now();
+        stmts.insertCheckpoint.run(checkpoint.workflow_id, 'prototype', null, 'pending',
+          JSON.stringify({ session_id: session.id, error: err.message }), errorNow);
+        stmts.updateWorkflowStatus.run('paused_at_checkpoint', errorNow, checkpoint.workflow_id);
+      }
+    })().catch(err => logger.error(`Prototype revision background task failed: ${err.message}`));
+
+    logger.info(`Prototype revision started for workflow ${checkpoint.workflow_id}`);
+    return;
+  }
+
   // Load the full prior artifact — passed as the assistant turn in the conversation thread
   const priorDraft = checkpoint.artifact_id
     ? loadFullArtifact(checkpoint.artifact_id)
@@ -1291,6 +1426,59 @@ export async function reiterateFromStage(
   // and retryCurrentStage can recover if the server restarts mid-run
   const now = Date.now();
   stmts.updateWorkflowStageAndStatus.run(fromStage, 'active', now, workflowId);
+
+  // ── Prototype stage reiteration ──────────────────────────────────────────
+  if (fromStage === 'prototype') {
+    insertEvent(workflowId, 'stage_started', 'prototype',
+      'Nova is regenerating the prototype based on your feedback...');
+
+    let protoTokenData: StageTokenData['specialist'] | null = null;
+    const protoTokenCallback = (usage: TokenUsage) => {
+      protoTokenData = {
+        model: usage.model, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,
+        cacheReadTokens: usage.cacheReadTokens, cacheWriteTokens: usage.cacheWriteTokens,
+        searchCount: 0, estimatedCost: usage.estimatedCost,
+      };
+      addWorkflowCost(workflowId, usage.estimatedCost);
+    };
+
+    const session = sessionManager.createBmadSession(workflow.item_id, 'analyst', 'analyst');
+    sessionManager.updateWorkflow(session.id, workflowId, 'Regenerating prototype...');
+
+    ;(async () => {
+      try {
+        const generator = generatePrototype(workflowId, feedback || undefined, protoTokenCallback);
+        while (true) {
+          const next = await generator.next();
+          if (next.done) break;
+        }
+        const artifactRow = db.prepare<[string], { id: number }>(`
+          SELECT a.id FROM artifacts a
+          LEFT JOIN sessions s ON a.session_id = s.id
+          WHERE (s.item_id = ? OR a.session_id IS NULL) AND a.type = 'prototype'
+          ORDER BY a.created_at DESC LIMIT 1
+        `).get(workflow.item_id);
+        const artifactId = artifactRow?.id ?? null;
+        const cpNow = Date.now();
+        insertEvent(workflowId, 'stage_completed', 'prototype', 'Prototype regenerated. Review before proceeding to backlog.');
+        const cpResult = stmts.insertCheckpoint.run(
+          workflowId, 'prototype', artifactId, 'pending',
+          JSON.stringify({ session_id: session.id, autonomous: true }), cpNow
+        );
+        if (protoTokenData) setCheckpointTokenUsage(cpResult.lastInsertRowid as number, { specialist: protoTokenData });
+        stmts.updateWorkflowStatus.run('paused_at_checkpoint', cpNow, workflowId);
+      } catch (err: any) {
+        logger.error(`Prototype reiteration failed: ${err.message}`);
+        const errorNow = Date.now();
+        stmts.insertCheckpoint.run(workflowId, 'prototype', null, 'pending',
+          JSON.stringify({ session_id: session.id, error: err.message }), errorNow);
+        stmts.updateWorkflowStatus.run('paused_at_checkpoint', errorNow, workflowId);
+      }
+    })().catch(err => logger.error(`Prototype reiteration background task failed: ${err.message}`));
+
+    logger.info(`Prototype reiteration started for workflow ${workflowId}`);
+    return;
+  }
 
   // Load the prior artifact so the specialist can revise in-place
   const priorDraft = loadLatestArtifactForStage(workflow.item_id, fromStage);
@@ -1407,6 +1595,38 @@ export async function retryCurrentStage(workflowId: string): Promise<{ stage: st
   // Reset workflow status to active on this stage
   const now = Date.now();
   stmts.updateWorkflowStageAndStatus.run(stage, 'active', now, workflowId);
+
+  // Prototype stage: re-run generatePrototype directly
+  if (stage === 'prototype') {
+    const session = sessionManager.createBmadSession(workflow.item_id, 'analyst', 'analyst');
+    sessionManager.updateWorkflow(session.id, workflowId, 'Retrying prototype generation...');
+
+    ;(async () => {
+      try {
+        const generator = generatePrototype(workflowId, undefined, costTracker(workflowId));
+        while (true) {
+          const next = await generator.next();
+          if (next.done) break;
+        }
+        const artifactRow = db.prepare<[string], { id: number }>(`
+          SELECT a.id FROM artifacts a
+          LEFT JOIN sessions s ON a.session_id = s.id
+          WHERE (s.item_id = ? OR a.session_id IS NULL) AND a.type = 'prototype'
+          ORDER BY a.created_at DESC LIMIT 1
+        `).get(workflow.item_id);
+        const artifactId = artifactRow?.id ?? null;
+        const cpNow = Date.now();
+        insertEvent(workflowId, 'stage_completed', 'prototype', 'Prototype regenerated. Review before proceeding to backlog.');
+        stmts.insertCheckpoint.run(workflowId, 'prototype', artifactId, 'pending',
+          JSON.stringify({ session_id: session.id, autonomous: true }), cpNow);
+        stmts.updateWorkflowStatus.run('paused_at_checkpoint', cpNow, workflowId);
+      } catch (err: any) {
+        logger.error(`Prototype retry failed: ${err.message}`);
+      }
+    })().catch(err => logger.error(`Prototype retry background task failed: ${err.message}`));
+
+    return { stage };
+  }
 
   // Generate a fresh brief
   const brief = await getCoordinator().generateStageBrief(workflowId, stage);

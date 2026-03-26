@@ -1,9 +1,15 @@
 /**
- * Prototype Agent — generates self-contained React prototypes from workflow artifacts.
+ * Prototype Agent — generates interactive React prototypes from workflow artifacts.
  *
- * Not a workflow stage — invoked on-demand after a workflow completes.
- * Reads PRD, architecture, and backlog artifacts, combines them with the design system
- * tokens and prototype persona, and streams a JSON file-map that Sandpack can render.
+ * Runs as a workflow stage (between solution_architect and pm_backlog).
+ *
+ * If FIGMA_DESIGN_SYSTEM_FILE is set, it first connects to figma-developer-mcp to read
+ * the real design system components and tokens, then feeds that context to Claude for
+ * accurate, brand-consistent prototype generation. Falls back to the design-tokens.css
+ * file when Figma is not configured.
+ *
+ * The generated prototype is a self-contained React app rendered via an srcdoc iframe
+ * using React 18 UMD + Babel Standalone — no external sandbox service required.
  */
 
 import * as fs from 'fs';
@@ -14,6 +20,12 @@ import { loadLatestArtifactForStage } from './artifact-helpers';
 import db from '../data/database';
 import Logger from '../utils/logger';
 
+// MCP SDK — loaded via require to avoid ESM/CJS interop issues with moduleResolution:node
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { Client } = require('@modelcontextprotocol/sdk/client') as typeof import('@modelcontextprotocol/sdk/client/index.js');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js') as typeof import('@modelcontextprotocol/sdk/client/stdio.js');
+
 const logger = new Logger('PROTOTYPE-AGENT');
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
@@ -23,33 +35,58 @@ const TEMPLATES_DIR = path.join(AGENTS_ROOT, 'templates');
 const PROTOTYPE_DIR = path.join(TEMPLATES_DIR, 'prototype');
 const CONTEXT_ROOT = path.join(PROJECT_ROOT, 'context');
 
-/**
- * Load all available artifacts for an item (PRD, architecture, backlog).
- * Returns a combined string for injection into the prompt.
- */
+// ── Result type ────────────────────────────────────────────────────────────────
+
+export interface PrototypeResult {
+  title: string;
+  description: string;
+  screens: string[];
+  entryScreen: string;
+  files: Record<string, string>;
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
 function loadWorkflowArtifacts(itemId: string): string {
-  const stages = ['analyst', 'pm_prd', 'solution_architect', 'pm_backlog'] as const;
+  const stages = ['analyst', 'pm_prd', 'solution_architect'] as const;
   const labels: Record<string, string> = {
     analyst: 'Research Brief',
     pm_prd: 'PRD',
     solution_architect: 'Architecture Document',
-    pm_backlog: 'Backlog',
   };
-
   const sections: string[] = [];
   for (const stage of stages) {
     const content = loadLatestArtifactForStage(itemId, stage);
-    if (content) {
-      sections.push(`## ${labels[stage]}\n\n${content}`);
-    }
+    if (content) sections.push(`## ${labels[stage]}\n\n${content}`);
   }
   return sections.join('\n\n---\n\n');
 }
 
-/**
- * Load the design system files (tokens CSS + tailwind config) for injection.
- */
-async function loadDesignSystem(): Promise<string> {
+async function loadPersona(): Promise<string> {
+  return fsAsync.readFile(path.join(PERSONAS_DIR, 'prototype-builder.md'), 'utf-8');
+}
+
+async function loadTemplate(): Promise<string> {
+  return fsAsync.readFile(path.join(TEMPLATES_DIR, 'prototype.template.md'), 'utf-8');
+}
+
+async function loadProjectContext(): Promise<string> {
+  try {
+    const files = await fsAsync.readdir(CONTEXT_ROOT);
+    const mdFiles = files.filter(f => f.endsWith('.md') && f !== 'README.md').sort();
+    const sections: string[] = [];
+    for (const file of mdFiles) {
+      const content = await fsAsync.readFile(path.join(CONTEXT_ROOT, file), 'utf-8');
+      if (content.trim()) sections.push(`### ${file}\n${content}`);
+    }
+    return sections.length > 0 ? `## Project & Company Context\n\n${sections.join('\n\n')}` : '';
+  } catch {
+    return '';
+  }
+}
+
+/** Load local design system CSS files (fallback when Figma is not configured). */
+async function loadLocalDesignSystem(): Promise<string> {
   const parts: string[] = [];
   try {
     const tokens = await fsAsync.readFile(path.join(PROTOTYPE_DIR, 'design-tokens.css'), 'utf-8');
@@ -62,74 +99,95 @@ async function loadDesignSystem(): Promise<string> {
   return parts.join('\n\n');
 }
 
-/**
- * Load the prototype builder persona markdown.
- */
-async function loadPersona(): Promise<string> {
-  return fsAsync.readFile(path.join(PERSONAS_DIR, 'prototype-builder.md'), 'utf-8');
-}
+// ── Figma design system reader ─────────────────────────────────────────────────
 
-/**
- * Load the prototype output template.
- */
-async function loadTemplate(): Promise<string> {
-  return fsAsync.readFile(path.join(TEMPLATES_DIR, 'prototype.template.md'), 'utf-8');
-}
-
-/**
- * Load project context files (same as BmadAgent).
- */
-async function loadProjectContext(): Promise<string> {
+/** Resolve the figma-developer-mcp binary path — prefer local install over npx. */
+function resolveFigmaDevMcpBin(): { command: string; args: string[] } {
+  const token = process.env.FIGMA_API_KEY ?? process.env.FIGMA_ACCESS_TOKEN ?? '';
+  const apiKeyArg = `--figma-api-key=${token}`;
   try {
-    const files = await fsAsync.readdir(CONTEXT_ROOT);
-    const mdFiles = files.filter(f => f.endsWith('.md') && f !== 'README.md').sort();
-    const sections: string[] = [];
-    for (const file of mdFiles) {
-      const content = await fsAsync.readFile(path.join(CONTEXT_ROOT, file), 'utf-8');
-      if (content.trim()) sections.push(`### ${file}\n${content}`);
+    const pkgPath = require.resolve('figma-developer-mcp/package.json');
+    const pkg = require(pkgPath) as { bin?: Record<string, string> };
+    const binFile = pkg.bin?.['figma-developer-mcp'];
+    if (binFile) {
+      const resolved = path.join(path.dirname(pkgPath), binFile);
+      return { command: 'node', args: [resolved, '--stdio', apiKeyArg] };
     }
-    return sections.length > 0 ? `## Project & Company Context\n\n${sections.join('\n\n')}` : '';
-  } catch { return ''; }
-}
-
-export interface PrototypeResult {
-  title: string;
-  description: string;
-  screens: string[];
-  entryScreen: string;
-  files: Record<string, string>;
+  } catch { /* fall back */ }
+  return { command: 'npx', args: ['-y', 'figma-developer-mcp', '--stdio', apiKeyArg] };
 }
 
 /**
- * Attempt to repair truncated JSON output (e.g. when the model hits max output tokens).
- * Closes unclosed strings, objects, and arrays to make the JSON parseable.
+ * Optionally connect to figma-developer-mcp and call get_figma_data on the design system file.
+ * Returns a formatted string of design system context, or an empty string if not configured.
  */
+async function loadFigmaDesignSystem(statusCb: (msg: string) => void): Promise<string> {
+  const fileKey = process.env.FIGMA_DESIGN_SYSTEM_FILE;
+  const token = process.env.FIGMA_API_KEY ?? process.env.FIGMA_ACCESS_TOKEN;
+  if (!fileKey || !token) return '';
+
+  statusCb('Reading Figma design system...\n');
+
+  const { command, args } = resolveFigmaDevMcpBin();
+  logger.info(`Starting figma-developer-mcp: ${command} ${args.join(' ')}`);
+
+  const transport = new StdioClientTransport({
+    command,
+    args,
+    env: { ...(process.env as Record<string, string>), FIGMA_API_KEY: token },
+  });
+
+  const client = new Client(
+    { name: 'product-hub', version: '1.0.0' },
+    { capabilities: {} },
+  );
+
+  try {
+    await client.connect(transport, { timeout: 8_000 });
+
+    const result = await client.callTool({
+      name: 'get_figma_data',
+      arguments: { fileKey },
+    }, undefined, { timeout: 30_000 });
+
+    const content = Array.isArray(result.content)
+      ? result.content.map((c: { type: string; text?: string }) => c.text ?? '').join('\n')
+      : String(result.content);
+
+    if (content.trim()) {
+      statusCb('Design system loaded from Figma.\n');
+      logger.info(`Loaded Figma design system data (${content.length} chars)`);
+      return `## Design System (from Figma file ${fileKey})\n\n${content}`;
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn(`Could not load Figma design system: ${msg} — falling back to local tokens`);
+    statusCb('Figma unavailable, using local design tokens.\n');
+  } finally {
+    try { await transport.close(); } catch { /* ignore */ }
+  }
+
+  return '';
+}
+
+// ── JSON repair (for truncated model output) ───────────────────────────────────
+
 export function repairTruncatedJson(raw: string): string {
   let s = raw.trim();
-  // Strip markdown code fences
   s = s.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-
-  // If it already parses, return as-is
   try { JSON.parse(s); return s; } catch { /* needs repair */ }
 
-  // Close unclosed string: if we're inside a string value, close it
-  // Count unescaped quotes
   let inString = false;
-  let lastQuoteIdx = -1;
   for (let i = 0; i < s.length; i++) {
-    if (s[i] === '\\') { i++; continue; } // skip escaped char
-    if (s[i] === '"') { inString = !inString; lastQuoteIdx = i; }
+    if (s[i] === '\\') { i++; continue; }
+    if (s[i] === '"') inString = !inString;
   }
   if (inString) {
-    // We're mid-string — close it. Escape any trailing backslash.
     if (s.endsWith('\\')) s = s.slice(0, -1);
     s += '"';
   }
-
-  // Remove trailing comma (invalid before closing bracket)
   s = s.replace(/,\s*$/, '');
 
-  // Count open/close braces and brackets, close any that are unclosed
   const stack: string[] = [];
   inString = false;
   for (let i = 0; i < s.length; i++) {
@@ -140,64 +198,91 @@ export function repairTruncatedJson(raw: string): string {
     else if (s[i] === '[') stack.push(']');
     else if (s[i] === '}' || s[i] === ']') stack.pop();
   }
-
-  // Close remaining open structures
-  while (stack.length > 0) {
-    s += stack.pop();
-  }
-
+  while (stack.length > 0) s += stack.pop();
   return s;
 }
 
+// ── Artifact persistence ───────────────────────────────────────────────────────
+
+async function savePrototypeArtifact(
+  itemId: string,
+  _workflowId: string,
+  prototype: PrototypeResult,
+): Promise<void> {
+  const artifactDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, 'prototype', 'artifacts');
+  await fsAsync.mkdir(artifactDir, { recursive: true });
+
+  const artifactPath = path.join(artifactDir, `${Date.now()}-prototype.json`);
+  await fsAsync.writeFile(artifactPath, JSON.stringify(prototype, null, 2), 'utf-8');
+
+  const session = db.prepare<[string], { id: string }>(`
+    SELECT id FROM sessions WHERE item_id = ? ORDER BY created_at DESC LIMIT 1
+  `).get(itemId);
+
+  db.prepare(`
+    INSERT INTO artifacts (session_id, type, file_path, created_at)
+    VALUES (?, ?, ?, ?)
+  `).run(session?.id ?? null, 'prototype', artifactPath, Date.now());
+
+  logger.info(`Saved prototype artifact → ${artifactPath}`);
+}
+
+// ── Public API ─────────────────────────────────────────────────────────────────
+
 /**
- * Generate a prototype as an async generator (streams text chunks).
- * The final concatenated output is a JSON code block.
+ * Generate an interactive React prototype from workflow artifacts.
+ * Yields status/content strings for SSE streaming.
+ * Returns the PrototypeResult (React file map) when complete.
  *
- * @param workflowId - The workflow whose artifacts to use
- * @param scope - Optional scope override (e.g. specific feature/story titles to focus on)
- * @param onTokens - Token usage callback for cost tracking
+ * If FIGMA_DESIGN_SYSTEM_FILE is configured, reads real component/token data from
+ * Figma first to inform the generated prototype's design language.
  */
 export async function* generatePrototype(
   workflowId: string,
   scope?: string,
   onTokens?: (usage: TokenUsage) => void,
 ): AsyncGenerator<string, PrototypeResult | null, unknown> {
-  // Load workflow to get item_id
   const workflow = db.prepare<[string], { item_id: string; goal: string }>(`
     SELECT item_id, goal FROM workflows WHERE id = ?
   `).get(workflowId);
-
   if (!workflow) throw new Error(`Workflow ${workflowId} not found`);
 
-  // Load all inputs in parallel
-  const [persona, template, designSystem, projectContext] = await Promise.all([
+  const artifacts = loadWorkflowArtifacts(workflow.item_id);
+  if (!artifacts.trim()) throw new Error('No workflow artifacts found — run earlier stages first');
+
+  const statusLines: string[] = [];
+  const statusCb = (msg: string) => { statusLines.push(msg); };
+
+  // Load all context in parallel (Figma call is separate to handle failures gracefully)
+  const [persona, template, localDesignSystem, projectContext] = await Promise.all([
     loadPersona(),
     loadTemplate(),
-    loadDesignSystem(),
+    loadLocalDesignSystem(),
     loadProjectContext(),
   ]);
 
-  const artifacts = loadWorkflowArtifacts(workflow.item_id);
-  if (!artifacts.trim()) throw new Error('No artifacts found for this workflow');
+  // Try to enrich with real Figma design system data
+  const figmaDesignSystem = await loadFigmaDesignSystem(statusCb);
+  const designSystemContext = figmaDesignSystem || localDesignSystem;
 
-  // Build system prompt — persona + design system + template are stable/cacheable
+  // Flush any status messages collected during Figma load
+  for (const line of statusLines) yield line;
+  statusLines.length = 0;
+
+  // Build system prompt
   const stable = [
     persona,
-    '\n\n## Design System\n\n' + designSystem,
+    '\n\n## Design System\n\n' + designSystemContext,
     projectContext ? '\n\n' + projectContext : '',
     '\n\n## Output Template\n\n' + template,
   ].join('');
 
-  // Dynamic part: the specific artifacts and scope
   const dynamicParts = [
     '## Workflow Artifacts\n\nUse these documents to understand what to prototype:\n\n' + artifacts,
   ];
-  if (scope) {
-    dynamicParts.push(`\n\n## Scope\n\nFocus the prototype on: ${scope}`);
-  }
-  const dynamic = dynamicParts.join('');
+  if (scope) dynamicParts.push(`\n\n## Scope\n\nFocus the prototype on: ${scope}`);
 
-  const systemPrompt: SystemPrompt = { stable, dynamic };
+  const systemPrompt: SystemPrompt = { stable, dynamic: dynamicParts.join('') };
 
   const userMessage = scope
     ? `Generate an interactive React prototype focused on: ${scope}\n\nThe workflow goal was: ${workflow.goal}`
@@ -207,35 +292,23 @@ export async function* generatePrototype(
   logger.info(`Generating prototype for workflow ${workflowId} (item ${workflow.item_id}), model=${model}`);
 
   let fullResponse = '';
-  const generator = streamAI(
-    model,
-    systemPrompt,
-    [{ role: 'user', content: userMessage }],
-    64_000,
-    { onTokens },
-  );
+  const generator = streamAI(model, systemPrompt, [{ role: 'user', content: userMessage }], 64_000, { onTokens });
 
   for await (const chunk of generator) {
     fullResponse += chunk;
     yield chunk;
   }
 
-  // Always save raw output to disk for recovery
+  // Save raw output
   const rawDir = path.join(PROJECT_ROOT, 'data', 'sessions', workflow.item_id, 'prototype', 'raw');
   await fsAsync.mkdir(rawDir, { recursive: true });
-  const rawPath = path.join(rawDir, `${Date.now()}-raw.txt`);
-  await fsAsync.writeFile(rawPath, fullResponse, 'utf-8');
-  logger.info(`Saved raw prototype output → ${rawPath}`);
+  await fsAsync.writeFile(path.join(rawDir, `${Date.now()}-raw.txt`), fullResponse, 'utf-8');
 
-  // Parse the result — try direct parse, then repair truncated JSON
   try {
     const repaired = repairTruncatedJson(fullResponse);
     const parsed = JSON.parse(repaired) as PrototypeResult;
     logger.info(`Prototype generated: "${parsed.title}" — ${parsed.screens.length} screens, ${Object.keys(parsed.files).length} files`);
-
-    // Save as artifact
     await savePrototypeArtifact(workflow.item_id, workflowId, parsed);
-
     return parsed;
   } catch (err) {
     logger.error('Failed to parse prototype JSON output even after repair', err);
@@ -256,26 +329,27 @@ export async function* revisePrototype(
   const workflow = db.prepare<[string], { item_id: string; goal: string }>(`
     SELECT item_id, goal FROM workflows WHERE id = ?
   `).get(workflowId);
-
   if (!workflow) throw new Error(`Workflow ${workflowId} not found`);
 
-  const [persona, template, designSystem, projectContext] = await Promise.all([
+  const [persona, template, localDesignSystem, projectContext] = await Promise.all([
     loadPersona(),
     loadTemplate(),
-    loadDesignSystem(),
+    loadLocalDesignSystem(),
     loadProjectContext(),
   ]);
 
+  const figmaDesignSystem = await loadFigmaDesignSystem(() => {});
+  const designSystemContext = figmaDesignSystem || localDesignSystem;
+
   const stable = [
     persona,
-    '\n\n## Design System\n\n' + designSystem,
+    '\n\n## Design System\n\n' + designSystemContext,
     projectContext ? '\n\n' + projectContext : '',
     '\n\n## Output Template\n\n' + template,
   ].join('');
 
   const systemPrompt: SystemPrompt = { stable };
 
-  // Thread: [user: original request, assistant: prior prototype, user: revision feedback]
   const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
     { role: 'user', content: `Generate an interactive React prototype for: ${workflow.goal}` },
     { role: 'assistant', content: '```json\n' + JSON.stringify(currentPrototype, null, 2) + '\n```' },
@@ -293,7 +367,6 @@ export async function* revisePrototype(
     yield chunk;
   }
 
-  // Save raw
   const rawDir = path.join(PROJECT_ROOT, 'data', 'sessions', workflow.item_id, 'prototype', 'raw');
   await fsAsync.mkdir(rawDir, { recursive: true });
   await fsAsync.writeFile(path.join(rawDir, `${Date.now()}-revision-raw.txt`), fullResponse, 'utf-8');
@@ -302,7 +375,6 @@ export async function* revisePrototype(
     const repaired = repairTruncatedJson(fullResponse);
     const partial = JSON.parse(repaired) as Partial<PrototypeResult>;
 
-    // Merge: start from the current prototype, overlay changed files
     const merged: PrototypeResult = {
       title: partial.title ?? currentPrototype.title,
       description: partial.description ?? currentPrototype.description,
@@ -311,9 +383,7 @@ export async function* revisePrototype(
       files: { ...currentPrototype.files, ...(partial.files ?? {}) },
     };
 
-    const changedCount = Object.keys(partial.files ?? {}).length;
-    const totalCount = Object.keys(merged.files).length;
-    logger.info(`Prototype revised: ${changedCount} files changed, ${totalCount} total files`);
+    logger.info(`Prototype revised: ${Object.keys(partial.files ?? {}).length} files changed`);
     await savePrototypeArtifact(workflow.item_id, workflowId, merged);
     return merged;
   } catch (err) {
@@ -323,35 +393,7 @@ export async function* revisePrototype(
 }
 
 /**
- * Save a generated prototype as an artifact on disk and in the DB.
- */
-async function savePrototypeArtifact(
-  itemId: string,
-  workflowId: string,
-  prototype: PrototypeResult,
-): Promise<number> {
-  const artifactDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, 'prototype', 'artifacts');
-  await fsAsync.mkdir(artifactDir, { recursive: true });
-
-  const artifactPath = path.join(artifactDir, `${Date.now()}-prototype.json`);
-  await fsAsync.writeFile(artifactPath, JSON.stringify(prototype, null, 2), 'utf-8');
-
-  // Find a session for this item to link the artifact (use the latest)
-  const session = db.prepare<[string], { id: string }>(`
-    SELECT id FROM sessions WHERE item_id = ? ORDER BY created_at DESC LIMIT 1
-  `).get(itemId);
-
-  const result = db.prepare(`
-    INSERT INTO artifacts (session_id, type, file_path, created_at)
-    VALUES (?, ?, ?, ?)
-  `).run(session?.id ?? null, 'prototype', artifactPath, Date.now());
-
-  logger.info(`Saved prototype artifact → ${artifactPath}`);
-  return result.lastInsertRowid as number;
-}
-
-/**
- * Load the most recent prototype artifact for a workflow's item.
+ * Load the most recent prototype artifact for a workflow.
  */
 export function loadLatestPrototype(workflowId: string): PrototypeResult | null {
   const workflow = db.prepare<[string], { item_id: string }>(`
@@ -369,7 +411,7 @@ export function loadLatestPrototype(workflowId: string): PrototypeResult | null 
 
   if (!row?.file_path) return null;
   try {
-    return JSON.parse(fs.readFileSync(row.file_path, 'utf-8'));
+    return JSON.parse(fs.readFileSync(row.file_path, 'utf-8')) as PrototypeResult;
   } catch {
     return null;
   }
