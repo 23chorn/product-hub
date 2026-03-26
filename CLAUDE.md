@@ -60,7 +60,7 @@ To add models: edit `PROVIDER_MODELS` in `utils/model-config.ts` — the UI pick
 The config endpoint `GET /api/config/models` returns `{ provider, models }` — the frontend calls this once on app mount.
 
 #### Prompt caching — `SystemPrompt` type
-`buildSystemPrompt()` in `bmad-agent.ts` returns `SystemPrompt = string | { stable: string; dynamic?: string }`:
+`buildSystemPrompt()` in `specialist-agent.ts` returns `SystemPrompt = string | { stable: string; dynamic?: string }`:
 - **`stable`** — the large cacheable portion: agent persona + project context + output template (per-stage). Marked `cache_control: ephemeral` for Anthropic; a `CachePointType.DEFAULT` marker is inserted for Bedrock.
 - **`dynamic`** (optional) — per-session item context injected uncached, so different sessions don't bust each other's cache.
 - Ollama receives both parts concatenated (no caching support).
@@ -134,9 +134,12 @@ There is one flow: the Coordinator-driven workflow. There is no direct-access mo
 | `agents/coordinator-agent.ts` | `CoordinatorAgent` class. Planning sessions, stage briefs, mid-workflow chat. Split `{ stable, dynamic }` prompt. |
 | `agents/critic-agent.ts` | `CriticAgent` class. Single-shot review with split prompt for caching. Parses Issues/Strengths/Verdict. Uses **stage-specific review criteria**: `buildStageInstructions(stage)` injects enforcement reminders per stage (analyst, pm_prd, solution_architect, pm_backlog), each with specific CRITICAL/MAJOR/MINOR rules for that artifact type. Full rules live in `agents/personas/critic.md` under `## Stage-Specific Checks`. |
 | `agents/curator-agent.ts` | `ContextCuratorAgent` class. Fetches artifacts, reads context files, proposes diffs. |
-| `agents/bmad-agent.ts` | `BmadAgent` class. Persona loading, project context injection, per-stage template injection, streaming. |
-| `agents/workflow-router.ts` | Core state machine. `createWorkflow()`, `advanceStage()`, `runAutonomousStage()`, `resolveCheckpoint()`, `propagateFeedback()`, `reiterateFromStage()`, cost tracking. |
-| `agents/stage-metadata.ts` | Stage constants: `STAGE_SESSION_MAP`, `STAGE_MAX_OUTPUT_TOKENS`, `STAGE_ARTIFACT_TYPE`, `STAGE_ARTIFACT_LABEL`, `STAGE_LABELS_INTERNAL`, `STAGE_LABELS_BRIEF`, `stageGoal()`, `stageNotDecide()`. Shared by workflow-router and coordinator-agent. |
+| `agents/specialist-agent.ts` | `SpecialistAgent` class. Persona loading, project context injection, per-stage template injection, streaming. |
+| `agents/workflow-router.ts` | Core state machine entry point. `createWorkflow()`, `advanceStage()`, checkpoint management (`completeStage`, `resolveCheckpoint`, `pauseAtCheckpoint`, `markWorkflowComplete`), `getWorkflowStatus()`. Re-exports from sub-modules for backward compatibility. |
+| `agents/workflow-db.ts` | Shared workflow infrastructure: types (`WorkflowRow`, `CheckpointRow`, `WorkflowStatus`, `WorkflowEvent`, `StageTokenData`), prepared statements, helpers (`insertEvent`, `costTracker`, `addWorkflowCost`), and `workflowOps` late-binding registry for circular dep resolution. |
+| `agents/workflow-stage-runner.ts` | `runAutonomousStage()` — fire-and-forget background task: builds per-stage context, streams specialist LLM output, saves artifacts, runs inline critic review, creates checkpoints. Also exports lazy singletons (`getCoordinator`, `getCritic`, `getCurator`) and `SILENT_STAGES`. |
+| `agents/workflow-mutations.ts` | Post-completion workflow modifications: `propagateFeedback()`, `reiterateFromStage()`, `extendWorkflow()`, `retryCurrentStage()`. |
+| `agents/stage-metadata.ts` | Stage constants: `STAGE_SESSION_MAP`, `STAGE_MAX_OUTPUT_TOKENS`, `STAGE_ARTIFACT_TYPE`, `STAGE_ARTIFACT_LABEL`, `STAGE_LABELS_INTERNAL`, `STAGE_LABELS_BRIEF`, `STAGE_OUTPUT_FORMATS`, `stageGoal()`, `stageNotDecide()`. Shared by workflow modules and coordinator-agent. |
 | `agents/artifact-helpers.ts` | DB/filesystem helpers for loading and saving artifacts: `saveCriticArtifact()`, `loadLatestArtifactForItem()`, `loadLatestArtifactForStage()`, `loadFullArtifact()`, `getLatestArchitectureArtifactPath()`, `getLatestArtifactPathByType()`. |
 | `agents/sprint-estimation.ts` | `loadSprintConfig()` reads `agents/config.yaml`; `injectSprintEstimates(parsed)` mutates a backlog JSON object with sprint metadata. Called from `runAutonomousStage()`. |
 | `agents/workflow-lifecycle.ts` | `deleteWorkflow()`, `recoverStaleWorkflows()`, `startStaleRecoveryTimer()`. Re-exported from workflow-router for backwards compatibility. |
@@ -152,7 +155,7 @@ There is one flow: the Coordinator-driven workflow. There is no direct-access mo
 | `routes/template-file-routes.ts` | `/api/template-files`. GET/PUT for editing output templates from the UI. |
 
 #### Per-stage template injection
-`STAGE_TEMPLATE_MAP` in `bmad-agent.ts` maps stage names to template files:
+`STAGE_TEMPLATE_MAP` in `specialist-agent.ts` maps stage names to template files:
 - `analyst` → `research.template.md`
 - `pm_prd` → `prd.template.md`
 - `solution_architect` → `architecture.template.md`
@@ -161,7 +164,7 @@ There is one flow: the Coordinator-driven workflow. There is no direct-access mo
 Only the relevant template is injected into the system prompt for each stage. Templates are read from disk each time — no caching, so UI edits take effect on the next stage run.
 
 #### Stage output format specifications
-`STAGE_OUTPUT_FORMATS` in `coordinator-agent.ts` defines inline format specs injected into `generateStageBrief()`. `generateStageBrief()` now produces a **structured 8-field brief schema** rather than flat sections. The fields are: Goal, Original request, Constraints, Prior stage outputs available, Key decisions already made, Human preferences expressed, Output required, What this specialist must NOT decide. The parameter previously named `previousOutputSummary` has been renamed to `additionalContext` (used for critic feedback on the auto-revise path). When adding a new stage, add entries in `STAGE_OUTPUT_FORMATS`, `STAGE_TEMPLATE_MAP`, and the stage metadata maps in `agents/stage-metadata.ts` (`STAGE_SESSION_MAP`, `STAGE_ARTIFACT_TYPE`, `STAGE_ARTIFACT_LABEL`, `STAGE_LABELS_BRIEF`, `stageGoal()`, `stageNotDecide()`).
+`STAGE_OUTPUT_FORMATS` in `stage-metadata.ts` defines inline format specs injected into `generateStageBrief()`. `generateStageBrief()` now produces a **structured 8-field brief schema** rather than flat sections. The fields are: Goal, Original request, Constraints, Prior stage outputs available, Key decisions already made, Human preferences expressed, Output required, What this specialist must NOT decide. The parameter previously named `previousOutputSummary` has been renamed to `additionalContext` (used for critic feedback on the auto-revise path). When adding a new stage, add entries in `STAGE_OUTPUT_FORMATS`, `STAGE_TEMPLATE_MAP`, and the stage metadata maps in `agents/stage-metadata.ts` (`STAGE_SESSION_MAP`, `STAGE_ARTIFACT_TYPE`, `STAGE_ARTIFACT_LABEL`, `STAGE_LABELS_BRIEF`, `stageGoal()`, `stageNotDecide()`).
 
 #### Policies (governance)
 The `policies` DB table stores key-value rules. Loaded at runtime — no restart needed. Key policies:
@@ -169,7 +172,7 @@ The `policies` DB table stores key-value rules. Loaded at runtime — no restart
 - `auto_approve_critic` — `"true"` auto-resolves critic approvals without human gate
 
 #### Context cache invalidation
-`bmad-agent.ts` holds a module-level `_projectContextCache`. `invalidateContextCache()` (exported) clears it. Called by `context-diff-routes.ts` and `context-file-routes.ts` after changes so the next agent request reloads from disk.
+`specialist-agent.ts` holds a module-level `_projectContextCache`. `invalidateContextCache()` (exported) clears it. Called by `context-diff-routes.ts` and `context-file-routes.ts` after changes so the next agent request reloads from disk.
 
 ### Change Request system
 
@@ -233,8 +236,8 @@ After a workflow completes, users can generate interactive React prototypes to d
 
 Two agent patterns exist:
 
-- **Pattern A (BMAD)** — specialist document-producing agents: Analyst, PM, Architect. Extend `BmadAgent`. Persona files use XML tags inside markdown (`<agent>`, `<role>`, `<identity>`, etc.). Loaded from `agents/personas/`.
-- **Pattern B (plain class)** — orchestration/review agents: Coordinator, Critic, Curator. No `BmadAgent` inheritance. Load persona via `readFileSync`. May still use `streamAI()`.
+- **Pattern A (Specialist)** — document-producing agents: Analyst, PM, Architect, Prototype Builder. Extend `SpecialistAgent`. Persona files are plain markdown with YAML frontmatter (name, description). Loaded from `agents/personas/`; frontmatter is stripped before injection into the system prompt.
+- **Pattern B (plain class)** — orchestration/review agents: Coordinator, Critic, Curator. No `SpecialistAgent` base class. Load persona via `readFileSync`. May still use `streamAI()`.
 
 ### Frontend state
 Zustand stores:
