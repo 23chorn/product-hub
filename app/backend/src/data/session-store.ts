@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import db from './database';
+import { resolveArtifactPath } from '../agents/artifact-helpers';
 import type { Session, ChatMessage, AppMode } from '@pap/shared';
 
 // ---------------------------------------------------------------------------
@@ -208,12 +209,12 @@ class SessionStore {
 
   getLatestPrdArtifactPath(itemId: string): string | null {
     const row = stmts.getLatestArtifactByType.get(itemId, 'prd') as { file_path: string } | undefined;
-    return row?.file_path ?? null;
+    return row ? resolveArtifactPath(row.file_path) : null;
   }
 
   getLatestAnalystArtifactPath(itemId: string): string | null {
-    const row = stmts.getLatestArtifactByType.get(itemId, 'research') as { file_path: string } | undefined;
-    return row?.file_path ?? null;
+    const row = stmts.getLatestArtifactByType.get(itemId, 'analyst') as { file_path: string } | undefined;
+    return row ? resolveArtifactPath(row.file_path) : null;
   }
 
   // Items

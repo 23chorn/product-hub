@@ -22,6 +22,8 @@ import {
   type ChangeRequestRow,
 } from '../agents/change-request';
 import db from '../data/database';
+import { insertEvent } from '../agents/workflow-db';
+import { resolveArtifactPath } from '../agents/artifact-helpers';
 import Logger from '../utils/logger';
 
 // ── Pre-workflow planning cost accumulator ────────────────────────────────────
@@ -705,7 +707,7 @@ workflowRoutes.post('/:id/push-to-board', async (req: Request, res: Response) =>
 
     // Read and parse the backlog JSON
     const fs = require('fs');
-    const content = fs.readFileSync(artifact.file_path, 'utf-8');
+    const content = fs.readFileSync(resolveArtifactPath(artifact.file_path), 'utf-8');
     const cleaned = content.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
     let backlog;
     try {
@@ -933,11 +935,110 @@ workflowRoutes.get('/artifact/:id/content', (req: Request, res: Response) => {
   if (!row) return res.status(404).json({ error: 'Artifact not found' });
 
   try {
-    const content = require('fs').readFileSync(row.file_path, 'utf-8');
+    const content = require('fs').readFileSync(resolveArtifactPath(row.file_path), 'utf-8');
     res.json({ content, type: row.type });
   } catch {
     res.status(404).json({ error: 'Artifact file not found on disk' });
   }
+});
+
+/**
+ * PUT /api/workflow/artifact/:id/content
+ * Overwrites artifact content on disk. Logs a human_edit workflow event so
+ * downstream agents are aware of the change. Optionally auto-resolves a
+ * pending checkpoint as approved, advancing the workflow.
+ *
+ * Body: { content: string, checkpointId?: number }
+ */
+workflowRoutes.put('/artifact/:id/content', async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: 'Invalid artifact id' });
+
+  const { content, checkpointId } = req.body as { content?: string; checkpointId?: number };
+  if (typeof content !== 'string') {
+    return res.status(400).json({ error: 'content must be a string' });
+  }
+
+  // Validate JSON for backlog/prototype artifacts
+  const row = db.prepare<[number], { file_path: string; type: string }>(
+    'SELECT file_path, type FROM artifacts WHERE id = ?'
+  ).get(id);
+  if (!row) return res.status(404).json({ error: 'Artifact not found' });
+
+  if (row.type === 'backlog' || row.type === 'prototype') {
+    try {
+      JSON.parse(content);
+    } catch {
+      return res.status(400).json({ error: 'Invalid JSON — fix syntax errors before saving' });
+    }
+  }
+
+  // Write content to disk
+  const fs = require('fs');
+  const resolvedPath = resolveArtifactPath(row.file_path);
+  try {
+    fs.writeFileSync(resolvedPath, content, 'utf-8');
+  } catch (err: any) {
+    logger.error(`Failed to write artifact ${id}: ${err.message}`);
+    return res.status(500).json({ error: `Failed to save: ${err.message}` });
+  }
+
+  // Log a workflow event so agents are aware of the human edit
+  // Find the workflow via the checkpoint or artifact's session
+  let workflowId: string | null = null;
+  let stage: string | null = null;
+
+  if (checkpointId) {
+    const cp = db.prepare<[number], { workflow_id: string; stage: string }>(
+      'SELECT workflow_id, stage FROM checkpoints WHERE id = ?'
+    ).get(checkpointId);
+    if (cp) { workflowId = cp.workflow_id; stage = cp.stage; }
+  }
+
+  if (!workflowId) {
+    // Fall back: find workflow via artifact → session → workflow
+    const wfRow = db.prepare<[number], { workflow_id: string; stage: string }>(`
+      SELECT s.workflow_id, a.type as stage FROM artifacts a
+      JOIN sessions s ON a.session_id = s.id
+      WHERE a.id = ? AND s.workflow_id IS NOT NULL
+    `).get(id);
+    if (wfRow) { workflowId = wfRow.workflow_id; stage = wfRow.stage; }
+  }
+
+  if (workflowId) {
+    insertEvent(workflowId, 'human_edit', stage,
+      'Human edited artifact directly.',
+      { artifact_id: id, artifact_type: row.type });
+  }
+
+  // If a checkpoint was provided, auto-resolve as approved and advance
+  if (checkpointId && workflowId) {
+    try {
+      resolveCheckpoint(checkpointId, 'approved', 'Human edited artifact directly');
+
+      // Advance to next stage (same pattern as checkpoint/resolve endpoint)
+      advanceStage(workflowId)
+        .then(result => {
+          logger.info(`Stage advanced to "${result.stage}" after human edit on workflow ${workflowId}`);
+        })
+        .catch(err => {
+          if (err.message?.startsWith('WORKFLOW_COMPLETE:')) {
+            logger.info(`Workflow ${workflowId} complete after human edit approval`);
+          } else {
+            logger.error(`advanceStage failed after human edit: ${err.message}`);
+          }
+        });
+
+      const workflowStatus = getWorkflowStatus(workflowId);
+      return res.json({ ok: true, workflowStatus });
+    } catch (err: any) {
+      // Checkpoint resolve failed — content was already saved, just warn
+      logger.warn(`Checkpoint resolve after human edit failed: ${err.message}`);
+      return res.json({ ok: true, warning: `Saved but checkpoint resolve failed: ${err.message}` });
+    }
+  }
+
+  res.json({ ok: true });
 });
 
 interface ArtifactRow {

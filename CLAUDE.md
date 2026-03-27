@@ -174,6 +174,24 @@ The `policies` DB table stores key-value rules. Loaded at runtime — no restart
 #### Context cache invalidation
 `specialist-agent.ts` holds a module-level `_projectContextCache`. `invalidateContextCache()` (exported) clears it. Called by `context-diff-routes.ts` and `context-file-routes.ts` after changes so the next agent request reloads from disk.
 
+### Inline artifact editing
+
+During human review, users can directly edit specialist outputs (research, PRD, architecture, backlog JSON) without triggering a full agent re-run.
+
+#### Flow
+1. User clicks the **pencil icon** in the artifact viewer header → content switches to a monospace textarea.
+2. User makes edits. **Cmd/Ctrl+S** saves without approving.
+3. **Save & Approve** (green button, shown when a pending checkpoint exists) overwrites the file on disk, auto-resolves the checkpoint as approved, and advances the workflow to the next stage.
+4. **Save** (blue button, shown for already-approved artifacts) overwrites the file only — no checkpoint resolution.
+5. JSON artifacts (backlog, prototype) are validated before save; malformed JSON is rejected with an error.
+
+#### Agent awareness
+- **File overwrite**: downstream stages load artifacts by reading `file_path` from the DB, so they automatically pick up the edited version.
+- **Workflow event**: a `human_edit` event is logged so the Coordinator can reference the edit when briefing the next specialist.
+
+#### Key endpoint
+`PUT /api/workflow/artifact/:id/content` — accepts `{ content: string, checkpointId?: number }`. Overwrites the artifact file, logs `human_edit` event, and optionally resolves the checkpoint + advances the workflow.
+
 ### Change Request system
 
 After a workflow completes, targeted changes can be made without full-stage reruns via **Change Requests (CRs)**.

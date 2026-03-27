@@ -8,6 +8,7 @@
  */
 
 import * as fs from 'fs';
+import { resolveArtifactPath } from './artifact-helpers';
 import * as path from 'path';
 import { streamAI, resolveModelId, type TokenUsage } from '../utils/ai-provider';
 import db from '../data/database';
@@ -80,7 +81,7 @@ export class ContextCuratorAgent {
     for (const row of artifactRows) {
       if (!row.file_path) continue;
       try {
-        const content = fs.readFileSync(row.file_path, 'utf-8');
+        const content = fs.readFileSync(resolveArtifactPath(row.file_path), 'utf-8');
         artifactSections.push(`### Artifact: ${row.type} (id=${row.id})\n\n${content.slice(0, 3000)}${content.length > 3000 ? '\n[…truncated]' : ''}`);
       } catch {
         // File missing — skip silently

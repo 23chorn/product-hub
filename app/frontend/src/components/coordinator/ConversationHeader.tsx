@@ -20,9 +20,9 @@ export function ConversationHeader(props: ConversationHeaderProps) {
   } = props;
 
   return (
-    <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex-shrink-0 flex items-start justify-between">
+    <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex-shrink-0 flex items-start justify-between">
       <div className="min-w-0">
-        <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
           {isComplete ? 'Workflow Complete'
             : isLaunching ? 'Launching workflow...'
             : isGathering ? 'Chief of Staff'
@@ -30,7 +30,7 @@ export function ConversationHeader(props: ConversationHeaderProps) {
             : hasWorkflow ? `Running: ${STAGE_LABELS[currentStage ?? ''] ?? currentStage ?? 'starting...'}`
             : 'Chief of Staff'}
           {itemId && (
-            <span className="ml-2 text-xs font-mono text-gray-400 dark:text-gray-500">
+            <span className="ml-2 text-xs font-mono text-slate-400 dark:text-slate-500">
               …{itemId.slice(-8)}
             </span>
           )}
@@ -43,7 +43,7 @@ export function ConversationHeader(props: ConversationHeaderProps) {
           )}
         </h2>
         {displayGoal && (
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate max-w-sm">
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate max-w-sm">
             {displayGoal}
           </p>
         )}
@@ -51,7 +51,7 @@ export function ConversationHeader(props: ConversationHeaderProps) {
       {!hasWorkflow && isGathering && !isLaunching && (
         <button
           onClick={onCancel}
-          className="text-xs text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+          className="text-xs text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
         >
           Cancel
         </button>

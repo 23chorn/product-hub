@@ -118,18 +118,18 @@ function App() {
   }, [isDragging, leftWidth]);
 
   return (
-    <div className="h-screen flex flex-col bg-gray-100 dark:bg-gray-900">
+    <div className="h-screen flex flex-col bg-slate-100 dark:bg-slate-950">
       {/* Toast Notifications */}
       <ToastContainer />
 
       {/* Header */}
-      <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
+      <header className="bg-white/90 dark:bg-slate-900/80 backdrop-blur-lg border-b border-slate-200 dark:border-slate-700 px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
               Product Hub
             </h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
               Chief of Staff-driven product workflow
             </p>
           </div>
@@ -137,7 +137,7 @@ function App() {
             {/* Context Editor Button */}
             <button
               onClick={openContextEditor}
-              className="flex items-center space-x-1.5 px-3 py-2 rounded-lg text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-400 dark:hover:border-gray-500 transition-colors shadow-sm"
+              className="flex items-center space-x-1.5 px-3 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-700/70 hover:border-slate-400 dark:hover:border-slate-500 transition-colors shadow-sm hover:shadow-glow-teal-sm"
               title="Open Context Editor"
             >
               <span>Context</span>
@@ -146,7 +146,7 @@ function App() {
             {/* Template Editor Button */}
             <button
               onClick={openTemplateEditor}
-              className="flex items-center space-x-1.5 px-3 py-2 rounded-lg text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-400 dark:hover:border-gray-500 transition-colors shadow-sm"
+              className="flex items-center space-x-1.5 px-3 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-700/70 hover:border-slate-400 dark:hover:border-slate-500 transition-colors shadow-sm hover:shadow-glow-teal-sm"
               title="Open Template Editor"
             >
               <span>Templates</span>
@@ -155,7 +155,7 @@ function App() {
             {/* Decision Log Button */}
             <button
               onClick={openDecisionLog}
-              className="flex items-center space-x-1.5 px-3 py-2 rounded-lg text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-400 dark:hover:border-gray-500 transition-colors shadow-sm"
+              className="flex items-center space-x-1.5 px-3 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-700/70 hover:border-slate-400 dark:hover:border-slate-500 transition-colors shadow-sm hover:shadow-glow-teal-sm"
               title="Open Decision Log"
             >
               <span>Decision Log</span>
@@ -165,7 +165,7 @@ function App() {
             {/* Dark Mode Toggle */}
             <button
               onClick={toggleTheme}
-              className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
               title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
             >
               {isDark ? (
@@ -182,14 +182,14 @@ function App() {
             {/* Connection Status */}
             <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
               isConnected === null
-                ? 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+                ? 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
                 : isConnected
                 ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400'
                 : 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400'
             }`}>
               <span className={`w-2 h-2 rounded-full mr-2 ${
                 isConnected === null
-                  ? 'bg-gray-400'
+                  ? 'bg-slate-400'
                   : isConnected
                   ? 'bg-green-500 animate-pulse'
                   : 'bg-red-500'
@@ -205,7 +205,7 @@ function App() {
         {/* Left Sidebar — stage tracker (active workflow), workflow history (idle), or initiative list */}
         <aside
           style={{ width: `${leftWidth}px` }}
-          className="bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 overflow-y-auto flex-shrink-0"
+          className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-md border-r border-slate-200 dark:border-slate-700 overflow-y-auto flex-shrink-0"
         >
           {activeWorkflow ? (
             <WorkflowStageTracker />
@@ -217,7 +217,7 @@ function App() {
         </aside>
         <div
           onMouseDown={() => setIsDragging(true)}
-          className="w-1 bg-gray-200 dark:bg-gray-700 hover:bg-blue-400 cursor-col-resize flex-shrink-0 transition-colors"
+          className="w-1 bg-slate-200 dark:bg-slate-700 hover:bg-teal-500 cursor-col-resize flex-shrink-0 transition-colors"
           style={{ cursor: 'col-resize' }}
         />
 

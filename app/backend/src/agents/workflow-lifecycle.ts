@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import db from '../data/database';
 import Logger from '../utils/logger';
 import type { WorkflowRow, CheckpointRow } from './workflow-router';
+import { resolveArtifactPath } from './artifact-helpers';
 
 const logger = new Logger('WORKFLOW-LIFECYCLE');
 
@@ -82,7 +83,7 @@ export function deleteWorkflow(workflowId: string): void {
     const row = db.prepare<[number], { file_path: string }>(
       'SELECT file_path FROM artifacts WHERE id = ?'
     ).get(id);
-    if (row?.file_path) filePaths.push(row.file_path);
+    if (row?.file_path) filePaths.push(resolveArtifactPath(row.file_path));
   }
 
   // Also collect file paths for all artifacts owned by these sessions
@@ -92,7 +93,7 @@ export function deleteWorkflow(workflowId: string): void {
       'SELECT file_path FROM artifacts WHERE session_id = ?'
     ).all(sessionId);
     for (const row of rows) {
-      if (row.file_path) filePaths.push(row.file_path);
+      if (row.file_path) filePaths.push(resolveArtifactPath(row.file_path));
     }
   }
 

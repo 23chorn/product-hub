@@ -37,7 +37,7 @@ export function ChangeRequestSection({
         <select
           value={crType}
           onChange={(e) => onCRTypeChange(e.target.value)}
-          className="w-full rounded-md border border-purple-300 dark:border-purple-700 bg-white dark:bg-gray-900 px-2 py-1.5 text-xs text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-500"
+          className="w-full rounded-md border border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-purple-500"
         >
           <option value="correction">Correction</option>
           <option value="scope">Scope Change</option>
@@ -51,19 +51,19 @@ export function ChangeRequestSection({
           onChange={(e) => onCRDescriptionChange(e.target.value)}
           placeholder="Describe what changed and why..."
           rows={3}
-          className="w-full resize-none rounded-md border border-purple-300 dark:border-purple-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+          className="w-full resize-none rounded-md border border-purple-300 dark:border-purple-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
         />
         <div className="flex gap-2">
           <button
             onClick={onSubmitAssess}
             disabled={!crDescription.trim() || crLoading}
-            className="flex-1 py-1.5 px-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white text-xs font-medium rounded-md transition-colors"
+            className="flex-1 py-1.5 px-3 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-xs font-medium rounded-md transition-colors"
           >
             {crLoading ? 'Assessing...' : 'Submit & Assess Impact'}
           </button>
           <button
             onClick={onCancel}
-            className="py-1.5 px-3 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+            className="py-1.5 px-3 text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
           >
             Cancel
           </button>
@@ -79,15 +79,15 @@ export function ChangeRequestSection({
         <p className="text-xs font-medium text-purple-700 dark:text-purple-300">
           Impact Assessment — {crAssessment.affected_stages.length} stage(s) affected
         </p>
-        <p className="text-xs text-gray-600 dark:text-gray-400">{crAssessment.summary}</p>
+        <p className="text-xs text-slate-600 dark:text-slate-400">{crAssessment.summary}</p>
         <div className="flex flex-wrap gap-2">
           {crAssessment.affected_stages.map(stage => (
-            <label key={stage} className="flex items-center gap-1.5 text-xs text-gray-700 dark:text-gray-300">
+            <label key={stage} className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300">
               <input
                 type="checkbox"
                 checked={crConfirmedStages[stage] ?? false}
                 onChange={() => onToggleConfirmedStage(stage)}
-                className="rounded border-gray-300 dark:border-gray-600 text-purple-600 focus:ring-purple-500"
+                className="rounded border-slate-300 dark:border-slate-600 text-purple-600 focus:ring-purple-500"
               />
               {STAGE_LABELS[stage] ?? stage}
             </label>
@@ -97,13 +97,13 @@ export function ChangeRequestSection({
           <button
             onClick={onApplyChanges}
             disabled={crLoading || Object.values(crConfirmedStages).every(v => !v)}
-            className="flex-1 py-1.5 px-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white text-xs font-medium rounded-md transition-colors"
+            className="flex-1 py-1.5 px-3 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-xs font-medium rounded-md transition-colors"
           >
             {crLoading ? 'Applying...' : 'Apply Changes'}
           </button>
           <button
             onClick={onCancel}
-            className="py-1.5 px-3 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+            className="py-1.5 px-3 text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
           >
             Cancel
           </button>

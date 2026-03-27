@@ -35,11 +35,11 @@ export interface StageTokenData {
 export function labelClass(status: StageStatus): string {
   switch (status) {
     case 'complete':       return 'text-green-700 dark:text-green-400';
-    case 'in-progress':    return 'text-blue-700 dark:text-blue-400 font-semibold';
+    case 'in-progress':    return 'text-teal-700 dark:text-teal-400 font-semibold';
     case 'at-checkpoint':  return 'text-amber-700 dark:text-amber-400 font-semibold';
     case 'rejected':       return 'text-red-600 dark:text-red-400 line-through';
-    case 'skipped':        return 'text-gray-400 dark:text-gray-600 line-through';
-    default:               return 'text-gray-400 dark:text-gray-600';
+    case 'skipped':        return 'text-slate-400 dark:text-slate-600 line-through';
+    default:               return 'text-slate-400 dark:text-slate-600';
   }
 }
 

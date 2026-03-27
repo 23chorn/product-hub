@@ -18,8 +18,8 @@ export function RoadmapItemRow({
     <div
       className={`rounded-lg border-2 transition-all ${
         isSelected
-          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-sm ring-1 ring-blue-200 dark:ring-blue-800'
-          : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-500'
+          ? 'border-teal-500 bg-teal-50 dark:bg-teal-900/20 shadow-sm ring-1 ring-teal-200 dark:ring-teal-800'
+          : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-500'
       }`}
     >
       <button
@@ -28,15 +28,15 @@ export function RoadmapItemRow({
       >
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center space-x-2 min-w-0">
-            {isSelected && <div className="w-1.5 h-1.5 bg-blue-500 rounded-full flex-shrink-0" />}
-            <h3 className={`font-medium text-sm truncate ${isSelected ? 'text-blue-900 dark:text-blue-300' : 'text-gray-900 dark:text-gray-100'}`}>
+            {isSelected && <div className="w-1.5 h-1.5 bg-teal-500 rounded-full flex-shrink-0" />}
+            <h3 className={`font-medium text-sm truncate ${isSelected ? 'text-teal-900 dark:text-teal-300' : 'text-slate-900 dark:text-slate-100'}`}>
               {item.initiative}
             </h3>
           </div>
           {statusBadge}
         </div>
         {item.description && (
-          <p className="text-xs text-gray-600 dark:text-gray-400 line-clamp-2 mt-1">
+          <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-2 mt-1">
             {item.description}
           </p>
         )}
@@ -53,7 +53,7 @@ export function RoadmapItemRow({
             </span>
           )}
           {item.businessValue !== undefined && (
-            <span className="text-xs text-gray-500 dark:text-gray-400">{item.businessValue}/10</span>
+            <span className="text-xs text-slate-500 dark:text-slate-400">{item.businessValue}/10</span>
           )}
         </div>
       </button>

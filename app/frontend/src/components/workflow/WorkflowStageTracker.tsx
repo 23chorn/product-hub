@@ -41,7 +41,7 @@ export function WorkflowStageTracker() {
     <div className="px-3 py-3">
       {/* Header with back button */}
       <div className="flex items-center justify-between mb-3">
-        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
           Workflow Stages
         </p>
         <button
@@ -49,7 +49,7 @@ export function WorkflowStageTracker() {
             localStorage.removeItem('coordinatorPlanningSessionId');
             resetWorkflow();
           }}
-          className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400 transition-colors"
+          className="text-xs text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-400 transition-colors"
         >
           ← Initiatives
         </button>

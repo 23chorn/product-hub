@@ -26,7 +26,7 @@ export function ExtendStagesPanel({
       <div className="flex justify-center">
         <button
           onClick={() => setShowExtendPanel(true)}
-          className="text-xs px-2.5 py-1.5 rounded-md border border-dashed border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-blue-300 dark:hover:border-blue-600 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+          className="text-xs px-2.5 py-1.5 rounded-md border border-dashed border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-400 hover:border-teal-300 dark:hover:border-teal-600 hover:text-teal-600 dark:hover:text-teal-400 transition-colors"
         >
           + Add stages
         </button>
@@ -35,9 +35,9 @@ export function ExtendStagesPanel({
   }
 
   return (
-    <div className="space-y-2 bg-gray-50 dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
-      <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Add stages to this workflow</p>
-      <p className="text-xs text-gray-500 dark:text-gray-400">
+    <div className="space-y-2 bg-slate-50 dark:bg-slate-800 rounded-lg p-3 border border-slate-200 dark:border-slate-700">
+      <p className="text-xs font-medium text-slate-700 dark:text-slate-300">Add stages to this workflow</p>
+      <p className="text-xs text-slate-500 dark:text-slate-400">
         New stages run after the existing output. Curator re-runs last to update context.
       </p>
       <div className="flex flex-wrap gap-2">
@@ -47,8 +47,8 @@ export function ExtendStagesPanel({
             onClick={() => setExtendStages(prev => ({ ...prev, [s.key]: !prev[s.key] }))}
             className={`text-xs px-2.5 py-1.5 rounded-md border transition-colors ${
               extendStages[s.key]
-                ? 'bg-blue-600 border-blue-600 text-white'
-                : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-blue-300 dark:hover:border-blue-600 hover:text-blue-600 dark:hover:text-blue-400'
+                ? 'bg-teal-600 border-teal-600 text-white'
+                : 'border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:border-teal-300 dark:hover:border-teal-600 hover:text-teal-600 dark:hover:text-teal-400'
             }`}
           >
             {s.label}
@@ -67,13 +67,13 @@ export function ExtendStagesPanel({
             setExtendStages({});
           }}
           disabled={selected.length === 0}
-          className="flex-1 py-1.5 px-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white text-xs font-medium rounded-md transition-colors"
+          className="flex-1 py-1.5 px-3 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-xs font-medium rounded-md transition-colors"
         >
           {selected.length === 0 ? 'Select stages above' : `Add ${selected.length} stage${selected.length !== 1 ? 's' : ''}`}
         </button>
         <button
           onClick={() => { setShowExtendPanel(false); setExtendStages({}); }}
-          className="py-1.5 px-3 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+          className="py-1.5 px-3 text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
         >
           Cancel
         </button>

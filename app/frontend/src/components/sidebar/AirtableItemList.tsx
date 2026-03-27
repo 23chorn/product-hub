@@ -159,8 +159,8 @@ export function AirtableItemList() {
       : wf.status === 'paused_at_checkpoint'
       ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
       : wf.status === 'active'
-      ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-      : 'bg-gray-100 dark:bg-gray-700 text-gray-500';
+      ? 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400'
+      : 'bg-slate-100 dark:bg-slate-700 text-slate-500';
     return (
       <span className={`flex-shrink-0 px-1.5 py-0.5 rounded text-xs font-medium ${color}`}>
         {label}
@@ -207,13 +207,13 @@ export function AirtableItemList() {
         {/* Local Initiatives Section */}
         <div className="mb-3">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
               {showRoadmap ? 'Local Initiatives' : 'Initiatives'}
             </span>
             <button
               onClick={() => { setShowInitiativeForm(true); setTimeout(() => titleInputRef.current?.focus(), 0); }}
               title="New initiative"
-              className="flex items-center justify-center w-6 h-6 rounded text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+              className="flex items-center justify-center w-6 h-6 rounded text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-colors"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -237,11 +237,11 @@ export function AirtableItemList() {
           {loading && localItems.length === 0 ? (
             <div className="animate-pulse space-y-2">
               {[...Array(2)].map((_, i) => (
-                <div key={i} className="h-12 bg-gray-200 dark:bg-gray-700 rounded-lg" />
+                <div key={i} className="h-12 bg-slate-200 dark:bg-slate-700 rounded-lg" />
               ))}
             </div>
           ) : localItems.length === 0 && !showInitiativeForm ? (
-            <p className="text-xs text-gray-400 dark:text-gray-500 pl-1 pb-1">
+            <p className="text-xs text-slate-400 dark:text-slate-500 pl-1 pb-1">
               No initiatives yet — click + to create one
             </p>
           ) : (
@@ -255,15 +255,15 @@ export function AirtableItemList() {
         {showRoadmap && (
           <>
             {/* Divider */}
-            <div className="border-t border-gray-200 dark:border-gray-700 mb-3" />
+            <div className="border-t border-slate-200 dark:border-slate-700 mb-3" />
 
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
                 Roadmap Items
               </span>
               <button
                 onClick={loadItems}
-                className="text-blue-600 hover:text-blue-700"
+                className="text-teal-600 hover:text-teal-700"
                 title="Refresh items"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -276,7 +276,7 @@ export function AirtableItemList() {
             {!loading && (
               <>
                 <div className="relative">
-                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
                   <input
@@ -284,12 +284,12 @@ export function AirtableItemList() {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Filter items..."
-                    className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
+                    className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500"
                   />
                   {searchQuery && (
                     <button
                       onClick={() => setSearchQuery('')}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -298,7 +298,7 @@ export function AirtableItemList() {
                   )}
                 </div>
                 {!error && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
                     {filteredItems.length === items.length
                       ? `${items.length} item${items.length !== 1 ? 's' : ''}`
                       : `${filteredItems.length} of ${items.length} items`}
@@ -316,7 +316,7 @@ export function AirtableItemList() {
           {loading ? (
             <div className="animate-pulse space-y-3">
               {[...Array(3)].map((_, i) => (
-                <div key={i} className="h-16 bg-gray-200 dark:bg-gray-700 rounded-lg" />
+                <div key={i} className="h-16 bg-slate-200 dark:bg-slate-700 rounded-lg" />
               ))}
             </div>
           ) : error ? (
@@ -328,13 +328,13 @@ export function AirtableItemList() {
               </button>
             </div>
           ) : filteredItems.length === 0 && searchQuery ? (
-            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+            <div className="text-center py-8 text-slate-500 dark:text-slate-400">
               <p className="text-sm">No items match your search</p>
             </div>
           ) : filteredItems.length === 0 ? (
-            <div className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 text-center">
-              <p className="text-gray-600 dark:text-gray-400">No items needing PRDs found</p>
-              <button onClick={loadItems} className="mt-3 px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 text-gray-800 dark:text-gray-200 rounded-md text-sm font-medium">
+            <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-6 text-center">
+              <p className="text-slate-600 dark:text-slate-400">No items needing PRDs found</p>
+              <button onClick={loadItems} className="mt-3 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-800 dark:text-slate-200 rounded-md text-sm font-medium">
                 Refresh
               </button>
             </div>

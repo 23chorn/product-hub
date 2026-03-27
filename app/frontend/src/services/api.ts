@@ -373,6 +373,18 @@ class APIClient {
     return response.data;
   }
 
+  async saveArtifactContent(
+    artifactId: number,
+    content: string,
+    checkpointId?: number
+  ): Promise<{ ok: boolean; workflowStatus?: any; warning?: string }> {
+    const response = await axios.put(
+      `${this.baseURL}/api/workflow/artifact/${artifactId}/content`,
+      { content, checkpointId }
+    );
+    return response.data;
+  }
+
   async getPendingContextDiffs() {
     const response = await axios.get(`${this.baseURL}/api/context-diffs/pending`);
     return response.data as { diffs: Array<{ id: number; workflow_id: string | null; file_name: string; diff_content: string; rationale: string; status: string; created_at: number }> };

@@ -13,9 +13,9 @@ export function LogPreview({
   currentYearMonth,
 }: LogPreviewProps) {
   return (
-    <aside className="w-80 bg-white dark:bg-gray-800 flex flex-col flex-shrink-0 overflow-hidden">
-      <div className="border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex-shrink-0">
-        <h2 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">
+    <aside className="w-80 bg-white dark:bg-slate-800 flex flex-col flex-shrink-0 overflow-hidden">
+      <div className="border-b border-slate-200 dark:border-slate-700 px-4 py-3 flex-shrink-0">
+        <h2 className="font-semibold text-slate-900 dark:text-slate-100 text-sm">
           {viewingMonth ? formatMonthShort(viewingMonth) : 'Log'} — Decisions
         </h2>
       </div>
@@ -25,7 +25,7 @@ export function LogPreview({
             <ReactMarkdown>{currentMonthLog}</ReactMarkdown>
           </div>
         ) : (
-          <div className="flex items-center justify-center h-full text-center text-gray-400 dark:text-gray-500">
+          <div className="flex items-center justify-center h-full text-center text-slate-400 dark:text-slate-500">
             <div>
               <p className="text-sm">No decisions logged</p>
               <p className="text-xs mt-1">

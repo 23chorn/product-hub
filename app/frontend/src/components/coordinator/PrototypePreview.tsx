@@ -236,36 +236,36 @@ export function PrototypePreview({
 
   if (!designSystem) {
     return (
-      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900">
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900">
         <div className="text-center">
-          <div className="animate-spin w-8 h-8 border-2 border-gray-600 border-t-white rounded-full mx-auto mb-3" />
-          <p className="text-sm text-gray-400">Loading design system...</p>
+          <div className="animate-spin w-8 h-8 border-2 border-slate-600 border-t-white rounded-full mx-auto mb-3" />
+          <p className="text-sm text-slate-400">Loading design system...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-gray-900">
+    <div className="fixed inset-0 z-[60] flex flex-col bg-slate-900">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-gray-800 border-b border-gray-700 flex-shrink-0">
+      <div className="flex items-center justify-between px-4 py-2.5 bg-slate-800 border-b border-slate-700 flex-shrink-0">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold text-white">{prototype.title}</h2>
-          <span className="text-xs text-gray-400">{prototype.description}</span>
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-slate-400">{prototype.description}</span>
+          <span className="text-xs text-slate-500">
             {prototype.screens.length} screen{prototype.screens.length !== 1 ? 's' : ''}
           </span>
         </div>
 
         <div className="flex items-center gap-2">
           {/* Device toggle */}
-          <div className="flex items-center bg-gray-700 rounded-lg p-0.5">
+          <div className="flex items-center bg-slate-700 rounded-lg p-0.5">
             {(Object.keys(DEVICE_SIZES) as DeviceFrame[]).map((d) => (
               <button
                 key={d}
                 onClick={() => setDevice(d)}
                 className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
-                  device === d ? 'bg-gray-500 text-white' : 'text-gray-400 hover:text-gray-200'
+                  device === d ? 'bg-slate-500 text-white' : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 {DEVICE_SIZES[d].label}
@@ -277,13 +277,13 @@ export function PrototypePreview({
           <button
             onClick={() => setShowCode(!showCode)}
             className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
-              showCode ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:text-white'
+              showCode ? 'bg-teal-600 text-white' : 'bg-slate-700 text-slate-300 hover:text-white'
             }`}
           >
             {showCode ? 'Hide Code' : 'Show Code'}
           </button>
 
-          <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-white transition-colors">
+          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-white transition-colors">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -295,32 +295,32 @@ export function PrototypePreview({
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Code panel */}
         {showCode && (
-          <div className="flex flex-col w-1/2 border-r border-gray-700">
-            <div className="flex gap-0 overflow-x-auto border-b border-gray-700 bg-gray-800 flex-shrink-0">
+          <div className="flex flex-col w-1/2 border-r border-slate-700">
+            <div className="flex gap-0 overflow-x-auto border-b border-slate-700 bg-slate-800 flex-shrink-0">
               {tsxFiles.map(f => (
                 <button
                   key={f}
                   onClick={() => setSelectedFile(f)}
-                  className={`px-3 py-1.5 text-xs whitespace-nowrap border-r border-gray-700 transition-colors ${
+                  className={`px-3 py-1.5 text-xs whitespace-nowrap border-r border-slate-700 transition-colors ${
                     selectedFile === f
-                      ? 'bg-gray-900 text-white'
-                      : 'text-gray-400 hover:text-gray-200 hover:bg-gray-750'
+                      ? 'bg-slate-900 text-white'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-750'
                   }`}
                 >
                   {f.split('/').pop()}
                 </button>
               ))}
             </div>
-            <pre className="flex-1 overflow-auto text-xs text-gray-300 bg-gray-950 p-4 m-0">
+            <pre className="flex-1 overflow-auto text-xs text-slate-300 bg-slate-950 p-4 m-0">
               <code>{prototype.files[selectedFile] ?? prototype.files[selectedFile.replace(/^\//, '')] ?? ''}</code>
             </pre>
           </div>
         )}
 
         {/* Preview */}
-        <div className={`flex items-center justify-center bg-gray-900 p-6 overflow-hidden min-h-0 ${showCode ? 'w-1/2' : 'flex-1'}`}>
+        <div className={`flex items-center justify-center bg-slate-900 p-6 overflow-hidden min-h-0 ${showCode ? 'w-1/2' : 'flex-1'}`}>
           <div
-            className="relative transition-all duration-200 rounded-[2rem] border-[8px] border-gray-700 shadow-2xl bg-white overflow-hidden"
+            className="relative transition-all duration-200 rounded-[2rem] border-[8px] border-slate-700 shadow-2xl bg-white overflow-hidden"
             style={{
               width: deviceSize.width,
               height: deviceSize.height,
@@ -329,7 +329,7 @@ export function PrototypePreview({
             }}
           >
             {device === 'mobile' && (
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-gray-700 rounded-b-2xl z-10 pointer-events-none" />
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-slate-700 rounded-b-2xl z-10 pointer-events-none" />
             )}
             <iframe
               key={srcdoc}
@@ -343,7 +343,7 @@ export function PrototypePreview({
       </div>
 
       {/* Revision bar */}
-      <div className="flex-shrink-0 px-4 py-2.5 bg-gray-800 border-t border-gray-700">
+      <div className="flex-shrink-0 px-4 py-2.5 bg-slate-800 border-t border-slate-700">
         {revisionStatus && (
           <p className={`text-xs mb-1.5 ${revisionStatus.startsWith('Error') ? 'text-red-400' : 'text-emerald-400'}`}>
             {revisionStatus}
@@ -360,12 +360,12 @@ export function PrototypePreview({
             placeholder="Describe changes... (e.g. make the buttons larger, add a back button to the transfer screen)"
             rows={1}
             disabled={isRevising}
-            className="flex-1 resize-none rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 overflow-y-auto"
+            className="flex-1 resize-none rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:opacity-50 overflow-y-auto"
           />
           <button
             type="submit"
             disabled={!feedback.trim() || isRevising}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors self-end flex-shrink-0"
+            className="px-4 py-2 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-700 text-white text-sm font-medium rounded-lg transition-colors self-end flex-shrink-0"
           >
             {isRevising ? 'Revising...' : 'Revise'}
           </button>

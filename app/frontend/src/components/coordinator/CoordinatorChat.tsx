@@ -442,8 +442,8 @@ export function CoordinatorChat() {
           if (msg.isProgress) {
             return (
               <div key={i} className="flex justify-start">
-                <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400">
-                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-500 dark:text-slate-400">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse" />
                   {displayContent}
                 </div>
               </div>
@@ -454,11 +454,11 @@ export function CoordinatorChat() {
             <div key={i} className={`flex ${isCoordinator ? 'justify-start' : 'justify-end'}`}>
               <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
                 isCoordinator
-                  ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100'
-                  : 'bg-blue-600 text-white'
+                  ? 'bg-slate-100 dark:bg-slate-800/60 text-slate-900 dark:text-slate-100'
+                  : 'bg-teal-600 text-white'
               }`}>
                 {isEmptyStreaming ? (
-                  <span className="text-gray-400 dark:text-gray-500 animate-pulse text-xs">thinking...</span>
+                  <span className="text-slate-400 dark:text-slate-500 animate-pulse text-xs">thinking...</span>
                 ) : isCoordinator ? (
                   <div className="prose prose-sm dark:prose-invert max-w-none">
                     <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{displayContent}</ReactMarkdown>
@@ -481,7 +481,7 @@ export function CoordinatorChat() {
                 <button
                   key={stage}
                   onClick={() => setViewingArtifactId(artifactId)}
-                  className="text-xs px-2.5 py-1 rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  className="text-xs px-2.5 py-1 rounded-md border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
                 >
                   View {STAGE_LABELS[stage] ?? stage}
                 </button>
@@ -516,7 +516,7 @@ export function CoordinatorChat() {
                   >
                     View Prototype
                   </button>
-                  <span className="text-xs text-gray-400 dark:text-gray-500">
+                  <span className="text-xs text-slate-400 dark:text-slate-500">
                     Review the prototype, then approve, revise, or reject below
                   </span>
                 </div>
@@ -541,16 +541,16 @@ export function CoordinatorChat() {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setViewingArtifactId(pending.artifact_id!)}
-                    className="text-xs px-2.5 py-1 rounded-md border border-blue-300 dark:border-blue-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                    className="text-xs px-2.5 py-1 rounded-md border border-teal-300 dark:border-teal-600 text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-colors"
                   >
                     Review output
                   </button>
-                  <span className="text-xs text-gray-400 dark:text-gray-500">
+                  <span className="text-xs text-slate-400 dark:text-slate-500">
                     Approve, revise, or reject from the artifact viewer
                   </span>
                 </div>
                 {summary && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400 italic pl-0.5">{summary}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 italic pl-0.5">{summary}</p>
                 )}
               </div>
             );
@@ -601,7 +601,7 @@ export function CoordinatorChat() {
                   }
                 }}
                 disabled={retryLoading}
-                className="text-xs px-2.5 py-1 rounded-md bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white font-medium transition-colors flex-shrink-0"
+                className="text-xs px-2.5 py-1 rounded-md bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white font-medium transition-colors flex-shrink-0"
               >
                 {retryLoading ? 'Retrying...' : 'Retry Stage'}
               </button>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useWorkflowStore } from '../../stores/workflowStore';
@@ -28,6 +28,10 @@ export function ArtifactViewer() {
   const [showCriticFlyout, setShowCriticFlyout] = useState(false);
   const [versionInfo, setVersionInfo] = useState<{ change_request_id: number; version: number } | null>(null);
   const [hasAdoMappings, setHasAdoMappings] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveToast, setSaveToast] = useState<string | null>(null);
 
   // Find the pending checkpoint that has this artifact
   const pendingCheckpoint = checkpoints.find(
@@ -129,6 +133,51 @@ export function ArtifactViewer() {
     }
   }
 
+  const isDirty = isEditing && editContent !== content;
+
+  const handleSave = useCallback(async (andApprove: boolean) => {
+    if (!viewingArtifactId || !isDirty) return;
+    setIsSaving(true);
+    setError(null);
+    try {
+      const cpId = andApprove && pendingCheckpoint ? pendingCheckpoint.id : undefined;
+      const result = await api.saveArtifactContent(viewingArtifactId, editContent, cpId);
+
+      setContent(editContent);
+      setIsEditing(false);
+
+      if (result.workflowStatus && activeWorkflow) {
+        applyWorkflowStatus(result.workflowStatus);
+        addCoordinatorMessage({
+          role: 'coordinator',
+          content: `Artifact edited and approved. Advancing to next stage.`,
+          timestamp: Date.now(),
+        });
+        setViewingArtifactId(null);
+      } else {
+        setSaveToast('Saved');
+        setTimeout(() => setSaveToast(null), 2000);
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.error ?? err.message ?? 'Failed to save');
+    } finally {
+      setIsSaving(false);
+    }
+  }, [viewingArtifactId, isDirty, editContent, pendingCheckpoint, activeWorkflow]);
+
+  // Cmd/Ctrl+S to save
+  useEffect(() => {
+    if (!isEditing) return;
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        if (isDirty && !isSaving) handleSave(false);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isEditing, isDirty, isSaving, handleSave]);
+
   // Parse critic data from the checkpoint associated with this artifact (pending or approved)
   const artifactCheckpoint = pendingCheckpoint
     ?? checkpoints.find(c => c.artifact_id === viewingArtifactId && c.coordinator_action);
@@ -161,19 +210,19 @@ export function ArtifactViewer() {
       }`}>
         {/* Issues panel — far left, toggled from review header */}
         {showSidePanel && showIssuesPanel && hasIssues && (
-          <div className="w-[340px] flex-shrink-0 bg-white dark:bg-gray-800 shadow-xl flex flex-col border-r border-gray-200 dark:border-gray-700">
-            <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex-shrink-0 flex items-center justify-between">
+          <div className="w-[340px] flex-shrink-0 bg-white dark:bg-slate-800 shadow-xl flex flex-col border-r border-slate-200 dark:border-slate-700">
+            <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex-shrink-0 flex items-center justify-between">
               <div>
-                <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                   Issues Flagged
                 </h2>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                   {criticData.issues.length} issue{criticData.issues.length !== 1 ? 's' : ''}
                 </p>
               </div>
               <button
                 onClick={() => setShowIssuesPanel(false)}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -188,13 +237,13 @@ export function ArtifactViewer() {
 
         {/* Review panel — questions, left of artifact */}
         {showSidePanel && (
-          <div className="w-[520px] flex-shrink-0 bg-gray-50 dark:bg-gray-900 shadow-xl flex flex-col border-r border-gray-200 dark:border-gray-700">
-            <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex-shrink-0 flex items-center justify-between">
+          <div className="w-[520px] flex-shrink-0 bg-slate-50 dark:bg-slate-900 shadow-xl flex flex-col border-r border-slate-200 dark:border-slate-700">
+            <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex-shrink-0 flex items-center justify-between">
               <div>
-                <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                   Flint's Review
                 </h2>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                   {criticData.questions.length} question{criticData.questions.length !== 1 ? 's' : ''} to answer
                 </p>
               </div>
@@ -219,12 +268,12 @@ export function ArtifactViewer() {
         )}
 
         {/* Artifact drawer — right side (or only panel) */}
-        <div className="flex-1 bg-white dark:bg-gray-800 shadow-xl flex flex-col overflow-hidden">
+        <div className="flex-1 bg-white dark:bg-slate-800 shadow-xl flex flex-col overflow-hidden">
           {/* Header */}
-          <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between flex-shrink-0">
+          <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between flex-shrink-0">
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                   {STAGE_LABELS[artifactType] ?? (artifactType || 'Artifact')}
                 </h2>
                 {versionInfo && (
@@ -244,7 +293,7 @@ export function ArtifactViewer() {
                 <button
                   onClick={pushToBoard}
                   disabled={pushLoading}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white transition-colors"
                 >
                   {pushLoading ? (
                     <>
@@ -286,7 +335,7 @@ export function ArtifactViewer() {
                   className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md border transition-colors ${
                     showCriticFlyout
                       ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400'
-                      : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'
                   }`}
                   title="Toggle Flint's review"
                 >
@@ -296,9 +345,37 @@ export function ArtifactViewer() {
                   Flint's Review
                 </button>
               )}
+              {content && !loading && (
+                <button
+                  onClick={() => {
+                    if (isEditing) {
+                      setIsEditing(false);
+                      setEditContent('');
+                    } else {
+                      // Pretty-print JSON for backlog/prototype so it's readable
+                      let formatted = content;
+                      if (artifactType === 'backlog' || artifactType === 'prototype') {
+                        try { formatted = JSON.stringify(JSON.parse(content), null, 2); } catch { /* use as-is */ }
+                      }
+                      setEditContent(formatted);
+                      setIsEditing(true);
+                    }
+                  }}
+                  className={`p-1 rounded transition-colors ${
+                    isEditing
+                      ? 'text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/20'
+                      : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
+                  }`}
+                  title={isEditing ? 'Exit edit mode' : 'Edit artifact'}
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </button>
+              )}
               <button
                 onClick={() => setIsFullscreen(f => !f)}
-                className="p-1 rounded text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                className="p-1 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
                 title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
               >
                 {isFullscreen ? (
@@ -313,7 +390,7 @@ export function ArtifactViewer() {
               </button>
               <button
                 onClick={() => { setViewingArtifactId(null); setIsFullscreen(false); }}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -330,10 +407,17 @@ export function ArtifactViewer() {
             return (
               <div className="flex-1 min-h-0 relative">
                 {/* Content — always takes full width, centered with max-w in fullscreen */}
-                <div className={`h-full overflow-y-auto px-4 py-4 ${isFullscreen ? '' : ''}`}>
-                  <div className={isFullscreen ? 'mx-auto w-full max-w-4xl' : ''}>
+                <div className={`h-full ${isEditing ? 'flex flex-col px-4 py-4' : 'overflow-y-auto px-4 py-4'}`}>
+                  <div className={`${isEditing ? 'flex-1 min-h-0 flex flex-col' : ''} ${isFullscreen ? 'mx-auto w-full max-w-4xl' : ''}`}>
                     {loading ? (
-                      <p className="text-sm text-gray-400 animate-pulse">Loading...</p>
+                      <p className="text-sm text-slate-400 animate-pulse">Loading...</p>
+                    ) : isEditing ? (
+                      <textarea
+                        value={editContent}
+                        onChange={(e) => setEditContent(e.target.value)}
+                        className="w-full flex-1 min-h-0 text-sm font-mono resize-none bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                        spellCheck={false}
+                      />
                     ) : content ? (() => {
                       if (backlogData) return <BacklogView data={backlogData} />;
                       return (
@@ -344,17 +428,17 @@ export function ArtifactViewer() {
                     })() : error ? (
                       <p className="text-sm text-red-500">{error}</p>
                     ) : (
-                      <p className="text-sm text-gray-400 italic">No content available.</p>
+                      <p className="text-sm text-slate-400 italic">No content available.</p>
                     )}
                   </div>
                 </div>
                 {/* Critic flyout — positioned absolutely on the left */}
                 {showCriticFlyout && hasCriticData && !showSidePanel && (
-                  <div className="absolute top-0 left-0 w-[380px] h-full overflow-y-auto border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg flex flex-col z-10">
-                    <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex-shrink-0 flex items-center justify-between">
+                  <div className="absolute top-0 left-0 w-[380px] h-full overflow-y-auto border-r border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg flex flex-col z-10">
+                    <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex-shrink-0 flex items-center justify-between">
                       <div>
-                        <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Flint's Review</h2>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                        <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Flint's Review</h2>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                           {hasIssues && <>{criticData.issues.length} issue{criticData.issues.length !== 1 ? 's' : ''}</>}
                           {hasIssues && hasQuestions && ' · '}
                           {hasQuestions && <>{criticData.questions.length} question{criticData.questions.length !== 1 ? 's' : ''}</>}
@@ -362,7 +446,7 @@ export function ArtifactViewer() {
                       </div>
                       <button
                         onClick={() => setShowCriticFlyout(false)}
-                        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
                       >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -372,18 +456,18 @@ export function ArtifactViewer() {
                     <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
                       {hasIssues && (
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">Issues</p>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">Issues</p>
                           <CriticIssuesPanel issues={criticData.issues} />
                         </div>
                       )}
                       {hasQuestions && (
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">Questions</p>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">Questions</p>
                           <div className="space-y-2">
                             {criticData.questions.map((q: string, i: number) => (
-                              <div key={i} className="text-sm rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-                                <span className="text-xs font-medium text-gray-400 dark:text-gray-500 mr-1">Q{i + 1}:</span>
-                                <div className="mt-1 text-gray-800 dark:text-gray-200 prose prose-sm dark:prose-invert max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0">
+                              <div key={i} className="text-sm rounded-lg border border-slate-200 dark:border-slate-700 p-3">
+                                <span className="text-xs font-medium text-slate-400 dark:text-slate-500 mr-1">Q{i + 1}:</span>
+                                <div className="mt-1 text-slate-800 dark:text-slate-200 prose prose-sm dark:prose-invert max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0">
                                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{q}</ReactMarkdown>
                                 </div>
                               </div>
@@ -396,7 +480,7 @@ export function ArtifactViewer() {
                 )}
                 {/* Persona panel — positioned absolutely so it doesn't affect content centering */}
                 {showPersonaPanel && (
-                  <div className="absolute top-0 right-0 w-80 h-full overflow-y-auto border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-3">
+                  <div className="absolute top-0 right-0 w-80 h-full overflow-y-auto border-l border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3">
                     <PersonaPanel personas={extractPersonas(backlogData)} />
                   </div>
                 )}
@@ -404,9 +488,43 @@ export function ArtifactViewer() {
             );
           })()}
 
-          {/* Action buttons (only for pending checkpoints) */}
-          {pendingCheckpoint && (
-            <div className={`px-4 pb-4 pt-3 border-t border-gray-200 dark:border-gray-700 flex-shrink-0 space-y-2 ${isFullscreen ? 'mx-auto w-full max-w-4xl' : ''}`}>
+          {/* Save bar (editing mode) */}
+          {isEditing && (
+            <div className={`px-4 pb-4 pt-3 border-t border-slate-200 dark:border-slate-700 flex-shrink-0 space-y-2 ${isFullscreen ? 'mx-auto w-full max-w-4xl' : ''}`}>
+              {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+              {saveToast && <p className="text-xs text-green-600 dark:text-green-400">{saveToast}</p>}
+              <div className="flex gap-2">
+                {pendingCheckpoint ? (
+                  <button
+                    onClick={() => handleSave(true)}
+                    disabled={!isDirty || isSaving}
+                    className="flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-sm font-medium rounded-lg transition-colors"
+                  >
+                    {isSaving ? 'Saving...' : 'Save & Approve'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleSave(false)}
+                    disabled={!isDirty || isSaving}
+                    className="flex-1 py-2 px-3 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-sm font-medium rounded-lg transition-colors"
+                  >
+                    {isSaving ? 'Saving...' : 'Save'}
+                  </button>
+                )}
+                <button
+                  onClick={() => { setIsEditing(false); setEditContent(''); setError(null); }}
+                  disabled={isSaving}
+                  className="py-2 px-3 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Action buttons (only for pending checkpoints, hidden while editing) */}
+          {pendingCheckpoint && !isEditing && (
+            <div className={`px-4 pb-4 pt-3 border-t border-slate-200 dark:border-slate-700 flex-shrink-0 space-y-2 ${isFullscreen ? 'mx-auto w-full max-w-4xl' : ''}`}>
               {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
 
               {showReviseForm && !showSidePanel ? (
@@ -417,20 +535,20 @@ export function ArtifactViewer() {
                     onChange={(e) => setFeedback(e.target.value)}
                     placeholder="What needs to change? Be specific."
                     rows={3}
-                    className="w-full text-sm resize-none rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-gray-800 px-3 py-2 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    className="w-full text-sm resize-none rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 px-3 py-2 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
                   />
                   <div className="flex gap-2">
                     <button
                       onClick={() => resolve('revised', feedback)}
                       disabled={!feedback.trim() || resolveLoading}
-                      className="flex-1 py-2 px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors"
+                      className="flex-1 py-2 px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-sm font-medium rounded-lg transition-colors"
                     >
                       {resolveLoading ? 'Sending...' : 'Send Revision'}
                     </button>
                     <button
                       onClick={() => { setShowReviseForm(false); setFeedback(''); }}
                       disabled={resolveLoading}
-                      className="py-2 px-3 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+                      className="py-2 px-3 text-sm text-slate-500 hover:text-slate-700 transition-colors"
                     >
                       Cancel
                     </button>
@@ -441,14 +559,14 @@ export function ArtifactViewer() {
                   <button
                     onClick={() => resolve('approved')}
                     disabled={resolveLoading}
-                    className="flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg transition-colors"
+                    className="flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white text-sm font-medium rounded-lg transition-colors"
                   >
                     Approve
                   </button>
                   <button
                     onClick={() => setShowReviseForm(true)}
                     disabled={resolveLoading}
-                    className="flex-1 py-2 px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg transition-colors"
+                    className="flex-1 py-2 px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 text-white text-sm font-medium rounded-lg transition-colors"
                   >
                     Revise
                   </button>
@@ -470,7 +588,7 @@ export function ArtifactViewer() {
       {showRejectConfirm && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowRejectConfirm(false)} />
-          <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-sm w-full mx-4 p-6">
+          <div className="relative bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-sm w-full mx-4 p-6">
             <div className="flex items-center gap-3 mb-3">
               <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
                 <svg className="w-5 h-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -478,25 +596,25 @@ export function ArtifactViewer() {
                 </svg>
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">End this workflow?</h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">This action cannot be undone</p>
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">End this workflow?</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">This action cannot be undone</p>
               </div>
             </div>
-            <p className="text-sm text-gray-600 dark:text-gray-300 mb-5">
+            <p className="text-sm text-slate-600 dark:text-slate-300 mb-5">
               Rejecting will permanently end this workflow. All completed stages are preserved, but no further stages will run. You can start a new workflow with a fresh goal afterward.
             </p>
             <div className="flex gap-3">
               <button
                 onClick={() => setShowRejectConfirm(false)}
                 disabled={resolveLoading}
-                className="flex-1 py-2 px-3 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                className="flex-1 py-2 px-3 text-sm font-medium rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
               >
                 Go Back
               </button>
               <button
                 onClick={() => resolve('rejected')}
                 disabled={resolveLoading}
-                className="flex-1 py-2 px-3 bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg transition-colors"
+                className="flex-1 py-2 px-3 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white text-sm font-medium rounded-lg transition-colors"
               >
                 {resolveLoading ? 'Rejecting...' : 'Yes, Reject'}
               </button>

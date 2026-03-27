@@ -34,14 +34,14 @@ function StageTokenTooltipContent({ data, style }: { data: StageTokenData; style
   return ReactDOM.createPortal(
     <div
       style={style}
-      className="fixed z-[9999] w-64 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3 text-xs pointer-events-none"
+      className="fixed z-[9999] w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-3 text-xs pointer-events-none"
     >
       {/* Specialist */}
       <div className="mb-2">
-        <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">
+        <div className="font-semibold text-slate-700 dark:text-slate-300 mb-1">
           Specialist · {modelLabel(s.model)}
         </div>
-        <div className="space-y-0.5 text-gray-500 dark:text-gray-400">
+        <div className="space-y-0.5 text-slate-500 dark:text-slate-400">
           <div className="flex justify-between">
             <span>Input</span>
             <span>{formatTokens(s.inputTokens + s.cacheReadTokens + s.cacheWriteTokens)} tokens</span>
@@ -53,7 +53,7 @@ function StageTokenTooltipContent({ data, style }: { data: StageTokenData; style
             </div>
           )}
           {s.cacheWriteTokens > 0 && (
-            <div className="flex justify-between pl-2 text-blue-500 dark:text-blue-400">
+            <div className="flex justify-between pl-2 text-teal-500 dark:text-teal-400">
               <span>↳ cache write</span>
               <span>{formatTokens(s.cacheWriteTokens)}</span>
             </div>
@@ -68,7 +68,7 @@ function StageTokenTooltipContent({ data, style }: { data: StageTokenData; style
               <span>{s.searchCount} × $0.01</span>
             </div>
           )}
-          <div className="flex justify-between font-medium text-gray-700 dark:text-gray-300 pt-0.5 border-t border-gray-100 dark:border-gray-800">
+          <div className="flex justify-between font-medium text-slate-700 dark:text-slate-300 pt-0.5 border-t border-slate-100 dark:border-slate-800">
             <span>Cost</span>
             <span>{formatCost(s.estimatedCost)}</span>
           </div>
@@ -77,11 +77,11 @@ function StageTokenTooltipContent({ data, style }: { data: StageTokenData; style
 
       {/* Critic */}
       {c && (
-        <div className="mb-2 pt-2 border-t border-gray-100 dark:border-gray-800">
-          <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">
+        <div className="mb-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <div className="font-semibold text-slate-700 dark:text-slate-300 mb-1">
             Critic · {modelLabel(c.model)}
           </div>
-          <div className="space-y-0.5 text-gray-500 dark:text-gray-400">
+          <div className="space-y-0.5 text-slate-500 dark:text-slate-400">
             <div className="flex justify-between">
               <span>Input</span>
               <span>{formatTokens(c.inputTokens + c.cacheReadTokens + c.cacheWriteTokens)} tokens</span>
@@ -96,7 +96,7 @@ function StageTokenTooltipContent({ data, style }: { data: StageTokenData; style
               <span>Output</span>
               <span>{formatTokens(c.outputTokens)} tokens</span>
             </div>
-            <div className="flex justify-between font-medium text-gray-700 dark:text-gray-300 pt-0.5 border-t border-gray-100 dark:border-gray-800">
+            <div className="flex justify-between font-medium text-slate-700 dark:text-slate-300 pt-0.5 border-t border-slate-100 dark:border-slate-800">
               <span>Cost</span>
               <span>{formatCost(c.estimatedCost)}</span>
             </div>
@@ -106,8 +106,8 @@ function StageTokenTooltipContent({ data, style }: { data: StageTokenData; style
 
       {/* Prior revision cost */}
       {(prior ?? 0) > 0 && (
-        <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
-          <div className="flex justify-between text-gray-400 dark:text-gray-500 text-xs">
+        <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex justify-between text-slate-400 dark:text-slate-500 text-xs">
             <span>Prior revision(s)</span>
             <span>{formatCost(prior!)}</span>
           </div>
@@ -115,7 +115,7 @@ function StageTokenTooltipContent({ data, style }: { data: StageTokenData; style
       )}
 
       {/* Total */}
-      <div className="pt-2 border-t border-gray-200 dark:border-gray-700 flex justify-between font-semibold text-gray-800 dark:text-gray-200">
+      <div className="pt-2 border-t border-slate-200 dark:border-slate-700 flex justify-between font-semibold text-slate-800 dark:text-slate-200">
         <span>Total</span>
         <span>{formatCost(totalCost)}</span>
       </div>
@@ -146,7 +146,7 @@ function StageTokenIcon({ tokenUsage }: { tokenUsage: string | null }) {
   return (
     <span
       ref={iconRef}
-      className="text-xs text-gray-400 dark:text-gray-500 cursor-help select-none leading-none"
+      className="text-xs text-slate-400 dark:text-slate-500 cursor-help select-none leading-none"
       onMouseEnter={handleMouseEnter}
       onMouseLeave={() => setVisible(false)}
     >
@@ -161,11 +161,11 @@ function StageTokenIcon({ tokenUsage }: { tokenUsage: string | null }) {
 function stageIcon(status: StageStatus) {
   switch (status) {
     case 'complete':       return <span className="text-green-500">✓</span>;
-    case 'in-progress':    return <span className="text-blue-500 animate-pulse">●</span>;
+    case 'in-progress':    return <span className="text-teal-500 animate-pulse">●</span>;
     case 'at-checkpoint':  return <span className="text-amber-500 animate-pulse">⏸</span>;
     case 'rejected':       return <span className="text-red-500">✕</span>;
-    case 'skipped':        return <span className="text-gray-400">—</span>;
-    default:               return <span className="text-gray-300 dark:text-gray-600">○</span>;
+    case 'skipped':        return <span className="text-slate-400">—</span>;
+    default:               return <span className="text-slate-300 dark:text-slate-600">○</span>;
   }
 }
 
@@ -173,11 +173,11 @@ function stageDot(status: StageStatus) {
   const base = 'w-2 h-2 rounded-full flex-shrink-0';
   switch (status) {
     case 'complete':       return <span className={`${base} bg-green-500`} />;
-    case 'in-progress':    return <span className={`${base} bg-blue-500 animate-pulse`} />;
+    case 'in-progress':    return <span className={`${base} bg-teal-500 animate-pulse`} />;
     case 'at-checkpoint':  return <span className={`${base} bg-amber-500 animate-pulse`} />;
     case 'rejected':       return <span className={`${base} bg-red-500`} />;
-    case 'skipped':        return <span className={`${base} bg-gray-300 dark:bg-gray-600`} />;
-    default:               return <span className={`${base} bg-gray-200 dark:bg-gray-700`} />;
+    case 'skipped':        return <span className={`${base} bg-slate-300 dark:bg-slate-600`} />;
+    default:               return <span className={`${base} bg-slate-200 dark:bg-slate-700`} />;
   }
 }
 
@@ -197,7 +197,7 @@ export function StageRow({
     <div>
       {/* Connector line (skip first) */}
       {index > 0 && (
-        <div className="ml-3 w-px h-2 bg-gray-200 dark:bg-gray-700" />
+        <div className="ml-3 w-px h-2 bg-slate-200 dark:bg-slate-700" />
       )}
 
       <div
@@ -205,7 +205,7 @@ export function StageRow({
           status === 'at-checkpoint'
             ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800'
             : status === 'in-progress'
-            ? 'bg-blue-50 dark:bg-blue-900/20'
+            ? 'bg-teal-50 dark:bg-teal-900/20'
             : ''
         }`}
       >
@@ -217,7 +217,7 @@ export function StageRow({
             </span>
             <span className="text-xs">{stageIcon(status)}</span>
             {agentModel && (
-              <span className="text-xs text-gray-400 dark:text-gray-600 bg-gray-100 dark:bg-gray-800 rounded px-1 py-0.5 leading-none">
+              <span className="text-xs text-slate-400 dark:text-slate-600 bg-slate-100 dark:bg-slate-800 rounded px-1 py-0.5 leading-none">
                 {agentModel}
               </span>
             )}
@@ -261,7 +261,7 @@ export function StageRow({
                   {diffArtifactId && (
                     <button
                       onClick={() => onViewArtifact(diffArtifactId!)}
-                      className="text-xs px-2 py-0.5 rounded border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+                      className="text-xs px-2 py-0.5 rounded border border-teal-300 dark:border-teal-700 text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/30 transition-colors"
                     >
                       View diff
                     </button>
@@ -279,14 +279,14 @@ export function StageRow({
             return (
               <div className="flex items-center gap-2 mt-0.5">
                 {completedAt && (
-                  <span className="text-xs text-gray-400 dark:text-gray-600">
+                  <span className="text-xs text-slate-400 dark:text-slate-600">
                     {new Date(completedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   </span>
                 )}
                 {latestApproved?.artifact_id && (
                   <button
                     onClick={() => onViewArtifact(latestApproved.artifact_id!)}
-                    className="text-xs text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+                    className="text-xs text-slate-400 dark:text-slate-500 hover:text-teal-500 dark:hover:text-teal-400 transition-colors"
                   >
                     View
                   </button>
@@ -294,7 +294,7 @@ export function StageRow({
                 {approvedDiffId && (
                   <button
                     onClick={() => onViewArtifact(approvedDiffId!)}
-                    className="text-xs text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+                    className="text-xs text-slate-400 dark:text-slate-500 hover:text-teal-500 dark:hover:text-teal-400 transition-colors"
                   >
                     Diff
                   </button>

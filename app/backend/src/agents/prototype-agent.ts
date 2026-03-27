@@ -16,7 +16,7 @@ import * as fs from 'fs';
 import * as fsAsync from 'fs/promises';
 import * as path from 'path';
 import { streamAI, resolveModelId, type SystemPrompt, type TokenUsage } from '../utils/ai-provider';
-import { loadLatestArtifactForStage } from './artifact-helpers';
+import { loadLatestArtifactForStage, resolveArtifactPath } from './artifact-helpers';
 import db from '../data/database';
 import Logger from '../utils/logger';
 
@@ -411,7 +411,7 @@ export function loadLatestPrototype(workflowId: string): PrototypeResult | null 
 
   if (!row?.file_path) return null;
   try {
-    return JSON.parse(fs.readFileSync(row.file_path, 'utf-8')) as PrototypeResult;
+    return JSON.parse(fs.readFileSync(resolveArtifactPath(row.file_path), 'utf-8')) as PrototypeResult;
   } catch {
     return null;
   }
