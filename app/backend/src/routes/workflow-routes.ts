@@ -23,6 +23,7 @@ import {
 } from '../agents/change-request';
 import db from '../data/database';
 import Logger from '../utils/logger';
+import { loadPrdForItem, buildEpicEnrichment, buildFeatureEnrichment } from '../utils/prd-enrichment';
 
 // ── Pre-workflow planning cost accumulator ────────────────────────────────────
 // Planning conversations happen before a workflow ID exists, so we can't call
@@ -732,6 +733,30 @@ workflowRoutes.post('/:id/push-to-board', async (req: Request, res: Response) =>
 
     if (!backlog?.epic || !Array.isArray(backlog?.features)) {
       return res.status(400).json({ error: 'Backlog JSON does not have a recognised structure (story, feature, or epic/features)' });
+    }
+
+    // Enrich epic and feature descriptions with PRD context
+    const prdContent = loadPrdForItem(workflow.item_id);
+    if (prdContent) {
+      // Epic: Problem Statement + Success Metrics + Out of Scope
+      const epicHtml = buildEpicEnrichment(prdContent);
+      if (epicHtml) {
+        backlog.epic.description = `${backlog.epic.description || ''}<hr>${epicHtml}`;
+      }
+
+      // Features: referenced FRs + referenced Key User Journeys
+      for (const feature of backlog.features as any[]) {
+        const frIds = new Set<string>();
+        const journeyRefs = new Set<string>();
+        for (const story of (feature.stories ?? []) as any[]) {
+          for (const fr of (story.prdRef?.functionalRequirements ?? []) as string[]) frIds.add(fr);
+          if (story.prdRef?.userJourney) journeyRefs.add(story.prdRef.userJourney as string);
+        }
+        const featureHtml = buildFeatureEnrichment(prdContent, frIds, journeyRefs);
+        if (featureHtml) {
+          feature.description = `${feature.description || ''}<hr>${featureHtml}`;
+        }
+      }
     }
 
     // Push to the configured provider

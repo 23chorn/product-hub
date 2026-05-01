@@ -83,6 +83,13 @@ export interface Feature {
   stories: Story[];
 }
 
+export interface StoryTechnical {
+  constraints?: string[];
+  affectedComponents?: string[];
+  dataChanges?: string | null;
+  apiChanges?: string | null;
+}
+
 export interface Story {
   title: string;
   persona: string;
@@ -90,6 +97,9 @@ export interface Story {
   benefit: string;
   acceptanceCriteria: string[];
   effort?: number;
+  aiEstimatedHours?: number;
+  aiEstimatedQaHours?: number;
+  technical?: StoryTechnical;
 }
 
 // ============================================

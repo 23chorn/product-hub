@@ -163,6 +163,7 @@ function App() {
               <span>Decision Log</span>
             </button>
 
+
             {/* Model Selector */}
             <ModelSelector />
 
@@ -250,6 +251,7 @@ function App() {
             <TemplateEditorPanel />
           </div>
         )}
+
       </div>
 
       {/* Artifact Viewer Drawer */}

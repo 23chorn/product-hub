@@ -4,6 +4,13 @@ import { BacklogStructure } from '@pap/shared';
 
 const logger = new Logger('AZURE-DEVOPS');
 
+/** Round a number to the nearest value in the Fibonacci sequence (1–144). */
+function toNearestFibonacci(n: number): number {
+  const fibs = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144];
+  if (n <= 0) return 1;
+  return fibs.reduce((prev, curr) => (Math.abs(curr - n) < Math.abs(prev - n) ? curr : prev));
+}
+
 /** Strip leading user-story prefixes that the model may have included in the JSON fields. */
 function stripStoryPrefix(text: string, prefix: RegExp): string {
   return text.replace(prefix, '').trim();
@@ -36,6 +43,44 @@ function formatGivenWhenThen(text: string): string {
     .join('<br>');
 }
 
+/**
+ * Format the `technical` block from a backlog story into an HTML section.
+ * Framed as suggestions because the architect's output is AI-generated and
+ * must be validated by the engineering team before implementation.
+ * Returns an empty string when no meaningful technical data is present.
+ */
+function buildTechnicalSuggestions(technical: { constraints?: string[]; affectedComponents?: string[]; dataChanges?: string | null; apiChanges?: string | null } | undefined): string {
+  if (!technical) return '';
+
+  const parts: string[] = [];
+
+  const components = (technical.affectedComponents ?? []).filter(Boolean);
+  if (components.length) {
+    parts.push(`<b>Affected Components:</b> ${escapeHtml(components.join(', '))}`);
+  }
+
+  const constraints = (technical.constraints ?? []).filter(Boolean);
+  if (constraints.length) {
+    parts.push(`<b>Constraints:</b><ul>${constraints.map(c => `<li>${escapeHtml(c)}</li>`).join('')}</ul>`);
+  }
+
+  if (technical.dataChanges && technical.dataChanges !== 'null') {
+    parts.push(`<b>Data Changes:</b> ${escapeHtml(technical.dataChanges)}`);
+  }
+
+  if (technical.apiChanges && technical.apiChanges !== 'null') {
+    parts.push(`<b>API Changes:</b> ${escapeHtml(technical.apiChanges)}`);
+  }
+
+  if (!parts.length) return '';
+
+  return [
+    '<hr>',
+    '<b>Technical Suggestions</b> <i>(AI-generated · pending engineering review)</i><br>',
+    parts.join('<br>'),
+  ].join('');
+}
+
 export interface WorkItem {
   id?: number;
   fields: {
@@ -61,6 +106,8 @@ export interface CreateWorkItemRequest {
   iterationPath?: string;
   priority?: number;
   effort?: number;
+  aiEstimateDevHours?: number;
+  aiEstimateQaHours?: number;
 }
 
 /**
@@ -76,6 +123,10 @@ export class AzureDevOpsClient {
     feature: string;
     story: string;
     task: string;
+  };
+  private customFields: {
+    aiEstimateDev: string;
+    aiEstimateQa: string;
   };
 
   constructor() {
@@ -112,7 +163,13 @@ export class AzureDevOpsClient {
       );
     }
 
+    this.customFields = {
+      aiEstimateDev: process.env.AZURE_DEVOPS_AI_EST_DEV_FIELD || 'Custom.AIEstimateDev',
+      aiEstimateQa: process.env.AZURE_DEVOPS_AI_EST_QA_FIELD || 'Custom.AIEstimateQA',
+    };
+
     logger.info(`Work item types configured: Epic=${this.workItemTypes.epic}, Feature=${this.workItemTypes.feature}, Story=${this.workItemTypes.story}, Task=${this.workItemTypes.task}`);
+    logger.info(`Custom fields: aiEstimateDev=${this.customFields.aiEstimateDev}, aiEstimateQa=${this.customFields.aiEstimateQa}`);
 
     // Create axios instance with Azure DevOps API configuration
     this.client = axios.create({
@@ -182,6 +239,22 @@ export class AzureDevOpsClient {
         op: 'add',
         path: '/fields/Microsoft.VSTS.Scheduling.Effort',
         value: request.effort,
+      });
+    }
+
+    if (request.aiEstimateDevHours !== undefined) {
+      operations.push({
+        op: 'add',
+        path: `/fields/${this.customFields.aiEstimateDev}`,
+        value: request.aiEstimateDevHours,
+      });
+    }
+
+    if (request.aiEstimateQaHours !== undefined) {
+      operations.push({
+        op: 'add',
+        path: `/fields/${this.customFields.aiEstimateQa}`,
+        value: request.aiEstimateQaHours,
       });
     }
 
@@ -266,7 +339,7 @@ export class AzureDevOpsClient {
             `<b>As a</b> ${escapeHtml(stripStoryPrefix(storyData.persona, /^as an?\s+/i))}`,
             `<b>I want</b> ${escapeHtml(stripStoryPrefix(storyData.goal, /^i want\s+(to\s+)?/i))}`,
             `<b>So that</b> ${escapeHtml(stripStoryPrefix(storyData.benefit, /^so that\s+/i))}`,
-          ].join('<br>');
+          ].join('<br>') + buildTechnicalSuggestions(storyData.technical);
 
           let acceptanceCriteriaHtml: string | undefined;
           if (storyData.acceptanceCriteria && storyData.acceptanceCriteria.length > 0) {
@@ -284,6 +357,8 @@ export class AzureDevOpsClient {
             description: storyDescription,
             acceptanceCriteria: acceptanceCriteriaHtml,
             effort: storyData.effort,
+            aiEstimateDevHours: storyData.aiEstimatedHours !== undefined ? toNearestFibonacci(storyData.aiEstimatedHours) : undefined,
+            aiEstimateQaHours: storyData.aiEstimatedQaHours,
             parentId: feature.id,
           });
           storyIds.push(story.id!);
@@ -306,11 +381,17 @@ export class AzureDevOpsClient {
       // If there are no MVP features, skip the phase split — everything goes under one epic
       const splitByPhase = mvpFeatures.length > 0 && laterPhases.size > 0;
 
+      // Total story-point effort across all features for high-level prioritisation
+      const totalEffort = structure.features
+        .flatMap(f => f.stories)
+        .reduce((sum, s) => sum + (s.effort ?? 0), 0);
+
       // 1. Main epic — MVP features only (or all features if not splitting)
       const epic = await this.createWorkItem({
         type: this.workItemTypes.epic as any,
         title: structure.epic.title,
         description: structure.epic.description,
+        effort: totalEffort || undefined,
       });
       await createFeaturesUnderEpic(splitByPhase ? mvpFeatures : structure.features, epic.id!);
 
@@ -345,7 +426,7 @@ export class AzureDevOpsClient {
    */
   async updateWorkItem(
     id: number,
-    updates: { title?: string; description?: string; effort?: number; acceptanceCriteria?: string }
+    updates: { title?: string; description?: string; effort?: number; acceptanceCriteria?: string; aiEstimateDevHours?: number; aiEstimateQaHours?: number }
   ): Promise<WorkItem> {
     logger.info(`Updating work item #${id}`);
 
@@ -362,6 +443,12 @@ export class AzureDevOpsClient {
     }
     if (updates.acceptanceCriteria !== undefined) {
       operations.push({ op: 'replace', path: '/fields/Microsoft.VSTS.Common.AcceptanceCriteria', value: updates.acceptanceCriteria });
+    }
+    if (updates.aiEstimateDevHours !== undefined) {
+      operations.push({ op: 'add', path: `/fields/${this.customFields.aiEstimateDev}`, value: updates.aiEstimateDevHours });
+    }
+    if (updates.aiEstimateQaHours !== undefined) {
+      operations.push({ op: 'add', path: `/fields/${this.customFields.aiEstimateQa}`, value: updates.aiEstimateQaHours });
     }
 
     if (operations.length === 0) {
@@ -405,14 +492,17 @@ export class AzureDevOpsClient {
 
     const epicId = epicMapping.ado_id;
 
-    // Update epic title/description if changed
-    if (epicMapping.title !== structure.epic.title) {
-      await this.updateWorkItem(epicId, {
-        title: structure.epic.title,
-        description: structure.epic.description,
-      });
-      updated++;
-    }
+    // Always sync epic description and total effort; count as updated only when title changes
+    const epicTitleChanged = epicMapping.title !== structure.epic.title;
+    const epicTotalEffort = structure.features
+      .flatMap(f => f.stories)
+      .reduce((sum, s) => sum + (s.effort ?? 0), 0);
+    await this.updateWorkItem(epicId, {
+      ...(epicTitleChanged ? { title: structure.epic.title } : {}),
+      description: structure.epic.description,
+      effort: epicTotalEffort || undefined,
+    });
+    if (epicTitleChanged) updated++;
 
     // Process features and stories
     for (let fi = 0; fi < structure.features.length; fi++) {
@@ -422,14 +512,13 @@ export class AzureDevOpsClient {
 
       let featureAdoId: number;
       if (featureMapping) {
-        // Update existing feature
-        if (featureMapping.title !== featureData.title) {
-          await this.updateWorkItem(featureMapping.ado_id, {
-            title: featureData.title,
-            description: featureData.description,
-          });
-          updated++;
-        }
+        // Always sync feature description (carries PRD enrichment); count as updated only when title changes
+        const featureTitleChanged = featureMapping.title !== featureData.title;
+        await this.updateWorkItem(featureMapping.ado_id, {
+          ...(featureTitleChanged ? { title: featureData.title } : {}),
+          description: featureData.description,
+        });
+        if (featureTitleChanged) updated++;
         featureAdoId = featureMapping.ado_id;
       } else {
         // Create new feature
@@ -460,7 +549,7 @@ export class AzureDevOpsClient {
           `<b>As a</b> ${escapeHtml(storyData.persona)}`,
           `<b>I want</b> ${escapeHtml(storyData.goal)}`,
           `<b>So that</b> ${escapeHtml(storyData.benefit)}`,
-        ].join('<br>');
+        ].join('<br>') + buildTechnicalSuggestions(storyData.technical);
 
         let acceptanceCriteriaHtml: string | undefined;
         if (storyData.acceptanceCriteria && storyData.acceptanceCriteria.length > 0) {
@@ -473,22 +562,29 @@ export class AzureDevOpsClient {
         }
 
         if (storyMapping) {
-          // Update existing story
+          const rawAiHours = storyData.aiEstimatedHours;
+          const fibAiHours = rawAiHours !== undefined && rawAiHours !== null ? toNearestFibonacci(rawAiHours) : undefined;
+          logger.info(`Story "${storyData.title}" (#${storyMapping.ado_id}): aiEstimatedHours=${rawAiHours} → fibonacciValue=${fibAiHours}`);
           await this.updateWorkItem(storyMapping.ado_id, {
             title: storyData.title,
             description: storyDescription,
-            effort: storyData.effort,
             acceptanceCriteria: acceptanceCriteriaHtml,
+            aiEstimateDevHours: fibAiHours,
+            aiEstimateQaHours: storyData.aiEstimatedQaHours,
           });
           updated++;
         } else {
           // Create new story
+          const rawAiHours = storyData.aiEstimatedHours;
+          const fibAiHours = rawAiHours !== undefined && rawAiHours !== null ? toNearestFibonacci(rawAiHours) : undefined;
           const story = await this.createWorkItem({
             type: this.workItemTypes.story as any,
             title: storyData.title,
             description: storyDescription,
             acceptanceCriteria: acceptanceCriteriaHtml,
             effort: storyData.effort,
+            aiEstimateDevHours: fibAiHours,
+            aiEstimateQaHours: storyData.aiEstimatedQaHours,
             parentId: featureAdoId,
           });
           created++;

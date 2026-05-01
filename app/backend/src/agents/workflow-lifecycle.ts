@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import db from '../data/database';
 import Logger from '../utils/logger';
-import type { WorkflowRow, CheckpointRow } from './workflow-router';
+import type { WorkflowRow, CheckpointRow } from './workflow-types';
 
 const logger = new Logger('WORKFLOW-LIFECYCLE');
 
