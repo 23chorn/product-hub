@@ -1,0 +1,128 @@
+import { useState } from 'react';
+
+export interface GoalEntryScreenProps {
+  goal: string;
+  onGoalChange: (value: string) => void;
+  onSubmitGoal: (e: React.FormEvent) => void;
+  availableStages: Array<{ key: string; label: string; short: string }>;
+  enabledStages: Record<string, boolean>;
+  onToggleStage: (key: string) => void;
+  error: string | null;
+  isStreaming: boolean;
+}
+
+export function GoalEntryScreen({
+  goal,
+  onGoalChange,
+  onSubmitGoal,
+  availableStages,
+  enabledStages,
+  onToggleStage,
+  error,
+  isStreaming,
+}: GoalEntryScreenProps) {
+  const [showExample, setShowExample] = useState(false);
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex-shrink-0">
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Product Hub</h2>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+          Describe what you want to build. The Chief of Staff will gather details and run the pipeline.
+        </p>
+      </div>
+      <div className="flex-1 overflow-y-auto flex flex-col items-center justify-start p-8">
+        <div className="w-full max-w-lg space-y-4">
+          <form onSubmit={onSubmitGoal} className="space-y-3">
+            <textarea
+              value={goal}
+              onChange={(e) => onGoalChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSubmitGoal(e as any); }
+              }}
+              placeholder={'What do you want to build?\n\nInclude: who it\'s for, the core problem, key outcomes, scope, and any constraints.'}
+              rows={7}
+              className="w-full resize-none rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500"
+            />
+            {/* Stage toggles */}
+            <div className="flex flex-wrap gap-1.5">
+              {availableStages.map(stage => {
+                const enabled = enabledStages[stage.key];
+                const enabledCount = Object.values(enabledStages).filter(Boolean).length;
+                const isLastEnabled = enabled && enabledCount === 1;
+                return (
+                  <button
+                    key={stage.key}
+                    type="button"
+                    disabled={isLastEnabled}
+                    onClick={() => onToggleStage(stage.key)}
+                    title={isLastEnabled ? 'At least one stage required' : `${enabled ? 'Disable' : 'Enable'} ${stage.label}`}
+                    className={`px-2 py-0.5 text-xs rounded-md border transition-colors ${
+                      enabled
+                        ? 'bg-teal-50 dark:bg-teal-900/30 border-teal-300 dark:border-teal-600 text-teal-700 dark:text-teal-300'
+                        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-600 line-through'
+                    } ${isLastEnabled ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-80 cursor-pointer'}`}
+                  >
+                    {stage.short}
+                  </button>
+                );
+              })}
+            </div>
+
+            {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
+            <button
+              type="submit"
+              disabled={!goal.trim() || isStreaming}
+              className="w-full py-2.5 px-4 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              Start
+            </button>
+          </form>
+
+          <button
+            onClick={() => setShowExample(v => !v)}
+            className="w-full text-xs text-slate-400 dark:text-slate-500 hover:text-teal-500 dark:hover:text-teal-400 transition-colors text-center"
+          >
+            {showExample ? 'Hide example' : 'Show example of an ideal input'}
+          </button>
+
+          {showExample && (
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-4 space-y-3 text-xs text-slate-600 dark:text-slate-400">
+              <p className="font-semibold text-slate-700 dark:text-slate-300">Example: high-quality goal input</p>
+              <div className="bg-white dark:bg-slate-900 rounded-md border border-slate-200 dark:border-slate-700 p-3 font-mono whitespace-pre-wrap leading-relaxed text-[11px]">{`Build a real-time dashboard for fleet managers at mid-size logistics companies (50–500 vehicles) that consolidates GPS tracking, fuel consumption, and maintenance alerts into a single view.
+
+**Who it's for:** Fleet operations managers who currently juggle 3–4 separate tools and lose 2+ hours/day reconciling data.
+
+**Core problem:** No unified view of vehicle health, location, and cost — leading to missed maintenance windows, route inefficiencies, and fuel waste.
+
+**Key outcomes:**
+- Reduce vehicle downtime by 20% through predictive maintenance alerts
+- Cut fuel spend by 10% via route optimization suggestions
+- Single pane of glass replacing Samsara + Google Sheets + email alerts
+
+**Scope:** MVP — web app only, 3 integrations (GPS provider API, fuel card API, OBD-II adapter). No mobile app in v1.
+
+**Constraints:**
+- Must comply with DOT electronic logging regulations
+- Max 2-second latency on real-time position updates
+- Team has React/Node experience, open to Postgres or TimescaleDB
+- Budget: \$150k, target launch in 12 weeks`}</div>
+              <div className="space-y-1.5 pt-1">
+                <p className="font-semibold text-slate-700 dark:text-slate-300">What makes this effective:</p>
+                <ul className="space-y-1 list-none">
+                  <li><span className="font-medium text-slate-700 dark:text-slate-300">Target user + pain</span> — who they are, what's broken today, quantified impact</li>
+                  <li><span className="font-medium text-slate-700 dark:text-slate-300">Measurable outcomes</span> — success criteria the agents can design toward</li>
+                  <li><span className="font-medium text-slate-700 dark:text-slate-300">Explicit scope boundary</span> — what's in v1, what's not</li>
+                  <li><span className="font-medium text-slate-700 dark:text-slate-300">Real constraints</span> — regulatory, technical, team skills, budget, timeline</li>
+                </ul>
+                <p className="pt-1 text-slate-500 dark:text-slate-500 italic">
+                  Tip: you don't need all of this upfront — the Chief of Staff will ask clarifying questions. But the more context you provide, the fewer rounds of Q&A and the better the outputs.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

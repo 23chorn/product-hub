@@ -27,10 +27,3 @@ export function handleIntegrationError(error: any, service: string): never {
     );
   }
 }
-
-export function formatError(error: any): string {
-  if (error instanceof APIError) {
-    return `[${error.service}] ${error.statusCode}: ${error.message}`;
-  }
-  return error.message || 'Unknown error';
-}

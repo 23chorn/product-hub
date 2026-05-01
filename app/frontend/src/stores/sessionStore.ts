@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { AirtableItem, AppMode, BmadMenuItem, QuickItem } from '@pap/shared';
+import type { AirtableItem, AppMode } from '@pap/shared';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -24,25 +24,13 @@ interface SessionState {
   selectedItem: AirtableItem | null;
   setSelectedItem: (item: AirtableItem | null) => void;
 
-  // Selected quick session (ad-hoc, not tied to a roadmap item)
-  selectedQuickItem: QuickItem | null;
-  setSelectedQuickItem: (item: QuickItem | null) => void;
-
-  // All quick sessions loaded from the server
-  quickItems: QuickItem[];
-  setQuickItems: (items: QuickItem[]) => void;
-
-  // BMAD Session
+  // Session
   sessionId: string | null;
   setSessionId: (id: string | null) => void;
 
-  // BMAD Agent info
+  // Agent info
   agentInfo: AgentInfo | null;
   setAgentInfo: (info: AgentInfo | null) => void;
-
-  // BMAD Menu
-  agentMenu: BmadMenuItem[];
-  setAgentMenu: (menu: BmadMenuItem[]) => void;
 
   // Active workflow
   activeWorkflow: string | null;
@@ -73,7 +61,7 @@ interface SessionState {
   // Reset everything
   reset: () => void;
 
-  // Clear session (keeps mode and selected item/quickItem)
+  // Clear session (keeps mode and selected item)
   clearSession: () => void;
 }
 
@@ -81,11 +69,8 @@ export const useSessionStore = create<SessionState>((set) => ({
   // Initial state
   mode: 'analyst',
   selectedItem: null,
-  selectedQuickItem: null,
-  quickItems: [],
   sessionId: null,
   agentInfo: null,
-  agentMenu: [],
   activeWorkflow: null,
   messages: [],
   prdContent: '',
@@ -96,19 +81,11 @@ export const useSessionStore = create<SessionState>((set) => ({
   // Actions
   setMode: (mode) => set({ mode }),
 
-  // Selecting a roadmap item clears any active quick session
-  setSelectedItem: (item) => set({ selectedItem: item, selectedQuickItem: null }),
-
-  // Selecting a quick item clears any active roadmap item and forces backlog mode
-  setSelectedQuickItem: (item) => set({ selectedQuickItem: item, selectedItem: null, mode: 'backlog' }),
-
-  setQuickItems: (items) => set({ quickItems: items }),
+  setSelectedItem: (item) => set({ selectedItem: item }),
 
   setSessionId: (id) => set({ sessionId: id }),
 
   setAgentInfo: (info) => set({ agentInfo: info }),
-
-  setAgentMenu: (menu) => set({ agentMenu: menu }),
 
   setActiveWorkflow: (code) => set({ activeWorkflow: code }),
 
@@ -142,11 +119,8 @@ export const useSessionStore = create<SessionState>((set) => ({
     set({
       mode: 'analyst',
       selectedItem: null,
-      selectedQuickItem: null,
-      quickItems: [],
       sessionId: null,
       agentInfo: null,
-      agentMenu: [],
       activeWorkflow: null,
       messages: [],
       prdContent: '',
@@ -159,7 +133,6 @@ export const useSessionStore = create<SessionState>((set) => ({
     set({
       sessionId: null,
       agentInfo: null,
-      agentMenu: [],
       activeWorkflow: null,
       messages: [],
       prdContent: '',

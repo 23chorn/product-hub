@@ -2,18 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@layer base {
+  body {
+    margin: 0;
+    font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.01em;
+  }
+
+  /* Default to dark mode background to prevent flash */
+  html.dark {
+    background-color: #020617;
+  }
 }
 
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+  font-family: 'JetBrains Mono', 'Fira Code', source-code-pro, Menlo, Monaco,
+    Consolas, 'Courier New', monospace;
 }
 
 /* Chat message prose styling */
@@ -31,6 +37,7 @@ code {
   margin-top: 1.25em;
   margin-bottom: 0.5em;
   font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .chat-message h1:first-child,
@@ -84,6 +91,21 @@ code {
   height: auto;
 }
 
+/* ── Glass effect utility ──────────────────────────────────────────────────
+   Applied to panels and cards in dark mode for depth/layering.
+   ────────────────────────────────────────────────────────────────────────── */
+@layer utilities {
+  .glass-panel {
+    @apply backdrop-blur-xl bg-white/80 dark:bg-slate-800/70;
+    @apply border border-slate-200/50 dark:border-slate-700/50;
+  }
+
+  .glass-surface {
+    @apply backdrop-blur-md bg-white/90 dark:bg-slate-900/80;
+    @apply border border-slate-200/50 dark:border-white/5;
+  }
+}
+
 /* ── Scrollbars ─────────────────────────────────────────────────────────────
    Webkit (Chrome, Edge, Safari): thin, rounded, matched to the app palette.
    Firefox: uses scrollbar-color / scrollbar-width properties.
@@ -93,11 +115,11 @@ code {
 /* Firefox */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #d1d5db #f3f4f6; /* thumb: gray-300  track: gray-100 */
+  scrollbar-color: #cbd5e1 #f1f5f9; /* thumb: slate-300  track: slate-100 */
 }
 
 .dark * {
-  scrollbar-color: #4b5563 #1f2937; /* thumb: gray-600  track: gray-800 */
+  scrollbar-color: #334155 #0f172a; /* thumb: slate-700  track: slate-900 */
 }
 
 /* Webkit */
@@ -107,37 +129,37 @@ code {
 }
 
 ::-webkit-scrollbar-track {
-  background: #f3f4f6; /* gray-100 */
+  background: #f1f5f9; /* slate-100 */
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d1d5db; /* gray-300 */
+  background: #cbd5e1; /* slate-300 */
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af; /* gray-400 */
+  background: #94a3b8; /* slate-400 */
 }
 
 ::-webkit-scrollbar-corner {
-  background: #f3f4f6;
+  background: #f1f5f9;
 }
 
 .dark ::-webkit-scrollbar-track {
-  background: #1f2937; /* gray-800 */
+  background: #0f172a; /* slate-900 */
 }
 
 .dark ::-webkit-scrollbar-thumb {
-  background: #4b5563; /* gray-600 */
+  background: #334155; /* slate-700 */
 }
 
 .dark ::-webkit-scrollbar-thumb:hover {
-  background: #6b7280; /* gray-500 */
+  background: #475569; /* slate-600 */
 }
 
 .dark ::-webkit-scrollbar-corner {
-  background: #1f2937;
+  background: #0f172a;
 }
 
 /* Toast animations */

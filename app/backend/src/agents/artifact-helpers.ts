@@ -10,6 +10,32 @@ const logger = new Logger('ARTIFACT-HELPERS');
 const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
 
 /**
+ * Resolve a stored artifact file_path to the current project root.
+ *
+ * Artifact paths are stored as absolute paths in the DB. If the project
+ * directory is moved or renamed, the stored paths become stale. This
+ * function extracts the relative portion (from 'data/' onwards) and
+ * re-resolves it against the current PROJECT_ROOT.
+ *
+ * Falls back to the original path if the relative portion can't be extracted.
+ */
+export function resolveArtifactPath(storedPath: string): string {
+  // If the file exists at the stored path, use it as-is (fast path)
+  if (fs.existsSync(storedPath)) return storedPath;
+
+  // Extract relative portion from 'data/' onwards
+  const dataIdx = storedPath.indexOf('/data/sessions/');
+  if (dataIdx >= 0) {
+    const relativePath = storedPath.slice(dataIdx + 1); // 'data/sessions/...'
+    const resolved = path.join(PROJECT_ROOT, relativePath);
+    if (fs.existsSync(resolved)) return resolved;
+  }
+
+  // Last resort: return original path (caller handles the read error)
+  return storedPath;
+}
+
+/**
  * Saves the critic's full markdown review to disk and inserts an artifact row.
  * Returns the artifact row ID.
  */
@@ -44,7 +70,7 @@ export function getLatestArchitectureArtifactPath(itemId: string): string | null
     WHERE s.item_id = ? AND s.mode = 'architecture'
     ORDER BY a.created_at DESC LIMIT 1
   `).get(itemId);
-  return row?.file_path ?? null;
+  return row ? resolveArtifactPath(row.file_path) : null;
 }
 
 /**
@@ -59,7 +85,7 @@ export function getLatestArtifactPathByType(itemId: string, artifactType: string
     WHERE s.item_id = ? AND a.type = ?
     ORDER BY a.created_at DESC LIMIT 1
   `).get(itemId, artifactType);
-  return row?.file_path ?? null;
+  return row ? resolveArtifactPath(row.file_path) : null;
 }
 
 /**
@@ -77,7 +103,7 @@ export function loadLatestArtifactForItem(itemId: string): { content: string; ty
 
   if (!row?.file_path) return { content: '(no artifact found)', type: 'document' };
   try {
-    return { content: fs.readFileSync(row.file_path, 'utf-8'), type: row.type };
+    return { content: fs.readFileSync(resolveArtifactPath(row.file_path), 'utf-8'), type: row.type };
   } catch {
     return { content: '(artifact file unreadable)', type: row.type };
   }
@@ -97,7 +123,7 @@ export function loadLatestArtifactForStage(itemId: string, stage: string): strin
   `).get(itemId, artifactType);
   if (!row?.file_path) return undefined;
   try {
-    return fs.readFileSync(row.file_path, 'utf-8');
+    return fs.readFileSync(resolveArtifactPath(row.file_path), 'utf-8');
   } catch {
     return undefined;
   }
@@ -112,7 +138,7 @@ export function loadFullArtifact(artifactId: number): string | undefined {
   ).get(artifactId);
   if (!row?.file_path) return undefined;
   try {
-    return fs.readFileSync(row.file_path, 'utf-8');
+    return fs.readFileSync(resolveArtifactPath(row.file_path), 'utf-8');
   } catch {
     return undefined;
   }
@@ -127,7 +153,7 @@ export function loadArtifactSummary(artifactId: number): string | undefined {
   ).get(artifactId);
   if (!row?.file_path) return undefined;
   try {
-    const content = fs.readFileSync(row.file_path, 'utf-8');
+    const content = fs.readFileSync(resolveArtifactPath(row.file_path), 'utf-8');
     return content.slice(0, 500) + (content.length > 500 ? '\n[…truncated]' : '');
   } catch {
     return undefined;

@@ -27,7 +27,8 @@
     "test:pipeline": "tsx scripts/test-pipeline.ts"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "figma-developer-mcp": "^0.7.1"
   },
   "engines": {
     "node": ">=18.0.0",

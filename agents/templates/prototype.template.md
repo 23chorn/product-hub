@@ -21,7 +21,7 @@ The JSON defines a complete, self-contained React prototype with these exact key
 Rules:
 - **files** is a flat key-value map: file path (string) → file content (string)
 - `/App.tsx` is the entry point — it must render the current screen based on a `useState<string>` router
-- `/styles.css` must begin with `@import "./design-tokens.css";` to load the design system
+- `/styles.css` must NOT import design-tokens.css or design-system-utilities.css — they are injected automatically; only add custom CSS that Tailwind can't handle
 - All components use TypeScript (.tsx) and Tailwind classes from the design system
 - Include `/data/mock-data.ts` with realistic domain data (not lorem ipsum)
 - Maximum 8 screens, 15 files total

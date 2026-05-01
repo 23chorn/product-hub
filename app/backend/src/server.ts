@@ -94,17 +94,11 @@ app.get('/api', (req, res) => {
     version: '1.0.0',
     endpoints: {
       health: '/health',
-      bmad: {
-        start: 'POST /api/bmad/start',
-        menuSelect: 'POST /api/bmad/menu-select',
-        message: 'POST /api/bmad/message (SSE)',
-        export: 'POST /api/bmad/export',
-        session: 'GET /api/bmad/session/:sessionId',
-        deleteSession: 'DELETE /api/bmad/session/:sessionId',
-      },
-      airtable: {
-        items: 'GET /api/prd/items/needingPRD',
-      },
+      workflow: 'POST /api/workflow/*',
+      initiatives: 'GET /api/initiatives',
+      contextDiffs: 'GET /api/context-diffs/*',
+      contextFiles: 'GET /api/context-files',
+      templateFiles: 'GET /api/template-files',
     },
   });
 });
@@ -133,13 +127,7 @@ app.listen(PORT, () => {
   logger.info(`📡 CORS enabled for: ${FRONTEND_URL}`);
   logger.info(`🌍 Environment: ${appConfig.server.nodeEnv}`);
   logger.info(`🤖 AI provider: ${appConfig.ai.provider} | models: ${models}`);
-  logger.info(`\n✅ BMAD Agent APIs ready!`);
-  logger.info(`📋 BMAD Endpoints:`);
-  logger.info(`   POST /api/bmad/start - Start BMAD session (PRD/Backlog/Analyst)`);
-  logger.info(`   POST /api/bmad/menu-select - Select workflow from agent menu`);
-  logger.info(`   POST /api/bmad/message - Chat with agent (SSE streaming)`);
-  logger.info(`   POST /api/prd/publish - Publish PRD to local file`);
-  logger.info(`   POST /api/bmad/publish-backlog - Save backlog as local JSON file\n`);
+  logger.info(`\n✅ APIs ready!`);
 });
 
 export default app;

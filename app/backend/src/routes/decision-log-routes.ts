@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
-import { BmadAgent } from '../agents/bmad-agent';
+import { SpecialistAgent } from '../agents/specialist-agent';
 import { sessionStore } from '../data/session-store';
 import { isValidModelId } from '../utils/ai-provider';
 import { DATA_DIR } from '../data/database';
@@ -14,11 +14,11 @@ const router = Router();
 const DL_DIR = path.join(DATA_DIR, 'decision-log');
 
 // Singleton Dex agent (cached after first persona load)
-let dexAgent: BmadAgent | null = null;
+let dexAgent: SpecialistAgent | null = null;
 
-async function getDexAgent(): Promise<BmadAgent> {
+async function getDexAgent(): Promise<SpecialistAgent> {
   if (!dexAgent) {
-    dexAgent = new BmadAgent('decision-log');
+    dexAgent = new SpecialistAgent('decision-log');
     await dexAgent.loadPersona();
   }
   return dexAgent;

@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
 import Logger from '../utils/logger';
-import { invalidateContextCache } from '../agents/bmad-agent';
+import { invalidateContextCache } from '../agents/specialist-agent';
 import { clearAllContextCaches } from '../agents/agent-cache';
 
 const logger = new Logger('CONTEXT-FILES');
@@ -120,8 +120,14 @@ contextFileRouter.put('/:fileName', (req: Request, res: Response) => {
       // File didn't exist — that's fine
     }
   } else {
-    fs.writeFileSync(filePath, content, 'utf-8');
-    logger.info(`Saved context file: ${fileName} (${content.length} chars)`);
+    try {
+      fs.writeFileSync(filePath, content, 'utf-8');
+      logger.info(`Saved context file: ${fileName} (${content.length} chars)`);
+    } catch (err: any) {
+      logger.error(`Failed to write context file ${fileName}: ${err.message}`);
+      res.status(500).json({ error: `Failed to save file: ${err.message}` });
+      return;
+    }
   }
 
   // Invalidate caches so next agent request picks up the change

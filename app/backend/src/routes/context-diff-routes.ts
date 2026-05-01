@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import db from '../data/database';
-import { invalidateContextCache } from '../agents/bmad-agent';
+import { invalidateContextCache } from '../agents/specialist-agent';
 import Logger from '../utils/logger';
 
 const logger = new Logger('CONTEXT-DIFF-ROUTES');

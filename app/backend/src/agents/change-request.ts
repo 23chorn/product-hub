@@ -24,7 +24,7 @@ import {
   STAGE_LABELS_INTERNAL,
 } from './stage-metadata';
 import { sessionManager } from '../session/session-manager';
-import { BmadAgent } from './bmad-agent';
+import { SpecialistAgent } from './specialist-agent';
 import { streamAI, resolveAgentModel, type TokenUsage } from '../utils/ai-provider';
 import Logger from '../utils/logger';
 
