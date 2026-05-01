@@ -12,14 +12,14 @@ export const STAGE_LABELS: Record<string, string> = {
 
 // Stages available for user toggle at workflow start (order matters)
 export const TOGGLEABLE_STAGES: Array<{ key: string; label: string; short: string }> = [
-  { key: 'analyst',            label: 'Analyst — Sage',          short: 'Sage' },
-  { key: 'pm_prd',             label: 'Requirements — Rex',      short: 'Rex' },
-  { key: 'solution_architect', label: 'Architect — Atlas',       short: 'Atlas' },
-  { key: 'prototype',          label: 'Prototype — Nova',        short: 'Nova' },
-  { key: 'pm_backlog',         label: 'Backlog — Pip',           short: 'Pip' },
-  { key: 'gtm_strategy',       label: 'GTM Strategy — Quinn',    short: 'Quinn' },
-  { key: 'feature_marketing',  label: 'Feature Marketing — Milo', short: 'Milo' },
-  { key: 'curator',            label: 'Curator — Ivy',           short: 'Ivy' },
+  { key: 'analyst',            label: 'Analyst — Sage',          short: 'Sage · Analyst' },
+  { key: 'pm_prd',             label: 'Requirements — Rex',      short: 'Rex · PM' },
+  { key: 'solution_architect', label: 'Architect — Atlas',       short: 'Atlas · Architect' },
+  { key: 'prototype',          label: 'Prototype — Nova',        short: 'Nova · Prototype' },
+  { key: 'pm_backlog',         label: 'Backlog — Pip',           short: 'Pip · Backlog' },
+  { key: 'gtm_strategy',       label: 'GTM Strategy — Quinn',    short: 'Quinn · GTM' },
+  { key: 'feature_marketing',  label: 'Feature Marketing — Milo', short: 'Milo · Marketing' },
+  { key: 'curator',            label: 'Curator — Ivy',           short: 'Ivy · Curator' },
 ];
 
 export const STAGE_SHORT_LABELS: Record<string, string> = {

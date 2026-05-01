@@ -34,7 +34,7 @@ export function ConversationHeader(props: ConversationHeaderProps) {
               …{itemId.slice(-8)}
             </span>
           )}
-          {estimatedCost !== undefined && estimatedCost > 0 && (
+          {false && estimatedCost !== undefined && estimatedCost > 0 && (
             <span className="ml-2 text-xs font-mono text-amber-600 dark:text-amber-400" title="Estimated workflow cost">
               ${estimatedCost < 0.01
                 ? estimatedCost.toFixed(4)

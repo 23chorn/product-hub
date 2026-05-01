@@ -21,6 +21,7 @@ import { contextDiffRouter } from './routes/context-diff-routes';
 import { contextFileRouter } from './routes/context-file-routes';
 import { templateFileRouter } from './routes/template-file-routes';
 import { prototypeRoutes } from './routes/prototype-routes';
+import { ticketRoutes } from './routes/ticket-routes';
 
 const logger = new Logger('SERVER');
 
@@ -87,6 +88,7 @@ app.use('/api/context-diffs', contextDiffRouter);
 app.use('/api/context-files', contextFileRouter);
 app.use('/api/template-files', templateFileRouter);
 app.use('/api', prototypeRoutes);
+app.use('/api', ticketRoutes);
 
 app.get('/api', (req, res) => {
   res.json({

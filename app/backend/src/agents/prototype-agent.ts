@@ -20,12 +20,6 @@ import { loadLatestArtifactForStage, resolveArtifactPath } from './artifact-help
 import db from '../data/database';
 import Logger from '../utils/logger';
 
-// MCP SDK — loaded via require to avoid ESM/CJS interop issues with moduleResolution:node
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { Client } = require('@modelcontextprotocol/sdk/client') as typeof import('@modelcontextprotocol/sdk/client/index.js');
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js') as typeof import('@modelcontextprotocol/sdk/client/stdio.js');
-
 const logger = new Logger('PROTOTYPE-AGENT');
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
@@ -127,6 +121,17 @@ export async function loadFigmaDesignSystem(statusCb: (msg: string) => void): Pr
   if (!fileKey || !token) return '';
 
   statusCb('Reading Figma design system...\n');
+
+  let Client: any;
+  let StdioClientTransport: any;
+  try {
+    ({ Client } = require('@modelcontextprotocol/sdk/client') as typeof import('@modelcontextprotocol/sdk/client/index.js'));
+    ({ StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js') as typeof import('@modelcontextprotocol/sdk/client/stdio.js'));
+  } catch {
+    logger.warn('MCP SDK not installed — Figma design system integration unavailable');
+    statusCb('Figma unavailable, using local design tokens.\n');
+    return '';
+  }
 
   const { command, args } = resolveFigmaDevMcpBin();
   logger.info(`Starting figma-developer-mcp: ${command} ${args.join(' ')}`);

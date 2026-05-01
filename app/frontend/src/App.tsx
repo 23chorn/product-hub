@@ -7,6 +7,7 @@ import { WorkflowStageTracker, WorkflowHistory } from './components/workflow';
 import { ArtifactViewer } from './components/artifact';
 import { ContextEditorPanel } from './components/ContextEditorPanel';
 import { TemplateEditorPanel } from './components/TemplateEditorPanel';
+import { QuickTicketPanel } from './components/QuickTicketPanel';
 import { useThemeStore } from './stores/themeStore';
 import { useModelStore } from './stores/modelStore';
 import { useDecisionLogStore } from './stores/decisionLogStore';
@@ -26,6 +27,7 @@ function App() {
   const { setConfig } = useConfigStore();
   const { activeWorkflow, viewingArtifactId } = useWorkflowStore();
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
+  const [isQTOpen, setIsQTOpen] = useState(false);
   const { config } = useConfigStore();
   const showRoadmapSidebar = config?.integrations?.roadmap && config.integrations.roadmap !== 'none';
 
@@ -152,6 +154,15 @@ function App() {
               <span>Templates</span>
             </button>
 
+            {/* Quick Ticket Button */}
+            <button
+              onClick={() => setIsQTOpen(true)}
+              className="flex items-center space-x-1.5 px-3 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-700/70 hover:border-slate-400 dark:hover:border-slate-500 transition-colors shadow-sm hover:shadow-glow-teal-sm"
+              title="Format and estimate a quick ticket"
+            >
+              <span>Quick Ticket</span>
+            </button>
+
             {/* Decision Log Button */}
             <button
               onClick={openDecisionLog}
@@ -245,6 +256,15 @@ function App() {
         {isTEOpen && (
           <div className="absolute inset-0 z-50 p-3">
             <TemplateEditorPanel />
+          </div>
+        )}
+
+        {/* Quick Ticket Modal Overlay */}
+        {isQTOpen && (
+          <div className="absolute inset-0 z-50 p-3 flex items-start justify-center pt-8">
+            <div className="w-full max-w-2xl max-h-[calc(100vh-5rem)] flex flex-col">
+              <QuickTicketPanel onClose={() => setIsQTOpen(false)} />
+            </div>
           </div>
         )}
 

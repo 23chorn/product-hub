@@ -12,7 +12,8 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import db from '../data/database';
+import * as path from 'path';
+import db, { getPolicies } from '../data/database';
 import { sessionManager } from '../session/session-manager';
 import { streamAI, resolveModelId, resolveAgentModel, type TokenUsage } from '../utils/ai-provider';
 import type { AppMode, AgentType } from '@pap/shared';
@@ -25,6 +26,11 @@ import {
 } from './artifact-helpers';
 import { deleteWorkflow as deleteWorkflowImpl, recoverStaleWorkflows as recoverStaleWorkflowsImpl, startStaleRecoveryTimer } from './workflow-lifecycle';
 import { WorkflowRow, CheckpointRow, WorkflowStatus, WorkflowEvent, StageTokenData } from './workflow-types';
+import Logger from '../utils/logger';
+import { CoordinatorAgent } from './coordinator-agent';
+import { CriticAgent } from './critic-agent';
+import { ContextCuratorAgent } from './curator-agent';
+import { workflowOps } from './workflow-db';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
 
@@ -426,7 +432,7 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
         const session = sessionManager.createSpecialistSession(workflow.item_id, stageMap.mode, stageMap.agentType);
         sessionManager.updateWorkflow(session.id, workflowId, brief);
 
-        runAutonomousStage(session.id, workflowId, prevStage!, workflow.item_id, brief, true)
+        workflowOps.runAutonomousStage(session.id, workflowId, prevStage!, workflow.item_id, brief, true)
           .catch(err => logger.error(`Auto-revision after critic failed: ${err.message}`));
 
         logger.info(`Critic auto-revise for workflow ${workflowId} — rerunning ${prevStage}`);
@@ -530,7 +536,7 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
 
   // Fire the autonomous specialist run as a background task.
   // It will collect the full output, store an artifact, then create the checkpoint.
-  runAutonomousStage(session.id, workflowId, nextStage, workflow.item_id, brief, shouldAutoApprove)
+  workflowOps.runAutonomousStage(session.id, workflowId, nextStage, workflow.item_id, brief, shouldAutoApprove)
     .catch(err => {
       logger.error(`Autonomous stage "${nextStage}" background task failed: ${err.message}`);
       // Safety net: if runAutonomousStage's inner try/catch didn't create a checkpoint,

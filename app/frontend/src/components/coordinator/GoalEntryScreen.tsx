@@ -89,24 +89,26 @@ export function GoalEntryScreen({
           {showExample && (
             <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-4 space-y-3 text-xs text-slate-600 dark:text-slate-400">
               <p className="font-semibold text-slate-700 dark:text-slate-300">Example: high-quality goal input</p>
-              <div className="bg-white dark:bg-slate-900 rounded-md border border-slate-200 dark:border-slate-700 p-3 font-mono whitespace-pre-wrap leading-relaxed text-[11px]">{`Build a real-time dashboard for fleet managers at mid-size logistics companies (50–500 vehicles) that consolidates GPS tracking, fuel consumption, and maintenance alerts into a single view.
+              <div className="bg-white dark:bg-slate-900 rounded-md border border-slate-200 dark:border-slate-700 p-3 font-mono whitespace-pre-wrap leading-relaxed text-[11px]">{`Build a price alert and notification system for retail investors on the xCube mobile trading app.
 
-**Who it's for:** Fleet operations managers who currently juggle 3–4 separate tools and lose 2+ hours/day reconciling data.
+**Who it's for:** Retail investors (ages 25–45) who actively monitor 5–20 positions and miss entry/exit opportunities because they can't watch prices throughout the day.
 
-**Core problem:** No unified view of vehicle health, location, and cost — leading to missed maintenance windows, route inefficiencies, and fuel waste.
+**Core problem:** Users currently set limit orders as a price-watching workaround, but those orders execute unintentionally. There is no way to be notified when a price threshold is crossed without committing to a trade — leading to missed opportunities and accidental fills.
 
 **Key outcomes:**
-- Reduce vehicle downtime by 20% through predictive maintenance alerts
-- Cut fuel spend by 10% via route optimization suggestions
-- Single pane of glass replacing Samsara + Google Sheets + email alerts
+- Users can set price alerts (above/below threshold) on any tradable instrument
+- Push notifications delivered within 30 seconds of the trigger price being hit
+- Reduce unintended limit order executions by 25%
+- Re-engage dormant users by surfacing alerts that bring them back to trade
 
-**Scope:** MVP — web app only, 3 integrations (GPS provider API, fuel card API, OBD-II adapter). No mobile app in v1.
+**Scope:** MVP — iOS and Android push notifications for equities and ETFs only. No options, no recurring alerts, no SMS. Alert history retained for 30 days.
 
 **Constraints:**
-- Must comply with DOT electronic logging regulations
-- Max 2-second latency on real-time position updates
-- Team has React/Node experience, open to Postgres or TimescaleDB
-- Budget: \$150k, target launch in 12 weeks`}</div>
+- Notification copy must not imply investment advice (DFSA/regulatory requirement)
+- Real-time price feed available via internal market data service (WebSocket, already in prod)
+- Max 30-second delivery latency from trigger to device
+- Team: 2 iOS, 2 Android, 2 backend engineers
+- Target: ship within a single 6-week sprint cycle`}</div>
               <div className="space-y-1.5 pt-1">
                 <p className="font-semibold text-slate-700 dark:text-slate-300">What makes this effective:</p>
                 <ul className="space-y-1 list-none">

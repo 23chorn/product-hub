@@ -5,8 +5,8 @@ import {
   pauseAtCheckpoint,
   resolveCheckpoint,
   getWorkflowStatus,
-  propagateFeedback,
 } from '../agents/workflow-router';
+import { propagateFeedback } from '../agents/workflow-mutations';
 import Logger from '../utils/logger';
 
 const logger = new Logger('WORKFLOW-ROUTES');
