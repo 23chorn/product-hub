@@ -72,9 +72,9 @@ interface WorkflowStoreState {
   setWorkflowMode: (active: boolean) => void;
 
   // Pre-workflow coordinator planning phase
-  planningPhase: 'idle' | 'gathering' | 'launching';
+  planningPhase: 'idle' | 'gathering' | 'confirming' | 'launching';
   planningSessionId: string | null;
-  setPlanningPhase: (phase: 'idle' | 'gathering' | 'launching') => void;
+  setPlanningPhase: (phase: 'idle' | 'gathering' | 'confirming' | 'launching') => void;
   setPlanningSessionId: (id: string | null) => void;
 
   // Active workflow data

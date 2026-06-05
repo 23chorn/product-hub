@@ -7,6 +7,7 @@ import db from '../data/database';
 import { appConfig } from '../config/app-config';
 import { getKnowledgeBaseProvider } from '../integrations/knowledge-base';
 import { STAGE_LABELS_BRIEF, STAGE_OUTPUT_FORMATS, stageGoal, stageNotDecide } from './stage-metadata';
+import { getActiveSkill, listSkills } from './skill-registry';
 import Logger from '../utils/logger';
 
 const logger = new Logger('COORDINATOR');
@@ -47,8 +48,21 @@ export class CoordinatorAgent {
   private readonly persona: string;
 
   constructor() {
-    this.persona = fs.readFileSync(PERSONA_PATH, 'utf-8');
-    logger.info('Coordinator persona loaded');
+    const skill = getActiveSkill('coordinator');
+    this.persona = skill?.persona_prompt ?? fs.readFileSync(PERSONA_PATH, 'utf-8');
+    if (skill) {
+      logger.info(`Coordinator persona loaded from skill registry v${skill.version}`);
+    } else {
+      logger.info('Coordinator persona loaded from disk');
+    }
+  }
+
+  private resolveStageFormat(stage: string): { label: string; format: string } {
+    const skill = getActiveSkill(stage);
+    if (skill?.stage_brief_label && skill?.stage_brief_format) {
+      return { label: skill.stage_brief_label, format: skill.stage_brief_format };
+    }
+    return STAGE_OUTPUT_FORMATS[stage] ?? { label: stage, format: '(no format specification defined for this stage)' };
   }
 
   /** Whether a knowledge base integration (GitBook, Notion) is configured. */
@@ -173,13 +187,9 @@ ${policyLines}`;
       workflow?.policy_overrides ?? '{}'
     );
 
-    const stageFormat = STAGE_OUTPUT_FORMATS[stage];
-    const outputLabel = stageFormat?.label ?? stage;
-
-    // Always use the inline format spec — it describes WHAT to produce.
-    // Template files use [placeholder] syntax that models fill in literally
-    // instead of researching and writing real content.
-    const outputFormat = stageFormat?.format ?? '(no format specification defined for this stage)';
+    const stageFormat = this.resolveStageFormat(stage);
+    const outputLabel = stageFormat.label;
+    const outputFormat = stageFormat.format;
 
     // ── Constraints ────────────────────────────────────────────────────────────
     const policies = getPolicies('global');
@@ -266,6 +276,29 @@ ${policyLines}`;
       '- If any detail is genuinely ambiguous, make a reasonable assumption — do not ask.',
     ];
 
+    // ── Domain skill discovery ──────────────────────────────────────────────────
+    // If the active skill for this stage has get_domain_skill_context in its tools,
+    // inject the list of available domain skills so the agent knows what to look up.
+    const activeSkill = getActiveSkill(stage);
+    if (activeSkill?.tool_definitions) {
+      try {
+        const toolDefs: Array<{ name: string }> = JSON.parse(activeSkill.tool_definitions);
+        const hasDomainLookup = toolDefs.some(t => t.name === 'get_domain_skill_context');
+        if (hasDomainLookup) {
+          const domainSkills = listSkills().filter(s => s.discipline !== 'agent');
+          if (domainSkills.length > 0) {
+            const skillLines = domainSkills.map(s =>
+              `- **${s.skill_name}** (${s.discipline})${s.development_context ? '' : ' — no context yet'}`
+            );
+            lines.push('');
+            lines.push('**Domain skills available via get_domain_skill_context:**');
+            lines.push('Call `get_domain_skill_context` with one of these names to load service-specific patterns, API contracts, or dev conventions before making technology or acceptance-criteria decisions:');
+            lines.push(skillLines.join('\n'));
+          }
+        }
+      } catch { /* malformed tool_definitions — skip */ }
+    }
+
     if (additionalContext) {
       lines.push('');
       lines.push('## Additional Context');
@@ -349,9 +382,9 @@ ${policyLines}`;
       .get(workflowId);
 
     const goal = workflow?.goal ?? '(workflow goal not found)';
-    const stageFormat = STAGE_OUTPUT_FORMATS[stage];
-    const outputLabel = stageFormat?.label ?? stage;
-    const outputFormat = stageFormat?.format ?? '(no format specification defined for this stage)';
+    const stageFormat = this.resolveStageFormat(stage);
+    const outputLabel = stageFormat.label;
+    const outputFormat = stageFormat.format;
 
     const issueList = issues.map((issue, i) => `${i + 1}. ${issue}`).join('\n');
 
@@ -402,9 +435,9 @@ ${policyLines}`;
       .get(workflowId);
 
     const goal = workflow?.goal ?? '(workflow goal not found)';
-    const stageFormat = STAGE_OUTPUT_FORMATS[stage];
-    const outputLabel = stageFormat?.label ?? stage;
-    const outputFormat = stageFormat?.format ?? '(no format specification defined for this stage)';
+    const stageFormat = this.resolveStageFormat(stage);
+    const outputLabel = stageFormat.label;
+    const outputFormat = stageFormat.format;
 
     const lines: string[] = [
       `# Change Request Revision: ${outputLabel}`,
@@ -497,7 +530,15 @@ If the goal is so vague you cannot answer any of the four, ask about Problem and
 When all four exit criteria are met, end your response with exactly:
 
 COORDINATOR_READY
-{"enriched_context": "<structured summary covering: (1) problem and evidence, (2) target user and their context, (3) explicit scope boundary — what is MVP vs deferred, (4) hard constraints the specialists must honour>"${this.hasKnowledgeBase() ? ', "kb_queries": ["<search term 1>", "<search term 2>"]' : ''}}
+{"enriched_context": "<structured summary covering: (1) problem and evidence, (2) target user and their context, (3) explicit scope boundary — what is MVP vs deferred, (4) hard constraints the specialists must honour>", "recommended_stages": ["<stage_key>", "..."], "stage_rationale": "<one sentence, max 20 words>"${this.hasKnowledgeBase() ? ', "kb_queries": ["<search term 1>", "<search term 2>"]' : ''}}
+
+**recommended_stages rules** — always include "pm_backlog" and "curator"; add others only when genuinely needed:
+- "analyst": add when market research, competitive analysis, or user research would materially improve the output
+- "pm_prd": add for any new feature or capability; omit only for bug fixes, copy changes, or minor config tweaks
+- "solution_architect": add when the work involves new infrastructure, new services, new third-party integrations, significant data model changes, or security/compliance decisions
+- "prototype": add when stakeholder alignment on UX flows would accelerate decisions before engineering starts
+- "gtm_strategy": add when the feature is user-facing and requires a launch strategy alongside engineering
+- "feature_marketing": add when copy, positioning, or marketing assets for the feature are needed alongside engineering
 ${this.hasKnowledgeBase() ? `
 **kb_queries rules:**
 - Include 1–3 short, specific search queries that would find relevant existing documentation (PRDs, architecture docs, research) to give specialists useful background.

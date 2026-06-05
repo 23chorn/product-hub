@@ -19,14 +19,18 @@ import { workflowRoutes } from './routes/workflow-routes';
 import { changeRequestRoutes } from './routes/change-request-routes';
 import { contextDiffRouter } from './routes/context-diff-routes';
 import { contextFileRouter } from './routes/context-file-routes';
-import { templateFileRouter } from './routes/template-file-routes';
 import { prototypeRoutes } from './routes/prototype-routes';
 import { ticketRoutes } from './routes/ticket-routes';
+import { skillRoutes } from './routes/skill-routes';
+import { seedSkills, syncSeedSkillTools } from './agents/skill-registry';
 
 const logger = new Logger('SERVER');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+seedSkills();
+syncSeedSkillTools();
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
 // Security middleware
@@ -86,9 +90,9 @@ if (appConfig.features.workflowModeEnabled) {
 app.use('/api', changeRequestRoutes);
 app.use('/api/context-diffs', contextDiffRouter);
 app.use('/api/context-files', contextFileRouter);
-app.use('/api/template-files', templateFileRouter);
 app.use('/api', prototypeRoutes);
 app.use('/api', ticketRoutes);
+app.use('/api/skills', skillRoutes);
 
 app.get('/api', (req, res) => {
   res.json({
@@ -100,7 +104,6 @@ app.get('/api', (req, res) => {
       initiatives: 'GET /api/initiatives',
       contextDiffs: 'GET /api/context-diffs/*',
       contextFiles: 'GET /api/context-files',
-      templateFiles: 'GET /api/template-files',
     },
   });
 });

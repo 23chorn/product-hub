@@ -26,6 +26,9 @@ import {
 } from './artifact-helpers';
 import { deleteWorkflow as deleteWorkflowImpl, recoverStaleWorkflows as recoverStaleWorkflowsImpl, startStaleRecoveryTimer } from './workflow-lifecycle';
 import { WorkflowRow, CheckpointRow, WorkflowStatus, WorkflowEvent, StageTokenData } from './workflow-types';
+export type { WorkflowRow, CheckpointRow, WorkflowStatus, WorkflowEvent, StageTokenData } from './workflow-types';
+export { propagateFeedback, reiterateFromStage, extendWorkflow, retryCurrentStage } from './workflow-mutations';
+export { deleteWorkflow } from './workflow-lifecycle';
 import Logger from '../utils/logger';
 import { CoordinatorAgent } from './coordinator-agent';
 import { CriticAgent } from './critic-agent';
@@ -69,44 +72,6 @@ let _curator: ContextCuratorAgent | null = null;
 function getCurator(): ContextCuratorAgent {
   if (!_curator) _curator = new ContextCuratorAgent();
   return _curator;
-}
-
-// ── Row types ──────────────────────────────────────────────────────────────────
-
-export interface WorkflowRow {
-  id: string;
-  item_id: string;
-  goal: string;
-  summary: string | null;    // AI-generated brief name
-  status: string;
-  current_stage: string | null;
-  stage_sequence: string;    // JSON string[]
-  policy_overrides: string;  // JSON Record<string,string>
-  estimated_cost: number;    // cumulative USD cost
-  created_at: number;
-  updated_at: number;
-}
-
-export interface CheckpointRow {
-  id: number;
-  workflow_id: string;
-  stage: string;
-  artifact_id: number | null;
-  status: string;
-  human_feedback: string | null;
-  coordinator_action: string | null;  // JSON blob
-  token_usage: string | null;       // JSON: StageTokenData
-  created_at: number;
-  resolved_at: number | null;
-}
-
-export interface WorkflowStatus {
-  workflow: WorkflowRow;
-  checkpoints: CheckpointRow[];
-  currentStage: string | null;
-  completedStages: string[];
-  pendingStage: string | null;
-  currentSessionId: string | null;
 }
 
 // ── Policy helpers ─────────────────────────────────────────────────────────────
@@ -172,16 +137,6 @@ const stmts = {
 
 // ── Workflow event logging ────────────────────────────────────────────────────
 
-export interface WorkflowEvent {
-  id: number;
-  workflow_id: string;
-  event_type: string;
-  stage: string | null;
-  summary: string;
-  details: string | null;
-  created_at: number;
-}
-
 const eventStmts = {
   insertEvent: db.prepare(`
     INSERT INTO workflow_events (workflow_id, event_type, stage, summary, details, created_at)
@@ -221,29 +176,6 @@ function addWorkflowCost(workflowId: string, cost: number): void {
 /** Build an onTokens callback that accumulates cost on a workflow. */
 export function costTracker(workflowId: string): (usage: TokenUsage) => void {
   return (usage) => addWorkflowCost(workflowId, usage.estimatedCost);
-}
-
-/** Token usage breakdown stored per-stage on the checkpoint row. */
-interface StageTokenData {
-  specialist: {
-    model: string;
-    inputTokens: number;
-    outputTokens: number;
-    cacheReadTokens: number;
-    cacheWriteTokens: number;
-    searchCount: number;
-    estimatedCost: number;
-  };
-  critic?: {
-    model: string;
-    inputTokens: number;
-    outputTokens: number;
-    cacheReadTokens: number;
-    cacheWriteTokens: number;
-    estimatedCost: number;
-  };
-  /** Cost from prior revision runs for this stage (not reflected in specialist/critic tokens above). */
-  priorRunsCost?: number;
 }
 
 /** Write token usage JSON to a checkpoint row. */

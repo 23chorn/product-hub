@@ -18,6 +18,9 @@ import {
   calculateCost,
 } from './model-config';
 import Logger from './logger';
+import { type ToolDefinition, executeTool } from '../agents/tool-registry';
+
+export type { ToolDefinition } from '../agents/tool-registry';
 
 const logger = new Logger('AI-PROVIDER');
 
@@ -120,36 +123,49 @@ export async function* streamAI(
   system: SystemPrompt,
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
   maxTokens = 8192,
-  options: { webSearch?: boolean; onTokens?: (usage: TokenUsage) => void } = {}
+  options: { webSearch?: boolean; onTokens?: (usage: TokenUsage) => void; tools?: ToolDefinition[] } = {}
 ): AsyncGenerator<string, void, unknown> {
   const provider = getActiveProvider();
   logger.info(`Streaming via provider: ${provider}, model: ${model}`);
 
   if (provider === 'anthropic') {
-    yield* streamWithAnthropic(model, system, messages, maxTokens, options);
+    yield* streamWithAnthropic(model, system, messages, maxTokens, options as any);
   } else if (provider === 'bedrock') {
-    yield* streamWithBedrock(model, system, messages, maxTokens, options.onTokens);
+    yield* streamWithBedrock(model, system, messages, maxTokens, options.onTokens, options.tools);
   } else {
     yield* streamWithOllama(model, toSystemString(system), messages, options.onTokens);
   }
 }
+
+// Internal content types used inside the Anthropic tool loop.
+// The external messages API stays as {role, content: string}; these are used only
+// internally when assembling assistant turns and tool results between iterations.
+type InternalTextBlock    = { type: 'text'; text: string };
+type InternalToolUseBlock = { type: 'tool_use'; id: string; name: string; input: Record<string, unknown>; _partialJson?: string };
+type InternalToolResult   = { type: 'tool_result'; tool_use_id: string; content: string };
+type InternalBlock        = InternalTextBlock | InternalToolUseBlock | InternalToolResult;
+type InternalMsg          = { role: 'user' | 'assistant'; content: string | InternalBlock[] };
 
 async function* streamWithAnthropic(
   model: string,
   system: SystemPrompt,
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
   maxTokens: number,
-  options: { webSearch?: boolean; onTokens?: (usage: TokenUsage) => void } = {}
+  options: { webSearch?: boolean; onTokens?: (usage: TokenUsage) => void; tools?: ToolDefinition[] } = {}
 ): AsyncGenerator<string, void, unknown> {
-  const tools = options.webSearch
-    ? [{ type: 'web_search_20250305' as const, name: 'web_search' as const }]
-    : undefined;
-
   const effectiveMaxTokens = Math.min(maxTokens, modelMaxOutputTokens(model));
 
-  // Build the system parameter. When system is split into stable/dynamic parts,
-  // mark the stable block with cache_control so Anthropic caches its KV prefix.
-  // Cache hits pay 10% of normal input-token cost for the cached portion.
+  // Build tools array: webSearch built-in + skill-defined client tools
+  const toolsParam: any[] = [];
+  if (options.webSearch) {
+    toolsParam.push({ type: 'web_search_20250305' as const, name: 'web_search' as const });
+  }
+  if (options.tools?.length) {
+    for (const t of options.tools) {
+      toolsParam.push({ type: 'custom' as const, name: t.name, description: t.description, input_schema: t.input_schema });
+    }
+  }
+
   const systemParam: string | Array<{ type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }> =
     typeof system === 'string'
       ? system
@@ -158,13 +174,10 @@ async function* streamWithAnthropic(
           ...(system.dynamic ? [{ type: 'text' as const, text: system.dynamic }] : []),
         ];
 
-  // Multi-turn message caching: mark the second-to-last message with cache_control
-  // so the entire conversation history up to that point is served from cache on
-  // subsequent turns. Cache hits pay 10% of normal cost for those tokens.
-  // Only applied when there are 2+ messages (single-shot calls skip this).
+  // Multi-turn message caching on the initial messages (before any tool turns)
   type MsgBlock = { type: 'text'; text: string; cache_control: { type: 'ephemeral' } };
   type PreparedMsg = { role: 'user' | 'assistant'; content: string | MsgBlock[] };
-  const preparedMessages: PreparedMsg[] = messages.map((m, i) => {
+  const initialMessages: PreparedMsg[] = messages.map((m, i) => {
     if (messages.length >= 2 && i === messages.length - 2) {
       return {
         role: m.role,
@@ -174,112 +187,159 @@ async function* streamWithAnthropic(
     return { role: m.role, content: m.content };
   });
 
-  const params = {
-    model,
-    max_tokens: effectiveMaxTokens,
-    system: systemParam,
-    messages: preparedMessages,
-    ...(tools && { tools }),
-    stream: true as const,
-  };
+  // Internal message history — grows when tool turns are added
+  let internalMessages: InternalMsg[] = initialMessages as InternalMsg[];
 
-  // Retry up to 3 times on 429 rate-limit errors with linear back-off.
-  // The rate-limit is checked at connection time, before any tokens are streamed,
-  // so retrying never duplicates output already sent to the client.
+  // Aggregate token counts across all tool-loop iterations
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let totalCacheRead = 0;
+  let totalCacheWrite = 0;
+  let totalSearchCount = 0;
+  const allSearchUrls: Array<{ url: string; title: string }> = [];
+
+  const MAX_TOOL_ITERATIONS = 5;
   const MAX_RETRIES = 3;
-  const RETRY_DELAY_MS = 15_000; // 15 s per attempt (rate limit window is 60 s)
+  const RETRY_DELAY_MS = 15_000;
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const stream = await getAnthropicClient().messages.create(params);
+  for (let toolIteration = 0; toolIteration < MAX_TOOL_ITERATIONS; toolIteration++) {
+    const params = {
+      model,
+      max_tokens: effectiveMaxTokens,
+      system: systemParam,
+      messages: internalMessages as any,
+      ...(toolsParam.length > 0 && { tools: toolsParam }),
+      stream: true as const,
+    };
 
-      let inputTokens = 0;
-      let outputTokens = 0;
-      let cacheReadTokens = 0;
-      let cacheWriteTokens = 0;
-      let searchQueryCount = 0;
+    let stopReason = 'end_turn';
+    const builtBlocks: InternalBlock[] = [];
+    let currentBlock: any = null;
 
-      // Track web search URLs for citation verification
-      const searchUrls: Array<{ url: string; title: string }> = [];
+    // Retry loop (rate limiting) wraps each streaming iteration
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const stream = await getAnthropicClient().messages.create(params);
 
-      for await (const event of stream) {
-        if (event.type === 'message_start') {
-          const usage = event.message.usage as {
-            input_tokens: number;
-            output_tokens: number;
-            cache_read_input_tokens?: number;
-            cache_creation_input_tokens?: number;
-          };
-          inputTokens       = usage.input_tokens;
-          cacheReadTokens   = usage.cache_read_input_tokens   ?? 0;
-          cacheWriteTokens  = usage.cache_creation_input_tokens ?? 0;
-        } else if (event.type === 'message_delta' && event.usage) {
-          outputTokens = event.usage.output_tokens;
-        } else if (
-          event.type === 'content_block_delta' &&
-          event.delta.type === 'text_delta'
-        ) {
-          yield event.delta.text;
-        } else if (event.type === 'content_block_start') {
-          const block = event.content_block as any;
-          // Count each search query (each server_tool_use = one $0.01 query)
-          if (block?.type === 'server_tool_use' && block.name === 'web_search') {
-            searchQueryCount++;
-          }
-          // Capture web search result URLs for citation verification
-          if (block?.type === 'web_search_tool_result' && Array.isArray(block.content)) {
-            for (const result of block.content) {
-              if (result.type === 'web_search_result' && result.url) {
-                searchUrls.push({ url: result.url, title: result.title ?? '' });
+        for await (const event of stream) {
+          if (event.type === 'message_start') {
+            const usage = event.message.usage as any;
+            totalInputTokens  += usage.input_tokens ?? 0;
+            totalCacheRead    += usage.cache_read_input_tokens   ?? 0;
+            totalCacheWrite   += usage.cache_creation_input_tokens ?? 0;
+          } else if (event.type === 'message_delta') {
+            if (event.usage) totalOutputTokens += event.usage.output_tokens ?? 0;
+            if ((event.delta as any).stop_reason) stopReason = (event.delta as any).stop_reason;
+          } else if (event.type === 'content_block_start') {
+            const block = event.content_block as any;
+            if (block?.type === 'text') {
+              currentBlock = { type: 'text' as const, text: '' };
+              builtBlocks.push(currentBlock);
+            } else if (block?.type === 'tool_use') {
+              currentBlock = { type: 'tool_use' as const, id: block.id, name: block.name, input: {}, _partialJson: '' };
+              builtBlocks.push(currentBlock);
+            }
+            // web search built-in blocks
+            if (block?.type === 'server_tool_use' && block.name === 'web_search') {
+              totalSearchCount++;
+            }
+            if (block?.type === 'web_search_tool_result' && Array.isArray(block.content)) {
+              for (const result of block.content) {
+                if (result.type === 'web_search_result' && result.url) {
+                  allSearchUrls.push({ url: result.url, title: result.title ?? '' });
+                }
               }
             }
+          } else if (event.type === 'content_block_delta') {
+            const delta = event.delta as any;
+            if (delta.type === 'text_delta' && currentBlock?.type === 'text') {
+              yield delta.text;
+              currentBlock.text += delta.text;
+            } else if (delta.type === 'input_json_delta' && currentBlock?.type === 'tool_use') {
+              currentBlock._partialJson += delta.partial_json ?? '';
+            }
+          } else if (event.type === 'content_block_stop') {
+            // Finalise tool_use input by parsing accumulated JSON
+            if (currentBlock?.type === 'tool_use') {
+              try {
+                currentBlock.input = JSON.parse(currentBlock._partialJson || '{}');
+              } catch {
+                currentBlock.input = {};
+              }
+              delete currentBlock._partialJson;
+            }
+            currentBlock = null;
           }
         }
+
+        break; // streaming succeeded — exit retry loop
+
+      } catch (err: any) {
+        if (err?.status === 429 && attempt < MAX_RETRIES) {
+          const waitMs = RETRY_DELAY_MS * (attempt + 1);
+          logger.warn(`Rate limit hit — waiting ${waitMs / 1000}s before retry ${attempt + 1}/${MAX_RETRIES}`);
+          await new Promise(res => setTimeout(res, waitMs));
+          continue;
+        }
+        if (err?.status === 429) {
+          throw new Error(
+            'Rate limit reached after retries. Your organisation\'s input token quota is full — ' +
+            'wait a minute then try again, or switch to a different model.'
+          );
+        }
+        throw err;
       }
-
-      if (searchQueryCount > 0) {
-        logger.info(`[WEB SEARCH] ${searchQueryCount} search quer${searchQueryCount === 1 ? 'y' : 'ies'} (${searchUrls.length} result(s) total)`);
-      } else if (searchUrls.length > 0) {
-        logger.info(`[WEB SEARCH] ${searchUrls.length} source(s): ${searchUrls.map(s => s.url).join(', ')}`);
-      }
-
-      // inputTokens = uncached tokens only; cache fields are reported separately.
-      // Total tokens processed = uncached + cache_write + cache_read.
-      const totalInput = inputTokens + cacheWriteTokens + cacheReadTokens;
-      logger.info(
-        `[TOKENS] model=${model}` +
-        ` | input=${totalInput} (uncached=${inputTokens} cache_write=${cacheWriteTokens} cache_read=${cacheReadTokens})` +
-        ` | output=${outputTokens}` +
-        estimateCost(model, inputTokens, cacheWriteTokens, cacheReadTokens, outputTokens, searchQueryCount)
-      );
-
-      options.onTokens?.({
-        model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens,
-        searchCount: searchQueryCount,
-        estimatedCost: calculateCost(model, inputTokens, cacheWriteTokens, cacheReadTokens, outputTokens, searchQueryCount),
-      });
-
-      return; // success — exit retry loop
-
-    } catch (err: any) {
-      if (err?.status === 429 && attempt < MAX_RETRIES) {
-        const waitMs = RETRY_DELAY_MS * (attempt + 1);
-        logger.warn(`Rate limit hit — waiting ${waitMs / 1000}s before retry ${attempt + 1}/${MAX_RETRIES}`);
-        await new Promise(res => setTimeout(res, waitMs));
-        continue;
-      }
-
-      // Re-wrap 429 exhaustion with a user-readable message
-      if (err?.status === 429) {
-        throw new Error(
-          'Rate limit reached after retries. Your organisation\'s input token quota is full — ' +
-          'wait a minute then try again, or switch to a different model.'
-        );
-      }
-
-      throw err;
     }
+
+    // If the model stopped for a reason other than tool_use, we are done
+    if (stopReason !== 'tool_use') break;
+
+    // Execute all tool_use blocks and build tool results
+    const toolUseBlocks = builtBlocks.filter((b): b is InternalToolUseBlock => b.type === 'tool_use');
+    if (toolUseBlocks.length === 0) break;
+
+    const toolResults: InternalToolResult[] = [];
+    for (const block of toolUseBlocks) {
+      let result: string;
+      try {
+        result = await executeTool(block.name, block.input);
+      } catch (err: any) {
+        result = `Tool execution failed: ${err.message}`;
+        logger.warn(`[TOOL] ${block.name} failed: ${err.message}`);
+      }
+      toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
+    }
+
+    // Append assistant turn + tool results and loop
+    internalMessages = [
+      ...internalMessages,
+      { role: 'assistant' as const, content: builtBlocks },
+      { role: 'user' as const, content: toolResults },
+    ];
   }
+
+  // Log search activity
+  if (totalSearchCount > 0) {
+    logger.info(`[WEB SEARCH] ${totalSearchCount} search quer${totalSearchCount === 1 ? 'y' : 'ies'} (${allSearchUrls.length} result(s) total)`);
+  }
+
+  const totalInput = totalInputTokens + totalCacheWrite + totalCacheRead;
+  logger.info(
+    `[TOKENS] model=${model}` +
+    ` | input=${totalInput} (uncached=${totalInputTokens} cache_write=${totalCacheWrite} cache_read=${totalCacheRead})` +
+    ` | output=${totalOutputTokens}` +
+    estimateCost(model, totalInputTokens, totalCacheWrite, totalCacheRead, totalOutputTokens, totalSearchCount)
+  );
+
+  options.onTokens?.({
+    model,
+    inputTokens: totalInputTokens,
+    outputTokens: totalOutputTokens,
+    cacheReadTokens: totalCacheRead,
+    cacheWriteTokens: totalCacheWrite,
+    searchCount: totalSearchCount,
+    estimatedCost: calculateCost(model, totalInputTokens, totalCacheWrite, totalCacheRead, totalOutputTokens, totalSearchCount),
+  });
 }
 
 async function* streamWithBedrock(
@@ -287,9 +347,11 @@ async function* streamWithBedrock(
   system: SystemPrompt,
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
   maxTokens: number,
-  onTokens?: (usage: TokenUsage) => void
+  onTokens?: (usage: TokenUsage) => void,
+  tools?: ToolDefinition[]
 ): AsyncGenerator<string, void, unknown> {
-  const bedrockMessages: Message[] = messages.map(msg => ({
+  // Build initial Bedrock messages (grows as tool turns are added)
+  let bedrockMessages: Message[] = messages.map(msg => ({
     role: msg.role as 'user' | 'assistant',
     content: [{ text: msg.content }] as ContentBlock[],
   }));
@@ -306,74 +368,152 @@ async function* streamWithBedrock(
           ...(system.dynamic ? [{ text: system.dynamic }] : []),
         ];
 
-  const command = new ConverseStreamCommand({
-    modelId: model,
-    system: systemBlocks,
-    messages: bedrockMessages,
-    inferenceConfig: { maxTokens: Math.min(maxTokens, modelMaxOutputTokens(model)) },
-  });
+  // Build toolConfig from ToolDefinition array if provided
+  const toolConfig = tools?.length
+    ? {
+        tools: tools.map(t => ({
+          toolSpec: {
+            name: t.name,
+            description: t.description,
+            inputSchema: { json: t.input_schema as unknown as Record<string, unknown> },
+          },
+        })),
+      }
+    : undefined;
 
-  // Retry up to 3 times on ThrottlingException with linear back-off.
+  const MAX_TOOL_ITERATIONS = 5;
   const MAX_RETRIES = 3;
   const RETRY_DELAY_MS = 15_000;
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const response = await bedrockClient.send(command);
+  // Aggregate token counts across tool-loop iterations
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let totalCacheRead = 0;
+  let totalCacheWrite = 0;
 
-      if (response.stream) {
-        let inputTokens = 0;
-        let outputTokens = 0;
-        let cacheReadTokens = 0;
-        let cacheWriteTokens = 0;
+  for (let toolIteration = 0; toolIteration < MAX_TOOL_ITERATIONS; toolIteration++) {
+    const command = new ConverseStreamCommand({
+      modelId: model,
+      system: systemBlocks,
+      messages: bedrockMessages,
+      inferenceConfig: { maxTokens: Math.min(maxTokens, modelMaxOutputTokens(model)) },
+      ...(toolConfig && { toolConfig: toolConfig as any }),
+    });
 
-        for await (const event of response.stream) {
-          if (event.contentBlockDelta?.delta?.text) {
-            yield event.contentBlockDelta.delta.text;
-          } else if (event.metadata?.usage) {
-            inputTokens      = event.metadata.usage.inputTokens      ?? 0;
-            outputTokens     = event.metadata.usage.outputTokens     ?? 0;
-            cacheReadTokens  = event.metadata.usage.cacheReadInputTokens  ?? 0;
-            cacheWriteTokens = event.metadata.usage.cacheWriteInputTokens ?? 0;
+    let stopReason = 'end_turn';
+    // Collect assistant content blocks for tool-loop continuation
+    const assistantBlocks: ContentBlock[] = [];
+    let currentToolUse: { toolUseId: string; name: string; inputJson: string } | null = null;
+    let currentText = '';
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const response = await bedrockClient.send(command);
+
+        if (response.stream) {
+          for await (const event of response.stream) {
+            if (event.contentBlockStart?.start) {
+              const start = event.contentBlockStart.start as any;
+              if (start.toolUse) {
+                // Flush accumulated text before starting a tool block
+                if (currentText) {
+                  assistantBlocks.push({ text: currentText });
+                  currentText = '';
+                }
+                currentToolUse = { toolUseId: start.toolUse.toolUseId, name: start.toolUse.name, inputJson: '' };
+              }
+            } else if (event.contentBlockDelta?.delta) {
+              const delta = event.contentBlockDelta.delta as any;
+              if (delta.text) {
+                yield delta.text;
+                currentText += delta.text;
+              } else if (delta.toolUse?.input) {
+                if (currentToolUse) currentToolUse.inputJson += delta.toolUse.input;
+              }
+            } else if (event.contentBlockStop !== undefined) {
+              if (currentToolUse) {
+                let input: Record<string, unknown> = {};
+                try { input = JSON.parse(currentToolUse.inputJson || '{}'); } catch {}
+                assistantBlocks.push({ toolUse: { toolUseId: currentToolUse.toolUseId, name: currentToolUse.name, input } } as any);
+                currentToolUse = null;
+              }
+            } else if ((event as any).messageStop) {
+              stopReason = (event as any).messageStop.stopReason ?? 'end_turn';
+            } else if (event.metadata?.usage) {
+              totalInputTokens  += event.metadata.usage.inputTokens      ?? 0;
+              totalOutputTokens += event.metadata.usage.outputTokens     ?? 0;
+              totalCacheRead    += event.metadata.usage.cacheReadInputTokens  ?? 0;
+              totalCacheWrite   += event.metadata.usage.cacheWriteInputTokens ?? 0;
+            }
           }
         }
 
-        const totalInput = inputTokens + cacheWriteTokens + cacheReadTokens;
-        logger.info(
-          `[TOKENS] model=${model}` +
-          ` | input=${totalInput} (uncached=${inputTokens} cache_write=${cacheWriteTokens} cache_read=${cacheReadTokens})` +
-          ` | output=${outputTokens}` +
-          estimateCost(model, inputTokens, cacheWriteTokens, cacheReadTokens, outputTokens)
-        );
+        break; // streaming succeeded — exit retry loop
 
-        onTokens?.({
-          model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens,
-          searchCount: 0,
-          estimatedCost: calculateCost(model, inputTokens, cacheWriteTokens, cacheReadTokens, outputTokens),
-        });
+      } catch (err: any) {
+        const isThrottle = err?.name === 'ThrottlingException' || err?.__type === 'ThrottlingException';
+        if (isThrottle && attempt < MAX_RETRIES) {
+          const waitMs = RETRY_DELAY_MS * (attempt + 1);
+          logger.warn(`Bedrock throttled — waiting ${waitMs / 1000}s before retry ${attempt + 1}/${MAX_RETRIES}`);
+          await new Promise(res => setTimeout(res, waitMs));
+          continue;
+        }
+        if (isThrottle) {
+          throw new Error('Bedrock request throttled after retries. Wait a moment then try again, or switch to a different model.');
+        }
+        throw err;
       }
-
-      return; // success — exit retry loop
-
-    } catch (err: any) {
-      const isThrottle = err?.name === 'ThrottlingException' || err?.__type === 'ThrottlingException';
-
-      if (isThrottle && attempt < MAX_RETRIES) {
-        const waitMs = RETRY_DELAY_MS * (attempt + 1);
-        logger.warn(`Bedrock throttled — waiting ${waitMs / 1000}s before retry ${attempt + 1}/${MAX_RETRIES}`);
-        await new Promise(res => setTimeout(res, waitMs));
-        continue;
-      }
-
-      if (isThrottle) {
-        throw new Error(
-          'Bedrock request throttled after retries. Wait a moment then try again, or switch to a different model.'
-        );
-      }
-
-      throw err;
     }
+
+    // Flush any remaining text block
+    if (currentText) assistantBlocks.push({ text: currentText });
+
+    // If no tool use was requested, we are done
+    if (stopReason !== 'tool_use') break;
+
+    const toolUseBlocks = assistantBlocks.filter(b => (b as any).toolUse) as Array<{ toolUse: { toolUseId: string; name: string; input: Record<string, unknown> } }>;
+    if (toolUseBlocks.length === 0) break;
+
+    // Execute tools and build tool result blocks
+    const toolResultBlocks: ContentBlock[] = [];
+    for (const block of toolUseBlocks) {
+      let resultText: string;
+      try {
+        resultText = await executeTool(block.toolUse.name, block.toolUse.input);
+      } catch (err: any) {
+        resultText = `Tool error: ${err.message}`;
+        logger.warn(`[TOOL/BEDROCK] ${block.toolUse.name} failed: ${err.message}`);
+      }
+      toolResultBlocks.push({
+        toolResult: { toolUseId: block.toolUse.toolUseId, content: [{ text: resultText }], status: 'success' },
+      } as any);
+    }
+
+    // Append assistant turn + tool results and loop
+    bedrockMessages = [
+      ...bedrockMessages,
+      { role: 'assistant', content: assistantBlocks },
+      { role: 'user', content: toolResultBlocks },
+    ];
   }
+
+  const totalInput = totalInputTokens + totalCacheWrite + totalCacheRead;
+  logger.info(
+    `[TOKENS] model=${model}` +
+    ` | input=${totalInput} (uncached=${totalInputTokens} cache_write=${totalCacheWrite} cache_read=${totalCacheRead})` +
+    ` | output=${totalOutputTokens}` +
+    estimateCost(model, totalInputTokens, totalCacheWrite, totalCacheRead, totalOutputTokens)
+  );
+
+  onTokens?.({
+    model,
+    inputTokens: totalInputTokens,
+    outputTokens: totalOutputTokens,
+    cacheReadTokens: totalCacheRead,
+    cacheWriteTokens: totalCacheWrite,
+    searchCount: 0,
+    estimatedCost: calculateCost(model, totalInputTokens, totalCacheWrite, totalCacheRead, totalOutputTokens),
+  });
 }
 
 /**

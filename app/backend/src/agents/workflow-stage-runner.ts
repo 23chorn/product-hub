@@ -26,6 +26,8 @@ import {
   saveCriticArtifact, getLatestArchitectureArtifactPath,
   getLatestArtifactPathByType,
 } from './artifact-helpers';
+import { getActiveSkill } from './skill-registry';
+import { type ToolDefinition, getRegisteredTools } from './tool-registry';
 import { loadWorkflowArtifacts, loadLocalDesignSystem, loadFigmaDesignSystem, repairTruncatedJson } from './prototype-agent';
 import {
   PROJECT_ROOT, logger, stmts, insertEvent, addWorkflowCost,
@@ -88,6 +90,35 @@ export async function runAutonomousStage(
     return;
   }
 
+  const activeSkill = getActiveSkill(stage);
+  const skillVersionId = activeSkill?.id ?? null;
+  if (activeSkill) {
+    db.prepare(
+      `INSERT INTO workflow_skill_assignments (workflow_id, stage, skill_name, skill_version, created_at)
+       VALUES (?, ?, ?, ?, ?)`
+    ).run(workflowId, stage, activeSkill.skill_name, activeSkill.version, Date.now());
+    logger.info(`Stage "${stage}" using skill v${activeSkill.version}`);
+  }
+
+  // Parse tool definitions from skill and filter to those with registered handlers
+  let skillTools: ToolDefinition[] = [];
+  if (activeSkill?.tool_definitions) {
+    try {
+      const parsed: ToolDefinition[] = JSON.parse(activeSkill.tool_definitions);
+      const registered = getRegisteredTools();
+      skillTools = parsed.filter(t => registered.includes(t.name));
+      const skipped = parsed.length - skillTools.length;
+      if (skipped > 0) {
+        logger.warn(`Stage "${stage}": ${skipped} tool(s) skipped — no handler registered`);
+      }
+      if (skillTools.length > 0) {
+        logger.info(`Stage "${stage}": providing tools: ${skillTools.map(t => t.name).join(', ')}`);
+      }
+    } catch {
+      logger.warn(`Stage "${stage}": could not parse tool_definitions from skill`);
+    }
+  }
+
   // Resolve model: workflow policy_overrides take priority, then per-agent defaults
   const workflow = stmts.getWorkflow.get(workflowId);
   const policyOverrides: Record<string, string> = workflow?.policy_overrides
@@ -127,7 +158,7 @@ export async function runAutonomousStage(
 
   try {
     const agent = new SpecialistAgent(stageMap.agentType);
-    const persona = await agent.loadPersona();
+    const persona = await agent.loadPersona(stage);
 
     // Extract the goal from the brief and pin it in the system prompt so the
     // model cannot miss it even when the project context describes a different product.
@@ -262,7 +293,7 @@ export async function runAutonomousStage(
     const startTime = Date.now();
     let lastProgressTime = startTime;
 
-    for await (const chunk of agent.streamResponse(systemPrompt, messages, stageModel, specialistTokenCallback, STAGE_MAX_OUTPUT_TOKENS[stage])) {
+    for await (const chunk of agent.streamResponse(systemPrompt, messages, stageModel, specialistTokenCallback, STAGE_MAX_OUTPUT_TOKENS[stage], skillTools)) {
       fullResponse += chunk;
 
       // Detect progress and emit events
@@ -338,9 +369,9 @@ export async function runAutonomousStage(
     // Insert artifact record (type must match what getLatestPrdArtifact / getLatestAnalystArtifact query for)
     const artifactType = STAGE_ARTIFACT_TYPE[stage] ?? stage;
     const artifactResult = db.prepare(`
-      INSERT INTO artifacts (session_id, type, file_path, created_at)
-      VALUES (?, ?, ?, ?)
-    `).run(sessionId, artifactType, artifactPath, Date.now());
+      INSERT INTO artifacts (session_id, type, file_path, skill_version_id, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(sessionId, artifactType, artifactPath, skillVersionId, Date.now());
     const artifactId = artifactResult.lastInsertRowid as number;
 
     // If this is a revision run, compute and save a diff of what changed

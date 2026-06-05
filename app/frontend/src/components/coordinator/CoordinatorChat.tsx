@@ -45,6 +45,8 @@ export function CoordinatorChat() {
   const [enabledStages, setEnabledStages] = useState<Record<string, boolean>>(
     () => Object.fromEntries(TOGGLEABLE_STAGES.map(s => [s.key, true]))
   );
+  const [pendingLaunchData, setPendingLaunchData] = useState<{ enrichedContext: string; kbQueries: string[] } | null>(null);
+  const [stageRationale, setStageRationale] = useState<string | null>(null);
   const [showDiffPanel, setShowDiffPanel] = useState(false);
   const [stageStale, setStageStale] = useState(false);
   // Change request state
@@ -77,6 +79,7 @@ export function CoordinatorChat() {
   const isComplete = activeWorkflow?.status === 'complete';
   const isAtCheckpoint = activeWorkflow?.status === 'paused_at_checkpoint';
   const isGathering = planningPhase === 'gathering';
+  const isConfirming = planningPhase === 'confirming';
   const isLaunching = planningPhase === 'launching';
 
   const { pendingDiffCount, setPendingDiffCount } = useWorkflowStore();
@@ -287,7 +290,7 @@ export function CoordinatorChat() {
         (fullContent) => {
           setIsStreaming(false);
           const payload = extractReadyPayload(fullContent);
-          if (payload.enrichedContext) handleLaunchWorkflow(trimmedGoal, payload.enrichedContext, payload.kbQueries);
+          if (payload.enrichedContext) handleCoordinatorReady(payload.enrichedContext, payload.kbQueries, payload.recommendedStages, payload.stageRationale);
         },
         (err) => { setError(err); setIsStreaming(false); },
         undefined,
@@ -340,7 +343,7 @@ export function CoordinatorChat() {
         (fullContent) => {
           setIsStreaming(false);
           const payload = extractReadyPayload(fullContent);
-          if (payload.enrichedContext) handleLaunchWorkflow(pendingGoal, payload.enrichedContext, payload.kbQueries);
+          if (payload.enrichedContext) handleCoordinatorReady(payload.enrichedContext, payload.kbQueries, payload.recommendedStages, payload.stageRationale);
         },
         (err) => { setError(err); setIsStreaming(false); },
         undefined,
@@ -352,7 +355,23 @@ export function CoordinatorChat() {
     }
   }
 
-  // ── Launch workflow after coordinator signals ready ───────────────────────
+  // ── Called when COORDINATOR_READY is received — enter confirming phase ──────
+  function handleCoordinatorReady(enrichedContext: string, kbQueries: string[] = [], recommendedStages: string[] | null = null, rationale: string | null = null) {
+    // Apply recommended stages if provided; otherwise keep all stages enabled
+    if (recommendedStages && recommendedStages.length > 0) {
+      const recommended = new Set(recommendedStages);
+      setEnabledStages(Object.fromEntries(
+        availableStages.map(s => [s.key, recommended.has(s.key)])
+      ));
+    } else {
+      setEnabledStages(Object.fromEntries(availableStages.map(s => [s.key, true])));
+    }
+    setStageRationale(rationale);
+    setPendingLaunchData({ enrichedContext, kbQueries });
+    setPlanningPhase('confirming');
+  }
+
+  // ── Launch workflow after user confirms stages ────────────────────────────
   async function handleLaunchWorkflow(originalGoal: string, enrichedContext: string, kbQueries: string[] = []) {
     setPlanningPhase('launching');
     try {
@@ -388,15 +407,12 @@ export function CoordinatorChat() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   // Goal entry form (idle, no workflow, no planning)
-  if (!hasWorkflow && !isGathering && !isLaunching) {
+  if (!hasWorkflow && !isGathering && !isConfirming && !isLaunching) {
     return (
       <GoalEntryScreen
         goal={goal}
         onGoalChange={setGoal}
         onSubmitGoal={handleSubmitGoal}
-        availableStages={availableStages}
-        enabledStages={enabledStages}
-        onToggleStage={(key) => setEnabledStages(prev => ({ ...prev, [key]: !prev[key] }))}
         error={error}
         isStreaming={isStreaming}
       />
@@ -409,7 +425,7 @@ export function CoordinatorChat() {
     : activeWorkflow?.goal;
   const displayGoal = activeWorkflow?.summary || rawGoal;
 
-  const showInput = !isLaunching && (
+  const showInput = !isLaunching && !isConfirming && (
     isGathering ||
     (hasWorkflow && !isComplete)
   );
@@ -470,6 +486,47 @@ export function CoordinatorChat() {
             </div>
           );
         })}
+
+        {/* Stage confirmation card — shown after coordinator signals ready */}
+        {isConfirming && pendingLaunchData && (
+          <div className="rounded-lg border border-teal-200 dark:border-teal-800 bg-teal-50/60 dark:bg-teal-900/20 p-4 space-y-3">
+            <div>
+              <p className="text-xs font-semibold text-teal-700 dark:text-teal-300 uppercase tracking-wide mb-1">Suggested pipeline</p>
+              {stageRationale && (
+                <p className="text-xs text-slate-600 dark:text-slate-400">{stageRationale}</p>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {availableStages.map(stage => {
+                const enabled = enabledStages[stage.key];
+                const enabledCount = Object.values(enabledStages).filter(Boolean).length;
+                const isLastEnabled = enabled && enabledCount === 1;
+                return (
+                  <button
+                    key={stage.key}
+                    type="button"
+                    disabled={isLastEnabled}
+                    onClick={() => setEnabledStages(prev => ({ ...prev, [stage.key]: !prev[stage.key] }))}
+                    title={isLastEnabled ? 'At least one stage required' : `${enabled ? 'Remove' : 'Add'} ${stage.label}`}
+                    className={`px-2 py-0.5 text-xs rounded-md border transition-colors ${
+                      enabled
+                        ? 'bg-teal-100 dark:bg-teal-900/50 border-teal-400 dark:border-teal-600 text-teal-800 dark:text-teal-200 font-medium'
+                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-600 line-through'
+                    } ${isLastEnabled ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-80 cursor-pointer'}`}
+                  >
+                    {stage.short}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              onClick={() => handleLaunchWorkflow(pendingGoal, pendingLaunchData.enrichedContext, pendingLaunchData.kbQueries)}
+              className="w-full py-2 px-4 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              Launch workflow →
+            </button>
+          </div>
+        )}
 
         {/* View output buttons for completed stages */}
         {hasWorkflow && completedStages.length > 0 && (

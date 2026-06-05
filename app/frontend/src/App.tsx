@@ -5,14 +5,12 @@ import { ToastContainer } from './components/ToastContainer';
 import { CoordinatorChat } from './components/coordinator';
 import { WorkflowStageTracker, WorkflowHistory } from './components/workflow';
 import { ArtifactViewer } from './components/artifact';
-import { ContextEditorPanel } from './components/ContextEditorPanel';
-import { TemplateEditorPanel } from './components/TemplateEditorPanel';
+import { SkillManagerPanel } from './components/SkillManagerPanel';
 import { QuickTicketPanel } from './components/QuickTicketPanel';
 import { useThemeStore } from './stores/themeStore';
 import { useModelStore } from './stores/modelStore';
 import { useDecisionLogStore } from './stores/decisionLogStore';
-import { useContextEditorStore } from './stores/contextEditorStore';
-import { useTemplateEditorStore } from './stores/templateEditorStore';
+import { useSkillManagerStore } from './stores/skillManagerStore';
 import { useConfigStore } from './stores/configStore';
 import { useWorkflowStore } from './stores/workflowStore';
 import { api } from './services/api';
@@ -22,8 +20,7 @@ function App() {
   const { isDark, toggleTheme } = useThemeStore();
   const { setAvailableModels, setAgentModels } = useModelStore();
   const { isOpen: isDLOpen, openDecisionLog } = useDecisionLogStore();
-  const { isOpen: isCEOpen, openContextEditor } = useContextEditorStore();
-  const { isOpen: isTEOpen, openTemplateEditor } = useTemplateEditorStore();
+  const { isOpen: isSMOpen, openSkillManager } = useSkillManagerStore();
   const { setConfig } = useConfigStore();
   const { activeWorkflow, viewingArtifactId } = useWorkflowStore();
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
@@ -136,22 +133,13 @@ function App() {
             </p>
           </div>
           <div className="flex items-center space-x-3">
-            {/* Context Editor Button */}
+            {/* Agent Studio Button */}
             <button
-              onClick={openContextEditor}
+              onClick={openSkillManager}
               className="flex items-center space-x-1.5 px-3 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-700/70 hover:border-slate-400 dark:hover:border-slate-500 transition-colors shadow-sm hover:shadow-glow-teal-sm"
-              title="Open Context Editor"
+              title="Open Agent Studio"
             >
-              <span>Context</span>
-            </button>
-
-            {/* Template Editor Button */}
-            <button
-              onClick={openTemplateEditor}
-              className="flex items-center space-x-1.5 px-3 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-700/70 hover:border-slate-400 dark:hover:border-slate-500 transition-colors shadow-sm hover:shadow-glow-teal-sm"
-              title="Open Template Editor"
-            >
-              <span>Templates</span>
+              <span>Studio</span>
             </button>
 
             {/* Quick Ticket Button */}
@@ -245,17 +233,10 @@ function App() {
           </div>
         )}
 
-        {/* Context Editor Modal Overlay */}
-        {isCEOpen && (
+        {/* Agent Studio Modal Overlay */}
+        {isSMOpen && (
           <div className="absolute inset-0 z-50 p-3">
-            <ContextEditorPanel />
-          </div>
-        )}
-
-        {/* Template Editor Modal Overlay */}
-        {isTEOpen && (
-          <div className="absolute inset-0 z-50 p-3">
-            <TemplateEditorPanel />
+            <SkillManagerPanel />
           </div>
         )}
 

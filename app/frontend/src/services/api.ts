@@ -3,6 +3,23 @@ import type { AirtableItem, AppConfig, LocalInitiative, ModelOption, DecisionLog
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
+export interface SkillVersion {
+  id: number;
+  skill_name: string;
+  agent_type: string;
+  version: string;
+  owner_team: string;
+  discipline: string;
+  persona_prompt: string;
+  output_format_template: string | null;
+  stage_brief_label: string | null;
+  stage_brief_format: string | null;
+  development_context: string | null;
+  tool_definitions: string | null;
+  created_at: number;
+  deprecated_at: number | null;
+}
+
 class APIClient {
   private baseURL: string;
 
@@ -412,25 +429,58 @@ class APIClient {
     return response.data;
   }
 
+  async createContextFile(label: string, description: string, content: string): Promise<{ ok: boolean; fileName: string; label: string }> {
+    const response = await axios.post(`${this.baseURL}/api/context-files`, { label, description, content });
+    return response.data;
+  }
+
   async saveContextFile(fileName: string, content: string): Promise<{ ok: boolean }> {
     const response = await axios.put(`${this.baseURL}/api/context-files/${fileName}`, { content });
     return response.data;
   }
 
-  // ============================================
-  // Template Files (editor)
-  // ============================================
-
-  async getTemplateFiles(): Promise<{ files: Array<{
-    fileName: string; label: string; description: string; content: string;
-  }> }> {
-    const response = await axios.get(`${this.baseURL}/api/template-files`);
+  async getContextFileVersions(fileName: string): Promise<{ versions: Array<{ id: number; file_name: string; content: string; created_at: number }> }> {
+    const response = await axios.get(`${this.baseURL}/api/context-files/${encodeURIComponent(fileName)}/versions`);
     return response.data;
   }
 
-  async saveTemplateFile(fileName: string, content: string): Promise<{ ok: boolean }> {
-    const response = await axios.put(`${this.baseURL}/api/template-files/${fileName}`, { content });
+  // ============================================
+  // Skill Registry
+  // ============================================
+
+  async getSkills(discipline?: string): Promise<SkillVersion[]> {
+    const params = discipline ? `?discipline=${encodeURIComponent(discipline)}` : '';
+    const response = await axios.get(`${this.baseURL}/api/skills${params}`);
     return response.data;
+  }
+
+  async getSkill(name: string): Promise<SkillVersion> {
+    const response = await axios.get(`${this.baseURL}/api/skills/${encodeURIComponent(name)}`);
+    return response.data;
+  }
+
+  async getSkillVersions(name: string): Promise<SkillVersion[]> {
+    const response = await axios.get(`${this.baseURL}/api/skills/${encodeURIComponent(name)}/versions`);
+    return response.data;
+  }
+
+  async publishSkill(skill: {
+    skill_name: string;
+    agent_type?: string;
+    version: string;
+    owner_team?: string;
+    discipline?: string;
+    persona_prompt?: string;
+    output_format_template?: string | null;
+    development_context?: string | null;
+    tool_definitions?: string | null;
+  }): Promise<{ id: number; skill_name: string; version: string }> {
+    const response = await axios.post(`${this.baseURL}/api/skills`, skill);
+    return response.data;
+  }
+
+  async deprecateSkill(name: string, version: string): Promise<void> {
+    await axios.delete(`${this.baseURL}/api/skills/${encodeURIComponent(name)}/versions/${encodeURIComponent(version)}`);
   }
 
   // ============================================

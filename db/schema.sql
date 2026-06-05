@@ -335,3 +335,61 @@ CREATE TABLE ado_work_item_map (
 );
 
 CREATE UNIQUE INDEX idx_ado_map_key ON ado_work_item_map(workflow_id, local_key);
+
+-- ------------------------------------------------------------
+-- skill_versions — Versioned Skill Registry
+-- Each row is an immutable snapshot of an agent skill at a
+-- given version. Agents load from here first; disk files are
+-- the fallback. Teams own skills by setting owner_team.
+-- deprecated_at = null means the version is active.
+-- UNIQUE(skill_name, version) prevents duplicate versions.
+-- ------------------------------------------------------------
+CREATE TABLE skill_versions (
+  id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+  skill_name             TEXT    NOT NULL,
+  agent_type             TEXT    NOT NULL,
+  version                TEXT    NOT NULL,
+  owner_team             TEXT    NOT NULL DEFAULT 'core',
+  discipline             TEXT    NOT NULL DEFAULT 'agent',
+  persona_prompt         TEXT    NOT NULL DEFAULT '',
+  output_format_template TEXT,
+  stage_brief_label      TEXT,
+  stage_brief_format     TEXT,
+  development_context    TEXT,
+  tool_definitions       TEXT,
+  created_at             INTEGER NOT NULL,
+  deprecated_at          INTEGER,
+  UNIQUE(skill_name, version)
+);
+
+CREATE INDEX idx_skill_versions_name ON skill_versions(skill_name);
+
+-- ------------------------------------------------------------
+-- workflow_skill_assignments — Stage Skill Audit Trail
+-- Records which skill version ran for each stage of each
+-- workflow. Enables cost attribution and rollback analysis.
+-- ------------------------------------------------------------
+CREATE TABLE workflow_skill_assignments (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  workflow_id   TEXT    NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+  stage         TEXT    NOT NULL,
+  skill_name    TEXT    NOT NULL,
+  skill_version TEXT    NOT NULL,
+  created_at    INTEGER NOT NULL
+);
+
+CREATE INDEX idx_skill_assignments_workflow ON workflow_skill_assignments(workflow_id);
+
+-- ------------------------------------------------------------
+-- context_file_versions — Context File Edit History
+-- Records a snapshot of every non-empty save to a context/*.md
+-- file so edits can be reviewed or restored.
+-- ------------------------------------------------------------
+CREATE TABLE context_file_versions (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  file_name  TEXT    NOT NULL,
+  content    TEXT    NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX idx_context_file_versions_file ON context_file_versions(file_name, created_at);

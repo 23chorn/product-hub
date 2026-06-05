@@ -1,7 +1,8 @@
 import * as fs from 'fs';
 import db from '../data/database';
 import Logger from '../utils/logger';
-import type { WorkflowRow, CheckpointRow } from './workflow-router';
+import type { WorkflowRow, CheckpointRow } from './workflow-types';
+import { resolveArtifactPath } from './artifact-helpers';
 
 const logger = new Logger('WORKFLOW-LIFECYCLE');
 

@@ -1,8 +1,9 @@
 import { AgentType } from '@pap/shared';
-import { streamAI, resolveModelId, getActiveProvider, type SystemPrompt, type TokenUsage } from '../utils/ai-provider';
+import { streamAI, resolveModelId, getActiveProvider, type SystemPrompt, type TokenUsage, type ToolDefinition } from '../utils/ai-provider';
 import Logger from '../utils/logger';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { getActiveSkill } from './skill-registry';
 
 const logger = new Logger('SPECIALIST-AGENT');
 
@@ -55,17 +56,24 @@ export class SpecialistAgent {
   }
 
   /**
-   * Load the agent persona markdown file as plain text.
-   * Strips YAML frontmatter if present.
+   * Load the agent persona. Tries the skill registry first (by stage), falls back to disk.
    */
-  async loadPersona(): Promise<string> {
+  async loadPersona(stage?: string): Promise<string> {
     if (this.persona) return this.persona;
 
+    if (stage) {
+      const skill = getActiveSkill(stage);
+      if (skill) {
+        this.persona = skill.persona_prompt;
+        logger.info(`Loaded persona for stage "${stage}" from skill registry v${skill.version}`);
+        return this.persona;
+      }
+    }
+
     const agentFilePath = path.join(AGENTS_ROOT, 'personas', `${this.agentType}.md`);
-    logger.info(`Loading persona from: ${agentFilePath}`);
+    logger.info(`Loading persona from disk: ${agentFilePath}`);
 
     const content = await fs.readFile(agentFilePath, 'utf-8');
-    // Strip YAML frontmatter (--- ... ---)
     this.persona = content.replace(/^---[\s\S]*?---\s*\n?/, '').trim();
     logger.info(`Loaded persona for agent type: ${this.agentType}`);
 
@@ -168,17 +176,22 @@ The full document is assembled at export. Mid-conversation your job is to gather
       stable += `\n\n## Project & Company Context\nUse this as background for your output. It describes the company, product, and strategy context.\n\n${projectContext}`;
     }
 
-    // Inject the output template for the current stage (coordinator flow only).
-    // Only the relevant template is loaded — e.g. analyst gets research.template.md,
-    // pm_prd gets prd.template.md. Stages without a template (critic, curator) skip this.
-    if (autonomous && stage && STAGE_TEMPLATE_MAP[stage]) {
-      try {
-        const templatePath = path.join(TEMPLATES_DIR, STAGE_TEMPLATE_MAP[stage]);
-        const templateContent = await fs.readFile(templatePath, 'utf-8');
-        stable += `\n\n## Output Template\nFollow this structure for your output:\n\n${templateContent}`;
-        logger.info(`Injected output template: ${STAGE_TEMPLATE_MAP[stage]}`);
-      } catch {
-        logger.warn(`Could not load output template: ${STAGE_TEMPLATE_MAP[stage]}`);
+    // Inject the output template for the current stage. Try skill registry first,
+    // fall back to disk. Stages without a template (critic, curator) skip this.
+    if (autonomous && stage) {
+      const skill = getActiveSkill(stage);
+      if (skill?.output_format_template) {
+        stable += `\n\n## Output Template\nFollow this structure for your output:\n\n${skill.output_format_template}`;
+        logger.info(`Injected output template for stage "${stage}" from skill registry v${skill.version}`);
+      } else if (STAGE_TEMPLATE_MAP[stage]) {
+        try {
+          const templatePath = path.join(TEMPLATES_DIR, STAGE_TEMPLATE_MAP[stage]);
+          const templateContent = await fs.readFile(templatePath, 'utf-8');
+          stable += `\n\n## Output Template\nFollow this structure for your output:\n\n${templateContent}`;
+          logger.info(`Injected output template from disk: ${STAGE_TEMPLATE_MAP[stage]}`);
+        } catch {
+          logger.warn(`Could not load output template: ${STAGE_TEMPLATE_MAP[stage]}`);
+        }
       }
     }
 
@@ -282,20 +295,18 @@ Your responses have a token ceiling. A document that is cut off is always worse 
     messages: Array<{ role: 'user' | 'assistant'; content: string }>,
     modelOverride?: string,
     onTokens?: (usage: TokenUsage) => void,
-    maxOutputTokens?: number
+    maxOutputTokens?: number,
+    tools?: ToolDefinition[]
   ): AsyncGenerator<string, void, unknown> {
     const model = modelOverride || this.model;
-    // Web search is only available on Anthropic (built-in tool). Bedrock/Ollama
-    // will get Tavily support later — until then, disable to prevent fabricated citations.
     const webSearch = this.agentType === 'analyst' && getActiveProvider() === 'anthropic';
-    // Autonomous mode always needs full document output — use the same ceiling as analyst.
-    // ai-provider caps this to the actual model limit so no API error is thrown.
     const defaultMax = (this.agentType === 'analyst' || this.isAutonomous) ? 12_000 : 8_192;
     const maxTokens = maxOutputTokens ?? defaultMax;
-    logger.info(`Streaming response (${messages.length} messages in history, model: ${model}, webSearch: ${webSearch}, maxTokens: ${maxTokens})`);
+    const hasTools = tools && tools.length > 0;
+    logger.info(`Streaming response (${messages.length} messages in history, model: ${model}, webSearch: ${webSearch}, tools: ${hasTools ? tools!.map(t => t.name).join(',') : 'none'}, maxTokens: ${maxTokens})`);
 
     try {
-      yield* streamAI(model, system, messages, maxTokens, { webSearch, onTokens });
+      yield* streamAI(model, system, messages, maxTokens, { webSearch, onTokens, tools });
       logger.info('Completed streaming response');
     } catch (error: any) {
       logger.error('Failed to stream response', error);

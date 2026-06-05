@@ -51,6 +51,17 @@ db.exec(safeSchema);
 
 // Migrations — add columns that don't exist yet on existing databases
 try { db.exec('ALTER TABLE checkpoints ADD COLUMN token_usage TEXT'); } catch { /* already exists */ }
+try { db.exec('ALTER TABLE artifacts ADD COLUMN skill_version_id INTEGER REFERENCES skill_versions(id)'); } catch { /* already exists */ }
+try { db.exec("ALTER TABLE skill_versions ADD COLUMN discipline TEXT NOT NULL DEFAULT 'agent'"); } catch { /* already exists */ }
+try {
+  db.exec(`CREATE TABLE IF NOT EXISTS context_file_versions (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_name  TEXT    NOT NULL,
+    content    TEXT    NOT NULL,
+    created_at INTEGER NOT NULL
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_context_file_versions_file ON context_file_versions(file_name, created_at)');
+} catch { /* already exists */ }
 
 // ---------------------------------------------------------------------------
 // Helper: getPolicies

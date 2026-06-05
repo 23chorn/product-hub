@@ -4,9 +4,6 @@ export interface GoalEntryScreenProps {
   goal: string;
   onGoalChange: (value: string) => void;
   onSubmitGoal: (e: React.FormEvent) => void;
-  availableStages: Array<{ key: string; label: string; short: string }>;
-  enabledStages: Record<string, boolean>;
-  onToggleStage: (key: string) => void;
   error: string | null;
   isStreaming: boolean;
 }
@@ -15,9 +12,6 @@ export function GoalEntryScreen({
   goal,
   onGoalChange,
   onSubmitGoal,
-  availableStages,
-  enabledStages,
-  onToggleStage,
   error,
   isStreaming,
 }: GoalEntryScreenProps) {
@@ -44,31 +38,6 @@ export function GoalEntryScreen({
               rows={7}
               className="w-full resize-none rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 py-3 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500"
             />
-            {/* Stage toggles */}
-            <div className="flex flex-wrap gap-1.5">
-              {availableStages.map(stage => {
-                const enabled = enabledStages[stage.key];
-                const enabledCount = Object.values(enabledStages).filter(Boolean).length;
-                const isLastEnabled = enabled && enabledCount === 1;
-                return (
-                  <button
-                    key={stage.key}
-                    type="button"
-                    disabled={isLastEnabled}
-                    onClick={() => onToggleStage(stage.key)}
-                    title={isLastEnabled ? 'At least one stage required' : `${enabled ? 'Disable' : 'Enable'} ${stage.label}`}
-                    className={`px-2 py-0.5 text-xs rounded-md border transition-colors ${
-                      enabled
-                        ? 'bg-teal-50 dark:bg-teal-900/30 border-teal-300 dark:border-teal-600 text-teal-700 dark:text-teal-300'
-                        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-600 line-through'
-                    } ${isLastEnabled ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-80 cursor-pointer'}`}
-                  >
-                    {stage.short}
-                  </button>
-                );
-              })}
-            </div>
-
             {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
             <button
               type="submit"
