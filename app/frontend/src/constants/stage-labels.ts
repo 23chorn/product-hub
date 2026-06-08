@@ -6,19 +6,21 @@ export const STAGE_LABELS: Record<string, string> = {
   pm_backlog:         'Backlog — Pip',
   gtm_strategy:       'GTM Strategy — Quinn',
   feature_marketing:  'Feature Marketing — Milo',
+  qa_engineer:        'QA Engineer — Vera',
   critic:             'Critic — Flint',
   curator:            'Curator — Ivy',
+  tech_refinement:    'Tech Refinement — Finn, Remi & Cole',
 };
 
 // Stages available for user toggle at workflow start (order matters)
+// gtm_strategy and feature_marketing are hidden — not yet ready for general use
 export const TOGGLEABLE_STAGES: Array<{ key: string; label: string; short: string }> = [
   { key: 'analyst',            label: 'Analyst — Sage',          short: 'Sage · Analyst' },
   { key: 'pm_prd',             label: 'Requirements — Rex',      short: 'Rex · PM' },
   { key: 'solution_architect', label: 'Architect — Atlas',       short: 'Atlas · Architect' },
   { key: 'prototype',          label: 'Prototype — Nova',        short: 'Nova · Prototype' },
   { key: 'pm_backlog',         label: 'Backlog — Pip',           short: 'Pip · Backlog' },
-  { key: 'gtm_strategy',       label: 'GTM Strategy — Quinn',    short: 'Quinn · GTM' },
-  { key: 'feature_marketing',  label: 'Feature Marketing — Milo', short: 'Milo · Marketing' },
+  { key: 'qa_engineer',        label: 'QA Engineer — Vera',      short: 'Vera · QA' },
   { key: 'curator',            label: 'Curator — Ivy',           short: 'Ivy · Curator' },
 ];
 
@@ -30,4 +32,6 @@ export const STAGE_SHORT_LABELS: Record<string, string> = {
   pm_backlog: 'Backlog',
   gtm_strategy: 'GTM',
   feature_marketing: 'Marketing',
+  qa_engineer: 'QA Tests',
+  tech_refinement: 'Tech Review',
 };

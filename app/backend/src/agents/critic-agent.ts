@@ -130,6 +130,26 @@ Apply the **Feature Marketing** stage-specific checks. Key enforcement reminders
 
 `;
 
+    case 'qa_engineer':
+      return `## Artifact Stage: QA Test Suite (Vera)
+
+Apply the **QA Test Suite** stage-specific checks. Key enforcement reminders:
+- **CRITICAL**: Any test case referencing a feature or requirement not present in the PRD or backlog.
+- **CRITICAL**: \`coverage.by_fr\` is missing or does not list every FR from the PRD.
+- **MAJOR**: Any FR with no \`critical\`-priority happy path test case.
+- **MAJOR**: Any FR with no \`bad_path\` test case.
+- **MAJOR**: Any backlog story acceptance criterion with no corresponding test case.
+- **MAJOR**: Test case Given/When/Then steps using vague language ("valid input", "user does something", "system works correctly").
+- **MAJOR**: \`test_data\` field containing placeholder values rather than concrete values.
+- **MAJOR**: Coverage summary counts do not match the actual number of test cases in the array.
+- **MAJOR**: Fewer bad_path + edge_case tests than happy_path tests (ratio must be at least 2:1 in favour of bad paths).
+- **MINOR**: Missing \`@smoke\` tags on the minimal happy path test set.
+- **MINOR**: Missing \`@negative\` tags on bad_path tests.
+- **MINOR**: \`automation_notes\` field is missing where the scenario has a non-obvious implementation concern.
+- PM Questions cover ambiguous acceptance criteria or missing edge cases only — not test writing style.
+
+`;
+
     default:
       return '';
   }

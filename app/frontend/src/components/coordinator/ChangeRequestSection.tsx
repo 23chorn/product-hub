@@ -32,7 +32,8 @@ export function ChangeRequestSection({
   // CR form
   if (showForm && !crAssessment) {
     return (
-      <div className="space-y-2 bg-purple-50 dark:bg-purple-900/10 rounded-lg p-3 border border-purple-200 dark:border-purple-800">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 dark:bg-black/40" onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+      <div className="w-full max-w-lg space-y-2 bg-white dark:bg-slate-900 rounded-xl shadow-xl p-4 border border-purple-200 dark:border-purple-800 mx-4">
         <p className="text-xs font-medium text-purple-700 dark:text-purple-300">New Change Request</p>
         <select
           value={crType}
@@ -69,13 +70,15 @@ export function ChangeRequestSection({
           </button>
         </div>
       </div>
+      </div>
     );
   }
 
   // CR assessment result — stage selection
   if (crAssessment) {
     return (
-      <div className="space-y-2 bg-purple-50 dark:bg-purple-900/10 rounded-lg p-3 border border-purple-200 dark:border-purple-800">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 dark:bg-black/40" onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+      <div className="w-full max-w-lg space-y-2 bg-white dark:bg-slate-900 rounded-xl shadow-xl p-4 border border-purple-200 dark:border-purple-800 mx-4">
         <p className="text-xs font-medium text-purple-700 dark:text-purple-300">
           Impact Assessment — {crAssessment.affected_stages.length} stage(s) affected
         </p>
@@ -108,6 +111,7 @@ export function ChangeRequestSection({
             Cancel
           </button>
         </div>
+      </div>
       </div>
     );
   }

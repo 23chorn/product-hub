@@ -8,6 +8,7 @@ import { useToast } from '../../hooks/useToast';
 import { InitiativeForm } from './InitiativeForm';
 import { LocalInitiativeRow } from './LocalInitiativeRow';
 import { RoadmapItemRow } from './RoadmapItemRow';
+import { TOGGLEABLE_STAGES } from '../../constants/stage-labels';
 
 type WorkflowInfo = { id: string; status: string; currentStage: string | null; summary: string | null };
 export type EnrichedItem = AirtableItem & { workflow?: WorkflowInfo };
@@ -36,12 +37,14 @@ export function AirtableItemList() {
   const [confirmDeleteInitiativeId, setConfirmDeleteInitiativeId] = useState<string | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
+  const [triggeringItemId, setTriggeringItemId] = useState<string | null>(null);
+
   const {
     selectedItem, setSelectedItem,
     clearSession,
   } = useSessionStore();
 
-  const { applyWorkflowStatus, resetWorkflow } = useWorkflowStore();
+  const { applyWorkflowStatus, resetWorkflow, addCoordinatorMessage } = useWorkflowStore();
 
   const { config } = useConfigStore();
   const showRoadmap = config?.integrations.roadmap !== 'none';
@@ -121,6 +124,36 @@ export function AirtableItemList() {
     }
   };
 
+  const handleTriggerItem = async (item: EnrichedItem) => {
+    if (triggeringItemId) return;
+    setTriggeringItemId(item.id);
+    try {
+      setSelectedItem(item);
+      resetWorkflow();
+      clearSession();
+      const goal = item.description
+        ? `${item.initiative}\n\n${item.description}`
+        : item.initiative;
+      const stageSequence = TOGGLEABLE_STAGES
+        .filter(s => s.key !== 'curator')
+        .map(s => s.key)
+        .concat(['curator']);
+      const result = await api.startWorkflow(item.id, goal, undefined, stageSequence);
+      const status = await api.getWorkflowStatus(result.workflowId);
+      applyWorkflowStatus(status);
+      addCoordinatorMessage({
+        role: 'coordinator',
+        content: `**Launched from Airtable brief**\n\n**${item.initiative}**\n\n${item.description || '_No description provided._'}\n\n---\nPipeline started with ${stageSequence.length} stages. Running autonomously — I'll keep you updated.`,
+        timestamp: Date.now(),
+      });
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.message || 'Failed to start workflow');
+      resetWorkflow();
+    } finally {
+      setTriggeringItemId(null);
+    }
+  };
+
   const handleSelectItem = async (item: EnrichedItem) => {
     setSelectedItem(item);
     clearSession();
@@ -176,10 +209,12 @@ export function AirtableItemList() {
       isSelected={selectedItem?.id === item.id}
       isDeleting={deletingInitiativeId === item.id}
       isConfirmingDelete={confirmDeleteInitiativeId === item.id}
+      isTriggeringId={triggeringItemId}
       onSelect={() => handleSelectItem(item)}
       onRequestDelete={() => setConfirmDeleteInitiativeId(item.id)}
       onConfirmDelete={() => handleDeleteInitiative(item)}
       onCancelDelete={() => setConfirmDeleteInitiativeId(null)}
+      onTrigger={() => handleTriggerItem(item)}
       statusBadge={statusBadge(item.workflow)}
     />
   );
@@ -190,7 +225,9 @@ export function AirtableItemList() {
       key={item.id}
       item={item}
       isSelected={selectedItem?.id === item.id}
+      isTriggeringId={triggeringItemId}
       onSelect={() => handleSelectItem(item)}
+      onTrigger={() => handleTriggerItem(item)}
       statusBadge={statusBadge(item.workflow)}
     />
   );

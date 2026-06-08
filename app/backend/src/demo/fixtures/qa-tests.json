@@ -1,0 +1,544 @@
+{
+  "suite": "Price Alerts & Watchlist — TradeEasy",
+  "version": "1.0",
+  "metadata": {
+    "prd_version": "Draft",
+    "source_documents": ["PRD: Price Alerts & Watchlist", "Backlog: Price Alerts & Watchlist", "Architecture Document"],
+    "notes": "FR-05 alert latency (< 30s) requires a dedicated integration test against the Alert Evaluator service — cannot be fully validated by UI automation alone. Push notification delivery tests require a physical device or Firebase Test Lab."
+  },
+  "test_cases": [
+    {
+      "id": "TC-001",
+      "title": "Add a valid ticker to an empty watchlist",
+      "type": "happy_path",
+      "priority": "critical",
+      "category": "Watchlist Management",
+      "prd_ref": "FR-01",
+      "story_ref": "F1.S1",
+      "scenario": {
+        "given": ["User is logged in as 'alex@tradeeasy.com'", "User's watchlist is empty", "User navigates to the AAPL ticker detail screen"],
+        "when": ["User taps 'Add to Watchlist'"],
+        "then": ["A success toast 'AAPL added to your watchlist' appears within 2 seconds", "The 'Add to Watchlist' button is replaced with an 'In Watchlist' indicator", "Navigating to the Watchlist tab shows AAPL as the first (and only) row"]
+      },
+      "preconditions": ["User account exists with email 'alex@tradeeasy.com' and password 'Demo1234!'", "AAPL is a valid US equity ticker in the system"],
+      "test_data": { "ticker": "AAPL", "user_email": "alex@tradeeasy.com", "user_password": "Demo1234!" },
+      "tags": ["@smoke", "@regression"],
+      "automation_notes": "Assert toast text exactly; assert button state change; assert watchlist row count = 1"
+    },
+    {
+      "id": "TC-002",
+      "title": "Watchlist displays live price during market hours",
+      "type": "happy_path",
+      "priority": "critical",
+      "category": "Watchlist Quotes",
+      "prd_ref": "FR-02",
+      "story_ref": "F1.S2",
+      "scenario": {
+        "given": ["User has AAPL and MSFT on their watchlist", "Current time is 10:30 AM ET on a trading day", "AAPL last price is $192.50, change is +1.2%"],
+        "when": ["User opens the Watchlist tab"],
+        "then": ["AAPL row shows '$192.50' as last price", "AAPL row shows '+1.20%' as intraday change in green text", "Price updates again within 15 seconds without user interaction"]
+      },
+      "preconditions": ["AAPL and MSFT are on user's watchlist", "Market is open (09:30–16:00 ET Mon–Fri)"],
+      "test_data": { "tickers": ["AAPL", "MSFT"], "market_status": "open" },
+      "tags": ["@smoke", "@regression"],
+      "automation_notes": "Use mock quote feed in CI; real Polygon feed for staging integration tests. Assert price refresh via DOM mutation observer within 15000ms."
+    },
+    {
+      "id": "TC-003",
+      "title": "Watchlist shows Market Closed label outside trading hours",
+      "type": "happy_path",
+      "priority": "high",
+      "category": "Watchlist Quotes",
+      "prd_ref": "FR-14",
+      "story_ref": "F1.S2",
+      "scenario": {
+        "given": ["User has AAPL on their watchlist", "Current time is 8:00 PM ET on a weekday (market closed)"],
+        "when": ["User opens the Watchlist tab"],
+        "then": ["AAPL row displays previous close price", "A 'Market Closed' label is visible on each row or as a banner"]
+      },
+      "preconditions": ["AAPL is on user's watchlist"],
+      "test_data": { "ticker": "AAPL", "simulated_time": "20:00 ET weekday" },
+      "tags": ["@regression"],
+      "automation_notes": "Mock system time in test environment to simulate market closed state"
+    },
+    {
+      "id": "TC-004",
+      "title": "Create a valid price-above alert",
+      "type": "happy_path",
+      "priority": "critical",
+      "category": "Alert Creation",
+      "prd_ref": "FR-03",
+      "story_ref": "F2.S1",
+      "scenario": {
+        "given": ["User is logged in", "AAPL current price is $192.50", "User has 0 active alerts"],
+        "when": ["User opens the AAPL ticker detail screen", "User taps 'Set Alert'", "User enters target price '200.00'", "User selects direction 'Above'", "User selects channel 'Push'", "User taps 'Create Alert'"],
+        "then": ["A success message 'Alert set for AAPL at $200.00' is displayed", "Navigating to the Alerts tab shows one active alert: AAPL | Above | $200.00 | Push", "Alert count in user profile shows 1 of 20 used"]
+      },
+      "preconditions": ["User is authenticated", "AAPL current price is below $200.00"],
+      "test_data": { "ticker": "AAPL", "target_price": "200.00", "direction": "above", "channel": "push", "current_price": "192.50" },
+      "tags": ["@smoke", "@regression"],
+      "automation_notes": ""
+    },
+    {
+      "id": "TC-005",
+      "title": "Create a valid price-below alert",
+      "type": "happy_path",
+      "priority": "high",
+      "category": "Alert Creation",
+      "prd_ref": "FR-03",
+      "story_ref": "F2.S1",
+      "scenario": {
+        "given": ["User is logged in", "AAPL current price is $192.50", "User has 0 active alerts"],
+        "when": ["User taps 'Set Alert' on AAPL", "User enters target price '180.00', direction 'Below', channel 'Email'", "User taps 'Create Alert'"],
+        "then": ["Success toast shown", "Alert appears in Alerts tab as: AAPL | Below | $180.00 | Email"]
+      },
+      "preconditions": ["User is authenticated", "AAPL current price is above $180.00"],
+      "test_data": { "ticker": "AAPL", "target_price": "180.00", "direction": "below", "channel": "email", "current_price": "192.50" },
+      "tags": ["@regression"],
+      "automation_notes": ""
+    },
+    {
+      "id": "TC-006",
+      "title": "Alert creation blocked when target price already met",
+      "type": "bad_path",
+      "priority": "critical",
+      "category": "Alert Creation — Validation",
+      "prd_ref": "FR-15",
+      "story_ref": "F2.S1",
+      "scenario": {
+        "given": ["User is logged in", "AAPL current price is $192.50"],
+        "when": ["User opens Set Alert for AAPL", "User enters target price '190.00', direction 'Below'", "User taps 'Create Alert'"],
+        "then": ["An inline validation error is shown: 'AAPL is already below $190.00'", "The alert is NOT created", "No entry appears in the Alerts tab"]
+      },
+      "preconditions": ["AAPL current price is $192.50 (above $190.00, so a 'below $190' alert is already met)"],
+      "test_data": { "ticker": "AAPL", "target_price": "190.00", "direction": "below", "current_price": "192.50" },
+      "tags": ["@regression", "@negative"],
+      "automation_notes": "Verify the exact error message text. Verify alert is not in DB via API assertion."
+    },
+    {
+      "id": "TC-007",
+      "title": "Alert creation blocked at 20-alert cap",
+      "type": "bad_path",
+      "priority": "critical",
+      "category": "Alert Creation — Limits",
+      "prd_ref": "FR-04",
+      "story_ref": "F2.S1",
+      "scenario": {
+        "given": ["User is logged in", "User already has 20 active alerts across various tickers"],
+        "when": ["User opens Set Alert for MSFT", "User enters target price '400.00', direction 'Above'", "User taps 'Create Alert'"],
+        "then": ["Creation is blocked with message: 'You've reached the 20-alert limit. Delete an alert to add a new one.'", "The Alerts tab still shows exactly 20 alerts", "No new alert is created in the database"]
+      },
+      "preconditions": ["User has exactly 20 active alerts"],
+      "test_data": { "existing_alert_count": 20, "new_ticker": "MSFT", "target_price": "400.00" },
+      "tags": ["@regression", "@negative", "@edge"],
+      "automation_notes": "Seed 20 active alerts via API setup before test. Assert DB count = 20 after attempt."
+    },
+    {
+      "id": "TC-008",
+      "title": "Alert creation with negative target price",
+      "type": "bad_path",
+      "priority": "high",
+      "category": "Alert Creation — Validation",
+      "prd_ref": "FR-03",
+      "story_ref": "F2.S1",
+      "scenario": {
+        "given": ["User is on the Set Alert screen for AAPL"],
+        "when": ["User enters target price '-10.00'", "User taps 'Create Alert'"],
+        "then": ["An inline validation error is shown: 'Target price must be greater than $0.00'", "The alert is not created"]
+      },
+      "preconditions": [],
+      "test_data": { "ticker": "AAPL", "target_price": "-10.00" },
+      "tags": ["@regression", "@negative"],
+      "automation_notes": ""
+    },
+    {
+      "id": "TC-009",
+      "title": "Alert creation with non-numeric target price",
+      "type": "bad_path",
+      "priority": "high",
+      "category": "Alert Creation — Validation",
+      "prd_ref": "FR-03",
+      "story_ref": "F2.S1",
+      "scenario": {
+        "given": ["User is on the Set Alert screen for AAPL"],
+        "when": ["User enters target price 'abc'", "User taps 'Create Alert'"],
+        "then": ["An inline validation error is shown: 'Please enter a valid price'", "The alert is not created"]
+      },
+      "preconditions": [],
+      "test_data": { "ticker": "AAPL", "target_price": "abc" },
+      "tags": ["@regression", "@negative"],
+      "automation_notes": "Check that numeric keyboard is enforced on mobile; this test is primarily for web."
+    },
+    {
+      "id": "TC-010",
+      "title": "Alert creation with zero target price",
+      "type": "edge_case",
+      "priority": "medium",
+      "category": "Alert Creation — Validation",
+      "prd_ref": "FR-03",
+      "story_ref": "F2.S1",
+      "scenario": {
+        "given": ["User is on the Set Alert screen for AAPL"],
+        "when": ["User enters target price '0'", "User taps 'Create Alert'"],
+        "then": ["An inline validation error is shown: 'Target price must be greater than $0.00'", "The alert is not created"]
+      },
+      "preconditions": [],
+      "test_data": { "ticker": "AAPL", "target_price": "0" },
+      "tags": ["@regression", "@edge", "@negative"],
+      "automation_notes": ""
+    },
+    {
+      "id": "TC-011",
+      "title": "Alert creation with maximum possible price",
+      "type": "edge_case",
+      "priority": "low",
+      "category": "Alert Creation — Validation",
+      "prd_ref": "FR-03",
+      "story_ref": "F2.S1",
+      "scenario": {
+        "given": ["User is on the Set Alert screen for AAPL", "AAPL current price is $192.50"],
+        "when": ["User enters target price '99999999.9999'", "User selects direction 'Above'", "User taps 'Create Alert'"],
+        "then": ["Alert is created successfully (the value is technically valid even if implausible)", "Alert appears in Alerts tab with target price '$99,999,999.9999'"]
+      },
+      "preconditions": [],
+      "test_data": { "ticker": "AAPL", "target_price": "99999999.9999", "direction": "above" },
+      "tags": ["@edge"],
+      "automation_notes": "Verify NUMERIC(12,4) column does not overflow — max value is 99,999,999.9999"
+    },
+    {
+      "id": "TC-012",
+      "title": "Push notification delivered within 30 seconds of price crossing",
+      "type": "happy_path",
+      "priority": "critical",
+      "category": "Alert Delivery",
+      "prd_ref": "FR-05",
+      "story_ref": "F2.S2",
+      "scenario": {
+        "given": ["User has an active alert: AAPL above $200.00", "AAPL current price is $199.50"],
+        "when": ["A trade for AAPL executes at $200.10 during market hours (10:00 AM ET)"],
+        "then": ["User receives a push notification within 30 seconds", "Notification text reads: 'AAPL reached your target of $200.00 — now at $200.10'", "Alert status in the Alerts tab changes to 'Triggered'", "Alert moves from Active to History tab"]
+      },
+      "preconditions": ["User has push notifications enabled on device", "Alert Evaluator service is running"],
+      "test_data": { "ticker": "AAPL", "alert_target": "200.00", "direction": "above", "trigger_price": "200.10", "time": "10:00 AM ET" },
+      "tags": ["@smoke", "@regression"],
+      "automation_notes": "Requires integration test with mock Quote Feed emitting the trigger price. Use Firebase Test Lab or stub FCM. Assert notification delivery timestamp delta < 30000ms."
+    },
+    {
+      "id": "TC-013",
+      "title": "Email fallback sent when push notification fails",
+      "type": "bad_path",
+      "priority": "critical",
+      "category": "Alert Delivery — Fallback",
+      "prd_ref": "FR-06",
+      "story_ref": "F2.S2",
+      "scenario": {
+        "given": ["User has an active push alert: AAPL above $200.00", "FCM is configured to return a delivery failure for this device token"],
+        "when": ["AAPL price crosses $200.00"],
+        "then": ["Push notification attempt is made (and fails)", "Within 5 minutes of the trigger, a fallback email is sent to 'alex@tradeeasy.com'", "Email subject contains 'AAPL' and '$200.00'", "alert_notifications table has two rows: push (failed) and email (sent)"]
+      },
+      "preconditions": ["FCM delivery failure simulated via test configuration or mock"],
+      "test_data": { "ticker": "AAPL", "alert_target": "200.00", "user_email": "alex@tradeeasy.com", "fcm_outcome": "failure" },
+      "tags": ["@regression", "@negative"],
+      "automation_notes": "Stub FCM client to return 'NotRegistered' error. Assert SendGrid mock received email call within 300000ms."
+    },
+    {
+      "id": "TC-014",
+      "title": "Notification tap navigates to ticker detail with pre-filled order",
+      "type": "happy_path",
+      "priority": "high",
+      "category": "Alert Deep Link",
+      "prd_ref": "FR-13",
+      "story_ref": "F2.S2",
+      "scenario": {
+        "given": ["User received a push notification for AAPL alert at $200.00", "App is in background"],
+        "when": ["User taps the push notification"],
+        "then": ["App opens to AAPL ticker detail screen", "Order ticket is visible and pre-filled with: side = Buy, type = Market, ticker = AAPL"]
+      },
+      "preconditions": ["Push notification has been received on device"],
+      "test_data": { "ticker": "AAPL", "notification_deep_link": "tradeeasy://ticker/AAPL?action=order" },
+      "tags": ["@regression"],
+      "automation_notes": "Test deep link routing in isolation. Verify order form pre-population via element assertions."
+    },
+    {
+      "id": "TC-015",
+      "title": "Alert does not trigger outside market hours",
+      "type": "bad_path",
+      "priority": "high",
+      "category": "Alert Delivery — Market Hours",
+      "prd_ref": "FR-05",
+      "story_ref": "F2.S2",
+      "scenario": {
+        "given": ["User has an active alert: AAPL above $200.00", "Current time is 6:00 PM ET (market closed)"],
+        "when": ["A trade for AAPL executes at $200.10 in after-hours trading"],
+        "then": ["No push notification is sent", "Alert status remains 'Active'", "No triggered_at timestamp is written to the database"]
+      },
+      "preconditions": ["Alert Evaluator is configured to suppress triggers outside 09:30–16:00 ET"],
+      "test_data": { "ticker": "AAPL", "alert_target": "200.00", "trigger_time": "18:00 ET" },
+      "tags": ["@regression", "@negative"],
+      "automation_notes": "Mock system time to after-hours. Emit trigger price into quote feed. Assert no notification row inserted after 35s wait."
+    },
+    {
+      "id": "TC-016",
+      "title": "Alert does not fire twice for the same price crossing",
+      "type": "edge_case",
+      "priority": "high",
+      "category": "Alert Delivery — Deduplication",
+      "prd_ref": "FR-05",
+      "story_ref": "F2.S2",
+      "scenario": {
+        "given": ["User has an active alert: AAPL above $200.00"],
+        "when": ["AAPL price crosses $200.00 at 10:00 AM", "AAPL price dips below $200.00 at 10:01 AM", "AAPL price crosses $200.00 again at 10:02 AM"],
+        "then": ["Only one push notification is ever sent for this alert", "After the first trigger, alert status is 'Triggered' and it does not re-arm automatically"]
+      },
+      "preconditions": [],
+      "test_data": { "ticker": "AAPL", "price_sequence": [199.80, 200.10, 199.90, 200.20] },
+      "tags": ["@regression", "@edge"],
+      "automation_notes": "Emit three price events through mock quote feed. Assert alert_notifications count = 1 and price_alerts.status = 'triggered'."
+    },
+    {
+      "id": "TC-017",
+      "title": "Delete an active alert",
+      "type": "happy_path",
+      "priority": "high",
+      "category": "Alert Management",
+      "prd_ref": "FR-09",
+      "story_ref": "F2.S3",
+      "scenario": {
+        "given": ["User has 3 active alerts including one for MSFT above $400.00"],
+        "when": ["User opens the Alerts tab", "User swipes left on the MSFT alert row", "User taps 'Delete'"],
+        "then": ["MSFT alert row is removed immediately", "Alerts tab now shows 2 alerts", "MSFT alert no longer appears after refreshing the Alerts tab", "Alert count shows 2 of 20 used"]
+      },
+      "preconditions": ["User has 3 active alerts"],
+      "test_data": { "ticker": "MSFT", "initial_alert_count": 3 },
+      "tags": ["@regression"],
+      "automation_notes": ""
+    },
+    {
+      "id": "TC-018",
+      "title": "Re-arm a triggered alert",
+      "type": "happy_path",
+      "priority": "high",
+      "category": "Alert Management",
+      "prd_ref": "FR-10",
+      "story_ref": "F2.S4",
+      "scenario": {
+        "given": ["User has a triggered alert for AAPL above $200.00 in their history", "User has 5 active alerts (below the 20-alert cap)"],
+        "when": ["User opens the Alerts History tab", "User taps 'Re-arm' on the AAPL alert"],
+        "then": ["Alert moves back to the Active tab with status 'Active'", "Target price remains $200.00 and direction remains 'Above'", "Active alert count increases by 1"]
+      },
+      "preconditions": ["User has a triggered alert in history", "Active alert count is below 20"],
+      "test_data": { "alert_id": "seed-triggered-alert-1", "active_count_before": 5 },
+      "tags": ["@regression"],
+      "automation_notes": "Assert triggered_at is reset to null and status = 'active' in DB."
+    },
+    {
+      "id": "TC-019",
+      "title": "Re-arm blocked when at 20-alert cap",
+      "type": "bad_path",
+      "priority": "high",
+      "category": "Alert Management",
+      "prd_ref": "FR-10",
+      "story_ref": "F2.S4",
+      "scenario": {
+        "given": ["User has a triggered alert for AAPL in history", "User already has 20 active alerts"],
+        "when": ["User taps 'Re-arm' on the AAPL alert"],
+        "then": ["Re-arm is blocked", "A message is shown: 'You've reached the 20-alert limit. Delete an alert to add a new one.'", "The alert remains in History with status 'Triggered'"]
+      },
+      "preconditions": ["User has 20 active alerts and at least 1 triggered alert"],
+      "test_data": { "active_count": 20 },
+      "tags": ["@regression", "@negative"],
+      "automation_notes": ""
+    },
+    {
+      "id": "TC-020",
+      "title": "Remove a watchlist ticker also deletes its alerts",
+      "type": "bad_path",
+      "priority": "high",
+      "category": "Watchlist Management",
+      "prd_ref": "FR-01",
+      "story_ref": "F1.S3",
+      "scenario": {
+        "given": ["User has AAPL on their watchlist", "User has 2 active alerts for AAPL (above $200, below $170)"],
+        "when": ["User swipes left on AAPL in the watchlist and taps 'Remove'"],
+        "then": ["AAPL is removed from the watchlist", "A toast is shown: 'AAPL removed from watchlist. 2 alerts deleted.'", "Navigating to the Alerts tab shows 0 AAPL alerts", "Alert count decreases by 2"]
+      },
+      "preconditions": ["AAPL on watchlist with 2 active alerts"],
+      "test_data": { "ticker": "AAPL", "alerts_for_ticker": 2 },
+      "tags": ["@regression"],
+      "automation_notes": "Verify cascade delete in DB: price_alerts where ticker='AAPL' and user_id=X count = 0."
+    },
+    {
+      "id": "TC-021",
+      "title": "Add a duplicate ticker to the watchlist",
+      "type": "bad_path",
+      "priority": "high",
+      "category": "Watchlist Management",
+      "prd_ref": "FR-01",
+      "story_ref": "F1.S1",
+      "scenario": {
+        "given": ["User already has AAPL on their watchlist"],
+        "when": ["User navigates to the AAPL ticker detail screen", "User taps the watchlist button"],
+        "then": ["The button shows 'In Watchlist' (not 'Add to Watchlist')", "No duplicate row appears in the watchlist", "Watchlist count remains unchanged"]
+      },
+      "preconditions": ["AAPL already in user's watchlist"],
+      "test_data": { "ticker": "AAPL" },
+      "tags": ["@regression", "@negative"],
+      "automation_notes": "Assert watchlist_items count for user remains the same before and after."
+    },
+    {
+      "id": "TC-022",
+      "title": "Add an invalid ticker to the watchlist",
+      "type": "bad_path",
+      "priority": "high",
+      "category": "Watchlist Management",
+      "prd_ref": "FR-01",
+      "story_ref": "F1.S1",
+      "scenario": {
+        "given": ["User searches for ticker 'ZZZZZ' which does not exist"],
+        "when": ["User taps 'Search'"],
+        "then": ["No ticker result is displayed", "An inline message 'Ticker not found' is shown", "There is no 'Add to Watchlist' button visible"]
+      },
+      "preconditions": [],
+      "test_data": { "ticker": "ZZZZZ" },
+      "tags": ["@regression", "@negative"],
+      "automation_notes": ""
+    },
+    {
+      "id": "TC-023",
+      "title": "Watchlist order persists across sessions",
+      "type": "happy_path",
+      "priority": "high",
+      "category": "Watchlist Persistence",
+      "prd_ref": "FR-12",
+      "story_ref": "F1.S4",
+      "scenario": {
+        "given": ["User has AAPL, MSFT, GOOG on their watchlist in that order"],
+        "when": ["User drags GOOG to the top of the list", "User closes the app", "User reopens the app"],
+        "then": ["Watchlist shows GOOG, AAPL, MSFT in that order"]
+      },
+      "preconditions": ["User has 3 watchlist items"],
+      "test_data": { "tickers": ["AAPL", "MSFT", "GOOG"], "new_order": ["GOOG", "AAPL", "MSFT"] },
+      "tags": ["@regression"],
+      "automation_notes": "Assert sort_order values in DB after PATCH /api/watchlist/reorder."
+    },
+    {
+      "id": "TC-024",
+      "title": "Unauthenticated user cannot access watchlist API",
+      "type": "bad_path",
+      "priority": "critical",
+      "category": "Security",
+      "prd_ref": "FR-01",
+      "story_ref": null,
+      "scenario": {
+        "given": ["No authentication token is included in the request"],
+        "when": ["A GET request is made to /api/watchlist"],
+        "then": ["The API returns HTTP 401 Unauthorized", "The response body contains an error code 'UNAUTHORIZED'", "No watchlist data is returned"]
+      },
+      "preconditions": [],
+      "test_data": { "endpoint": "GET /api/watchlist", "auth_header": null },
+      "tags": ["@regression", "@security"],
+      "automation_notes": "API-level test. Assert status code 401 and no data payload."
+    },
+    {
+      "id": "TC-025",
+      "title": "User cannot access another user's alerts",
+      "type": "bad_path",
+      "priority": "critical",
+      "category": "Security",
+      "prd_ref": "FR-09",
+      "story_ref": null,
+      "scenario": {
+        "given": ["User A has an alert with id 'alert-user-a-001'", "User B is logged in with a valid JWT"],
+        "when": ["User B sends DELETE /api/alerts/alert-user-a-001"],
+        "then": ["The API returns HTTP 403 Forbidden", "Alert 'alert-user-a-001' still exists and belongs to User A"]
+      },
+      "preconditions": ["Two user accounts exist: User A and User B", "User A has an active alert"],
+      "test_data": { "owner_user": "user-a@tradeeasy.com", "attacking_user": "user-b@tradeeasy.com", "alert_id": "alert-user-a-001" },
+      "tags": ["@regression", "@security"],
+      "automation_notes": "Assert HTTP 403 and verify DB record unchanged."
+    },
+    {
+      "id": "TC-026",
+      "title": "Watchlist empty state shown when no items",
+      "type": "edge_case",
+      "priority": "medium",
+      "category": "Watchlist Management",
+      "prd_ref": "FR-01",
+      "story_ref": "F1.S2",
+      "scenario": {
+        "given": ["User has a new account with no watchlist items"],
+        "when": ["User opens the Watchlist tab"],
+        "then": ["An empty state screen is displayed", "A call to action 'Search for a ticker to add' is visible and tappable", "Tapping the call to action navigates to the Search screen"]
+      },
+      "preconditions": ["User has zero watchlist items"],
+      "test_data": { "watchlist_count": 0 },
+      "tags": ["@regression", "@edge"],
+      "automation_notes": ""
+    },
+    {
+      "id": "TC-027",
+      "title": "Alert history shows triggered alerts up to 90 days",
+      "type": "edge_case",
+      "priority": "medium",
+      "category": "Alert History",
+      "prd_ref": "FR-08",
+      "story_ref": "F2.S4",
+      "scenario": {
+        "given": ["User has a triggered alert from 89 days ago and one from 91 days ago"],
+        "when": ["User opens the Alerts History tab"],
+        "then": ["The 89-day-old alert is visible", "The 91-day-old alert is NOT visible (purged per NFR-07)"]
+      },
+      "preconditions": ["Two triggered alerts seeded: one 89 days old, one 91 days old"],
+      "test_data": { "alert_89_days_ago": "seed-alert-89d", "alert_91_days_ago": "seed-alert-91d" },
+      "tags": ["@regression", "@edge"],
+      "automation_notes": "Seed alerts with created_at timestamps. Run purge job before asserting."
+    },
+    {
+      "id": "TC-028",
+      "title": "Alert creation rejected when target price is current price exactly",
+      "type": "edge_case",
+      "priority": "medium",
+      "category": "Alert Creation — Validation",
+      "prd_ref": "FR-15",
+      "story_ref": "F2.S1",
+      "scenario": {
+        "given": ["AAPL current price is exactly $192.50"],
+        "when": ["User attempts to create an alert for AAPL above $192.50"],
+        "then": ["Alert creation is rejected with message 'AAPL is already at or above $192.50'"]
+      },
+      "preconditions": ["AAPL price is exactly $192.50 (boundary condition)"],
+      "test_data": { "ticker": "AAPL", "target_price": "192.50", "current_price": "192.50", "direction": "above" },
+      "tags": ["@regression", "@edge", "@negative"],
+      "automation_notes": "Mock quote feed to return exact boundary price."
+    }
+  ],
+  "coverage": {
+    "total": 28,
+    "happy_paths": 8,
+    "bad_paths": 13,
+    "edge_cases": 7,
+    "by_priority": {
+      "critical": 8,
+      "high": 13,
+      "medium": 5,
+      "low": 2
+    },
+    "by_fr": {
+      "FR-01": 5,
+      "FR-02": 1,
+      "FR-03": 5,
+      "FR-04": 2,
+      "FR-05": 4,
+      "FR-06": 1,
+      "FR-07": 1,
+      "FR-08": 2,
+      "FR-09": 2,
+      "FR-10": 2,
+      "FR-11": 1,
+      "FR-12": 1,
+      "FR-13": 1,
+      "FR-14": 1,
+      "FR-15": 3
+    }
+  }
+}

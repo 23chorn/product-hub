@@ -14,18 +14,10 @@ interface WorkflowEvent {
  * Convert a workflow event to a coordinator message for the chat narration.
  * Returns null if the event shouldn't be displayed.
  */
-export function eventToMessage(event: WorkflowEvent): { role: 'coordinator'; content: string; timestamp: number } | null {
+export function eventToMessage(event: WorkflowEvent): { role: 'coordinator'; content: string; timestamp: number; eventType: string; stage?: string } | null {
   let content = event.summary;
 
-  // Add excerpt for stage_completed events with artifact
-  if (event.event_type === 'stage_completed' && event.details) {
-    try {
-      const details = JSON.parse(event.details);
-      if (details.excerpt) {
-        content += `\n\n> ${details.excerpt.slice(0, 150)}${details.excerpt.length > 150 ? '...' : ''}`;
-      }
-    } catch { /* ignore */ }
-  }
+  // stage_completed: no content preview — artifact viewer handles full output
 
   // Format critic verdict with structured issues
   if (event.event_type === 'critic_verdict' && event.details) {
@@ -77,6 +69,22 @@ export function eventToMessage(event: WorkflowEvent): { role: 'coordinator'; con
     } catch { /* fall through to raw summary */ }
   }
 
+  // Board sync — surface the top-level ticket URL prominently
+  if (event.event_type === 'board_synced' && event.details) {
+    try {
+      const details = JSON.parse(event.details);
+      const url = details.top_url;
+      const id = details.top_id;
+      const level: string = details.level ?? 'Epic';
+      const levelLabel = level.charAt(0).toUpperCase() + level.slice(1);
+      const parts = [`${levelLabel} #${id} created on Azure DevOps`];
+      if (details.feature_count) parts.push(`${details.feature_count} feature${details.feature_count !== 1 ? 's' : ''}`);
+      if (details.story_count) parts.push(`${details.story_count} stor${details.story_count !== 1 ? 'ies' : 'y'}`);
+      if (url) parts.push(`→ ${url}`);
+      content = parts.join('\n');
+    } catch { /* use summary */ }
+  }
+
   // Show curator reasoning log
   if (event.event_type === 'curator_reasoning' && event.details) {
     try {
@@ -87,5 +95,11 @@ export function eventToMessage(event: WorkflowEvent): { role: 'coordinator'; con
     } catch { /* ignore */ }
   }
 
-  return { role: 'coordinator', content, timestamp: event.created_at };
+  return {
+    role: 'coordinator',
+    content,
+    timestamp: event.created_at,
+    eventType: event.event_type,
+    stage: event.stage ?? undefined,
+  };
 }

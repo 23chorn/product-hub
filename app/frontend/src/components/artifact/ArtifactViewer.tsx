@@ -8,7 +8,9 @@ import { CriticQuestionForm, CriticIssuesPanel } from './CriticQuestionForm';
 import { STAGE_LABELS } from '../../constants/stage-labels';
 import { tryParseBacklog } from '../../utils/backlog-helpers';
 import { BacklogView } from './BacklogView';
+import { QATestsView, tryParseQATests } from './QATestsView';
 import { extractPersonas, PersonaPanel } from './PersonaPanel';
+import { PrototypePreview, type PrototypeData } from '../coordinator/PrototypePreview';
 
 export function ArtifactViewer() {
   const { viewingArtifactId, setViewingArtifactId, checkpoints, activeWorkflow, applyWorkflowStatus, addCoordinatorMessage } = useWorkflowStore();
@@ -420,6 +422,23 @@ export function ArtifactViewer() {
                       />
                     ) : content ? (() => {
                       if (backlogData) return <BacklogView data={backlogData} />;
+                      const qaData = artifactType === 'qa_tests' ? tryParseQATests(content) : null;
+                      if (qaData) return <QATestsView data={qaData} />;
+                      if (artifactType === 'prototype') {
+                        try {
+                          const protoData: PrototypeData = JSON.parse(content);
+                          if (protoData.files && activeWorkflow) {
+                            return (
+                              <PrototypePreview
+                                prototype={protoData}
+                                workflowId={activeWorkflow.id}
+                                onClose={() => setViewingArtifactId(null)}
+                                onUpdate={() => {}}
+                              />
+                            );
+                          }
+                        } catch { /* fall through to raw view */ }
+                      }
                       return (
                         <div className="prose prose-sm dark:prose-invert max-w-none">
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>

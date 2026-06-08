@@ -484,6 +484,23 @@ class APIClient {
   }
 
   // ============================================
+  // Agent Personas (file-based)
+  // ============================================
+
+  async getPersonas(): Promise<Array<{
+    name: string; displayName: string; agentType: string;
+    content: string; frontmatter: string;
+  }>> {
+    const response = await axios.get(`${this.baseURL}/api/agents/personas`);
+    return response.data;
+  }
+
+  async savePersona(name: string, content: string): Promise<{ ok: boolean }> {
+    const response = await axios.put(`${this.baseURL}/api/agents/personas/${encodeURIComponent(name)}`, { content });
+    return response.data;
+  }
+
+  // ============================================
   // Utility
   // ============================================
 
@@ -760,6 +777,32 @@ class APIClient {
     } finally {
       reader.releaseLock();
     }
+  }
+
+  async triggerAiCoding(workflowId: string): Promise<{
+    epicId: number; epicUrl: string; taggedCount: number; pipelineRunId?: number; pipelineUrl?: string; demo?: boolean;
+  }> {
+    const response = await axios.post(`${this.baseURL}/api/workflow/${workflowId}/trigger-ai-coding`);
+    return response.data;
+  }
+
+  async getAiCodingStatus(workflowId: string): Promise<{
+    triggered: boolean; triggeredAt?: number; epicId?: number; epicUrl?: string; pipelineRunId?: number; demo?: boolean;
+  } | null> {
+    try {
+      const response = await axios.get(`${this.baseURL}/api/workflow/${workflowId}/ai-coding/status`);
+      return response.data;
+    } catch { return null; }
+  }
+
+  async getPipelineDemoData(workflowId: string): Promise<{ summary: string; testCases: any[] }> {
+    const response = await axios.get(`${this.baseURL}/api/workflow/${workflowId}/pipeline-demo`);
+    return response.data;
+  }
+
+  async triggerDemoWebhook(): Promise<{ workflowId: string; itemId: string; initiative: string; stages: string[] }> {
+    const response = await axios.post(`${this.baseURL}/api/demo/webhook/trigger`);
+    return response.data;
   }
 
   async pushTicketToAdo(ticket: {

@@ -11,6 +11,7 @@ export interface BacklogStory {
   estimatedHours?: number;
   traditionalHours?: number;
   aiEstimatedHours?: number;
+  technical_notes?: { ios?: string | null; android?: string | null; backend?: string | null };
 }
 
 export interface BacklogFeature {

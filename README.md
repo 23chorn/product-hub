@@ -1,6 +1,6 @@
 # Product Hub
 
-AI-powered product operations platform. Describe what you want to build, and a coordinated team of AI agents researches it, writes the PRD, designs the architecture, and breaks it into a developer-ready backlog — with human review at every stage.
+AI-powered product operations platform. Describe what you want to build and a coordinated team of AI agents researches it, writes the PRD, designs the architecture, produces a developer-ready backlog with QA test suite and technical refinements — with human review at every stage.
 
 ## Overview
 
@@ -11,6 +11,8 @@ You talk to one agent: the **Coordinator** (Chief of Staff). It gathers requirem
 - **PM Strategy (Rex)** — PRD with user personas, journeys, and requirements
 - **Architect (Atlas)** — solution architecture aligned to your tech stack
 - **Backlog Agent (Pip)** — epics, features, and stories with acceptance criteria
+- **QA Engineer (Vera)** — automation-ready JSON test suite covering all happy paths, bad paths, and edge cases
+- **Tech Refinement (Finn, Remi & Cole)** — technical backlog refining stories into engineering-ready tickets with platform-specific tasks (iOS, Android, Backend)
 - **Critic (Flint)** — adversarial quality review after each specialist stage
 - **Context Curator (Ivy)** — proposes updates to project knowledge files based on workflow outputs
 
@@ -28,11 +30,12 @@ You talk to one agent: the **Coordinator** (Chief of Staff). It gathers requirem
 product-agent/
 ├── app/
 │   ├── backend/       Express API, agents, workflow engine
+│   │   └── src/demo/  Claude Code Studio WS handlers + demo fixtures
 │   ├── frontend/      React UI (two-column layout)
 │   └── shared/        Compiled TypeScript types (@pap/shared)
 ├── agents/
-│   ├── personas/      Agent persona markdown files (coordinator, analyst, pm, architect, critic, curator)
-│   ├── templates/     Output templates (research, prd, backlog)
+│   ├── personas/      Agent persona markdown files (coordinator, analyst, pm, architect, critic, curator, qa-engineer, prototype-builder, platform engineers)
+│   ├── templates/     Output templates (research, prd, architecture, backlog, qa-tests, prototype)
 │   ├── config.example.yaml  Template for user config (tracked)
 │   └── config.yaml    User identity and preferences (gitignored)
 ├── context/           Project context files injected into every agent prompt
@@ -97,8 +100,10 @@ See [docs/setup/llm-providers.md](docs/setup/llm-providers.md) for detailed prov
 | PRD | PM Strategy (Rex) | Product Requirements Document |
 | Architecture | Architect (Atlas) | Solution architecture document |
 | Backlog | Backlog Agent (Pip) | Right-sized backlog: single stories, small features, or full epic/feature/story hierarchy (JSON) |
-| Quality Review | Critic | Inline after each specialist — auto-revises once, then asks the human |
-| Context Update | Curator | Proposed updates to `context/*.md` files |
+| QA Test Suite | QA Engineer (Vera) | Automation-ready JSON test suite covering happy paths, bad paths, and edge cases |
+| Tech Refinement | Finn, Remi & Cole | Engineering-ready tickets with iOS, Android, and Backend tasks and effort estimates |
+| Quality Review | Critic (Flint) | Inline after each specialist — auto-revises once, then asks the human |
+| Context Update | Curator (Ivy) | Proposed updates to `context/*.md` files |
 
 ### Checkpoints
 
@@ -114,9 +119,26 @@ After a workflow completes, you can **redo from any stage** — provide a reason
 The backlog stage automatically calculates sprint estimates using your team's velocity and capacity factor (configured in `agents/config.yaml`):
 - **Epic level** — total story points divided by effective velocity
 - **Feature level** — per-feature sprint estimates shown in the backlog preview
-- Used for comparing initiatives and prioritising which epics to build first
+- **AI-assisted estimates** — when `ai_assisted_development.enabled: true`, shows AI vs traditional hour comparisons
 
 ## UI Features
+
+### Home Screen
+The home screen lists your initiatives as cards showing title, workflow status, and current stage progress. Cards auto-refresh when any workflow is active. Two ways to start a new workflow:
+- **New Initiative** — opens a form to describe the initiative; the Coordinator gathers requirements before launching
+- **Simulate webhook** — instantly creates and launches a full pipeline from a set of sample initiatives (In-App Messaging, Onboarding Redesign, Portfolio Analytics, Social Trading) — useful for demos showing multiple parallel workflows
+
+### Pipeline Terminal View
+When a workflow is active, the main view switches to a split-pane terminal layout:
+- **Left pane** — stage list with progress bar, completion status, and per-stage cost
+- **Right pane** — live event log grouped by stage, showing agent progress, critic reviews, and checkpoints with inline approve/revise/reject actions
+
+### Claude Code Studio
+After a workflow's backlog has been pushed to Azure DevOps, a **Claude Code Studio** button appears in the terminal. This opens a local Claude Code CLI session:
+- **Left pane** — ticket context showing the feature goal, ADO work item IDs, and backlog stories with acceptance criteria
+- **Right pane** — real-time terminal output from `claude --print --allowedTools Read,Bash,Glob,Grep` running against the actual project codebase
+- Output is persisted in the Zustand store so it survives navigation
+- Falls back to a mock stream if the Claude CLI is not installed
 
 ### Artifact Viewer
 Review specialist outputs in a slide-out panel with fullscreen mode. The backlog preview shows structured epics, features, and stories with:
@@ -124,15 +146,28 @@ Review specialist outputs in a slide-out panel with fullscreen mode. The backlog
 - Expandable stories with formatted acceptance criteria (Given/When/Then)
 - Persona summary panel (fullscreen) showing which personas are covered and their story references
 - **Push to Board** button (after workflow completes) to export the backlog to Azure DevOps or Jira
+- **QA Test Suite** view with structured test cases and coverage breakdown
+- **Prototype Preview** — renders AI-generated React prototypes in an inline device frame
+
+### Prototype Builder
+After a workflow completes, click **Generate Prototype** to create an interactive React prototype:
+- Agent reads all workflow artifacts (PRD, architecture, backlog) and the design system
+- Produces a self-contained React app rendered in-browser via an iframe
+- Device frame toggle: desktop / tablet / mobile
+- Code viewer panel showing all generated `.tsx` files
+- Revision input to refine the prototype with natural language instructions
+
+### Change Requests
+After a workflow completes, **Change Request** opens a centred modal to describe a targeted change:
+1. Select change type (Correction, Scope, Direction, Constraint, Stakeholder, Technical)
+2. The Coordinator assesses impact and lists affected stages
+3. Confirm which stages to re-run — only selected stages execute, not the full pipeline
 
 ### Initiative List
 The left sidebar shows local initiatives and Airtable roadmap items (when configured). Each initiative displays its workflow status (active/paused/done) and clicking one restores the full workflow state.
 
-### Workflow History
-Past workflows show stage badges (Research, PRD, Arch, Backlog) indicating which agent steps were enabled, along with status and date.
-
 ### Context Editor
-Edit the 6 canonical project context files directly from the UI. Click **Context** in the header. Changes are picked up immediately by the next agent request — no server restart needed. Files with templates show a "Load template" button.
+Edit the 6 canonical project context files directly from the UI. Click **Context** in the header. Changes are picked up immediately by the next agent request — no server restart needed.
 
 ### Template Editor
 Edit the output templates that agents follow when producing documents. Click **Templates** in the header. Saves require double-confirmation since template changes affect all future outputs.
@@ -176,6 +211,9 @@ AZURE_DEVOPS_PROJECT=...
 AZURE_DEVOPS_PAT=...
 AZURE_DEVOPS_STORY_TYPE=User Story  # or "Product Backlog Item" for Scrum template
 
+# Azure DevOps AI pipeline (optional — triggers a Claude Code pipeline run)
+AZURE_DEVOPS_AI_PIPELINE_ID=...
+
 # Knowledge base (Notion or GitBook)
 KNOWLEDGE_BASE_INTEGRATION=notion|gitbook|none
 NOTION_API_KEY=...
@@ -216,7 +254,7 @@ The `context/` directory contains markdown files injected into every agent's sys
 | `process.md` | Dev lifecycle, definition of ready/done, release process | Create to enable |
 | `current-state.md` | Where things stand today, active work, known debt | Create to enable |
 
-Context files can be edited from the UI (**Context** button in the header) or on disk. Changes take effect immediately — no restart needed. See [`context/README.md`](context/README.md) for guidelines.
+Context files can be edited from the UI (**Context** button in the header) or on disk. Changes take effect immediately — no restart needed.
 
 ## Development
 
@@ -238,7 +276,7 @@ See [CUSTOMIZING.md](CUSTOMIZING.md) for fork customization and [docs/developer-
 
 ## Database
 
-Schema in `db/schema.sql`, mirrored in `app/backend/src/data/database.ts`. Twelve tables:
+Schema in `db/schema.sql`, mirrored in `app/backend/src/data/database.ts`.
 
 | Table | Purpose |
 |-------|---------|
@@ -253,4 +291,7 @@ Schema in `db/schema.sql`, mirrored in `app/backend/src/data/database.ts`. Twelv
 | `context_diffs` | Proposed edits to `context/*.md` files |
 | `policies` | Governance rules injected into Coordinator prompt |
 | `staged_decisions` | Candidate ADR entries |
-| `context_loads` | Context audit trail (schema only) |
+| `context_loads` | Context audit trail |
+| `change_requests` | Post-completion change requests with impact assessment and status |
+| `cr_artifact_versions` | Links change requests to new artifact versions and their parents |
+| `ado_work_item_map` | Maps local backlog keys to Azure DevOps work item IDs for sync |

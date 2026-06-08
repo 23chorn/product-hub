@@ -34,6 +34,7 @@ import {
   setCheckpointTokenUsage, loadGlobalPolicies, workflowOps,
   type StageTokenData,
 } from './workflow-db';
+import { isDemoMode, getDemoFixture, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
 
 /**
  * Stages that run silently with no human review gate.
@@ -153,10 +154,112 @@ export async function runAutonomousStage(
     criticRunCost = usage.estimatedCost;
     addWorkflowCost(workflowId, usage.estimatedCost);
   };
+  const coordinatorFilterTokenCallback = (usage: TokenUsage) => {
+    addWorkflowCost(workflowId, usage.estimatedCost);
+  };
 
   logger.info(`Autonomous stage "${stage}" starting (session=${sessionId})`);
 
   try {
+    // ── Demo mode fast-path ──────────────────────────────────────────────────
+    if (isDemoMode()) {
+      const fixture = getDemoFixture(stage);
+      if (fixture) {
+        // ── Analyst demo: extended flow to showcase the activity timer ──────
+        if (stage === 'analyst') {
+          insertEvent(workflowId, 'stage_progress', stage, 'Writing section 1: Executive Summary...');
+          await demoSleep(4_500);  // timer counts up to ~4s
+          insertEvent(workflowId, 'stage_progress', stage, 'Generating... 5s elapsed, 0.9k chars written');  // heartbeat resets timer
+          await demoSleep(3_500);  // timer counts up again
+          insertEvent(workflowId, 'stage_progress', stage, 'Writing section 2: Market Analysis...');  // resets timer
+          await demoSleep(2_000);
+        } else {
+          const delay = DEMO_STAGE_DELAY_MS[stage] ?? 2_000;
+          insertEvent(workflowId, 'stage_progress', stage, `Running ${stage}...`);
+          await demoSleep(delay);
+        }
+
+        const artifactDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, stageMap.mode, 'artifacts');
+        await fsAsync.mkdir(artifactDir, { recursive: true });
+        const isJson = stage === 'pm_backlog' || stage === 'prototype' || stage === 'qa_engineer';
+        const ext = isJson ? 'json' : 'md';
+        const artifactPath = path.join(artifactDir, `${Date.now()}-${stage}.${ext}`);
+
+        let artifactContent = fixture;
+        if (stage === 'pm_backlog') {
+          const stripped = fixture.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+          try { artifactContent = await injectSprintEstimates(JSON.parse(stripped)); } catch { artifactContent = stripped; }
+        } else if (isJson) {
+          const stripped = fixture.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+          try { artifactContent = JSON.stringify(JSON.parse(stripped), null, 2); } catch { artifactContent = stripped; }
+        }
+
+        await fsAsync.writeFile(artifactPath, artifactContent, 'utf-8');
+        const artifactType = STAGE_ARTIFACT_TYPE[stage] ?? stage;
+        const artifactId = (db.prepare(
+          `INSERT INTO artifacts (session_id, type, file_path, created_at) VALUES (?, ?, ?, ?)`
+        ).run(sessionId, artifactType, artifactPath, Date.now())).lastInsertRowid as number;
+
+        // ── Demo critic simulation — PRD only ──────────────────────────────
+        if (stage === 'pm_prd') {
+          insertEvent(workflowId, 'stage_completed', stage, 'PRD draft complete.', { artifact_id: artifactId });
+          await demoSleep(600);
+          insertEvent(workflowId, 'stage_progress', stage, 'Running quality review...');
+          await demoSleep(1_800);
+
+          const reviseDetails = {
+            critic_verdict: 'revise',
+            issue_count: 1,
+            critical_issues: 0,
+            major_issues: 1,
+            issues_summary: '[MAJOR] Counter-metrics table missing — document should include measurable failure thresholds alongside success metrics to enable informed rollback decisions',
+            inline_review: true,
+            reviewed_stage: 'pm_prd',
+          };
+          insertEvent(workflowId, 'critic_verdict', stage,
+            'Quality review flagged issues. Auto-revising (attempt 1/1).', reviseDetails);
+          await demoSleep(500);
+
+          insertEvent(workflowId, 'stage_progress', stage, 'Auto-revising: addressing quality review feedback...');
+          await demoSleep(1_600);
+          insertEvent(workflowId, 'stage_progress', stage, 'Running quality review...');
+          await demoSleep(1_800);
+
+          const approveDetails = {
+            critic_verdict: 'approve',
+            issue_count: 0,
+            critical_issues: 0,
+            major_issues: 0,
+            issues_summary: '',
+            inline_review: true,
+            reviewed_stage: 'pm_prd',
+          };
+          const now = Date.now();
+          stmts.insertCheckpoint.run(
+            workflowId, stage, artifactId, 'pending',
+            JSON.stringify({ session_id: sessionId, autonomous: true, demo_mode: true, critic: approveDetails }),
+            now
+          );
+          stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
+          insertEvent(workflowId, 'critic_verdict', stage,
+            'Quality review passed — no issues found. Approve to proceed.', approveDetails);
+          logger.info(`[DEMO] Stage "${stage}" complete — demo critic flow done, checkpoint created`);
+          return;
+        }
+
+        const now = Date.now();
+        stmts.insertCheckpoint.run(
+          workflowId, stage, artifactId, 'pending',
+          JSON.stringify({ session_id: sessionId, autonomous: true, demo_mode: true }),
+          now
+        );
+        stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
+        insertEvent(workflowId, 'stage_completed', stage, `Demo output ready — approve to continue.`, { artifact_id: artifactId });
+        logger.info(`[DEMO] Stage "${stage}" complete — fixture loaded, checkpoint created`);
+        return;
+      }
+    }
+
     const agent = new SpecialistAgent(stageMap.agentType);
     const persona = await agent.loadPersona(stage);
 
@@ -243,6 +346,23 @@ export async function runAutonomousStage(
         } catch { /* ignore */ }
       }
       if (parts.length > 0) itemContext = parts.join('\n\n---\n\n');
+    } else if (stage === 'qa_engineer') {
+      const parts: string[] = [];
+      const prdPath = sessionManager.getLatestPrdArtifactPath(itemId);
+      if (prdPath) {
+        try {
+          const content = fs.readFileSync(prdPath, 'utf-8');
+          parts.push(`**PRD Document (use to trace every FR and acceptance criterion to test cases):**\n\n${content}`);
+        } catch { /* ignore */ }
+      }
+      const backlogPath = getLatestArtifactPathByType(itemId, 'backlog');
+      if (backlogPath) {
+        try {
+          const content = fs.readFileSync(backlogPath, 'utf-8');
+          parts.push(`**Backlog (use story IDs and acceptance criteria to populate story_ref and scenario fields):**\n\n${content}`);
+        } catch { /* ignore */ }
+      }
+      if (parts.length > 0) itemContext = parts.join('\n\n---\n\n');
     } else if (stage === 'prototype') {
       // Load design system context: try Figma MCP first, fall back to local CSS tokens
       const figma = await loadFigmaDesignSystem((msg) => {
@@ -324,6 +444,14 @@ export async function runAutonomousStage(
               lastProgressTime = now;
             }
           }
+          // Heartbeat: still on same section and been silent for 45s — prove the stage is alive
+          if (now - lastProgressTime > 45_000) {
+            const elapsedSec = Math.round((now - startTime) / 1000);
+            const kChars = (fullResponse.length / 1000).toFixed(1);
+            insertEvent(workflowId, 'stage_progress', stage,
+              `Generating... ${elapsedSec}s elapsed, ${kChars}k chars written`);
+            lastProgressTime = now;
+          }
         }
       }
     }
@@ -401,7 +529,7 @@ export async function runAutonomousStage(
     // After each specialist produces an artifact, the critic reviews it.
     // If issues are found, auto-revise once. If still unresolved,
     // pause and ask the human for input.
-    const specialistStages = new Set(['analyst', 'pm_prd', 'solution_architect', 'prototype', 'pm_backlog', 'gtm_strategy', 'feature_marketing']);
+    const specialistStages = new Set(['analyst', 'pm_prd', 'solution_architect', 'prototype', 'pm_backlog', 'gtm_strategy', 'feature_marketing', 'qa_engineer']);
     const policies = loadGlobalPolicies();
     const criticEnabled = policies.get('require_critic_review') !== 'false' && policies.get('require_critic_review') !== (false as any);
 
@@ -410,7 +538,7 @@ export async function runAutonomousStage(
         { excerpt, artifact_id: artifactId });
 
       // Brief pause before critic to reduce back-to-back API rate limit pressure
-      await new Promise(r => setTimeout(r, 8_000));
+      await demoSleep(8_000);
 
       insertEvent(workflowId, 'stage_progress', stage, 'Running quality review...');
 
@@ -456,10 +584,50 @@ export async function runAutonomousStage(
           } catch { /* ignore */ }
         }
         if (refParts.length > 0) criticReferenceDocuments = refParts.join('\n\n---\n\n');
+      } else if (stage === 'qa_engineer') {
+        const refParts: string[] = [];
+        const prdPath = sessionManager.getLatestPrdArtifactPath(itemId);
+        if (prdPath) {
+          try {
+            const content = fs.readFileSync(prdPath, 'utf-8');
+            refParts.push(`### PRD Document\n\n${content}`);
+          } catch { /* ignore */ }
+        }
+        const backlogPath = getLatestArtifactPathByType(itemId, 'backlog');
+        if (backlogPath) {
+          try {
+            const content = fs.readFileSync(backlogPath, 'utf-8');
+            refParts.push(`### Backlog\n\n${content}`);
+          } catch { /* ignore */ }
+        }
+        if (refParts.length > 0) criticReferenceDocuments = refParts.join('\n\n---\n\n');
       }
 
-      const review = await getCritic().review(fullResponse, artifactType, resolveAgentModel('critic'), criticTokenCallback, stage, priorCriticIssues, criticReferenceDocuments);
+      let review = await getCritic().review(fullResponse, artifactType, resolveAgentModel('critic'), criticTokenCallback, stage, priorCriticIssues, criticReferenceDocuments);
       insertEvent(workflowId, 'stage_progress', stage, 'Quality review complete. Processing results...');
+
+      // ── Coordinator scope filter ──────────────────────────────────────────
+      // If the Critic flagged issues, ask the Coordinator to validate them against
+      // the initiative's stated scope. Issues that contradict explicit scope
+      // boundaries are filtered out before the revision decision is made.
+      if (review.verdict === 'revise' && review.issues.length > 0) {
+        insertEvent(workflowId, 'stage_progress', stage, 'Validating review against initiative scope…');
+        const filterResult = await getCoordinator().filterCriticIssues(
+          workflowId, stage, review.issues, coordinatorFilterTokenCallback
+        );
+        if (filterResult.filteredCount > 0) {
+          const noun = filterResult.filteredCount === 1 ? 'issue' : 'issues';
+          insertEvent(workflowId, 'stage_progress', stage,
+            `Chief of Staff removed ${filterResult.filteredCount} out-of-scope ${noun}. ${filterResult.reasoning}`);
+        }
+        review = { ...review, issues: filterResult.validIssues };
+        // Re-evaluate verdict with only in-scope issues
+        const hasCritical = filterResult.validIssues.some(i => i.severity === 'critical');
+        const majorCount = filterResult.validIssues.filter(i => i.severity === 'major').length;
+        if (!hasCritical && majorCount < 2) {
+          review = { ...review, verdict: 'approve' };
+        }
+      }
 
       // Save full critic review as artifact .md file
       const criticArtifactId = await saveCriticArtifact(itemId, stage, review.fullText, sessionId);
@@ -478,24 +646,38 @@ export async function runAutonomousStage(
       };
 
       if (review.verdict === 'approve') {
-        // Critic approved — still pause for human review before advancing
         const now = Date.now();
+        const checkpointStatusCritic = autoApprove ? 'approved' : 'pending';
         const cpResult = stmts.insertCheckpoint.run(
-          workflowId, stage, artifactId, 'pending',
-          JSON.stringify({ session_id: sessionId, autonomous: true, critic: criticDetails, ...(diffArtifactId ? { diff_artifact_id: diffArtifactId } : {}) }),
+          workflowId, stage, artifactId, checkpointStatusCritic,
+          JSON.stringify({ session_id: sessionId, autonomous: true, critic: criticDetails, auto_approved: autoApprove, ...(diffArtifactId ? { diff_artifact_id: diffArtifactId } : {}) }),
           now
         );
         if (specialistTokenData) {
           setCheckpointTokenUsage(cpResult.lastInsertRowid as number,
             { specialist: specialistTokenData, ...(criticTokenData ? { critic: criticTokenData } : {}), ...(priorRunsCost ? { priorRunsCost } : {}) });
         }
-        stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
         const minorCount = review.issues.filter(i => i.severity === 'minor').length;
         const approveMsg = minorCount > 0
           ? `Quality review passed with ${minorCount} minor note${minorCount > 1 ? 's' : ''} (resolved internally). Approve to proceed.`
           : 'Quality review passed — no issues found. Approve to proceed.';
         insertEvent(workflowId, 'critic_verdict', stage, approveMsg, criticDetails);
-        logger.info(`Inline critic approved "${stage}" for workflow ${workflowId} — paused for human review`);
+
+        if (autoApprove) {
+          logger.info(`Inline critic approved "${stage}" — auto-advancing (demo mode)`);
+          workflowOps.advanceStage(workflowId).catch(err => {
+            if (err.message?.startsWith('WORKFLOW_COMPLETE')) {
+              logger.info(`Workflow ${workflowId} completed after critic auto-approve chain through "${stage}"`);
+            } else {
+              logger.error(`Auto-advance after critic-approved stage "${stage}" failed: ${err.message}`);
+              const now2 = Date.now();
+              stmts.updateWorkflowStatus.run('paused_at_checkpoint', now2, workflowId);
+            }
+          });
+        } else {
+          stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
+          logger.info(`Inline critic approved "${stage}" for workflow ${workflowId} — paused for human review`);
+        }
         return;
       }
 
@@ -536,7 +718,7 @@ export async function runAutonomousStage(
         return;
       }
 
-      // Max revisions exhausted — pause at checkpoint for human input
+      // Max revisions exhausted
       const issuesSummary = review.issues.slice(0, 3).map(i => `[${i.severity.toUpperCase()}] ${i.description}`).join('; ');
       const hasQuestions = review.questions && review.questions.length > 0;
       const questionsSummary = hasQuestions
@@ -545,19 +727,34 @@ export async function runAutonomousStage(
 
       const now = Date.now();
       const cpResult2 = stmts.insertCheckpoint.run(
-        workflowId, stage, artifactId, 'pending',
-        JSON.stringify({ session_id: sessionId, autonomous: true, critic: criticDetails, ...(diffArtifactId ? { diff_artifact_id: diffArtifactId } : {}) }),
+        workflowId, stage, artifactId, autoApprove ? 'approved' : 'pending',
+        JSON.stringify({ session_id: sessionId, autonomous: true, critic: criticDetails, auto_approved: autoApprove, ...(diffArtifactId ? { diff_artifact_id: diffArtifactId } : {}) }),
         now
       );
       if (specialistTokenData) {
         setCheckpointTokenUsage(cpResult2.lastInsertRowid as number,
           { specialist: specialistTokenData, ...(criticTokenData ? { critic: criticTokenData } : {}) });
       }
-      stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
-      insertEvent(workflowId, 'critic_verdict', stage,
-        `Quality review still has unresolved issues after ${MAX_INLINE_REVISIONS} revision(s): ${issuesSummary}.${questionsSummary} How would you like to proceed?`,
-        criticDetails);
-      logger.info(`Inline critic exhausted revisions for "${stage}" — pausing for human input`);
+
+      if (autoApprove) {
+        insertEvent(workflowId, 'critic_verdict', stage,
+          `Quality review noted issues — advancing automatically (demo mode): ${issuesSummary}.`,
+          criticDetails);
+        logger.info(`Inline critic exhausted revisions for "${stage}" — auto-advancing (demo mode)`);
+        workflowOps.advanceStage(workflowId).catch(err => {
+          if (!err.message?.startsWith('WORKFLOW_COMPLETE')) {
+            logger.error(`Auto-advance after exhausted revisions "${stage}" failed: ${err.message}`);
+            const now2 = Date.now();
+            stmts.updateWorkflowStatus.run('paused_at_checkpoint', now2, workflowId);
+          }
+        });
+      } else {
+        stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
+        insertEvent(workflowId, 'critic_verdict', stage,
+          `Quality review still has unresolved issues after ${MAX_INLINE_REVISIONS} revision(s): ${issuesSummary}.${questionsSummary} How would you like to proceed?`,
+          criticDetails);
+        logger.info(`Inline critic exhausted revisions for "${stage}" — pausing for human input`);
+      }
       return;
     }
 

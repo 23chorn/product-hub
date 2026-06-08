@@ -26,6 +26,7 @@ import { insertEvent } from '../agents/workflow-db';
 import { resolveArtifactPath } from '../agents/artifact-helpers';
 import Logger from '../utils/logger';
 import { loadPrdForItem, buildEpicEnrichment, buildFeatureEnrichment } from '../utils/prd-enrichment';
+import { isDemoMode } from '../demo/demo-mode';
 
 // ── Pre-workflow planning cost accumulator ────────────────────────────────────
 // Planning conversations happen before a workflow ID exists, so we can't call
@@ -123,7 +124,7 @@ function cleanCoordinatorResponse(text: string): string {
   return cleaned;
 }
 
-const KNOWN_STAGES = new Set(['analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'gtm_strategy', 'feature_marketing', 'critic', 'curator']);
+const KNOWN_STAGES = new Set(['analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'gtm_strategy', 'feature_marketing', 'critic', 'curator', 'tech_refinement']);
 
 /**
  * Validate a candidate stage sequence.
@@ -396,9 +397,15 @@ workflowRoutes.post('/start', async (req: Request, res: Response) => {
 
   try {
     // Use caller-supplied sequence if valid, otherwise the fixed default
-    const stages = (stageSequence && Array.isArray(stageSequence) && stageSequence.length > 0)
+    let stages = (stageSequence && Array.isArray(stageSequence) && stageSequence.length > 0)
       ? stageSequence
       : DEFAULT_STAGES;
+
+    // tech_refinement is always injected after pm_backlog (required stage)
+    if (stages.includes('pm_backlog') && !stages.includes('tech_refinement')) {
+      const idx = stages.indexOf('pm_backlog');
+      stages = [...stages.slice(0, idx + 1), 'tech_refinement', ...stages.slice(idx + 1)];
+    }
 
     // Fold coordinator-gathered context into the goal so all stage briefs benefit from it
     const fullGoal = enrichedContext
@@ -546,6 +553,16 @@ workflowRoutes.post('/checkpoint/resolve', async (req: Request, res: Response) =
         }
       }
 
+      // Auto push-to-board after tech refinement approval
+      if (cpDetail?.stage === 'tech_refinement') {
+        const wfRow = db.prepare<[string], { item_id: string }>('SELECT item_id FROM workflows WHERE id = ?').get(workflowId);
+        if (wfRow) {
+          autoPushToBoard(workflowId, wfRow.item_id).catch(err =>
+            logger.error(`autoPushToBoard failed: ${err.message}`)
+          );
+        }
+      }
+
       // Advance to the next stage asynchronously — don't block the response.
       // The checkpoint is already approved; the frontend polls for status updates.
       advanceStage(workflowId)
@@ -673,6 +690,172 @@ workflowRoutes.post('/:id/retry', async (req: Request, res: Response) => {
     res.status(400).json({ error: err.message });
   }
 });
+
+// ── Auto push-to-board after tech refinement ────────────────────────────────────
+
+interface PushResult {
+  topUrl: string;
+  topId: number;
+  level: 'epic' | 'feature' | 'story';
+  featureCount?: number;
+  storyCount?: number;
+}
+
+/**
+ * Called automatically when a tech_refinement checkpoint is approved.
+ * Pushes the refined backlog to the configured board and emits a board_synced event.
+ */
+async function autoPushToBoard(workflowId: string, itemId: string): Promise<void> {
+  const fs = require('fs');
+
+  try {
+    // ── Demo mode fast-path ──────────────────────────────────────────────────
+    if (isDemoMode()) {
+      const demoOrg = process.env.AZURE_DEVOPS_ORG || 'contoso';
+      const demoProject = process.env.AZURE_DEVOPS_PROJECT || 'MobileApp';
+      const mockEpicId = Math.floor(10000 + Math.random() * 90000);
+      const mockUrl = `https://dev.azure.com/${demoOrg}/${demoProject}/_workitems/edit/${mockEpicId}`;
+      insertEvent(workflowId, 'board_synced', 'tech_refinement',
+        `Backlog synced to Azure DevOps — Epic #${mockEpicId} created`,
+        { top_url: mockUrl, top_id: mockEpicId, level: 'epic', demo: true });
+      logger.info(`[DEMO] Auto push-to-board complete — mock Epic #${mockEpicId}`);
+      return;
+    }
+
+    // ── Real ADO push ────────────────────────────────────────────────────────
+    const { appConfig } = require('../config/app-config');
+    if (appConfig.integrations.workItems !== 'ado') {
+      logger.info(`Auto push skipped — work items integration is "${appConfig.integrations.workItems}"`);
+      return;
+    }
+
+    // Load latest backlog artifact
+    const artifact = db.prepare<[string], { file_path: string }>(`
+      SELECT a.file_path FROM artifacts a
+      JOIN sessions s ON a.session_id = s.id
+      WHERE s.item_id = ? AND a.type = 'backlog'
+      ORDER BY a.created_at DESC LIMIT 1
+    `).get(itemId);
+
+    if (!artifact) {
+      logger.warn(`Auto push-to-board: no backlog artifact for item ${itemId}`);
+      return;
+    }
+
+    const content = fs.readFileSync(resolveArtifactPath(artifact.file_path), 'utf-8');
+    const cleaned = content.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+    let backlog: any;
+    try { backlog = JSON.parse(cleaned); } catch {
+      logger.warn('Auto push-to-board: backlog artifact is not valid JSON');
+      return;
+    }
+
+    // Normalise tiers
+    if (backlog?.story) {
+      backlog.epic = { title: backlog.story.title, description: backlog.story.goal || '' };
+      backlog.features = [{ title: backlog.story.title, description: backlog.story.goal || '', phase: 'MVP', stories: [backlog.story] }];
+      delete backlog.story;
+    } else if (backlog?.feature) {
+      backlog.epic = { title: backlog.feature.title, description: backlog.feature.description || '' };
+      backlog.features = [backlog.feature];
+      delete backlog.feature;
+    } else if (backlog?.epic && !backlog?.features && Array.isArray(backlog?.epic?.stories)) {
+      backlog.features = [{ title: backlog.epic.title, description: backlog.epic.description, phase: 'MVP', stories: backlog.epic.stories }];
+    }
+
+    if (!backlog?.epic || !Array.isArray(backlog?.features)) {
+      logger.warn('Auto push-to-board: unrecognised backlog structure');
+      return;
+    }
+
+    // PRD enrichment
+    const prdContent = loadPrdForItem(itemId);
+    if (prdContent) {
+      const epicHtml = buildEpicEnrichment(prdContent);
+      if (epicHtml) backlog.epic.description = `${backlog.epic.description || ''}<hr>${epicHtml}`;
+      for (const feature of backlog.features as any[]) {
+        const frIds = new Set<string>();
+        const journeyRefs = new Set<string>();
+        for (const story of (feature.stories ?? []) as any[]) {
+          for (const fr of (story.prdRef?.functionalRequirements ?? []) as string[]) frIds.add(fr);
+          if (story.prdRef?.userJourney) journeyRefs.add(story.prdRef.userJourney as string);
+        }
+        const featureHtml = buildFeatureEnrichment(prdContent, frIds, journeyRefs);
+        if (featureHtml) feature.description = `${feature.description || ''}<hr>${featureHtml}`;
+      }
+    }
+
+    const { AzureDevOpsClient } = require('../integrations/azure-devops');
+    const client = new AzureDevOpsClient();
+
+    // Check for existing mappings (sync vs create)
+    const existingMappings = db.prepare<[string], { local_key: string; ado_id: number; title: string }>(
+      'SELECT local_key, ado_id, title FROM ado_work_item_map WHERE workflow_id = ?'
+    ).all(workflowId);
+
+    const artifactRow = db.prepare<[string], { id: number }>(`
+      SELECT a.id FROM artifacts a
+      JOIN sessions s ON a.session_id = s.id
+      WHERE s.item_id = ? AND a.type = 'backlog'
+      ORDER BY a.created_at DESC LIMIT 1
+    `).get(itemId);
+    const artifactId = artifactRow?.id ?? 0;
+
+    let result: PushResult;
+
+    if (existingMappings.length > 0) {
+      const mapByKey = new Map(existingMappings.map((m: any) => [m.local_key, m]));
+      const updateResult = await client.updateBacklog(backlog, mapByKey);
+      const insertMapping = db.prepare(`
+        INSERT OR REPLACE INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, title, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      const now = Date.now();
+      for (const m of updateResult.newMappings) {
+        insertMapping.run(workflowId, artifactId, m.ado_id, m.ado_type, m.ado_url, m.local_key, m.title, now);
+      }
+      result = { topId: updateResult.epicId, topUrl: client.getEpicUrl(updateResult.epicId), level: 'epic' };
+    } else {
+      const createResult = await client.createBacklog(backlog);
+      const epicUrl = client.getEpicUrl(createResult.epicId);
+      const insertMapping = db.prepare(`
+        INSERT OR REPLACE INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, title, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      const now = Date.now();
+      insertMapping.run(workflowId, artifactId, createResult.epicId, 'epic', epicUrl, 'epic', backlog.epic.title, now);
+      let featureIdx = 0, storyIdx = 0;
+      for (let fi = 0; fi < backlog.features.length; fi++) {
+        const featureKey = `F${fi + 1}`;
+        const featureAdoId = createResult.featureIds[featureIdx++];
+        insertMapping.run(workflowId, artifactId, featureAdoId, 'feature', client.getEpicUrl(featureAdoId), featureKey, backlog.features[fi].title, now);
+        for (let si = 0; si < backlog.features[fi].stories.length; si++) {
+          const storyKey = `${featureKey}.S${si + 1}`;
+          const storyAdoId = createResult.storyIds[storyIdx++];
+          insertMapping.run(workflowId, artifactId, storyAdoId, 'story', client.getEpicUrl(storyAdoId), storyKey, backlog.features[fi].stories[si].title, now);
+        }
+      }
+      result = {
+        topId: createResult.epicId,
+        topUrl: epicUrl,
+        level: 'epic',
+        featureCount: createResult.featureIds.length,
+        storyCount: createResult.storyIds.length,
+      };
+    }
+
+    insertEvent(workflowId, 'board_synced', 'tech_refinement',
+      `Backlog synced to Azure DevOps — Epic #${result.topId} created`,
+      { top_url: result.topUrl, top_id: result.topId, level: result.level,
+        feature_count: result.featureCount, story_count: result.storyCount });
+
+    logger.info(`Auto push-to-board complete for workflow ${workflowId} — Epic #${result.topId} at ${result.topUrl}`);
+  } catch (err: any) {
+    logger.error(`Auto push-to-board failed for workflow ${workflowId}: ${err.message}`);
+    insertEvent(workflowId, 'error', 'tech_refinement',
+      `Board sync failed: ${err.message}`, { error: err.message });
+  }
+}
 
 // ── POST /api/workflow/:id/push-to-board ────────────────────────────────────────
 
@@ -1130,6 +1313,40 @@ workflowRoutes.get('/list/all', (_req: Request, res: Response) => {
  * Returns all checkpoints for the workflow, each enriched with artifact metadata
  * when artifact_id is present.
  */
+// Pipeline demo data — QA test cases + workflow summary for the pipeline status panel
+workflowRoutes.get('/:id/pipeline-demo', (req: Request, res: Response) => {
+  const fs = require('fs') as typeof import('fs');
+  const { id } = req.params;
+  try {
+    const wf = db.prepare<[string], { goal: string; summary: string | null }>(
+      'SELECT goal, summary FROM workflows WHERE id = ?'
+    ).get(id);
+    if (!wf) return res.status(404).json({ error: 'Workflow not found' });
+
+    const artifact = db.prepare<[string], { file_path: string }>(
+      `SELECT a.file_path FROM artifacts a
+       JOIN sessions s ON a.session_id = s.id
+       WHERE s.workflow_id = ? AND a.type = 'qa_tests'
+       ORDER BY a.created_at DESC LIMIT 1`
+    ).get(id);
+
+    let testCases: unknown[] = [];
+    if (artifact?.file_path && fs.existsSync(artifact.file_path)) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(artifact.file_path, 'utf-8'));
+        testCases = parsed.test_cases ?? [];
+      } catch { /* use empty */ }
+    }
+
+    res.json({
+      summary: wf.summary ?? wf.goal.split('\n')[0].slice(0, 80),
+      testCases,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 workflowRoutes.get('/:id/checkpoints', (req: Request, res: Response) => {
   try {
     const { checkpoints } = getWorkflowStatus(req.params.id);

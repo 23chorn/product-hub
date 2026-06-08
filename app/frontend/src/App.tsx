@@ -1,12 +1,12 @@
-import { useState, useEffect, useRef } from 'react';
-import { AirtableItemList } from './components/sidebar';
+import { useState, useEffect } from 'react';
+import { HomeScreen } from './components/HomeScreen';
 import { DecisionLogPanel } from './components/decision-log';
 import { ToastContainer } from './components/ToastContainer';
 import { CoordinatorChat } from './components/coordinator';
-import { WorkflowStageTracker, WorkflowHistory } from './components/workflow';
 import { ArtifactViewer } from './components/artifact';
 import { SkillManagerPanel } from './components/SkillManagerPanel';
 import { QuickTicketPanel } from './components/QuickTicketPanel';
+import { ClaudeCodeStudio } from './components/ClaudeCodeStudio';
 import { useThemeStore } from './stores/themeStore';
 import { useModelStore } from './stores/modelStore';
 import { useDecisionLogStore } from './stores/decisionLogStore';
@@ -25,9 +25,7 @@ function App() {
   const { activeWorkflow, viewingArtifactId } = useWorkflowStore();
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
   const [isQTOpen, setIsQTOpen] = useState(false);
-  const { config } = useConfigStore();
-  const showRoadmapSidebar = config?.integrations?.roadmap && config.integrations.roadmap !== 'none';
-
+  const [isCodeStudioOpen, setIsCodeStudioOpen] = useState(false);
   // Fetch app config, available models, and context status on mount
   useEffect(() => {
     api.getConfig().then(setConfig).catch(() => {});
@@ -79,42 +77,6 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Left column width
-  const [leftWidth, setLeftWidth] = useState(() => {
-    const saved = localStorage.getItem('leftColumnWidth');
-    return saved ? parseInt(saved) : 280;
-  });
-  const [isDragging, setIsDragging] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    localStorage.setItem('leftColumnWidth', leftWidth.toString());
-  }, [leftWidth]);
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging || !containerRef.current) return;
-      const containerRect = containerRef.current.getBoundingClientRect();
-      const newWidth = e.clientX - containerRect.left;
-      setLeftWidth(Math.max(200, Math.min(newWidth, containerRect.width - 400)));
-    };
-
-    const handleMouseUp = () => setIsDragging(false);
-
-    if (isDragging) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = 'col-resize';
-      document.body.style.userSelect = 'none';
-    }
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
-  }, [isDragging, leftWidth]);
 
   return (
     <div className="h-screen flex flex-col bg-slate-100 dark:bg-slate-950">
@@ -141,26 +103,6 @@ function App() {
             >
               <span>Studio</span>
             </button>
-
-            {/* Quick Ticket Button */}
-            <button
-              onClick={() => setIsQTOpen(true)}
-              className="flex items-center space-x-1.5 px-3 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-700/70 hover:border-slate-400 dark:hover:border-slate-500 transition-colors shadow-sm hover:shadow-glow-teal-sm"
-              title="Format and estimate a quick ticket"
-            >
-              <span>Quick Ticket</span>
-            </button>
-
-            {/* Decision Log Button */}
-            <button
-              onClick={openDecisionLog}
-              className="flex items-center space-x-1.5 px-3 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-700/70 hover:border-slate-400 dark:hover:border-slate-500 transition-colors shadow-sm hover:shadow-glow-teal-sm"
-              title="Open Decision Log"
-            >
-              <span>Decision Log</span>
-            </button>
-
-
 
             {/* Dark Mode Toggle */}
             <button
@@ -200,30 +142,12 @@ function App() {
         </div>
       </header>
 
-      {/* Main Content - Two Column Layout */}
-      <div ref={containerRef} className="flex-1 flex overflow-hidden relative">
-        {/* Left Sidebar — stage tracker (active workflow), workflow history (idle), or initiative list */}
-        <aside
-          style={{ width: `${leftWidth}px` }}
-          className="bg-white/90 dark:bg-slate-900/70 backdrop-blur-md border-r border-slate-200 dark:border-slate-700 overflow-y-auto flex-shrink-0"
-        >
-          {activeWorkflow ? (
-            <WorkflowStageTracker />
-          ) : showRoadmapSidebar ? (
-            <AirtableItemList />
-          ) : (
-            <WorkflowHistory />
-          )}
-        </aside>
-        <div
-          onMouseDown={() => setIsDragging(true)}
-          className="w-1 bg-slate-200 dark:bg-slate-700 hover:bg-teal-500 cursor-col-resize flex-shrink-0 transition-colors"
-          style={{ cursor: 'col-resize' }}
-        />
-
-        {/* Main Column — Coordinator chat (the sole interface) */}
+      {/* Main Content */}
+      <div className="flex-1 flex overflow-hidden relative">
         <main className="flex-1 overflow-hidden min-w-0 relative">
-          <CoordinatorChat />
+          {activeWorkflow
+            ? <CoordinatorChat onOpenCodeStudio={() => setIsCodeStudioOpen(true)} />
+            : <HomeScreen />}
         </main>
 
         {/* Decision Log Modal Overlay */}
@@ -247,6 +171,14 @@ function App() {
               <QuickTicketPanel onClose={() => setIsQTOpen(false)} />
             </div>
           </div>
+        )}
+
+        {/* AI Code Studio Overlay */}
+        {isCodeStudioOpen && activeWorkflow && (
+          <ClaudeCodeStudio
+            workflowId={activeWorkflow.id}
+            onClose={() => setIsCodeStudioOpen(false)}
+          />
         )}
 
       </div>

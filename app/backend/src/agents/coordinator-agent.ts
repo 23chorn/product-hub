@@ -9,6 +9,7 @@ import { getKnowledgeBaseProvider } from '../integrations/knowledge-base';
 import { STAGE_LABELS_BRIEF, STAGE_OUTPUT_FORMATS, stageGoal, stageNotDecide } from './stage-metadata';
 import { getActiveSkill, listSkills } from './skill-registry';
 import Logger from '../utils/logger';
+import type { CriticIssue } from './critic-agent';
 
 const logger = new Logger('COORDINATOR');
 
@@ -599,6 +600,88 @@ Nothing may follow the JSON line. By your 3rd message you must include COORDINAT
       undefined,
       { onTokens }
     );
+  }
+
+  // ── Critic verdict filter ────────────────────────────────────────────────
+
+  /**
+   * Evaluate the Critic's flagged issues against the initiative's stated scope.
+   * Issues that contradict explicit scope boundaries, stated exclusions, or
+   * already-documented constraints are filtered out before the auto-revision
+   * decision is made — preventing noisy, off-scope issues from triggering
+   * unnecessary revision cycles.
+   *
+   * Fails safe: if the LLM call or JSON parse fails, all issues are preserved.
+   *
+   * @returns validIssues   Only the issues that survive scope validation.
+   * @returns filteredCount Number of issues removed.
+   * @returns reasoning     One-sentence explanation from the Coordinator.
+   */
+  async filterCriticIssues(
+    workflowId: string,
+    stage: string,
+    issues: CriticIssue[],
+    onTokens?: (usage: TokenUsage) => void
+  ): Promise<{ validIssues: CriticIssue[]; filteredCount: number; reasoning: string }> {
+    const noOp = { validIssues: issues, filteredCount: 0, reasoning: '' };
+    if (issues.length === 0) return noOp;
+
+    const workflow = db
+      .prepare<[string], WorkflowRow>('SELECT * FROM workflows WHERE id = ?')
+      .get(workflowId);
+    if (!workflow) return noOp;
+
+    const issueList = issues
+      .map((issue, i) => `${i + 1}. [${issue.severity.toUpperCase()}] ${issue.description}`)
+      .join('\n');
+
+    const systemPrompt = `You are the Chief of Staff validating a quality reviewer's findings against the stated initiative scope. You output ONLY a JSON object — no other text.`;
+
+    const userMessage =
+`**Initiative goal and scope:**
+${workflow.goal}
+
+**Stage reviewed:** ${stage}
+
+**Issues flagged by the quality reviewer:**
+${issueList}
+
+Classify each issue as one of:
+- "valid" — genuinely in-scope and should be fixed
+- "out_of_scope" — contradicts an explicit scope exclusion, stated constraint, or MVP boundary
+- "already_addressed" — the goal or constraints already cover this concern
+
+Return exactly:
+{"assessments":[{"index":1,"status":"valid"|"out_of_scope"|"already_addressed","reason":"<brief>"}...],"recommendation":"proceed_with_revision"|"override_to_approve","reasoning":"<one sentence>"}`;
+
+    try {
+      const resolvedModel = resolveAgentModel('coordinator');
+      let fullText = '';
+      for await (const chunk of streamAI(resolvedModel, systemPrompt,
+        [{ role: 'user', content: userMessage }], undefined, { onTokens })) {
+        fullText += chunk;
+      }
+
+      const jsonMatch = fullText.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return noOp;
+      const parsed = JSON.parse(jsonMatch[0]) as {
+        assessments: Array<{ index: number; status: string; reason: string }>;
+        recommendation: string;
+        reasoning: string;
+      };
+
+      const validIssues = issues.filter((_, i) => {
+        const a = parsed.assessments?.find(a => a.index === i + 1);
+        return !a || a.status === 'valid';
+      });
+
+      const filteredCount = issues.length - validIssues.length;
+      logger.info(`Coordinator filtered ${filteredCount}/${issues.length} critic issues for stage "${stage}" — ${parsed.reasoning}`);
+      return { validIssues, filteredCount, reasoning: parsed.reasoning ?? '' };
+    } catch (err: any) {
+      logger.warn(`Coordinator issue filter failed for stage "${stage}": ${err.message} — preserving all issues`);
+      return noOp;
+    }
   }
 
   /**

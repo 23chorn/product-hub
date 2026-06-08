@@ -1,0 +1,168 @@
+{
+  "epic": {
+    "title": "Price Alerts & Watchlist",
+    "description": "Allow retail investors to monitor price movements on securities they care about and receive timely notifications when target prices are crossed.",
+    "businessValue": "Increases 7-day active user rate from 22% to 31% by reducing the need for users to monitor competitor apps for price movements. Users who receive a timely alert are 4.2× more likely to execute the trade on TradeEasy.",
+    "prdLink": "PRD: Price Alerts & Watchlist — TradeEasy"
+  },
+  "features": [
+    {
+      "title": "Watchlist Management",
+      "description": "Users can build and manage a personal list of securities they want to monitor, with real-time quote data.",
+      "phase": "MVP",
+      "stories": [
+        {
+          "title": "Add a ticker to the watchlist",
+          "persona": "Alex — Active Self-Directed Trader",
+          "goal": "add any US equity or ETF ticker to my personal watchlist",
+          "benefit": "so that I can monitor securities I'm interested in without keeping a separate spreadsheet",
+          "acceptanceCriteria": [
+            "Given I am on any ticker detail screen or search result, When I tap 'Add to Watchlist', Then the ticker appears on my Watchlist tab within 2 seconds and a confirmation toast is displayed",
+            "Given a ticker is already on my watchlist, When I tap 'Add to Watchlist', Then the button is replaced with 'In Watchlist' and no duplicate is added",
+            "Given I search for a ticker that does not exist (e.g. 'ZZZZZ'), When I tap search, Then an inline message 'Ticker not found' is shown and the Add to Watchlist button is not displayed"
+          ],
+          "effort": 2,
+          "technical_notes": {
+            "ios": "Use WatchlistViewModel with @Published var tickers: [Ticker]. Call POST /api/watchlist via WatchlistService; handle 409 conflict gracefully with AlertService.showToast. Update local state optimistically and roll back on error using a saved snapshot before the call.",
+            "android": "Implement in WatchlistViewModel using StateFlow<List<Ticker>>. POST via WatchlistRepository (Retrofit). Use Snackbar for confirmation toast with a 2s duration. Guard duplicate state in ViewModel before the API call to prevent double-tap race conditions.",
+            "backend": "POST /api/watchlist validates ticker against Polygon.io symbol cache (Redis, 24h TTL). Upsert into watchlist_items with a unique constraint on (user_id, ticker). Return 409 if duplicate detected at DB level as a safety net alongside the ViewModel-level guard."
+          }
+        },
+        {
+          "title": "View watchlist with live quotes",
+          "persona": "Maya — Passive Portfolio Reviewer",
+          "goal": "see the current price and intraday change for every security on my watchlist at a glance",
+          "benefit": "so that I can quickly assess whether anything needs my attention without opening each position individually",
+          "acceptanceCriteria": [
+            "Given I am on the Watchlist tab with at least one item, When the screen is in foreground during market hours, Then each row displays the ticker, last price, and intraday % change updated within 15 seconds",
+            "Given the market is closed, When I view my watchlist, Then each row displays the previous close price and a 'Market Closed' label",
+            "Given my watchlist has no items, When I open the Watchlist tab, Then an empty state screen is shown with a 'Search for a ticker to add' call to action"
+          ],
+          "effort": 3,
+          "technical_notes": {
+            "ios": "Connect to /ws/quotes via URLSessionWebSocketTask. Switch to REST poll (GET /api/watchlist every 15s) when app enters background using sceneDidEnterBackground notification. Display via UITableView with NSDiffableDataSource — only changed rows are re-rendered, preventing flicker on rapid updates.",
+            "android": "Use OkHttp WebSocket for foreground streaming; switch to WorkManager PeriodicWorkRequest (15-min interval) when backgrounded. QuoteViewModel holds StateFlow<Map<String, Quote>>. RecyclerView with ListAdapter and DiffUtil.ItemCallback handles live row updates without full rebind.",
+            "backend": "WebSocket handler at /ws/quotes fans out from Redis Pub/Sub keyed by ticker symbol. REST GET /api/watchlist joins watchlist_items with the latest quote snapshot table. Quote snapshots written by AlertEvaluator on each price tick; stale snapshots (>15s) flagged with a 'market_closed' boolean in the response."
+          }
+        },
+        {
+          "title": "Remove a ticker from the watchlist",
+          "persona": "Alex — Active Self-Directed Trader",
+          "goal": "remove a ticker I no longer want to follow",
+          "benefit": "so that my watchlist stays focused on my current interests",
+          "acceptanceCriteria": [
+            "Given a ticker is on my watchlist, When I swipe-left on the row and tap 'Remove', Then the row is removed immediately and any active alerts for that ticker are also deleted",
+            "Given I remove a ticker that has an active alert, When the removal is confirmed, Then I see a toast saying 'AAPL removed from watchlist. 1 alert deleted.'"
+          ],
+          "effort": 1,
+          "technical_notes": {
+            "ios": "Implement swipe-to-delete via UITableViewDelegate.tableView(_:trailingSwipeActionsConfigurationForRowAt:). Trigger WatchlistService.removeTicker(), then remove the ticker from the @Published array. Show confirmation toast via AlertService that interpolates the deleted alert count returned by the API.",
+            "android": "Use ItemTouchHelper.SimpleCallback with LEFT swipe direction on the RecyclerView. Call WatchlistRepository.removeTicker(), update StateFlow list optimistically. Display Snackbar with delete count from DELETE response body (e.g. { deleted_alerts: 1 }) to match the copy requirement.",
+            "backend": "DELETE /api/watchlist/:ticker runs in a single transaction: delete the watchlist_items row, then DELETE FROM price_alerts WHERE user_id = ? AND ticker = ?. Count the deleted alerts before the delete and return { ticker, deleted_alerts: N } so the client can build the toast message."
+          }
+        },
+        {
+          "title": "Reorder watchlist items",
+          "persona": "Alex — Active Self-Directed Trader",
+          "goal": "organise my watchlist so the most important tickers are at the top",
+          "benefit": "so that I don't have to scroll to find the positions I'm actively managing",
+          "acceptanceCriteria": [
+            "Given I am on the Watchlist tab, When I long-press a row and drag it to a new position, Then the row moves to the new position and the order is persisted when I close and reopen the app",
+            "Given I reorder items on one device, When I open the app on a second device, Then the same order is displayed"
+          ],
+          "effort": 2,
+          "technical_notes": {
+            "ios": "Enable drag reordering via UITableView drag-and-drop (UITableViewDragDelegate / UITableViewDropDelegate). On drop, recompute sort_order values locally and update the @Published array immediately. Debounce the PATCH /api/watchlist/reorder call by 500ms using a DispatchWorkItem to avoid rapid API calls during drag.",
+            "android": "Enable ItemTouchHelper with UP | DOWN drag directions. Update sort order in the StateFlow list on each onMove callback for instant visual feedback. Persist by calling WatchlistRepository.reorderItems() in clearView (drag end), not on every onMove, to avoid excessive network calls.",
+            "backend": "PATCH /api/watchlist/reorder accepts [{ticker, sortOrder}] array. Validate ownership: all tickers must exist in watchlist_items for this user_id. Execute a bulk UPDATE using CASE WHEN to update all sort_order values atomically in a single transaction — avoids N individual UPDATE round-trips."
+          }
+        }
+      ]
+    },
+    {
+      "title": "Price Alert Creation & Delivery",
+      "description": "Users can set price-crossing alerts on any watchlist item and receive timely push or email notifications when the threshold is met.",
+      "phase": "MVP",
+      "stories": [
+        {
+          "title": "Set a price alert on a ticker",
+          "persona": "Alex — Active Self-Directed Trader",
+          "goal": "set a notification for when a stock hits a specific price",
+          "benefit": "so that I know the right moment to place my order without watching the screen all day",
+          "acceptanceCriteria": [
+            "Given I am on a ticker detail screen or watchlist row, When I tap 'Set Alert', Then a bottom sheet opens with fields: target price, direction (above/below), and notification channel (push/email)",
+            "Given I enter a valid target price and tap 'Create Alert', When the request succeeds, Then a success confirmation is shown and the alert appears in my Alerts tab with status 'Active'",
+            "Given I already have 20 active alerts, When I tap 'Create Alert', Then the creation is blocked with an inline message 'You've reached the 20-alert limit. Delete an alert to add a new one.'",
+            "Given I enter a target price that is already met (e.g. target $150 above, current price is $155), When I tap 'Create Alert', Then an inline error 'AAPL is already above $150.00' is shown and the alert is not created"
+          ],
+          "effort": 3,
+          "technical_notes": {
+            "ios": "Present AlertCreationSheet as a bottom sheet via UISheetPresentationController with detent .medium(). Client-side validate price format (NumberFormatter.currency) and direction toggle before submitting. Map HTTP 422 → inline price field error; 429 → limit banner. Call AlertsService.createAlert() and update AlertsViewModel @Published array on success.",
+            "android": "Implement as BottomSheetDialogFragment with AlertCreationViewModel. TextWatcher on EditText validates decimal price format live. Handle 422 (already met) and 429 (limit) responses in AlertsRepository by emitting FormError sealed class to StateFlow — UI observes and shows error inline below the relevant field.",
+            "backend": "POST /api/alerts: validate target price against current Redis quote snapshot — return 422 with { error: 'ALREADY_MET', current_price } if condition is already satisfied. Check user_alert_count:{userId} in Redis against cap of 20; return 429 if exceeded. Insert into price_alerts with status 'active' and increment the Redis counter atomically via MULTI/EXEC."
+          }
+        },
+        {
+          "title": "Receive push notification when alert triggers",
+          "persona": "Alex — Active Self-Directed Trader",
+          "goal": "get an instant notification on my phone when my target price is crossed",
+          "benefit": "so that I can act on the information before the price moves further",
+          "acceptanceCriteria": [
+            "Given an active alert exists for AAPL at $180.00 (above), When the last trade price for AAPL crosses $180.00 during market hours, Then I receive a push notification within 30 seconds containing: 'AAPL reached your target of $180.00 — now at $180.15'",
+            "Given I tap the push notification, When the app opens, Then I land on the AAPL ticker detail screen with a market order pre-filled",
+            "Given the alert triggers and push notification delivery fails (FCM error), When 30 seconds have elapsed, Then a fallback email is sent to my registered email address with the same content"
+          ],
+          "effort": 5,
+          "technical_notes": {
+            "ios": "APNs device token registered in AppDelegate.application(_:didRegisterForRemoteNotificationsWithDeviceToken:) — POST token to /api/devices. Deep-link handling in UNUserNotificationCenterDelegate.userNotificationCenter(_:didReceive:): parse userInfo for ticker and pre-fill MarketOrderViewController. Request UNUserNotificationCenter permission at alert creation, not at app launch.",
+            "android": "FCM token registered in FirebaseMessagingService.onNewToken(); POST to /api/devices. onMessageReceived() builds a high-priority notification channel (IMPORTANCE_HIGH) and opens TickerDetailActivity via PendingIntent with Intent.putExtra('ticker', ...) and pre-filled order flag. Handle background vs foreground receipt separately.",
+            "backend": "AlertEvaluator BullMQ worker consumes from Redis stream trades:{ticker}. On price crossing: UPDATE price_alerts SET status='triggered', triggered_at, triggered_price in transaction. Enqueue FCM + APNs push job immediately; enqueue fallback SendGrid email job with 30s delay. On FCM success, cancel the email job by its Bull job ID stored in alert_notifications."
+          }
+        },
+        {
+          "title": "View and manage active alerts",
+          "persona": "Maya — Passive Portfolio Reviewer",
+          "goal": "see all my alerts in one place and delete ones I no longer need",
+          "benefit": "so that I stay within the 20-alert limit and keep my alerts relevant",
+          "acceptanceCriteria": [
+            "Given I have at least one active alert, When I open the Alerts tab, Then I see a list of active alerts each showing: ticker, direction (above/below), target price, and channel",
+            "Given I swipe-left on an active alert and tap 'Delete', When the deletion succeeds, Then the row is removed and the alert count is decremented",
+            "Given I have no active alerts, When I open the Alerts tab, Then an empty state is shown with a 'Go to Watchlist to set your first alert' link"
+          ],
+          "effort": 2,
+          "technical_notes": {
+            "ios": "AlertsTab uses UITableView with two sections (active/history) driven by NSDiffableDataSource. AlertsViewModel fetches via GET /api/alerts, filters into active and history @Published arrays. Swipe-to-delete via trailingSwipeActionsConfigurationForRowAt: calls AlertsService.deleteAlert() and removes row optimistically; revert snapshot on error.",
+            "android": "AlertsFragment uses ViewPager2 with two AlertsListFragment tabs (Active / History). Shared AlertsViewModel holds StateFlow<AlertsUiState> containing both lists. DELETE /api/alerts/:id via AlertsRepository; optimistic removal from StateFlow list, rollback on network error using a copy saved before mutation.",
+            "backend": "GET /api/alerts returns active alerts + triggered alerts from last 90 days in a single query (WHERE status IN ('active', 'triggered') AND (status='active' OR triggered_at > NOW()-90d)). DELETE /api/alerts/:id sets status='deleted', triggered_at preserved for audit. Decrement Redis user_alert_count:{userId} atomically."
+          }
+        },
+        {
+          "title": "View triggered alert history and re-arm",
+          "persona": "Maya — Passive Portfolio Reviewer",
+          "goal": "see which of my alerts have fired and set them again if I still want them",
+          "benefit": "so that I don't need to re-enter all the details every time a recurring price level is relevant",
+          "acceptanceCriteria": [
+            "Given one or more of my alerts have triggered in the past 90 days, When I tap the 'History' tab in the Alerts screen, Then I see each triggered alert with: ticker, trigger price, triggered time, and current price",
+            "Given I see a triggered alert I want to re-use, When I tap 'Re-arm', Then the alert is reinstated as active (status → 'active') and appears back in the active list",
+            "Given I tap 'Re-arm' when I already have 20 active alerts, Then the re-arm is blocked with the 20-alert limit message"
+          ],
+          "effort": 2,
+          "technical_notes": {
+            "ios": "History tab fetches triggered alerts from the AlertsViewModel @Published historyAlerts array (filtered from GET /api/alerts response). 'Re-arm' button calls AlertsService.rearmAlert() — POST /api/alerts/:id/rearm. Handle 429 (limit reached) with an inline alert banner. On success, move the row from historyAlerts to activeAlerts in the ViewModel.",
+            "android": "AlertsHistoryFragment RecyclerView displays triggered alerts sorted by triggered_at desc. 'Re-arm' button in each row triggers AlertsRepository.rearmAlert(). 429 response surfaced as Snackbar with limit message. On success: remove from historyAlertsFlow, insert at top of activeAlertsFlow in the shared AlertsViewModel.",
+            "backend": "POST /api/alerts/:id/rearm: validate ownership, check Redis user_alert_count < 20 (return 429 if exceeded). UPDATE price_alerts SET status='active', triggered_at=NULL, triggered_price=NULL. Increment user_alert_count in Redis atomically. Return the updated alert object so client can optimistically update both list states."
+          }
+        }
+      ]
+    }
+  ],
+  "sprintMetadata": {
+    "sprintVelocity": 20,
+    "capacityFactor": 0.8,
+    "effectiveVelocity": 16,
+    "totalEffort": 20,
+    "sprintsRequired": 1.3,
+    "totalHours": 80,
+    "aiAssisted": false
+  }
+}

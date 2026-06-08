@@ -1,0 +1,184 @@
+{
+  "epic": {
+    "title": "Price Alerts & Watchlist",
+    "description": "Allow retail investors to monitor price movements on securities they care about and receive timely notifications when target prices are crossed.",
+    "businessValue": "Increases 7-day active user rate from 22% to 31% by reducing the need for users to monitor competitor apps for price movements. Users who receive a timely alert are 4.2× more likely to execute the trade on TradeEasy.",
+    "prdLink": "PRD: Price Alerts & Watchlist — TradeEasy"
+  },
+  "features": [
+    {
+      "title": "Watchlist Management",
+      "description": "Users can build and manage a personal list of securities they want to monitor, with real-time quote data.",
+      "phase": "MVP",
+      "stories": [
+        {
+          "title": "Add a ticker to the watchlist",
+          "persona": "Alex — Active Self-Directed Trader",
+          "goal": "add any US equity or ETF ticker to my personal watchlist",
+          "benefit": "so that I can monitor securities I'm interested in without keeping a separate spreadsheet",
+          "acceptanceCriteria": [
+            "Given I am on any ticker detail screen or search result, When I tap 'Add to Watchlist', Then the ticker appears on my Watchlist tab within 2 seconds and a confirmation toast is displayed",
+            "Given a ticker is already on my watchlist, When I tap 'Add to Watchlist', Then the button is replaced with 'In Watchlist' and no duplicate is added",
+            "Given I search for a ticker that does not exist (e.g. 'ZZZZZ'), When I tap search, Then an inline message 'Ticker not found' is shown and the Add to Watchlist button is not displayed"
+          ],
+          "prdRef": { "functionalRequirements": ["FR-01"], "userJourney": "Journey 2 · Step 1" },
+          "technical": {
+            "constraints": ["POST /api/watchlist validates ticker against Polygon.io symbol list"],
+            "affectedComponents": ["WatchlistService", "TickerDetailScreen"],
+            "dataChanges": "Insert row into watchlist_items",
+            "apiChanges": "POST /api/watchlist → {ticker}"
+          },
+          "effort": 2
+        },
+        {
+          "title": "View watchlist with live quotes",
+          "persona": "Maya — Passive Portfolio Reviewer",
+          "goal": "see the current price and intraday change for every security on my watchlist at a glance",
+          "benefit": "so that I can quickly assess whether anything needs my attention without opening each position individually",
+          "acceptanceCriteria": [
+            "Given I am on the Watchlist tab with at least one item, When the screen is in foreground during market hours, Then each row displays the ticker, last price, and intraday % change updated within 15 seconds",
+            "Given the market is closed, When I view my watchlist, Then each row displays the previous close price and a 'Market Closed' label",
+            "Given my watchlist has no items, When I open the Watchlist tab, Then an empty state screen is shown with a 'Search for a ticker to add' call to action"
+          ],
+          "prdRef": { "functionalRequirements": ["FR-02", "FR-14"], "userJourney": "Journey 2 · Step 2" },
+          "technical": {
+            "constraints": ["WebSocket connection only in foreground; REST poll every 15s when backgrounded"],
+            "affectedComponents": ["WatchlistTab", "QuoteFeedService", "WebSocketManager"],
+            "dataChanges": null,
+            "apiChanges": "GET /api/watchlist; WS /ws/quotes"
+          },
+          "effort": 3
+        },
+        {
+          "title": "Remove a ticker from the watchlist",
+          "persona": "Alex — Active Self-Directed Trader",
+          "goal": "remove a ticker I no longer want to follow",
+          "benefit": "so that my watchlist stays focused on my current interests",
+          "acceptanceCriteria": [
+            "Given a ticker is on my watchlist, When I swipe-left on the row and tap 'Remove', Then the row is removed immediately and any active alerts for that ticker are also deleted",
+            "Given I remove a ticker that has an active alert, When the removal is confirmed, Then I see a toast saying 'AAPL removed from watchlist. 1 alert deleted.'"
+          ],
+          "prdRef": { "functionalRequirements": ["FR-01"], "userJourney": "Journey 2 · Step 4" },
+          "technical": {
+            "constraints": ["Cascade delete watchlist_items and associated price_alerts"],
+            "affectedComponents": ["WatchlistTab", "WatchlistService"],
+            "dataChanges": "DELETE watchlist_items; cascade DELETE price_alerts where ticker matches",
+            "apiChanges": "DELETE /api/watchlist/:ticker"
+          },
+          "effort": 1
+        },
+        {
+          "title": "Reorder watchlist items",
+          "persona": "Alex — Active Self-Directed Trader",
+          "goal": "organise my watchlist so the most important tickers are at the top",
+          "benefit": "so that I don't have to scroll to find the positions I'm actively managing",
+          "acceptanceCriteria": [
+            "Given I am on the Watchlist tab, When I long-press a row and drag it to a new position, Then the row moves to the new position and the order is persisted when I close and reopen the app",
+            "Given I reorder items on one device, When I open the app on a second device, Then the same order is displayed"
+          ],
+          "prdRef": { "functionalRequirements": ["FR-11", "FR-12"], "userJourney": "Journey 2 · Step 2" },
+          "technical": {
+            "constraints": ["PATCH /api/watchlist/reorder is a batch update of sort_order values"],
+            "affectedComponents": ["WatchlistTab", "WatchlistService"],
+            "dataChanges": "UPDATE watchlist_items.sort_order for batch",
+            "apiChanges": "PATCH /api/watchlist/reorder → {items: [{ticker, sortOrder}]}"
+          },
+          "effort": 2
+        }
+      ]
+    },
+    {
+      "title": "Price Alert Creation & Delivery",
+      "description": "Users can set price-crossing alerts on any watchlist item and receive timely push or email notifications when the threshold is met.",
+      "phase": "MVP",
+      "stories": [
+        {
+          "title": "Set a price alert on a ticker",
+          "persona": "Alex — Active Self-Directed Trader",
+          "goal": "set a notification for when a stock hits a specific price",
+          "benefit": "so that I know the right moment to place my order without watching the screen all day",
+          "acceptanceCriteria": [
+            "Given I am on a ticker detail screen or watchlist row, When I tap 'Set Alert', Then a bottom sheet opens with fields: target price, direction (above/below), and notification channel (push/email)",
+            "Given I enter a valid target price and tap 'Create Alert', When the request succeeds, Then a success confirmation is shown and the alert appears in my Alerts tab with status 'Active'",
+            "Given I already have 20 active alerts, When I tap 'Create Alert', Then the creation is blocked with an inline message 'You've reached the 20-alert limit. Delete an alert to add a new one.'",
+            "Given I enter a target price that is already met (e.g. target $150 above, current price is $155), When I tap 'Create Alert', Then an inline error 'AAPL is already above $150.00' is shown and the alert is not created"
+          ],
+          "prdRef": { "functionalRequirements": ["FR-03", "FR-04", "FR-15"], "userJourney": "Journey 1 · Steps 1–4" },
+          "technical": {
+            "constraints": ["POST /api/alerts validates price condition at time of creation; 422 if already met"],
+            "affectedComponents": ["AlertCreationSheet", "AlertsService", "WatchlistRow"],
+            "dataChanges": "INSERT price_alerts; INCREMENT user_alert_count:{userId} in Redis",
+            "apiChanges": "POST /api/alerts → {ticker, targetPrice, direction, channel}"
+          },
+          "effort": 3
+        },
+        {
+          "title": "Receive push notification when alert triggers",
+          "persona": "Alex — Active Self-Directed Trader",
+          "goal": "get an instant notification on my phone when my target price is crossed",
+          "benefit": "so that I can act on the information before the price moves further",
+          "acceptanceCriteria": [
+            "Given an active alert exists for AAPL at $180.00 (above), When the last trade price for AAPL crosses $180.00 during market hours, Then I receive a push notification within 30 seconds containing: 'AAPL reached your target of $180.00 — now at $180.15'",
+            "Given I tap the push notification, When the app opens, Then I land on the AAPL ticker detail screen with a market order pre-filled",
+            "Given the alert triggers and push notification delivery fails (FCM error), When 30 seconds have elapsed, Then a fallback email is sent to my registered email address with the same content"
+          ],
+          "prdRef": { "functionalRequirements": ["FR-05", "FR-06", "FR-07", "FR-13"], "userJourney": "Journey 1 · Steps 5–6" },
+          "technical": {
+            "constraints": ["Alert Evaluator reads from Redis quotes stream; must process within 30s SLA"],
+            "affectedComponents": ["AlertEvaluator", "NotificationService", "FCMClient", "SendGridClient"],
+            "dataChanges": "UPDATE price_alerts status → 'triggered', triggered_at, triggered_price; INSERT alert_notifications",
+            "apiChanges": null
+          },
+          "effort": 5
+        },
+        {
+          "title": "View and manage active alerts",
+          "persona": "Maya — Passive Portfolio Reviewer",
+          "goal": "see all my alerts in one place and delete ones I no longer need",
+          "benefit": "so that I stay within the 20-alert limit and keep my alerts relevant",
+          "acceptanceCriteria": [
+            "Given I have at least one active alert, When I open the Alerts tab, Then I see a list of active alerts each showing: ticker, direction (above/below), target price, and channel",
+            "Given I swipe-left on an active alert and tap 'Delete', When the deletion succeeds, Then the row is removed and the alert count is decremented",
+            "Given I have no active alerts, When I open the Alerts tab, Then an empty state is shown with a 'Go to Watchlist to set your first alert' link"
+          ],
+          "prdRef": { "functionalRequirements": ["FR-09", "FR-04"], "userJourney": "Journey 1 · Step 4" },
+          "technical": {
+            "constraints": ["GET /api/alerts returns active + last 90 days of triggered; client-side tab filter"],
+            "affectedComponents": ["AlertsTab", "AlertsService"],
+            "dataChanges": "UPDATE price_alerts.status → 'deleted'; DECREMENT user_alert_count",
+            "apiChanges": "GET /api/alerts; DELETE /api/alerts/:id"
+          },
+          "effort": 2
+        },
+        {
+          "title": "View triggered alert history and re-arm",
+          "persona": "Maya — Passive Portfolio Reviewer",
+          "goal": "see which of my alerts have fired and set them again if I still want them",
+          "benefit": "so that I don't need to re-enter all the details every time a recurring price level is relevant",
+          "acceptanceCriteria": [
+            "Given one or more of my alerts have triggered in the past 90 days, When I tap the 'History' tab in the Alerts screen, Then I see each triggered alert with: ticker, trigger price, triggered time, and current price",
+            "Given I see a triggered alert I want to re-use, When I tap 'Re-arm', Then the alert is reinstated as active (status → 'active') and appears back in the active list",
+            "Given I tap 'Re-arm' when I already have 20 active alerts, Then the re-arm is blocked with the 20-alert limit message"
+          ],
+          "prdRef": { "functionalRequirements": ["FR-08", "FR-10"], "userJourney": "Journey 1 · Step 4" },
+          "technical": {
+            "constraints": ["triggered_at records retained 90 days per NFR-07; purge job runs nightly"],
+            "affectedComponents": ["AlertsHistoryTab", "AlertsService"],
+            "dataChanges": "UPDATE price_alerts.status → 'active' on re-arm; reset triggered_at to null",
+            "apiChanges": "POST /api/alerts/:id/rearm"
+          },
+          "effort": 2
+        }
+      ]
+    }
+  ],
+  "sprintMetadata": {
+    "sprintVelocity": 20,
+    "capacityFactor": 0.8,
+    "effectiveVelocity": 16,
+    "totalEffort": 20,
+    "sprintsRequired": 1.3,
+    "totalHours": 80,
+    "aiAssisted": false
+  }
+}

@@ -25,6 +25,7 @@ import {
   saveCriticArtifact, loadLatestArtifactForItem,
 } from './artifact-helpers';
 import { deleteWorkflow as deleteWorkflowImpl, recoverStaleWorkflows as recoverStaleWorkflowsImpl, startStaleRecoveryTimer } from './workflow-lifecycle';
+import { isDemoMode, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
 import { WorkflowRow, CheckpointRow, WorkflowStatus, WorkflowEvent, StageTokenData } from './workflow-types';
 export type { WorkflowRow, CheckpointRow, WorkflowStatus, WorkflowEvent, StageTokenData } from './workflow-types';
 export { propagateFeedback, reiterateFromStage, extendWorkflow, retryCurrentStage } from './workflow-mutations';
@@ -33,6 +34,7 @@ import Logger from '../utils/logger';
 import { CoordinatorAgent } from './coordinator-agent';
 import { CriticAgent } from './critic-agent';
 import { ContextCuratorAgent } from './curator-agent';
+import { runTechRefinementStage } from './tech-refinement-agent';
 import { workflowOps } from './workflow-db';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
@@ -406,7 +408,28 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
       addWorkflowCost(workflowId, usage.estimatedCost);
     };
 
-    const { diffCount, reasoning } = await getCurator().runCuration(workflowId, resolveAgentModel('curator'), curatorTokenCallback);
+    let diffCount: number;
+    let reasoning: string | null;
+
+    if (isDemoMode()) {
+      await demoSleep(DEMO_STAGE_DELAY_MS['curator'] ?? 1500);
+      diffCount = 3;
+      reasoning = `## Curator review — Price Alerts & Watchlist
+
+Reviewed all stage outputs against the existing context files. Proposing 3 targeted updates:
+
+**company.md** — Add the Price Alerts feature to the Active Features section. The PRD confirms push notification infrastructure (Firebase FCM) is now part of the production stack.
+
+**strategy.md** — Update the retention strategy section to reference price alerts as a re-engagement mechanism for dormant users (per GTM strategy: 8% reactivation target). Also note the regulatory constraint: notification copy must not imply investment advice (DFSA requirement).
+
+**current-state.md** — Add the Alert Evaluator microservice and Redis Streams alert queue to the architecture overview. These are new production components introduced in this feature.
+
+No changes needed to tech-stack.md or process.md — those remain accurate as written.`;
+    } else {
+      const result = await getCurator().runCuration(workflowId, resolveAgentModel('curator'), curatorTokenCallback);
+      diffCount = result.diffCount;
+      reasoning = result.reasoning;
+    }
 
     // Log the curator's reasoning so the user can review it
     if (reasoning) {
@@ -440,6 +463,25 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
     throw new Error(`WORKFLOW_COMPLETE:${workflowId}`);
   }
 
+  // Compute auto-approve once — used by tech_refinement and regular stages below.
+  const _wfPolicyOverrides: Record<string, string> = workflow.policy_overrides
+    ? JSON.parse(workflow.policy_overrides)
+    : {};
+  const _isDemoAutoApprove = _wfPolicyOverrides['demo_auto_approve'] === 'true';
+
+  // ── Tech Refinement stage: parallel engineering stream review ────────────
+  if (nextStage === 'tech_refinement') {
+    const techAutoApprove = SILENT_STAGES.has('tech_refinement') || _isDemoAutoApprove;
+    insertEvent(workflowId, 'stage_started', 'tech_refinement',
+      'Finn (iOS), Remi (Android), and Cole (Backend) are reviewing the backlog in parallel. Each engineer will annotate every story with platform-specific implementation notes.');
+
+    runTechRefinementStage(workflowId, workflow.item_id, techAutoApprove).catch((err: Error) => {
+      logger.error(`Tech refinement background task failed: ${err.message}`);
+    });
+
+    return { stage: nextStage, sessionId: null };
+  }
+
   // ── Regular specialist stage: run autonomously in the background ─────────
   const STAGE_NARRATION: Record<string, string> = {
     analyst:            'Sage is starting market research. This stage uses web search and typically takes 2–4 minutes.',
@@ -458,13 +500,13 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
   logger.info(`Created ${stageMap.mode} session ${session.id} for stage "${nextStage}"`);
 
   insertEvent(workflowId, 'stage_progress', nextStage, 'Coordinator is briefing the specialist...');
-  const brief = await getCoordinator().generateStageBrief(workflowId, nextStage);
+  const brief = isDemoMode()
+    ? `## Goal\nDemo mode — running with fixture data.\n\n## Output required\nSee fixture.`
+    : await getCoordinator().generateStageBrief(workflowId, nextStage);
   sessionManager.updateWorkflow(session.id, workflowId, brief);
   insertEvent(workflowId, 'stage_progress', nextStage, 'Brief received. Specialist is working...');
 
-  // Silent stages (pm_prd, pm_backlog) auto-approve and chain to the next stage.
-  // Human gates only at analyst (Checkpoint A) and critic (Checkpoint C).
-  const shouldAutoApprove = SILENT_STAGES.has(nextStage);
+  const shouldAutoApprove = SILENT_STAGES.has(nextStage) || _isDemoAutoApprove;
 
   // Fire the autonomous specialist run as a background task.
   // It will collect the full output, store an artifact, then create the checkpoint.

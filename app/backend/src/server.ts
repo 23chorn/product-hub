@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import path from 'path';
+import http from 'http';
 import express from 'express';
 
 // Load .env from root directory
@@ -22,7 +23,12 @@ import { contextFileRouter } from './routes/context-file-routes';
 import { prototypeRoutes } from './routes/prototype-routes';
 import { ticketRoutes } from './routes/ticket-routes';
 import { skillRoutes } from './routes/skill-routes';
+import { personaRoutes } from './routes/persona-routes';
 import { seedSkills, syncSeedSkillTools } from './agents/skill-registry';
+import { attachDemoWebSocket } from './demo/ws-demo-handler';
+import { attachAiCodingWebSocket } from './demo/ws-ai-coding-handler';
+import { aiCodingRoutes } from './routes/ai-coding-routes';
+import { demoWebhookRoutes } from './routes/demo-webhook-routes';
 
 const logger = new Logger('SERVER');
 
@@ -93,6 +99,9 @@ app.use('/api/context-files', contextFileRouter);
 app.use('/api', prototypeRoutes);
 app.use('/api', ticketRoutes);
 app.use('/api/skills', skillRoutes);
+app.use('/api/agents/personas', personaRoutes);
+app.use('/api', aiCodingRoutes);
+app.use('/api', demoWebhookRoutes);
 
 app.get('/api', (req, res) => {
   res.json({
@@ -126,12 +135,31 @@ app.use((req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+const httpServer = http.createServer(app);
+const demoWss = attachDemoWebSocket(httpServer);
+const aiCodingWss = attachAiCodingWebSocket(httpServer);
+
+// Route WebSocket upgrades by path — multiple WSS on one server requires manual routing
+// because the ws package destroys the socket if a path doesn't match, blocking other handlers.
+httpServer.on('upgrade', (req, socket, head) => {
+  const pathname = (req.url ?? '').split('?')[0];
+  if (pathname === '/ws/demo') {
+    demoWss.handleUpgrade(req, socket, head, (ws) => demoWss.emit('connection', ws, req));
+  } else if (pathname === '/ws/ai-coding') {
+    aiCodingWss.handleUpgrade(req, socket, head, (ws) => aiCodingWss.emit('connection', ws, req));
+  } else {
+    socket.destroy();
+  }
+});
+
+httpServer.listen(PORT, () => {
   const models = appConfig.ai.models.map(m => m.id).join(', ');
   logger.info(`🚀 Server running on http://localhost:${PORT}`);
   logger.info(`📡 CORS enabled for: ${FRONTEND_URL}`);
   logger.info(`🌍 Environment: ${appConfig.server.nodeEnv}`);
   logger.info(`🤖 AI provider: ${appConfig.ai.provider} | models: ${models}`);
+  logger.info(`🔌 WebSocket demo available at ws://localhost:${PORT}/ws/demo`);
+  logger.info(`💻 AI Coding WebSocket at ws://localhost:${PORT}/ws/ai-coding`);
   logger.info(`\n✅ APIs ready!`);
 });
 

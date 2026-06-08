@@ -38,8 +38,8 @@ app/
   frontend/  React 18 + Vite + Tailwind (port 5173)
   shared/    Compiled TypeScript types — consumed by both via `@pap/shared`
 agents/
-  personas/  Agent persona .md files (coordinator, analyst, pm, architect, critic, curator)
-  templates/ Output templates (research.template.md, prd.template.md, backlog.template.md)
+  personas/  Agent persona .md files (coordinator, analyst, pm, architect, critic, curator, qa-engineer, prototype-builder, android-engineer, ios-engineer, backend-engineer)
+  templates/ Output templates (research.template.md, prd.template.md, backlog.template.md, qa-tests.template.md, architecture.template.md, prototype.template.md)
   config.example.yaml  Template for user config (tracked)
   config.yaml  User identity and preferences (gitignored)
 context/     Project context files loaded into every agent system prompt
@@ -153,6 +153,13 @@ There is one flow: the Coordinator-driven workflow. There is no direct-access mo
 | `routes/context-diff-routes.ts` | `/api/context-diffs`. Approve/reject proposed context file changes. |
 | `routes/context-file-routes.ts` | `/api/context-files`. GET/PUT for editing context files from the UI. |
 | `routes/template-file-routes.ts` | `/api/template-files`. GET/PUT for editing output templates from the UI. |
+| `routes/demo-webhook-routes.ts` | `POST /api/demo/webhook/trigger` — creates an initiative and launches a full workflow pipeline autonomously (no coordinator planning), cycling through 4 sample initiatives. Default stages include `qa_engineer` and `tech_refinement`. |
+| `routes/persona-routes.ts` | REST endpoints for reading agent persona files and templates. |
+| `demo/ws-ai-coding-handler.ts` | WebSocket handler at `/ws/ai-coding`. Loads workflow context (goal, backlog artifact, ADO tickets) and spawns a local `claude --print` CLI session, streaming output line-by-line. Falls back to mock stream if CLI not found. |
+| `demo/ws-demo-handler.ts` | WebSocket handler at `/ws/demo` for demo workflow narration events. |
+| `components/HomeScreen.tsx` | Initiative cards grid with workflow status badges. Polls `loadLocalItems` every 4s when any workflow is active. Header buttons: New Initiative + Simulate webhook. |
+| `components/ClaudeCodeStudio.tsx` | Full-screen overlay for Claude Code Studio. Left pane: ticket context (feature title, ADO tickets, backlog stories). Right pane: streaming terminal from the WS connection. Output persisted in `workflowStore.studioOutput[workflowId]`. |
+| `components/workflow/PipelineTerminalView.tsx` | Split-pane workflow terminal. Left: stage list with progress bar. Right: live event log grouped by stage, with inline checkpoint actions. Used when `activeWorkflow` is set. |
 
 #### Per-stage template injection
 `STAGE_TEMPLATE_MAP` in `specialist-agent.ts` maps stage names to template files:
@@ -248,7 +255,29 @@ After a workflow completes, users can generate interactive React prototypes to d
 | `agents/templates/prototype/tailwind.config.js` | Tailwind config mapped to design tokens |
 | `agents/prototype-agent.ts` | Generation logic: artifact loading, prompt assembly, streaming, artifact save |
 | `routes/prototype-routes.ts` | REST endpoints: generate (SSE), load latest |
-| `components/PrototypePreview.tsx` | Sandpack wrapper with device frame toggle and code editor |
+| `components/PrototypePreview.tsx` | Full-screen overlay with device frame toggle, code editor, and revision input. Supports light/dark theme. |
+
+### Claude Code Studio
+
+After a workflow's backlog is pushed to Azure DevOps, a **Claude Code Studio** button appears. This opens a local Claude Code CLI session via WebSocket at `/ws/ai-coding`.
+
+#### Flow
+1. Frontend opens WS connection to `/ws/ai-coding?workflowId=<id>`
+2. Backend sends `connected` event with workflow context (goal, backlog stories, ADO tickets from `ado_work_item_map`)
+3. Frontend sends `{ action: 'start_coding' }` (only if no prior output for this workflow)
+4. Backend spawns `claude --print --allowedTools Read,Bash,Glob,Grep --max-turns 8 --no-color` with prompt via stdin, CWD = project root (detected by walking up to find `package.json` with `workspaces`)
+5. stdout streams line-by-line as `{ type: 'output', line }` events
+6. Falls back to `streamMock()` if claude CLI not found
+
+#### Output persistence
+`workflowStore.studioOutput[workflowId]` accumulates lines in Zustand state so output survives component unmount/remount. Cleared and restarted only when `start_coding` fires (i.e., on first open for a given workflow).
+
+#### WebSocket routing
+Both WS servers use `noServer: true`. A manual `upgrade` event handler on the HTTP server routes `/ws/demo` and `/ws/ai-coding` to their respective `WebSocketServer` instances.
+
+### Demo webhook simulation
+
+`POST /api/demo/webhook/trigger` creates a new initiative and immediately launches a full pipeline workflow without coordinator planning. Cycles through 4 sample initiatives (In-App Messaging, Onboarding Redesign, Portfolio Analytics, Social Trading). Default stages: `['analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'qa_engineer', 'tech_refinement', 'curator']`. Useful for demos of parallel workflows on the Home Screen.
 
 ### Agent patterns
 
@@ -259,7 +288,7 @@ Two agent patterns exist:
 
 ### Frontend state
 Zustand stores:
-- `stores/workflowStore.ts` — all workflow state: `activeWorkflow` (WorkflowRow with `estimated_cost`), `stageSequence`, `currentStage`, `completedStages`, `checkpoints`, `coordinatorMessages`, `isStreaming`, `pendingDiffCount`. `applyWorkflowStatus()` syncs from API. `resetWorkflow()` clears everything.
+- `stores/workflowStore.ts` — all workflow state: `activeWorkflow` (WorkflowRow with `estimated_cost`), `stageSequence`, `currentStage`, `completedStages`, `checkpoints`, `coordinatorMessages`, `isStreaming`, `pendingDiffCount`, `studioOutput` (Record<workflowId, string[]> for Claude Code Studio terminal persistence). `applyWorkflowStatus()` syncs from API. `resetWorkflow()` clears everything.
 - `stores/sessionStore.ts` — `selectedItem` for initiative selection.
 - `stores/modelStore.ts` — `selectedModelId` (persisted to `localStorage`), `availableModels`.
 - `stores/themeStore.ts` — dark/light preference.

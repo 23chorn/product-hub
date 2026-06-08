@@ -25,6 +25,7 @@ const STAGE_TEMPLATE_MAP: Record<string, string> = {
   gtm_strategy:         'gtm.template.md',
   prototype:            'prototype.template.md',
   feature_marketing:    'feature_marketing.template.md',
+  qa_engineer:          'qa-tests.template.md',
 };
 
 /**

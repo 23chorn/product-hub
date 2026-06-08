@@ -1,0 +1,507 @@
+import { useRef, useEffect, useState } from 'react';
+import { useWorkflowStore } from '../../stores/workflowStore';
+import { useModelStore } from '../../stores/modelStore';
+import { api } from '../../services/api';
+import { deriveStageStatus } from '../../utils/stage-tracker-helpers';
+import { StageRow } from './StageRow';
+import { STAGE_LABELS } from '../../constants/stage-labels';
+import type { StageStatus, CoordinatorMessage } from '../../stores/workflowStore';
+import { InlineCheckpointActions } from '../coordinator/InlineCheckpointActions';
+import { PipelineStatusSection } from './PipelineStatusSection';
+
+// ── Event type → display config ──────────────────────────────────────────────
+
+const EVENT_CFG: Record<string, { icon: string; color: string; bgColor: string }> = {
+  stage_started:       { icon: '▶', color: 'text-teal-600 dark:text-teal-400',    bgColor: 'bg-teal-100 dark:bg-teal-900/30' },
+  stage_progress:      { icon: '·', color: 'text-slate-500 dark:text-slate-400',  bgColor: 'bg-slate-100 dark:bg-slate-800/40' },
+  stage_completed:     { icon: '✓', color: 'text-green-600 dark:text-green-400',  bgColor: 'bg-green-100 dark:bg-green-900/30' },
+  critic_verdict:      { icon: '◎', color: 'text-amber-600 dark:text-amber-400',  bgColor: 'bg-amber-100 dark:bg-amber-900/30' },
+  checkpoint_created:  { icon: '⏸', color: 'text-amber-600 dark:text-amber-400',  bgColor: 'bg-amber-100 dark:bg-amber-900/30' },
+  revision_started:    { icon: '↻', color: 'text-violet-600 dark:text-violet-400', bgColor: 'bg-violet-100 dark:bg-violet-900/30' },
+  human_edit:          { icon: '✎', color: 'text-blue-600 dark:text-blue-400',    bgColor: 'bg-blue-100 dark:bg-blue-900/30' },
+  curator_reasoning:   { icon: '📝', color: 'text-teal-600 dark:text-teal-300',   bgColor: 'bg-teal-100 dark:bg-teal-900/20' },
+  board_synced:        { icon: '⬆', color: 'text-blue-600 dark:text-blue-400',    bgColor: 'bg-blue-100 dark:bg-blue-900/30' },
+  workflow_started:    { icon: '🚀', color: 'text-teal-600 dark:text-teal-400',   bgColor: 'bg-teal-100 dark:bg-teal-900/30' },
+  workflow_complete:   { icon: '✓', color: 'text-green-600 dark:text-green-400',  bgColor: 'bg-green-100 dark:bg-green-900/30' },
+};
+
+function getEventCfg(eventType: string) {
+  return EVENT_CFG[eventType] ?? { icon: '●', color: 'text-slate-500', bgColor: 'bg-slate-100 dark:bg-slate-800/30' };
+}
+
+function formatTs(ts: number) {
+  return new Date(ts).toLocaleTimeString('en-GB', {
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+}
+
+// ── Stage group header ────────────────────────────────────────────────────────
+
+function StageGroupHeader({
+  stageName, status, artifactId, onViewOutput,
+}: {
+  stageName: string;
+  status: StageStatus;
+  artifactId?: number | null;
+  onViewOutput?: (id: number) => void;
+}) {
+  const label = STAGE_LABELS[stageName] ?? stageName;
+  const color = status === 'complete'
+    ? 'text-green-600 dark:text-green-400'
+    : status === 'in-progress'
+    ? 'text-teal-600 dark:text-teal-400'
+    : status === 'at-checkpoint'
+    ? 'text-amber-600 dark:text-amber-400'
+    : 'text-slate-400 dark:text-slate-600';
+
+  const dot = status === 'complete'
+    ? <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
+    : status === 'in-progress'
+    ? <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse inline-block" />
+    : status === 'at-checkpoint'
+    ? <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse inline-block" />
+    : null;
+
+  return (
+    <div className={`flex items-center gap-2 px-2 py-1.5 mt-2 first:mt-0 text-[10px] font-semibold uppercase tracking-widest ${color}`}>
+      {dot}
+      <span>{label}</span>
+      {artifactId && onViewOutput && (
+        <button
+          onClick={() => onViewOutput(artifactId)}
+          className="text-[9px] font-mono normal-case tracking-normal text-slate-500 dark:text-slate-600 hover:text-teal-600 dark:hover:text-teal-400 transition-colors whitespace-nowrap border border-slate-200 dark:border-slate-800 hover:border-teal-400 dark:hover:border-teal-800 rounded px-1.5 py-0.5"
+        >
+          view →
+        </button>
+      )}
+      <div className="flex-1 h-px bg-slate-200 dark:bg-slate-800/60" />
+    </div>
+  );
+}
+
+// ── Expandable detail row (curator reasoning, critic verdict) ─────────────────
+
+function ExpandableRow({
+  label,
+  labelColor,
+  borderColor,
+  bgColor,
+  content,
+  timestamp,
+}: {
+  label: string;
+  labelColor: string;
+  borderColor: string;
+  bgColor: string;
+  content: string;
+  timestamp: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const lines = content.split('\n').filter(Boolean);
+  const hasMore = lines.length > 1;
+  const displayLines = expanded ? lines : lines.slice(0, 1);
+
+  return (
+    <div className={`mx-2 my-1 rounded border ${borderColor} ${bgColor}`}>
+      <button
+        onClick={() => hasMore && setExpanded(e => !e)}
+        className={`w-full flex items-center gap-2 px-3 py-2 text-left ${hasMore ? 'cursor-pointer' : 'cursor-default'}`}
+      >
+        {hasMore && (
+          <span className={`text-[9px] font-mono ${labelColor} opacity-60 w-3 flex-shrink-0`}>
+            {expanded ? '▲' : '▼'}
+          </span>
+        )}
+        {!hasMore && <span className="w-3 flex-shrink-0" />}
+        <span className={`text-[9px] font-semibold uppercase tracking-widest font-mono flex-1 text-left ${labelColor}`}>
+          {label}
+        </span>
+        <span className="text-[9px] text-slate-400 dark:text-slate-700 font-mono flex-shrink-0">{formatTs(timestamp)}</span>
+      </button>
+      <div className="px-3 pb-2">
+        {displayLines.map((line, i) => {
+          const plain = line.replace(/\*\*(.*?)\*\*/g, '$1');
+          return (
+            <p key={i} className="text-[10px] text-slate-600 dark:text-slate-400 font-mono leading-relaxed">
+              {plain}
+            </p>
+          );
+        })}
+        {!expanded && hasMore && (
+          <p className="text-[9px] text-slate-400 dark:text-slate-600 font-mono mt-0.5">
+            +{lines.length - 1} more line{lines.length - 1 !== 1 ? 's' : ''}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Single event row ──────────────────────────────────────────────────────────
+
+function EventRow({ msg }: { msg: CoordinatorMessage }) {
+  if (msg.eventType === 'curator_reasoning') {
+    return (
+      <ExpandableRow
+        label="context updates"
+        labelColor="text-teal-600 dark:text-teal-500"
+        borderColor="border-teal-200 dark:border-teal-800/40"
+        bgColor="bg-teal-50 dark:bg-teal-900/10"
+        content={msg.content}
+        timestamp={msg.timestamp}
+      />
+    );
+  }
+
+  if (msg.eventType === 'critic_verdict') {
+    return (
+      <ExpandableRow
+        label="quality review"
+        labelColor="text-amber-600 dark:text-amber-500"
+        borderColor="border-amber-200 dark:border-amber-800/40"
+        bgColor="bg-amber-50 dark:bg-amber-900/10"
+        content={msg.content}
+        timestamp={msg.timestamp}
+      />
+    );
+  }
+
+  const cfg = getEventCfg(msg.eventType ?? '');
+  const isProgress = msg.isProgress;
+
+  const lines = msg.content.split('\n').filter(Boolean);
+  const title = lines[0] ?? '';
+  const detailLines = lines.slice(1).filter(l => !l.startsWith('→ '));
+  const detail = detailLines.join(' ').slice(0, 120);
+  const boardUrl = msg.eventType === 'board_synced'
+    ? (lines.find(l => l.startsWith('→ '))?.replace(/^→\s*/, '') ?? null)
+    : null;
+
+  return (
+    <div className={`flex items-center gap-2 px-2 py-1.5 rounded transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/20 ${isProgress ? 'opacity-60' : ''}`}>
+      {/* Icon badge */}
+      <div className={`flex-shrink-0 w-5 h-5 rounded flex items-center justify-center text-[10px] ${cfg.bgColor}`}>
+        <span className={cfg.color}>{cfg.icon}</span>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-xs text-slate-700 dark:text-slate-300 leading-tight font-mono truncate">{title}</span>
+          <span className="flex-shrink-0 text-[10px] text-slate-400 dark:text-slate-700 font-mono">{formatTs(msg.timestamp)}</span>
+        </div>
+        {detail && !boardUrl && (
+          <p className="text-[11px] text-slate-500 dark:text-slate-600 font-mono mt-0.5 leading-relaxed truncate">{detail}</p>
+        )}
+        {boardUrl && (
+          <a
+            href={boardUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 mt-0.5 text-[11px] text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 font-mono underline underline-offset-2 transition-colors"
+          >
+            open in Azure DevOps ↗
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Checkpoint inline review ──────────────────────────────────────────────────
+
+function CheckpointRow({
+  stageName,
+  onResolved,
+}: {
+  stageName: string;
+  onResolved: (result: any) => void;
+}) {
+  const { checkpoints, setViewingArtifactId } = useWorkflowStore();
+  const checkpoint = checkpoints.find(c => c.stage === stageName && c.status === 'pending');
+  if (!checkpoint) return null;
+
+  return (
+    <div className="mx-2 mt-1 mb-2 rounded border border-sky-200 dark:border-sky-700/40 bg-sky-50 dark:bg-sky-900/10 p-2 space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] text-sky-600 dark:text-sky-400 font-mono">⏸ awaiting approval</span>
+        {checkpoint.artifact_id && (
+          <button
+            onClick={() => setViewingArtifactId(checkpoint.artifact_id!)}
+            className="text-[10px] text-sky-600 hover:text-sky-800 dark:text-sky-400 dark:hover:text-sky-200 font-mono border border-sky-200 hover:border-sky-400 dark:border-sky-700/40 dark:hover:border-sky-500 px-1.5 py-0.5 rounded transition-colors"
+          >
+            review output →
+          </button>
+        )}
+      </div>
+      <InlineCheckpointActions
+        checkpoint={checkpoint}
+        onResolved={onResolved}
+      />
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
+interface Props {
+  coordinatorMessages: CoordinatorMessage[];
+  isRunning: boolean;
+  onCheckpointResolved: (result: any) => void;
+  onBack: () => void;
+  onOpenCodeStudio?: () => void;
+}
+
+export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpointResolved, onBack, onOpenCodeStudio }: Props) {
+  const {
+    activeWorkflow,
+    stageSequence,
+    currentStage,
+    completedStages,
+    pendingStage,
+    checkpoints,
+    applyWorkflowStatus,
+    setViewingArtifactId,
+  } = useWorkflowStore();
+  const { agentModels } = useModelStore();
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll event log
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [coordinatorMessages.length]);
+
+  // Poll workflow status while running
+  useEffect(() => {
+    if (!activeWorkflow || activeWorkflow.status === 'complete') return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const status = await api.getWorkflowStatus(activeWorkflow.id);
+        if (!cancelled) applyWorkflowStatus(status);
+      } catch { /* ignore */ }
+    };
+    const t = setInterval(poll, 5_000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [activeWorkflow?.id, activeWorkflow?.status]);
+
+  if (!activeWorkflow) return null;
+
+  const total = stageSequence.length;
+  const doneCount = completedStages.length;
+  const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+  const isComplete = activeWorkflow.status === 'complete';
+
+  const statuses: StageStatus[] = stageSequence.map(s =>
+    deriveStageStatus(s, currentStage, completedStages, pendingStage, activeWorkflow.status)
+  );
+
+  // Group coordinator messages by stage (null stage → 'general')
+  const eventsByStage = new Map<string, CoordinatorMessage[]>();
+  for (const msg of coordinatorMessages) {
+    const key = msg.stage ?? 'general';
+    const arr = eventsByStage.get(key) ?? [];
+    arr.push(msg);
+    eventsByStage.set(key, arr);
+  }
+
+  // Stages to show in the event log (exclude stages with no events yet if pending)
+  const activeStages = stageSequence.filter(s => {
+    const status = deriveStageStatus(s, currentStage, completedStages, pendingStage, activeWorkflow.status);
+    return status !== 'pending' || eventsByStage.has(s);
+  });
+
+  const showCost = (activeWorkflow.estimated_cost ?? 0) > 0.0001;
+  const costStr = activeWorkflow.estimated_cost !== undefined
+    ? activeWorkflow.estimated_cost < 0.01
+      ? `$${activeWorkflow.estimated_cost.toFixed(4)}`
+      : `$${activeWorkflow.estimated_cost.toFixed(2)}`
+    : '';
+
+  return (
+    <div className="flex h-full overflow-hidden bg-white dark:bg-[#0d1117] font-mono">
+      {/* ── Left: stage list ───────────────────────────────────── */}
+      <div className="w-52 flex-shrink-0 flex flex-col border-r border-slate-200 dark:border-slate-800/80">
+        {/* Title bar — fixed h-10 matches right-pane header exactly */}
+        <div className="flex items-center h-10 px-3 bg-slate-50 dark:bg-[#161b22] border-b border-slate-200 dark:border-slate-700/60 flex-shrink-0">
+          <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">pipeline</span>
+        </div>
+
+        {/* Progress */}
+        <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-800/40 flex-shrink-0">
+          <div className="flex justify-between mb-1">
+            <span className="text-[9px] text-slate-500 dark:text-slate-600">
+              {isComplete ? 'complete' : `${doneCount}/${total}`}
+            </span>
+            <div className="flex items-center gap-1.5">
+              {showCost && <span className="text-[9px] text-slate-400 dark:text-slate-700">{costStr}</span>}
+              <span className="text-[9px] text-slate-500 dark:text-slate-600">{pct}%</span>
+            </div>
+          </div>
+          <div className="h-0.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-700 ${isComplete ? 'bg-green-500' : 'bg-teal-500'}`}
+              style={{ width: `${isComplete ? 100 : pct}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Stage rows — fill available height; each row is flex-1 so connectors stretch */}
+        <div className="flex-1 flex flex-col px-2 py-2">
+          {stageSequence.map((stageName, idx) => {
+            const status = statuses[idx];
+            const checkpoint = checkpoints.find(c => c.stage === stageName && c.status === 'pending');
+            const latestApproved = checkpoints.filter(c => c.stage === stageName && c.status === 'approved').at(-1);
+            const completedAt = latestApproved?.resolved_at ?? latestApproved?.created_at ?? null;
+            return (
+              <StageRow
+                key={stageName}
+                stageName={stageName}
+                index={idx}
+                status={status}
+                prevStatus={idx > 0 ? statuses[idx - 1] : undefined}
+                checkpoint={checkpoint}
+                latestApproved={latestApproved}
+                completedAt={completedAt}
+                agentModel={agentModels[stageName]}
+                onViewArtifact={setViewingArtifactId}
+                isLast={idx === stageSequence.length - 1}
+                compact
+              />
+            );
+          })}
+        </div>
+
+        {isComplete && (
+          <div className="px-3 py-2 border-t border-slate-200 dark:border-slate-800/40 flex-shrink-0">
+            <div className="flex items-center gap-1 text-[9px] text-green-600 dark:text-green-400">
+              <span className="w-1 h-1 rounded-full bg-green-500" />
+              all stages done
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Right: event log ──────────────────────────────────── */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Log header */}
+        <div className="flex items-center justify-between h-10 px-4 bg-slate-50 dark:bg-[#161b22] border-b border-slate-200 dark:border-slate-700/60 flex-shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              onClick={onBack}
+              className="flex-shrink-0 text-[11px] text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors font-mono"
+            >
+              ← back
+            </button>
+            <span className="text-slate-300 dark:text-slate-700/60 text-xs select-none">│</span>
+            <span className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate leading-tight">
+              {activeWorkflow.summary ?? activeWorkflow.goal.split('\n')[0].slice(0, 70)}
+            </span>
+            {isRunning && !isComplete && (
+              <span className="flex-shrink-0 flex items-center gap-1 text-[10px] text-teal-600 dark:text-teal-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse" />
+                live
+              </span>
+            )}
+            {isComplete && (
+              <span className="flex-shrink-0 flex items-center gap-1 text-[10px] text-green-600 dark:text-green-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                complete
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {showCost && (
+              <span className="text-[11px] font-mono text-slate-500">{costStr}</span>
+            )}
+          </div>
+        </div>
+
+        {/* Events */}
+        <div className="flex-1 overflow-y-auto px-0 py-2">
+          {/* Per-stage sections */}
+          {activeStages.map(stageName => {
+            const stageIdx = stageSequence.indexOf(stageName);
+            const status = stageIdx >= 0 ? statuses[stageIdx] : 'pending';
+            const msgs = eventsByStage.get(stageName) ?? [];
+            const isAtCheckpoint = status === 'at-checkpoint';
+
+            const pendingCp = checkpoints.find(c => c.stage === stageName && c.status === 'pending');
+            const approvedCp = checkpoints.filter(c => c.stage === stageName && c.status === 'approved').at(-1);
+            const stageArtifactId = approvedCp?.artifact_id ?? pendingCp?.artifact_id ?? null;
+
+            return (
+              <div key={stageName}>
+                <StageGroupHeader
+                  stageName={stageName}
+                  status={status}
+                  artifactId={stageArtifactId}
+                  onViewOutput={setViewingArtifactId}
+                />
+                {msgs.map((msg, i) => (
+                  <EventRow key={i} msg={msg} />
+                ))}
+                {status === 'in-progress' && msgs.length === 0 && (
+                  <div className="flex items-center gap-2 px-4 py-1.5 text-[10px] text-slate-500 dark:text-slate-600">
+                    <svg className="w-2.5 h-2.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    initialising…
+                  </div>
+                )}
+                {status === 'in-progress' && msgs.length > 0 && (
+                  <div className="flex items-center gap-2 px-4 py-1 text-[10px] text-teal-600 animate-pulse">
+                    <span className="w-1 h-1 rounded-full bg-teal-600" />
+                    processing…
+                  </div>
+                )}
+                {isAtCheckpoint && (
+                  <CheckpointRow stageName={stageName} onResolved={onCheckpointResolved} />
+                )}
+              </div>
+            );
+          })}
+
+          {/* Post-workflow events (workflow_complete etc.) — rendered after stages */}
+          {(eventsByStage.get('general') ?? []).filter(msg => !!msg.eventType).map((msg, i) => (
+            <EventRow key={i} msg={msg} />
+          ))}
+
+          {/* Empty state */}
+          {coordinatorMessages.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-full text-center gap-3 py-16">
+              <div className="text-3xl opacity-40">⚙</div>
+              <p className="text-sm text-slate-500 dark:text-slate-600 font-mono">workflow initialising…</p>
+            </div>
+          )}
+
+          {isComplete && (
+            <div className="px-4 py-3 space-y-3">
+              <div className="flex items-center justify-between border-t border-slate-200 dark:border-slate-800/60 pt-3">
+                <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400 font-mono">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                  workflow complete
+                </div>
+                {/* AI Coding Studio trigger — shown when board has been synced */}
+                {coordinatorMessages.some(m => m.eventType === 'board_synced') && onOpenCodeStudio && (
+                  <button
+                    onClick={onOpenCodeStudio}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-semibold font-mono text-white bg-violet-700 hover:bg-violet-600 border border-violet-600/50 hover:border-violet-500 transition-colors"
+                  >
+                    <span>⚡</span> Claude Code Studio
+                  </button>
+                )}
+              </div>
+
+              {/* Azure pipeline + QA results — auto-starts on completion */}
+              <PipelineStatusSection workflowId={activeWorkflow.id} />
+            </div>
+          )}
+
+          <div ref={bottomRef} />
+        </div>
+      </div>
+    </div>
+  );
+}

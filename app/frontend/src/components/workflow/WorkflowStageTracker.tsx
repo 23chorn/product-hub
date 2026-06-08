@@ -4,6 +4,7 @@ import { useModelStore } from '../../stores/modelStore';
 import { api } from '../../services/api';
 import { deriveStageStatus } from '../../utils/stage-tracker-helpers';
 import { StageRow } from './StageRow';
+import type { StageStatus } from '../../stores/workflowStore';
 
 export function WorkflowStageTracker() {
   const {
@@ -19,7 +20,6 @@ export function WorkflowStageTracker() {
   } = useWorkflowStore();
   const { agentModels } = useModelStore();
 
-  // Poll for status updates while workflow is active
   useEffect(() => {
     if (!activeWorkflow || activeWorkflow.status === 'complete') return;
 
@@ -37,38 +37,69 @@ export function WorkflowStageTracker() {
 
   if (!activeWorkflow) return null;
 
+  const total = stageSequence.length;
+  const doneCount = completedStages.length;
+  const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+  const isComplete = activeWorkflow.status === 'complete';
+
+  const statuses: StageStatus[] = stageSequence.map((stageName) =>
+    deriveStageStatus(stageName, currentStage, completedStages, pendingStage, activeWorkflow.status)
+  );
+
+  const showCost = (activeWorkflow.estimated_cost ?? 0) > 0.0001;
+  const costStr = activeWorkflow.estimated_cost !== undefined
+    ? activeWorkflow.estimated_cost < 0.01
+      ? `$${activeWorkflow.estimated_cost.toFixed(4)}`
+      : `$${activeWorkflow.estimated_cost.toFixed(2)}`
+    : '';
+
   return (
-    <div className="px-3 py-3">
-      {/* Header with back button */}
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-          Workflow Stages
-        </p>
+    <div className="flex flex-col h-full bg-[#0d1117] font-mono">
+      {/* Title bar */}
+      <div className="flex items-center justify-between px-3 py-2.5 bg-[#161b22] border-b border-slate-700/60 flex-shrink-0">
+        <span className="text-[10px] text-slate-500">pipeline</span>
         <button
           onClick={() => {
             localStorage.removeItem('coordinatorPlanningSessionId');
             resetWorkflow();
           }}
-          className="text-xs text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-400 transition-colors"
+          className="text-[10px] text-slate-600 hover:text-slate-400 transition-colors"
+          title="Back to initiatives"
         >
-          ← Initiatives
+          ← back
         </button>
       </div>
 
-      <div className="space-y-1">
-        {stageSequence.map((stageName, idx) => {
-          const status = deriveStageStatus(
-            stageName,
-            currentStage,
-            completedStages,
-            pendingStage,
-            activeWorkflow.status
-          );
+      {/* Progress bar */}
+      <div className="px-3 py-2 border-b border-slate-800/60 flex-shrink-0">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[10px] text-slate-500">
+            {isComplete ? 'complete' : doneCount > 0 ? `${doneCount}/${total} stages` : 'initialising…'}
+          </span>
+          <div className="flex items-center gap-2">
+            {showCost && (
+              <span className="text-[10px] font-mono text-slate-600">{costStr}</span>
+            )}
+            <span className="text-[10px] font-mono text-slate-500">{pct}%</span>
+          </div>
+        </div>
+        <div className="h-0.5 bg-slate-800 rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-700 ease-out ${
+              isComplete ? 'bg-green-500' : 'bg-teal-500'
+            }`}
+            style={{ width: `${isComplete ? 100 : pct}%` }}
+          />
+        </div>
+      </div>
 
+      {/* Stage list */}
+      <div className="flex-1 overflow-y-auto px-2 py-2">
+        {stageSequence.map((stageName, idx) => {
+          const status = statuses[idx];
           const checkpoint = checkpoints.find(
             (c) => c.stage === stageName && c.status === 'pending'
           );
-
           const latestApproved = checkpoints
             .filter((c) => c.stage === stageName && c.status === 'approved')
             .at(-1);
@@ -80,21 +111,25 @@ export function WorkflowStageTracker() {
               stageName={stageName}
               index={idx}
               status={status}
+              prevStatus={idx > 0 ? statuses[idx - 1] : undefined}
               checkpoint={checkpoint}
               latestApproved={latestApproved}
               completedAt={completedAt}
               agentModel={agentModels[stageName]}
               onViewArtifact={setViewingArtifactId}
+              isLast={idx === stageSequence.length - 1}
+              compact
             />
           );
         })}
       </div>
 
-      {activeWorkflow.status === 'complete' && (
-        <div className="mt-3">
-          <div className="flex items-center gap-1.5 px-2 py-1.5 bg-green-50 dark:bg-green-900/20 rounded-lg">
-            <span className="text-green-500 text-xs">✓</span>
-            <span className="text-xs text-green-700 dark:text-green-400 font-medium">All stages complete</span>
+      {/* All done footer */}
+      {isComplete && (
+        <div className="px-3 py-2 border-t border-slate-800/60 flex-shrink-0">
+          <div className="flex items-center gap-1.5 text-[10px] text-green-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+            all stages complete
           </div>
         </div>
       )}

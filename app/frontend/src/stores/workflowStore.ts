@@ -43,6 +43,8 @@ export interface CoordinatorMessage {
   content: string;
   timestamp: number;
   isProgress?: boolean;  // progress events replace each other in the chat
+  eventType?: string;    // original workflow event type for styled rendering
+  stage?: string;        // stage the event belongs to
 }
 
 export interface WorkflowEvent {
@@ -114,6 +116,11 @@ interface WorkflowStoreState {
   setActiveCR: (cr: { id: number; status: string; impactAssessment?: { affected_stages: string[]; summary: string } } | null) => void;
   clearActiveCR: () => void;
 
+  // Claude Code Studio — persist terminal output per workflow so it survives navigation
+  studioOutput: Record<string, string[]>;
+  appendStudioLines: (workflowId: string, lines: string[]) => void;
+  clearStudioOutput: (workflowId: string) => void;
+
   // Update from a WorkflowStatus API response
   applyWorkflowStatus: (status: WorkflowStatus) => void;
 
@@ -179,6 +186,21 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
   activeCR: null,
   setActiveCR: (cr) => set({ activeCR: cr }),
   clearActiveCR: () => set({ activeCR: null }),
+
+  studioOutput: {},
+  appendStudioLines: (workflowId, lines) =>
+    set((s) => ({
+      studioOutput: {
+        ...s.studioOutput,
+        [workflowId]: [...(s.studioOutput[workflowId] ?? []), ...lines],
+      },
+    })),
+  clearStudioOutput: (workflowId) =>
+    set((s) => {
+      const next = { ...s.studioOutput };
+      delete next[workflowId];
+      return { studioOutput: next };
+    }),
 
   applyWorkflowStatus: ({ workflow, checkpoints, currentStage, completedStages, pendingStage, currentSessionId }: WorkflowStatus & { currentSessionId?: string | null }) => {
     const stageSequence: string[] = JSON.parse(workflow.stage_sequence ?? '[]');

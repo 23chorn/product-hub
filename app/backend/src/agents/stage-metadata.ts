@@ -10,6 +10,8 @@ export const STAGE_SESSION_MAP: Record<string, { mode: AppMode; agentType: Agent
   pm_backlog:           { mode: 'backlog',           agentType: 'pm' },
   gtm_strategy:         { mode: 'gtm',               agentType: 'gtm' },
   feature_marketing:    { mode: 'feature_marketing', agentType: 'marketer' },
+  qa_engineer:          { mode: 'qa',                agentType: 'qa-engineer' },
+  tech_refinement:      { mode: 'backlog' as AppMode, agentType: 'pm' as AgentType },
 };
 
 // Per-stage output token ceiling. Backlog gets more headroom because the JSON
@@ -23,6 +25,8 @@ export const STAGE_MAX_OUTPUT_TOKENS: Record<string, number> = {
   gtm_strategy:       12_000,
   prototype:          64_000,
   feature_marketing:  12_000,
+  qa_engineer:        32_000,
+  tech_refinement:    32_000,
 };
 
 // Maps stage name to the artifact.type value stored in the DB.
@@ -35,6 +39,8 @@ export const STAGE_ARTIFACT_TYPE: Record<string, string> = {
   pm_backlog:         'backlog',
   gtm_strategy:       'gtm',
   feature_marketing:  'feature_marketing',
+  qa_engineer:        'qa_tests',
+  tech_refinement:    'backlog',
 };
 
 // Human-readable labels for stage names (used for revision diffs and events)
@@ -46,6 +52,8 @@ export const STAGE_ARTIFACT_LABEL: Record<string, string> = {
   pm_backlog: 'Backlog',
   gtm_strategy: 'GTM Strategy',
   feature_marketing: 'Feature Marketing Content Pack',
+  qa_engineer: 'QA Test Suite',
+  tech_refinement: 'Technical Refinement Backlog',
 };
 
 // Internal labels used for event messages and logging
@@ -57,8 +65,10 @@ export const STAGE_LABELS_INTERNAL: Record<string, string> = {
   pm_backlog:         'Backlog — Pip',
   gtm_strategy:       'GTM Strategy — Quinn',
   feature_marketing:  'Feature Marketing — Milo',
+  qa_engineer:        'QA Engineer — Vera',
   critic:             'Critic — Flint',
   curator:            'Curator — Ivy',
+  tech_refinement:    'Tech Refinement — Finn, Remi & Cole',
 };
 
 // Brief labels used in coordinator stage briefing
@@ -70,6 +80,8 @@ export const STAGE_LABELS_BRIEF: Record<string, string> = {
   pm_backlog:         'Backlog (Pip)',
   gtm_strategy:       'GTM Strategy (Quinn)',
   feature_marketing:  'Feature Marketing Content Pack (Milo)',
+  qa_engineer:        'QA Test Suite (Vera)',
+  tech_refinement:    'Technical Refinement (Finn, Remi & Cole)',
 };
 
 // ── Per-stage output format specifications ────────────────────────────────────
@@ -212,6 +224,20 @@ Do not propose budget figures. Do not redefine personas or success metrics from 
 Do not reference features or capabilities not in the approved PRD or GTM strategy. Do not suggest product changes.`,
   },
 
+  qa_engineer: {
+    label: 'QA Test Suite (Vera)',
+    format: `Produce a single valid JSON object wrapped in a \`\`\`json code block following the QA test suite template injected into your system prompt. No prose before or after the JSON block.
+
+Key requirements:
+- **Trace every FR**: every Functional Requirement from the PRD must appear in \`coverage.by_fr\` and have at least one \`critical\` happy path test and one \`bad_path\` test.
+- **Trace every story AC**: every backlog story acceptance criterion (Given/When/Then) must map to at least one test case via \`story_ref\`.
+- **Concrete test data**: every test case's \`test_data\` object must contain the exact field names and values to use — no placeholders like "valid input".
+- **Automation-first Given/When/Then**: steps must be specific enough to implement in Playwright or Cypress without interpretation.
+- **Priority tagging**: mark at minimum one test per FR as \`critical\` and include \`@smoke\` tags on the smallest set of tests that confirm the feature fundamentally works.
+- **Coverage summary**: the \`coverage\` object must be accurate — count and categorise every test case you produce.
+- **Minimum thresholds**: aim for at least 3× more bad_path + edge_case tests than happy_path tests. Happy paths are the minority — failure modes are not.`,
+  },
+
   curator: {
     label: 'Context Diff (Ivy)',
     format: `Produce one or more unified diffs for files in the context/ directory.
@@ -241,6 +267,7 @@ export function stageGoal(stage: string, goal: string): string {
     pm_backlog:         `Produce a prioritised backlog of epics, features, and stories covering the full MVP scope defined in the PRD for: ${goal}`,
     gtm_strategy:       `Produce a complete Go-to-Market strategy covering positioning, target segments, messaging, launch timeline, competitive positioning, and success metrics for: ${goal}`,
     feature_marketing:  `Produce a ready-to-use feature marketing content pack with channel copy and internal FAQ based on the approved PRD and GTM strategy for: ${goal}`,
+    qa_engineer:        `Produce an exhaustive, automation-ready JSON test suite covering all happy paths, bad paths, and edge cases derived from the PRD and backlog for: ${goal}`,
   };
   const outputLabel = STAGE_LABELS_BRIEF[stage] ?? stage;
   return STAGE_GOAL[stage] ?? `Produce the required ${outputLabel} for: ${goal}`;
@@ -278,6 +305,11 @@ export function stageNotDecide(stage: string): string {
       'Do not make product decisions or suggest feature changes. ' +
       'Do not write technical documentation — user-facing benefits only. ' +
       'Brand guidelines and final copy approval belong to the marketing team.',
+    qa_engineer:
+      'Do not invent features or requirements not present in the PRD or backlog. ' +
+      'Do not test implementation internals — test observable user-facing behaviour only. ' +
+      'Do not write performance or load tests unless specific SLAs appear in the NFRs. ' +
+      'Do not make product decisions; if a requirement is ambiguous, flag it in metadata.notes.',
   };
   return NOT_DECIDE[stage]
     ?? 'Follow the output format and scope defined above. Do not add scope that was not in the workflow goal.';

@@ -6,10 +6,12 @@ interface LocalInitiativeRowProps {
   isSelected: boolean;
   isDeleting: boolean;
   isConfirmingDelete: boolean;
+  isTriggeringId: string | null;
   onSelect: () => void;
   onRequestDelete: () => void;
   onConfirmDelete: () => void;
   onCancelDelete: () => void;
+  onTrigger?: () => void;
   statusBadge: React.ReactNode;
 }
 
@@ -18,12 +20,16 @@ export function LocalInitiativeRow({
   isSelected,
   isDeleting,
   isConfirmingDelete,
+  isTriggeringId,
   onSelect,
   onRequestDelete,
   onConfirmDelete,
   onCancelDelete,
+  onTrigger,
   statusBadge,
 }: LocalInitiativeRowProps) {
+  const isTriggering = isTriggeringId === item.id;
+  const canTrigger = !!onTrigger && !item.workflow?.status?.match(/^(active|paused_at_checkpoint)$/);
   return (
     <div
       className={`rounded-lg border-2 transition-all ${
@@ -46,12 +52,28 @@ export function LocalInitiativeRow({
             </div>
             {statusBadge}
           </div>
-          {item.description && (
-            <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-2 mt-1">
-              {item.description}
-            </p>
-          )}
         </button>
+
+        {/* Trigger button */}
+        {canTrigger && !isConfirmingDelete && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onTrigger(); }}
+            disabled={isTriggering}
+            title="Launch workflow from this brief"
+            className="p-2 text-slate-300 dark:text-slate-600 hover:text-teal-500 dark:hover:text-teal-400 transition-colors flex-shrink-0"
+          >
+            {isTriggering ? (
+              <svg className="w-3.5 h-3.5 animate-spin text-teal-500" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+              </svg>
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            )}
+          </button>
+        )}
 
         {/* Delete button */}
         {isConfirmingDelete ? (

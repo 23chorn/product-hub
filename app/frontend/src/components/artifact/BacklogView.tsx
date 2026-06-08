@@ -11,6 +11,26 @@ function HoursDisplay({ story, aiAssisted }: { story: BacklogStory; aiAssisted: 
   return <> · {story.estimatedHours}h</>;
 }
 
+/** Render technical notes (iOS / Android / Backend) added by the tech refinement stage. */
+function TechnicalNotes({ notes }: { notes?: BacklogStory['technical_notes'] }) {
+  if (!notes || (!notes.ios && !notes.android && !notes.backend)) return null;
+  const items: Array<{ key: string; label: string; color: string; note: string }> = [];
+  if (notes.ios) items.push({ key: 'ios', label: 'iOS', color: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400', note: notes.ios });
+  if (notes.android) items.push({ key: 'android', label: 'Android', color: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400', note: notes.android });
+  if (notes.backend) items.push({ key: 'backend', label: 'Backend', color: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400', note: notes.backend });
+  return (
+    <div className="mt-2 space-y-1.5">
+      <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Technical Notes:</p>
+      {items.map(({ key, label, color, note }) => (
+        <div key={key} className="flex gap-1.5 items-start">
+          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0 ${color}`}>{label}</span>
+          <p className="text-xs text-slate-600 dark:text-slate-400">{note}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Render aggregate hours with optional AI savings line. */
 function AggregateHours({ hours, traditionalHours, aiAssisted }: { hours: number; traditionalHours?: number; aiAssisted: boolean }) {
   if (hours <= 0) return null;
@@ -166,6 +186,7 @@ export function BacklogView({ data }: { data: BacklogData }) {
                 <p className="text-xs text-slate-600 dark:text-slate-400">{story.agentContext}</p>
               </div>
             )}
+            <TechnicalNotes notes={story.technical_notes} />
           </div>
         );
       })()}
@@ -251,6 +272,7 @@ export function BacklogView({ data }: { data: BacklogData }) {
                       <p className="text-xs text-slate-600 dark:text-slate-400">{story.agentContext}</p>
                     </div>
                   )}
+                  <TechnicalNotes notes={story.technical_notes} />
                 </div>
               )}
             </div>
