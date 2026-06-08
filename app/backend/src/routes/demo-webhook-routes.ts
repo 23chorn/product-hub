@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import db from '../data/database';
 import { createWorkflow, advanceStage } from '../agents/workflow-router';
+import { generateDemoProject } from '../agents/demo-project-agent';
+import { runDemoScript, getDemoProjectPath } from '../demo/demo-runner';
 import Logger from '../utils/logger';
 
 const logger = new Logger('DEMO-WEBHOOK');
@@ -104,8 +106,12 @@ const DEFAULT_STAGES = ['analyst', 'pm_prd', 'solution_architect', 'pm_backlog',
  */
 demoWebhookRoutes.post('/demo/webhook/trigger', async (req: Request, res: Response) => {
   try {
-    const sample = WEBHOOK_SAMPLES[sampleIndex % WEBHOOK_SAMPLES.length];
-    sampleIndex++;
+    // If forceIndex is provided, use that sample; otherwise cycle through all four
+    const forceIndex = req.body?.forceIndex;
+    const sample = typeof forceIndex === 'number'
+      ? WEBHOOK_SAMPLES[forceIndex % WEBHOOK_SAMPLES.length]
+      : WEBHOOK_SAMPLES[sampleIndex % WEBHOOK_SAMPLES.length];
+    if (typeof forceIndex !== 'number') sampleIndex++;
 
     const itemId = `item-${uuidv4()}`;
     const now = Date.now();
@@ -121,6 +127,29 @@ demoWebhookRoutes.post('/demo/webhook/trigger', async (req: Request, res: Respon
 
     // Create workflow and kick off first stage
     const workflow = createWorkflow(itemId, goal, DEFAULT_STAGES, { demo_auto_approve: 'true' });
+
+    // When the pipeline completes, auto-generate the demo React project.
+    // We poll until the workflow reaches 'complete', then fire the project agent.
+    const pollAndGenerate = () => {
+      const wf = db.prepare('SELECT status FROM workflows WHERE id = ?').get(workflow.id) as any;
+      if (wf?.status === 'complete') {
+        generateDemoProject(workflow.id, (s) => {
+          logger.info(`[DEMO-PROJECT] ${workflow.id}: ${s.phase} — ${s.message}`);
+        }).catch((err: Error) =>
+          logger.error(`Demo project generation failed for ${workflow.id}: ${err.message}`)
+        );
+        // If a local demo project is configured, run the full branch+test flow
+        if (getDemoProjectPath()) {
+          runDemoScript(workflow.id).catch((err: Error) =>
+            logger.error(`Demo runner failed for ${workflow.id}: ${err.message}`)
+          );
+        }
+      } else if (wf?.status !== 'failed') {
+        setTimeout(pollAndGenerate, 10_000);
+      }
+    };
+    setTimeout(pollAndGenerate, 30_000);
+
     advanceStage(workflow.id).catch((err: Error) =>
       logger.error(`advanceStage failed for demo webhook workflow ${workflow.id}`, err)
     );

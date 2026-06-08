@@ -8,7 +8,26 @@ export interface DemoEvent {
   payload?: Record<string, unknown>;
 }
 
-const MOCK_AIRTABLE_WEBHOOK = {
+const FIXTURE_THEME = process.env.DEMO_FIXTURE_THEME ?? 'price-alerts';
+
+const MOCK_AIRTABLE_WEBHOOK = FIXTURE_THEME === 'messaging' ? {
+  type: 'record.created',
+  table: 'Initiatives',
+  timestamp: new Date().toISOString(),
+  record: {
+    id: 'recMSG456ABC',
+    fields: {
+      Initiative: 'In-App Messaging & Trade Chat — TradeEasy',
+      Description:
+        'Add real-time channel-based chat so users can discuss trades without leaving the app. Topic channels (e.g. #aapl-watchers), live ticker card sharing, MiFID II-compliant message retention.',
+      Priority: 'High',
+      Team: 'Platform',
+      Sprint: 'Q2 2026',
+      BusinessValue: 9,
+      Estimate: 'L',
+    },
+  },
+} : {
   type: 'record.created',
   table: 'Initiatives',
   timestamp: new Date().toISOString(),
@@ -27,7 +46,59 @@ const MOCK_AIRTABLE_WEBHOOK = {
   },
 };
 
-const CODE_LINES = [
+const CODE_LINES = FIXTURE_THEME === 'messaging' ? [
+  "import { WebSocket } from 'ws';",
+  "import { CassandraClient } from './db/CassandraClient';",
+  "import { RedisPublisher } from './pubsub/RedisPublisher';",
+  "import { ModerationService } from './ModerationService';",
+  '',
+  'export interface Message {',
+  '  messageId: string;',
+  '  channelId: string;',
+  '  userId: string;',
+  '  content: string;',
+  '  tickerRef?: { symbol: string };',
+  '  moderationStatus: string;',
+  '  createdAt: Date;',
+  '}',
+  '',
+  'export class MessageService {',
+  '  constructor(',
+  '    private cassandra: CassandraClient,',
+  '    private redis: RedisPublisher,',
+  '    private moderation: ModerationService,',
+  '  ) {}',
+  '',
+  '  async send(params: Omit<Message, "messageId" | "createdAt" | "moderationStatus">): Promise<Message> {',
+  '    // Stage 1: synchronous rule-based check < 5ms',
+  '    const ruleResult = await this.moderation.checkRules(params);',
+  '    if (ruleResult.blocked) {',
+  "      return { ...params, messageId: crypto.randomUUID(), moderationStatus: 'held', createdAt: new Date() };",
+  '    }',
+  '',
+  '    const message: Message = {',
+  '      ...params,',
+  '      messageId: crypto.randomUUID(),',
+  "      moderationStatus: 'approved',",
+  '      createdAt: new Date(),',
+  '    };',
+  '',
+  '    // Write to Cassandra before fan-out',
+  '    await this.cassandra.execute(',
+  "      'INSERT INTO messages (channel_id, created_at, message_id, user_id, content, ticker_ref, moderation_status) VALUES (?, ?, ?, ?, ?, ?, ?)',",
+  '      [message.channelId, message.createdAt, message.messageId, message.userId, message.content, JSON.stringify(message.tickerRef ?? null), message.moderationStatus]',
+  '    );',
+  '',
+  '    // Fan out to all channel subscribers via Redis Pub/Sub',
+  '    await this.redis.publish(`ch:${message.channelId}`, JSON.stringify(message));',
+  '',
+  '    // Stage 2: async LLM moderation (non-blocking)',
+  '    this.moderation.classifyAsync(message).catch(console.error);',
+  '',
+  '    return message;',
+  '  }',
+  '}',
+] : [
   "import { EventEmitter } from 'events';",
   "import { WebSocketPriceFeed } from './WebSocketPriceFeed';",
   "import { NotificationService } from './NotificationService';",
@@ -188,7 +259,11 @@ async function runDemoSequence(ws: WebSocket) {
     type: 'ado_creating_items',
     label: 'Creating ADO work items — Epic → Features → Stories',
     timestamp: now(),
-    payload: {
+    payload: FIXTURE_THEME === 'messaging' ? {
+      epic: 'In-App Messaging & Trade Chat',
+      features: ['Channel Discovery & Membership', 'Real-Time Messaging', 'Content Moderation & Compliance'],
+      storiesTotal: 8,
+    } : {
       epic: 'Price Alerts & Watchlist',
       features: ['Alert Configuration', 'Push Notification Delivery', 'Alert History & Management'],
       storiesTotal: 12,
@@ -201,7 +276,9 @@ async function runDemoSequence(ws: WebSocket) {
     type: 'code_generation_start',
     label: 'Claude Code — generating PriceAlertService.ts',
     timestamp: now(),
-    payload: { file: 'src/services/PriceAlertService.ts', ticket: 'F1.S1' },
+    payload: FIXTURE_THEME === 'messaging'
+      ? { file: 'src/services/MessageService.ts', ticket: 'F2.S1' }
+      : { file: 'src/services/PriceAlertService.ts', ticket: 'F1.S1' },
   });
 
   // Stream code lines
@@ -228,7 +305,7 @@ async function runDemoSequence(ws: WebSocket) {
     type: 'code_generation_complete',
     label: 'PriceAlertService.ts — generation complete',
     timestamp: now(),
-    payload: { lines: CODE_LINES.length, file: 'src/services/PriceAlertService.ts' },
+    payload: { lines: CODE_LINES.length, file: FIXTURE_THEME === 'messaging' ? 'src/services/MessageService.ts' : 'src/services/PriceAlertService.ts' },
   });
 
   await sleep(300);

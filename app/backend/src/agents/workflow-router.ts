@@ -414,7 +414,20 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
     if (isDemoMode()) {
       await demoSleep(DEMO_STAGE_DELAY_MS['curator'] ?? 1500);
       diffCount = 3;
-      reasoning = `## Curator review — Price Alerts & Watchlist
+      const fixtureTheme = process.env.DEMO_FIXTURE_THEME ?? 'price-alerts';
+      reasoning = fixtureTheme === 'messaging'
+        ? `## Curator review — In-App Messaging & Trade Chat
+
+Reviewed all stage outputs against the existing context files. Proposing 3 targeted updates:
+
+**company.md** — Add the In-App Messaging feature to the Active Features section. The architecture confirms a new Message Service (Node.js), Cassandra message store, and Redis Pub/Sub fan-out layer are now part of the production stack.
+
+**strategy.md** — Update the retention strategy section to reference Chat as a social engagement mechanism. Per GTM strategy: target 25% of MAU using Chat within 90 days; 30-day retention lift of +15% for Chat users vs non-Chat. Note the regulatory constraint: all messages retained 7 years for MiFID II compliance.
+
+**current-state.md** — Add the Message Service, Cassandra cluster, Redis cluster, Moderation Service, and S3 archive pipeline to the architecture overview. These are new production components introduced in this feature.
+
+No changes needed to tech-stack.md or process.md — those remain accurate as written.`
+        : `## Curator review — Price Alerts & Watchlist
 
 Reviewed all stage outputs against the existing context files. Proposing 3 targeted updates:
 

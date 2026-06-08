@@ -1,0 +1,265 @@
+{
+  "testSuite": {
+    "feature": "In-App Messaging & Trade Chat",
+    "version": "1.0",
+    "totalCases": 18,
+    "coverage": {
+      "functional": 14,
+      "performance": 2,
+      "compliance": 2
+    }
+  },
+  "testCases": [
+    {
+      "id": "TC-MSG-001",
+      "title": "User can browse and join a public channel",
+      "type": "functional",
+      "priority": "critical",
+      "preconditions": ["User is logged in", "At least 3 public channels exist"],
+      "steps": [
+        "Open Chat tab",
+        "Verify channel list displays with name, topic, and member count",
+        "Tap a channel the user has not joined",
+        "Tap Join"
+      ],
+      "expectedResult": "User is added as a member. Channel thread is displayed. Channel appears in joined list with joined indicator.",
+      "linkedStory": "Browse and join a public channel"
+    },
+    {
+      "id": "TC-MSG-002",
+      "title": "User can send a text message and see it delivered",
+      "type": "functional",
+      "priority": "critical",
+      "preconditions": ["User is a member of a channel", "A second test user is connected to the same channel"],
+      "steps": [
+        "Open joined channel",
+        "Type 'AAPL holding above 225 support, looks constructive' in compose box",
+        "Press Enter",
+        "Observe message appears in thread",
+        "Verify second user's client receives the message"
+      ],
+      "expectedResult": "Message appears in sender's thread within 500ms. Message appears on second user's client within 500ms. Timestamp is displayed.",
+      "linkedStory": "Send and receive text messages in a channel"
+    },
+    {
+      "id": "TC-MSG-003",
+      "title": "Message delivery latency is under 500ms at p95",
+      "type": "performance",
+      "priority": "critical",
+      "preconditions": ["Load test environment with 5,000 simulated concurrent WebSocket connections"],
+      "steps": [
+        "Send 1,000 messages across 50 channels using load test tool",
+        "Measure end-to-end delivery time from send to receipt on subscriber",
+        "Calculate p50, p95, and p99 latencies"
+      ],
+      "expectedResult": "p50 < 100ms. p95 < 500ms. p99 < 1,000ms. No message loss.",
+      "linkedStory": "Send and receive text messages in a channel"
+    },
+    {
+      "id": "TC-MSG-004",
+      "title": "User can attach a ticker card to a message",
+      "type": "functional",
+      "priority": "critical",
+      "preconditions": ["User is a member of a channel", "AAPL is a valid symbol"],
+      "steps": [
+        "Open a channel thread",
+        "Tap the ticker-card icon in the compose toolbar",
+        "Search for 'AAPL'",
+        "Select AAPL from results",
+        "Add text 'My entry target:' to the compose box",
+        "Tap Send"
+      ],
+      "expectedResult": "Message appears in thread with text and an embedded AAPL ticker card showing current price and intraday % change.",
+      "linkedStory": "Share a live ticker card in a message"
+    },
+    {
+      "id": "TC-MSG-005",
+      "title": "Ticker card price updates every 15 seconds",
+      "type": "functional",
+      "priority": "high",
+      "preconditions": ["A message with an AAPL ticker card is visible in a channel during market hours"],
+      "steps": [
+        "Observe ticker card showing initial price",
+        "Wait 15 seconds",
+        "Observe ticker card price"
+      ],
+      "expectedResult": "Ticker card price is refreshed to reflect the current market price within 15 seconds. Change % updates accordingly.",
+      "linkedStory": "Share a live ticker card in a message"
+    },
+    {
+      "id": "TC-MSG-006",
+      "title": "Tapping a ticker card navigates to instrument detail screen",
+      "type": "functional",
+      "priority": "high",
+      "preconditions": ["A message with a ticker card is visible in a channel thread"],
+      "steps": [
+        "Tap the ticker card in the message",
+        "Observe navigation"
+      ],
+      "expectedResult": "User is navigated to the TradeEasy instrument detail screen for the tapped symbol.",
+      "linkedStory": "Share a live ticker card in a message"
+    },
+    {
+      "id": "TC-MSG-007",
+      "title": "Message over 2,000 characters is rejected",
+      "type": "functional",
+      "priority": "medium",
+      "preconditions": ["User is composing a message in a channel"],
+      "steps": [
+        "Paste or type 2,001 characters in the compose box",
+        "Observe character counter",
+        "Tap Send"
+      ],
+      "expectedResult": "Character counter turns red and shows 'Over limit — 2,000 character maximum'. Send button is disabled. Message is not sent.",
+      "linkedStory": "Send and receive text messages in a channel"
+    },
+    {
+      "id": "TC-MSG-008",
+      "title": "Rate limiting prevents message spam",
+      "type": "functional",
+      "priority": "medium",
+      "preconditions": ["User is in a channel"],
+      "steps": [
+        "Send 30 short messages in quick succession",
+        "Attempt to send a 31st message within the same 60-second window"
+      ],
+      "expectedResult": "After the 30th message, a toast appears: 'Slow down — you're sending messages too quickly'. Send is blocked for 10 seconds.",
+      "linkedStory": "Send and receive text messages in a channel"
+    },
+    {
+      "id": "TC-MSG-009",
+      "title": "Message history loads when opening a channel",
+      "type": "functional",
+      "priority": "high",
+      "preconditions": ["A channel has at least 50 existing messages"],
+      "steps": [
+        "Open a channel with message history",
+        "Measure time for last 50 messages to render"
+      ],
+      "expectedResult": "Last 50 messages displayed within 1 second. Messages are in chronological order (oldest at top, newest at bottom).",
+      "linkedStory": "Load message history on channel open"
+    },
+    {
+      "id": "TC-MSG-010",
+      "title": "Infinite scroll loads older message history",
+      "type": "functional",
+      "priority": "medium",
+      "preconditions": ["A channel has more than 50 messages"],
+      "steps": [
+        "Open a channel and allow initial 50 messages to load",
+        "Scroll to the top of the loaded messages"
+      ],
+      "expectedResult": "When the top of the loaded list is reached, the previous 50 messages load automatically. Scroll position is preserved.",
+      "linkedStory": "Load message history on channel open"
+    },
+    {
+      "id": "TC-MSG-011",
+      "title": "Blocked keyword in message is held for moderation",
+      "type": "functional",
+      "priority": "critical",
+      "preconditions": ["User is in a channel", "Moderation blocklist contains test pattern"],
+      "steps": [
+        "Send a message containing a blocked keyword",
+        "Observe result in sender's thread",
+        "Check if other members can see the message"
+      ],
+      "expectedResult": "Sender sees 'Your message is under review'. Message does not appear in the thread for other members.",
+      "linkedStory": "Messages are screened before delivery"
+    },
+    {
+      "id": "TC-MSG-012",
+      "title": "Compliance reviewer can approve a held message",
+      "type": "functional",
+      "priority": "high",
+      "preconditions": ["A message is in the compliance review queue"],
+      "steps": [
+        "Compliance reviewer opens review queue",
+        "Reviewer taps Approve on the held message"
+      ],
+      "expectedResult": "Message is delivered to the channel thread retroactively. Sender receives notification 'Your message has been approved'.",
+      "linkedStory": "Messages are screened before delivery"
+    },
+    {
+      "id": "TC-MSG-013",
+      "title": "Pump-and-dump velocity detection triggers hold",
+      "type": "functional",
+      "priority": "critical",
+      "preconditions": ["A channel is active"],
+      "steps": [
+        "Send 11 messages referencing the same ticker within 5 minutes in a single channel (via test harness)",
+        "Attempt to send a 12th message referencing the same ticker"
+      ],
+      "expectedResult": "The 12th message is held for review. A notice appears: 'High message volume detected for this ticker — your message is under review'.",
+      "linkedStory": "Messages are screened before delivery"
+    },
+    {
+      "id": "TC-MSG-014",
+      "title": "User can create a new public channel",
+      "type": "functional",
+      "priority": "high",
+      "preconditions": ["User is on the channel list screen"],
+      "steps": [
+        "Tap 'New Channel'",
+        "Enter name 'nvda-bulls' and topic 'NVIDIA earnings and AI news'",
+        "Tap Create"
+      ],
+      "expectedResult": "Channel is created. User is auto-joined as founder. Channel appears in the channel list. Other users can discover and join it.",
+      "linkedStory": "Create a new public channel"
+    },
+    {
+      "id": "TC-MSG-015",
+      "title": "Duplicate channel name is rejected",
+      "type": "functional",
+      "priority": "medium",
+      "preconditions": ["Channel 'aapl-watchers' already exists"],
+      "steps": [
+        "Tap 'New Channel'",
+        "Enter name 'aapl-watchers'",
+        "Tap Create"
+      ],
+      "expectedResult": "Inline error: 'A channel with this name already exists'. Channel is not created.",
+      "linkedStory": "Create a new public channel"
+    },
+    {
+      "id": "TC-MSG-016",
+      "title": "User can leave a channel",
+      "type": "functional",
+      "priority": "medium",
+      "preconditions": ["User is a member of a channel"],
+      "steps": [
+        "Open channel settings",
+        "Tap 'Leave Channel'",
+        "Confirm"
+      ],
+      "expectedResult": "User is removed from the channel. Channel no longer appears in joined list. Member count decrements by 1. Message history is preserved.",
+      "linkedStory": "Leave a channel"
+    },
+    {
+      "id": "TC-MSG-017",
+      "title": "All messages are written to archive within 1 hour",
+      "type": "compliance",
+      "priority": "critical",
+      "preconditions": ["Archive pipeline is running", "Test messages are sent"],
+      "steps": [
+        "Send 10 test messages across 2 channels",
+        "Wait 1 hour",
+        "Query compliance archive API for those messages"
+      ],
+      "expectedResult": "All 10 messages appear in the archive with correct channel_id, user_id, content, and created_at. Moderation status is included.",
+      "linkedStory": "Messages are archived for 7-year MiFID II retention"
+    },
+    {
+      "id": "TC-MSG-018",
+      "title": "Compliance team can search archived messages by user and date range",
+      "type": "compliance",
+      "priority": "high",
+      "preconditions": ["Messages exist in the archive for user-123"],
+      "steps": [
+        "Call compliance API: GET /internal/compliance/messages?userId=user-123&from=2026-01-01&to=2026-06-01",
+        "Verify response"
+      ],
+      "expectedResult": "Response contains all messages sent by user-123 in the specified date range. Results are returned within 30 seconds. Each record includes: message_id, channel_id, user_id, content, ticker_ref, created_at, moderation_status.",
+      "linkedStory": "Messages are archived for 7-year MiFID II retention"
+    }
+  ]
+}

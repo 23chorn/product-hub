@@ -296,6 +296,46 @@ export function HomeScreen() {
     }
   };
 
+  const handleFullDemo = async () => {
+    if (isWebhookFiring) return;
+    setIsWebhookFiring(true);
+    try {
+      // forceIndex 0 = In-App Messaging, which is the feature the tradeeasy-demo script writes
+      const result = await api.triggerDemoWebhook(0);
+      // Reload items to get the new initiative
+      await loadLocalItems();
+      // Auto-navigate into the new workflow so the user sees the full pipeline
+      try {
+        const status = await api.getWorkflowStatus(result.workflowId);
+        const newItem = {
+          id: result.itemId,
+          initiative: result.initiative,
+          description: '',
+          status: 'In Progress' as const,
+          businessValue: 0,
+          priorityScore: 0,
+          estimate: 'M' as const,
+          confidence: 0,
+          workflow: { id: result.workflowId, status: status.workflow.status, currentStage: status.currentStage, summary: null },
+        } as EnrichedItem;
+        setSelectedItem(newItem);
+        clearSession();
+        resetWorkflow();
+        applyWorkflowStatus(status);
+        addCoordinatorMessage({
+          role: 'coordinator',
+          content: `Full demo pipeline started for **${result.initiative}**. Docs pipeline running — code generation and Playwright tests will follow automatically.`,
+          timestamp: Date.now(),
+        });
+      } catch { /* navigate failed — still leave the toast */ }
+      setWebhookToast(result.initiative);
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.message || 'Full demo trigger failed');
+    } finally {
+      setIsWebhookFiring(false);
+    }
+  };
+
   const enabledCount = Object.values(enabledStages).filter(Boolean).length;
 
   const statusCounts = useMemo<Record<StatusFilter, number>>(() => {
@@ -369,6 +409,22 @@ export function HomeScreen() {
                   <span className="text-xs">📨</span>
                 )}
                 Simulate webhook
+              </button>
+              <button
+                onClick={handleFullDemo}
+                disabled={isWebhookFiring}
+                title="Full demo: runs the complete AI pipeline, then writes code to the demo project and runs Playwright tests — with all output streamed live"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300 bg-white dark:bg-slate-800/50 hover:bg-violet-50 dark:hover:bg-violet-900/20 hover:border-violet-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+              >
+                {isWebhookFiring ? (
+                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                ) : (
+                  <span className="text-xs">⚡</span>
+                )}
+                Full Demo
               </button>
               <button
                 onClick={openForm}

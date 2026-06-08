@@ -4,12 +4,21 @@
  * Enable via DEMO_MODE=true in .env. Useful for testing the workflow pipeline,
  * UI animations, and approval flow without incurring LLM costs.
  *
- * Fixtures are themed around a retail brokerage app (Price Alerts & Watchlist).
+ * Two fixture themes are available:
+ *   DEMO_FIXTURE_THEME=price-alerts  (default) — Price Alerts & Watchlist
+ *   DEMO_FIXTURE_THEME=messaging               — In-App Messaging & Trade Chat
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 
+function getFixturesDir(): string {
+  const theme = process.env.DEMO_FIXTURE_THEME ?? 'price-alerts';
+  if (theme === 'messaging') return path.join(__dirname, 'fixtures/messaging');
+  return path.join(__dirname, 'fixtures');
+}
+
+// Alias for backwards-compatibility — always read at call time so theme changes take effect
 const FIXTURES_DIR = path.join(__dirname, 'fixtures');
 
 // Stage → fixture file mapping
@@ -37,7 +46,7 @@ export function getDemoFixture(stage: string): string | null {
   const filename = DEMO_FIXTURE_FILES[stage];
   if (!filename) return null;
 
-  const fixturePath = path.join(FIXTURES_DIR, filename);
+  const fixturePath = path.join(getFixturesDir(), filename);
   try {
     return fs.readFileSync(fixturePath, 'utf-8');
   } catch {

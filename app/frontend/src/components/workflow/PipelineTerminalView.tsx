@@ -8,6 +8,34 @@ import { STAGE_LABELS } from '../../constants/stage-labels';
 import type { StageStatus, CoordinatorMessage } from '../../stores/workflowStore';
 import { InlineCheckpointActions } from '../coordinator/InlineCheckpointActions';
 import { PipelineStatusSection } from './PipelineStatusSection';
+import { DemoProjectSection } from './DemoProjectSection';
+
+// ── Dancing creature ─────────────────────────────────────────────────────────
+
+const CREATURE_FRAMES = [
+  ['\\(^.^)/', ' ~  ~  '],
+  [' (^.^) ', '~  ~   '],
+  ['/(^.^)\\', '   ~  ~'],
+  [' (^.^) ', '  ~   ~'],
+];
+
+function DancingCreature() {
+  const [frame, setFrame] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setFrame(f => (f + 1) % CREATURE_FRAMES.length), 700);
+    return () => clearInterval(t);
+  }, []);
+  const [top, bottom] = CREATURE_FRAMES[frame];
+  return (
+    <div
+      className="flex-shrink-0 pb-2 pt-1 flex flex-col items-center select-none transition-opacity duration-500"
+      title="keep going"
+    >
+      <pre className="text-[9px] leading-tight text-slate-400 dark:text-slate-400 text-center font-mono">{top}</pre>
+      <pre className="text-[8px] leading-tight text-slate-500 dark:text-slate-500 text-center font-mono">{bottom}</pre>
+    </div>
+  );
+}
 
 // ── Event type → display config ──────────────────────────────────────────────
 
@@ -330,12 +358,11 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
         {/* Progress */}
         <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-800/40 flex-shrink-0">
           <div className="flex justify-between mb-1">
-            <span className="text-[9px] text-slate-500 dark:text-slate-600">
+            <span className="text-[10px] text-slate-500 dark:text-slate-600">
               {isComplete ? 'complete' : `${doneCount}/${total}`}
             </span>
             <div className="flex items-center gap-1.5">
-              {showCost && <span className="text-[9px] text-slate-400 dark:text-slate-700">{costStr}</span>}
-              <span className="text-[9px] text-slate-500 dark:text-slate-600">{pct}%</span>
+              <span className="text-[10px] text-slate-500 dark:text-slate-600">{pct}%</span>
             </div>
           </div>
           <div className="h-0.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
@@ -347,7 +374,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
         </div>
 
         {/* Stage rows — fill available height; each row is flex-1 so connectors stretch */}
-        <div className="flex-1 flex flex-col px-2 py-2">
+        <div className="flex-1 flex flex-col px-2 py-2 overflow-hidden">
           {stageSequence.map((stageName, idx) => {
             const status = statuses[idx];
             const checkpoint = checkpoints.find(c => c.stage === stageName && c.status === 'pending');
@@ -372,9 +399,12 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
           })}
         </div>
 
+        {/* Creature lives outside the overflow-hidden stage rows */}
+        <DancingCreature />
+
         {isComplete && (
           <div className="px-3 py-2 border-t border-slate-200 dark:border-slate-800/40 flex-shrink-0">
-            <div className="flex items-center gap-1 text-[9px] text-green-600 dark:text-green-400">
+            <div className="flex items-center gap-1 text-[10px] text-green-600 dark:text-green-400">
               <span className="w-1 h-1 rounded-full bg-green-500" />
               all stages done
             </div>
@@ -496,6 +526,9 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
 
               {/* Azure pipeline + QA results — auto-starts on completion */}
               <PipelineStatusSection workflowId={activeWorkflow.id} />
+
+              {/* Demo React project — shown when workflow was created by demo webhook */}
+              <DemoProjectSection workflowId={activeWorkflow.id} />
             </div>
           )}
 

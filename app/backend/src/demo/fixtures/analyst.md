@@ -8,75 +8,59 @@ Two findings stand out for the PM team. First, the bar for "good enough" is low 
 
 ---
 
-## Problem Space
+## Background
 
-Retail investors making decisions based on stale prices face two compounding problems. First, they miss entry/exit windows because they are not watching their screens; a stock they intended to buy at $95 moves through that price while they are working. Second, they compensate by checking brokerage apps compulsively — the average retail investor opens their brokerage app 11 times per day [5], suggesting anxious monitoring rather than disciplined alerting.
+TradeEasy's current mobile app has no alerting system. Users who want to know when a stock hits a target price must: (a) set a limit order they don't actually want to execute, (b) check the app manually throughout the day, or (c) use a competitor app for alerts and return to TradeEasy only to execute. Option (c) is the most common workaround — it directly reduces TradeEasy's share of executed trades.
 
-Current workarounds include third-party apps (Yahoo Finance, Robinhood) used alongside a primary brokerage, manual calendar reminders, and paper notes. Each workaround fragments the user's workflow and reduces the likelihood they execute through their primary brokerage when the alert triggers [2].
-
----
-
-## Market Size & Growth
-
-| Metric | Value | Source |
-|--------|-------|--------|
-| Global retail brokerage TAM | $14.6B (2024) | [1] |
-| Mobile trading segment CAGR | 12.4% (2024–2030) | [1] |
-| Alerting/notification feature market (add-on tools) | $890M | [3] |
+The business case is straightforward: users who receive a timely alert are 4.2× more likely to execute the trade on the same platform that alerted them [3]. A simple alerting feature is therefore both a retention mechanism and a revenue driver.
 
 ---
 
-## Target Users
+## Key Research Findings
 
-**Active Self-Directed Trader**
-- Job to be done: Execute trades at pre-decided price points without monitoring screens continuously
-- Current workaround: Third-party alert apps (Yahoo Finance, TradingView) with manual order entry in brokerage
-- Key frustration: Alert fires in Yahoo Finance, then they must switch apps, log in, and hope the price is still right
+**Finding 1: Push notification latency is the primary differentiator**
+Among the top 8 retail brokerage apps, only 3 offer mobile push alerts; all 3 use polling with 15–60 second delays. A sub-30-second WebSocket-based notification is technically differentiated today. Users in usability tests rated 30-second latency as "basically instant" for their needs; latency above 90 seconds was consistently described as "useless."
 
-**Passive Portfolio Reviewer**
-- Job to be done: Know when a stock they own has moved significantly so they can decide whether to act
-- Current workaround: Checking app manually 2–3x per day or relying on news notifications that don't correlate to their actual holdings
-- Key frustration: No way to set a "notify me if this drops 5%" alert without a spreadsheet
+**Finding 2: Users want alerts on positions they don't own yet**
+74% of users in the research sample said they primarily want alerts on stocks they are *watching* (pre-trade), not positions they already hold [2]. This validates building alert creation from the Watchlist rather than the Portfolio screen.
+
+**Finding 3: Email is the fallback, not the primary channel**
+84% of surveyed traders set push notifications as their preferred channel; email is strongly preferred as a fallback if the push fails. A two-channel delivery model (push → email fallback) satisfies nearly all users without building SMS infrastructure.
+
+**Finding 4: Alert management friction causes abandonment**
+Users with more than 5 active alerts report frustration with managing them — deleting triggered alerts is cited as the top pain point. A history tab with re-arm capability ("set this alert again") is the highest-value management feature.
+
+**Finding 5: Complex conditions are wanted but not required at MVP**
+66% of users said they would value percentage-based alerts or moving-average crossover alerts [2]. However, when offered simple price-threshold alerts in prototypes, satisfaction was high (NPS: +42). Complex conditions are therefore a strong Phase 2 candidate, not an MVP blocker.
 
 ---
 
 ## Competitive Landscape
 
-| Player | Strength | Gap |
-|--------|----------|-----|
-| Robinhood | Push alerts with ~1min latency; clean mobile UX | Limited alert types (price only, no % change, no MA crossings) |
-| TD Ameritrade (thinkorswim) | Advanced conditional alerts, desktop and mobile | Complex setup UX; no push on mobile app (email only) |
-| E*TRADE | Solid email alerts; good coverage of alert types | Mobile push frequently delayed 10–20 minutes |
-| Fidelity | Reliable alerts; good iOS widget | UI buried deep in app; max 10 alerts per account |
-| Webull | Good price and volume alerts; competitive latency | Limited to stocks; no ETF or options chain alerts |
+| Feature | TradeEasy (today) | Competitor A | Competitor B | Competitor C |
+|---|---|---|---|---|
+| Push alerts | ✗ | ✓ (60s delay) | ✓ (30s delay) | ✗ |
+| Email alerts | ✗ | ✓ | ✓ | ✓ (only) |
+| Watchlist | ✓ | ✓ | ✓ | ✓ |
+| Alert history | — | ✗ | ✓ | ✗ |
+| Conditional alerts | — | ✗ | ✗ | ✗ |
+
+TradeEasy has an opportunity to launch the fastest push alert in the retail segment. Sub-30-second delivery is achievable with the existing market data WebSocket infrastructure.
 
 ---
 
-## Constraints & Risks
+## Constraints & Open Questions
 
-- **Real-time data costs** — Sub-second price feeds from exchanges carry per-user licensing costs (~$1.50–$3.00/user/month); needs commercial review before committing to <5s latency SLA [4]
-- **Notification deliverability** — Push notification delivery rate varies by device/OS/user settings; must design for SMS/email fallback or users will miss critical alerts [6]
-- **Alert volume at market open** — Gap-up/down opens can trigger thousands of simultaneous alerts; system must handle spike without degrading core order flow latency [3]
-- **Regulatory** — Price alerts are informational, not investment advice, but copy and timing must be reviewed by compliance to ensure no language that could be construed as a recommendation [7]
-
----
-
-## Strategic Recommendations
-
-1. **Start with simple price-crossing alerts** (above/below a target price) on stocks, ETFs, and options — this covers 94% of stated user needs and can ship in one sprint cycle.
-2. **Mobile push as primary channel** — invest in <30s end-to-end latency for push; add email as a fallback only.
-3. **Watchlist as the primary entry point** — users who build a watchlist have 3.4× higher 90-day retention than those who do not [2]; alerts should deepen watchlist engagement, not exist as a standalone feature.
-4. **Cap alerts per user at 20 in v1** — prevents data cost overruns while covering >95% of user needs; remove cap in v2 after validating infrastructure at scale.
-5. **Defer conditional logic** (MA crossings, volume triggers, % change from purchase price) to v2 — validate that simple alerts drive the retention and trading frequency improvements before investing in complex rules.
+- **Max concurrent WebSocket connections** — needs infrastructure sizing. Assuming 50,000 MAU with 20% peak concurrency = 10,000 simultaneous connections. Within current Kubernetes cluster capacity per infrastructure team estimates.
+- **Regulatory copy** — notification text must not imply investment advice ("AAPL reached $180" is acceptable; "Now is a good time to buy AAPL" is not). Legal sign-off required before copy is finalised.
+- **Alert limit per user** — 20 active alerts per user is the proposed cap (matches Competitor B). This reduces abuse risk without constraining typical user behaviour (median: 3 active alerts).
+- **Alert evaluation on market-closed prices** — define policy: do alerts evaluate on after-hours trades? Current recommendation: market-hours only for MVP.
 
 ---
 
-## References
+## Recommendations
 
-[1] Grand View Research — Retail Brokerage Market Size Report 2024 — https://www.grandviewresearch.com/industry-analysis/retail-brokerage-market
-[2] SIFMA Retail Investor Survey 2023 — https://www.sifma.org/resources/research/retail-investor-study-2023
-[3] Deloitte Digital — Mobile Investing Trends — https://www2.deloitte.com/insights/us/en/industry/financial-services/mobile-investing-trends
-[4] NYSE Market Data Licensing — https://www.nyse.com/market-data/real-time
-[5] Apptopia Mobile Finance Benchmark Report — https://apptopia.com/blog/mobile-finance-benchmark
-[6] Firebase Cloud Messaging Delivery Rate Analysis — https://firebase.google.com/docs/cloud-messaging/understand-delivery
-[7] FINRA Rule 2210 — Communications with the Public — https://www.finra.org/rules-guidance/rulebooks/finra-rules/2210
+1. **Prioritise push notification delivery** — it is the entire value proposition. Email fallback is required; SMS is not.
+2. **Build Watchlist alongside alerts** — 74% of alert use cases are pre-trade; watchlist is the natural home for alert creation.
+3. **Include alert history with re-arm in MVP** — the research clearly shows alert management friction is a retention risk.
+4. **Defer complex conditions to Phase 2** — the data supports it; simpler MVP ships faster and validates the push infrastructure.

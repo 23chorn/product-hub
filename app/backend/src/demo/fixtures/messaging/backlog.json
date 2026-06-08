@@ -1,0 +1,202 @@
+{
+  "epic": {
+    "title": "In-App Messaging & Trade Chat",
+    "description": "Add real-time channel-based chat so users can discuss trades and market ideas without leaving the TradeEasy app. Includes live ticker card sharing, content moderation, and MiFID II-compliant message retention.",
+    "businessValue": "Closes the context-switching gap between external trading communities (Discord, WhatsApp) and trade execution. Users who engage with social features have 3.1× higher 90-day retention; message-to-trade conversion target is 8% within 10 minutes of reading a message.",
+    "prdLink": "PRD: In-App Messaging & Trade Chat — TradeEasy"
+  },
+  "features": [
+    {
+      "title": "Channel Discovery & Membership",
+      "description": "Users can browse, join, and leave topic-based channels organised by ticker or theme.",
+      "phase": "MVP",
+      "stories": [
+        {
+          "title": "Browse and join a public channel",
+          "persona": "Alex — Active Self-Directed Trader",
+          "goal": "find and join a channel dedicated to a stock I'm watching",
+          "benefit": "so that I can follow live discussions about that ticker without leaving TradeEasy",
+          "acceptanceCriteria": [
+            "Given I open the Chat tab, When the channel list loads, Then I see public channels sorted by recent activity, each showing: name, topic, and member count",
+            "Given I tap a channel I haven't joined, When I tap 'Join', Then I am added as a member and the channel thread is displayed immediately",
+            "Given I am already a member of a channel, When I open the Chat tab, Then my joined channels appear at the top of the list with an unread badge if there are new messages"
+          ],
+          "prdRef": { "functionalRequirements": ["FR-01", "FR-02"], "userJourney": "Journey 1 · Steps 1–3" },
+          "technical": {
+            "constraints": ["POST /api/channels/:id/join is idempotent"],
+            "affectedComponents": ["ChannelListScreen", "ChannelService", "channel_members table"],
+            "dataChanges": "INSERT channel_members; INCREMENT channels.member_count",
+            "apiChanges": "GET /api/channels; POST /api/channels/:id/join"
+          },
+          "effort": 2,
+          "storyPoints": 2
+        },
+        {
+          "title": "Create a new public channel",
+          "persona": "Alex — Active Self-Directed Trader",
+          "goal": "create a topic channel for a ticker or theme that doesn't exist yet",
+          "benefit": "so that I can seed a community around a stock or strategy I follow",
+          "acceptanceCriteria": [
+            "Given I tap 'New Channel', When I enter a name and topic and tap 'Create', Then the channel is created, I am auto-joined as the founder, and the channel appears in the list immediately",
+            "Given I enter a channel name that already exists, When I tap 'Create', Then an inline error 'A channel with this name already exists' is shown and no duplicate is created",
+            "Given I enter a channel name containing a blocked keyword, When I tap 'Create', Then an inline error is shown and the channel is not created"
+          ],
+          "prdRef": { "functionalRequirements": ["FR-11"], "userJourney": "Journey 1 · Step 2" },
+          "technical": {
+            "constraints": ["Channel name must be lowercase alphanumeric + hyphens, max 32 chars"],
+            "affectedComponents": ["CreateChannelSheet", "ChannelService"],
+            "dataChanges": "INSERT channels; INSERT channel_members (creator)",
+            "apiChanges": "POST /api/channels → {name, topic}"
+          },
+          "effort": 2,
+          "storyPoints": 2
+        },
+        {
+          "title": "Leave a channel",
+          "persona": "Jamie — Casual Community Investor",
+          "goal": "leave channels I no longer follow to reduce noise",
+          "benefit": "so that my channel list stays relevant to my current interests",
+          "acceptanceCriteria": [
+            "Given I am a member of a channel, When I tap 'Leave Channel' in the channel settings, Then I am removed from the channel and it no longer appears in my joined list",
+            "Given I leave a channel and return to the channel list, When I search for the channel, Then it appears in the public list with an option to rejoin"
+          ],
+          "prdRef": { "functionalRequirements": ["FR-02"], "userJourney": "Journey 1 · Step 3" },
+          "technical": {
+            "constraints": ["Leaving a channel does not delete message history"],
+            "affectedComponents": ["ChannelSettingsSheet", "ChannelService"],
+            "dataChanges": "DELETE channel_members; DECREMENT channels.member_count",
+            "apiChanges": "POST /api/channels/:id/leave"
+          },
+          "effort": 1,
+          "storyPoints": 1
+        }
+      ]
+    },
+    {
+      "title": "Real-Time Messaging",
+      "description": "Users can send and receive text messages and live ticker cards in channels with sub-500ms delivery.",
+      "phase": "MVP",
+      "stories": [
+        {
+          "title": "Send and receive text messages in a channel",
+          "persona": "Alex — Active Self-Directed Trader",
+          "goal": "type a message and have it appear in the channel thread for all members instantly",
+          "benefit": "so that I can share trade ideas and react to market moves in real time",
+          "acceptanceCriteria": [
+            "Given I am in a channel thread, When I type a message and press Enter or tap Send, Then my message appears in the thread within 500ms",
+            "Given another member sends a message to a channel I am viewing, When the message arrives, Then it appears at the bottom of my thread without requiring a page refresh",
+            "Given I send a message exceeding 2,000 characters, When I tap Send, Then an inline counter shows 'Over limit — 2,000 character maximum' and the message is not sent",
+            "Given I send messages faster than 30 per minute, When the rate limit is reached, Then I see a toast 'Slow down — you're sending messages too quickly' and further sends are blocked for 10 seconds"
+          ],
+          "prdRef": { "functionalRequirements": ["FR-03", "FR-04"], "userJourney": "Journey 3 · Steps 1–3" },
+          "technical": {
+            "constraints": ["WebSocket write-through to Cassandra before fan-out; no message loss on pod restart"],
+            "affectedComponents": ["ChannelThreadScreen", "MessageService", "WebSocketGateway", "Cassandra messages table"],
+            "dataChanges": "INSERT messages (Cassandra)",
+            "apiChanges": "WS: { type: 'send', channelId, content }"
+          },
+          "effort": 5,
+          "storyPoints": 5
+        },
+        {
+          "title": "Share a live ticker card in a message",
+          "persona": "Alex — Active Self-Directed Trader",
+          "goal": "attach a live price card for a stock I'm discussing so other members can see the exact price and act on it immediately",
+          "benefit": "so that I don't have to copy-paste prices and members can tap through to trade",
+          "acceptanceCriteria": [
+            "Given I am composing a message, When I tap the ticker-card icon and search for a symbol, Then I can select a symbol and a ticker card is attached to my message draft showing current price and change",
+            "Given a message with a ticker card is displayed in the thread, When I view it, Then the card shows the symbol, current price, and intraday % change updated within 15 seconds",
+            "Given I tap a ticker card in a message, When the tap registers, Then I am taken to the TradeEasy instrument detail screen for that symbol",
+            "Given the market is closed, When I view a ticker card, Then it displays the previous close price with a 'Market Closed' label"
+          ],
+          "prdRef": { "functionalRequirements": ["FR-05", "FR-06", "FR-07"], "userJourney": "Journey 2 · Steps 2–4" },
+          "technical": {
+            "constraints": ["Ticker card price updates subscribe to existing Market Data Service WS feed; 15s update interval"],
+            "affectedComponents": ["MessageComposer", "TickerCardComponent", "MessageService", "MarketDataService (existing)"],
+            "dataChanges": "tickerRef field in Cassandra messages",
+            "apiChanges": "WS: send with tickerRef: { symbol }; server resolves live price"
+          },
+          "effort": 3,
+          "storyPoints": 3
+        },
+        {
+          "title": "Load message history on channel open",
+          "persona": "Jamie — Casual Community Investor",
+          "goal": "see recent messages when I open a channel even if I wasn't connected when they were sent",
+          "benefit": "so that I can catch up on discussion and context before contributing",
+          "acceptanceCriteria": [
+            "Given I open a channel, When the thread renders, Then the last 50 messages are displayed within 1 second",
+            "Given I scroll to the top of the loaded history, When I reach the oldest loaded message, Then older messages are loaded in batches of 50 without losing scroll position",
+            "Given a channel has no messages, When I open it, Then an empty state is shown: 'No messages yet — start the conversation'"
+          ],
+          "prdRef": { "functionalRequirements": ["FR-03", "FR-04"], "userJourney": "Journey 1 · Step 3" },
+          "technical": {
+            "constraints": ["Cursor-based pagination using (channel_id, created_at) composite key in Cassandra"],
+            "affectedComponents": ["ChannelThreadScreen", "MessageService"],
+            "dataChanges": null,
+            "apiChanges": "GET /api/channels/:id/messages?before=<cursor>&limit=50"
+          },
+          "effort": 2,
+          "storyPoints": 2
+        }
+      ]
+    },
+    {
+      "title": "Content Moderation & Compliance",
+      "description": "Automated and human moderation pipeline to block harmful content, with MiFID II-compliant 7-year message archiving.",
+      "phase": "MVP",
+      "stories": [
+        {
+          "title": "Messages are screened before delivery",
+          "persona": "System",
+          "goal": "automatically block pump-and-dump signals, hate speech, and investment advice before they reach users",
+          "benefit": "so that TradeEasy meets its regulatory obligations and protects users from harmful content",
+          "acceptanceCriteria": [
+            "Given I send a message containing a blocked keyword pattern, When the message is submitted, Then it is not delivered to other members and I see 'Your message is under review'",
+            "Given the automated classifier flags a message, When a compliance reviewer approves it, Then the message is delivered retroactively and I receive a notification 'Your message has been approved'",
+            "Given the automated classifier flags a message and a reviewer rejects it, When the rejection is confirmed, Then the message is permanently deleted and I receive a notification 'Your message was removed — it violates community guidelines'",
+            "Given a channel receives >10 messages mentioning the same ticker in 5 minutes, When the velocity threshold is hit, Then all new messages mentioning that ticker in that channel are held for human review for 15 minutes"
+          ],
+          "prdRef": { "functionalRequirements": ["FR-08", "FR-09"], "userJourney": "N/A" },
+          "technical": {
+            "constraints": ["Rule-based check is synchronous (<5ms); LLM classifier is async (~200ms); message is delivered only after rule-based passes"],
+            "affectedComponents": ["ModerationService", "MessageService", "ComplianceReviewQueue"],
+            "dataChanges": "messages.moderation_status field; INSERT moderation_events",
+            "apiChanges": "Internal only"
+          },
+          "effort": 5,
+          "storyPoints": 5
+        },
+        {
+          "title": "Messages are archived for 7-year MiFID II retention",
+          "persona": "System / Compliance",
+          "goal": "ensure all messages are durably stored and searchable by the compliance team for 7 years",
+          "benefit": "so that TradeEasy meets its MiFID II Article 16 record-keeping obligations",
+          "acceptanceCriteria": [
+            "Given a message is sent, When the message is persisted, Then it is also published to the archive pipeline and written to cold storage within 1 hour",
+            "Given the compliance team queries for messages by user or channel, When the query is submitted, Then results are returned from the archive within 30 seconds",
+            "Given a message is moderation-rejected, When it is archived, Then its moderation_status and rejection reason are included in the archive record"
+          ],
+          "prdRef": { "functionalRequirements": ["FR-10"], "userJourney": "N/A" },
+          "technical": {
+            "constraints": ["Cassandra native TTL set to 7 years; Kafka consumer writes to S3 Parquet; Athena for compliance queries"],
+            "affectedComponents": ["ArchivePipeline (new)", "KafkaProducer", "S3Bucket"],
+            "dataChanges": "S3 Parquet partitioned by channel_id/year/month",
+            "apiChanges": "Internal compliance API: GET /internal/compliance/messages?userId=&channelId=&from=&to="
+          },
+          "effort": 3,
+          "storyPoints": 3
+        }
+      ]
+    }
+  ],
+  "sprintMetadata": {
+    "sprintVelocity": 20,
+    "capacityFactor": 0.8,
+    "effectiveVelocity": 16,
+    "totalEffort": 23,
+    "sprintsRequired": 1.4,
+    "totalHours": 92,
+    "aiAssisted": false
+  }
+}

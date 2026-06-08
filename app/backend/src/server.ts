@@ -29,6 +29,7 @@ import { attachDemoWebSocket } from './demo/ws-demo-handler';
 import { attachAiCodingWebSocket } from './demo/ws-ai-coding-handler';
 import { aiCodingRoutes } from './routes/ai-coding-routes';
 import { demoWebhookRoutes } from './routes/demo-webhook-routes';
+import { demoProjectRoutes } from './routes/demo-project-routes';
 
 const logger = new Logger('SERVER');
 
@@ -102,6 +103,7 @@ app.use('/api/skills', skillRoutes);
 app.use('/api/agents/personas', personaRoutes);
 app.use('/api', aiCodingRoutes);
 app.use('/api', demoWebhookRoutes);
+app.use('/api', demoProjectRoutes);
 
 app.get('/api', (req, res) => {
   res.json({
