@@ -1,12 +1,14 @@
 /**
  * demo-runner.ts
  *
- * Spawns `npm run demo` in the configured DEMO_PROJECT_PATH directory,
+ * Spawns the pipeline-demo.mjs script directly via node in DEMO_PROJECT_PATH,
  * captures stdout/stderr line-by-line, and stores the run log in memory
  * so the frontend can poll it.
  */
 
-import { spawn, execSync } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
 import Logger from '../utils/logger';
 
 const logger = new Logger('DEMO-RUNNER');
@@ -33,13 +35,33 @@ export function getRunState(workflowId: string): RunState {
 }
 
 export function getDemoProjectPath(): string | null {
-  return process.env.DEMO_PROJECT_PATH ?? null;
+  return process.env.DEMO_PROJECT_PATH?.trim() ?? null;
+}
+
+/** Locate node.exe / node from PATH or the current process */
+function findNodeBin(): string {
+  // Try resolving 'node' from PATH first via `where` (Win) / `which` (Unix)
+  const isWin = process.platform === 'win32';
+  try {
+    const result = spawnSync(isWin ? 'where' : 'which', ['node'], { encoding: 'utf-8' });
+    const found = result.stdout?.trim().split('\n')[0].trim();
+    if (found && fs.existsSync(found)) return found;
+  } catch { /* fall through */ }
+  // Fall back to the current process's node binary
+  return process.execPath;
 }
 
 export async function runDemoScript(workflowId: string): Promise<void> {
-  const demoPath = getDemoProjectPath();
-  if (!demoPath) {
+  const rawPath = getDemoProjectPath();
+  if (!rawPath) {
     throw new Error('DEMO_PROJECT_PATH is not set in .env');
+  }
+
+  // Normalise: trim whitespace and remove any stray quotes or > characters
+  const demoPath = rawPath.replace(/['"<>]/g, '').trim();
+
+  if (!fs.existsSync(demoPath)) {
+    throw new Error(`DEMO_PROJECT_PATH does not exist: "${demoPath}"`);
   }
 
   if (runs.get(workflowId)?.status === 'running') {
@@ -54,27 +76,34 @@ export async function runDemoScript(workflowId: string): Promise<void> {
     state.lines.push({ type, text: text.replace(/\x1b\[[0-9;]*m/g, ''), ts: Date.now() });
   };
 
-  logger.info(`Starting demo run for workflow ${workflowId} in ${demoPath}`);
+  const demoScript = path.join(demoPath, 'scripts', 'pipeline-demo.mjs');
+  if (!fs.existsSync(demoScript)) {
+    const msg = `Demo script not found: ${demoScript}`;
+    logger.error(msg);
+    state.status = 'failed';
+    state.exitCode = -1;
+    state.finishedAt = Date.now();
+    push('stderr', msg);
+    push('exit', '✗ Demo script missing');
+    return;
+  }
 
+  const nodeBin = findNodeBin();
   const PRODUCT_HUB_URL = process.env.PRODUCT_HUB_URL ?? 'http://localhost:3001';
-  const isWin   = process.platform === 'win32';
-  // On Windows npm is a .cmd batch file — must use npm.cmd to avoid shell: true
-  const npmBin  = isWin ? 'npm.cmd' : 'npm';
 
-  const childEnv = {
-    ...process.env,
-    FORCE_COLOR: '0',
-    NO_COLOR: '1',
-    WORKFLOW_ID: workflowId,
-    PRODUCT_HUB_URL,
-  };
+  // Build a clean env — filter undefined values which can cause EINVAL on Windows
+  const childEnv: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    if (v !== undefined) childEnv[k] = v;
+  }
+  childEnv.FORCE_COLOR = '0';
+  childEnv.NO_COLOR = '1';
+  childEnv.WORKFLOW_ID = workflowId;
+  childEnv.PRODUCT_HUB_URL = PRODUCT_HUB_URL;
 
-  // Install Playwright browsers synchronously (silent) before starting the demo
-  try {
-    execSync(`${npmBin} run demo:reset`, { cwd: demoPath, stdio: 'ignore', env: childEnv });
-  } catch { /* ignore — browsers may already be installed */ }
+  logger.info(`Demo run for ${workflowId}: node=${nodeBin} script=${demoScript} cwd=${demoPath}`);
 
-  const child = spawn(npmBin, ['run', 'demo'], {
+  const child = spawn(nodeBin, [demoScript], {
     cwd: demoPath,
     shell: false,
     env: childEnv,
@@ -97,8 +126,10 @@ export async function runDemoScript(workflowId: string): Promise<void> {
       logger.info(`Demo run ${state.status} (code=${code}) for ${workflowId}`);
       resolve();
     });
-    child.on('error', (err) => {
-      push('stderr', `spawn error: ${err.message}`);
+    child.on('error', (err: NodeJS.ErrnoException) => {
+      const msg = `spawn error: ${err.message} (code=${err.code ?? 'n/a'}, path=${nodeBin})`;
+      push('stderr', msg);
+      logger.error(`Demo runner spawn error for ${workflowId}: ${msg}`);
       state.status     = 'failed';
       state.exitCode   = -1;
       state.finishedAt = Date.now();
