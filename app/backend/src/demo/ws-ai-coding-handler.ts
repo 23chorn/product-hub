@@ -135,9 +135,12 @@ function loadWorkflowContext(workflowId: string): WorkflowContext {
 
 // ── Project root (for Claude Code CWD) ───────────────────────────────────────
 
-// When running via `npm run dev` the CWD is the repo root or app/backend.
-// Walk up until we find the package.json that has "workspaces" to identify the root.
+// Use DEMO_PROJECT_PATH when set so Claude writes to the external demo repo,
+// not product-hub. Fall back to the monorepo root for non-demo usage.
 function findProjectRoot(): string {
+  const demoPath = process.env.DEMO_PROJECT_PATH;
+  if (demoPath && fs.existsSync(demoPath)) return demoPath;
+
   let dir = process.cwd();
   for (let i = 0; i < 5; i++) {
     const pkg = path.join(dir, 'package.json');
@@ -157,6 +160,9 @@ function findProjectRoot(): string {
 // ── Build the Claude Code prompt ──────────────────────────────────────────────
 
 function buildPrompt(ctx: WorkflowContext): string {
+  const demoProjectPath = process.env.DEMO_PROJECT_PATH;
+  const inDemoRepo = demoProjectPath && fs.existsSync(demoProjectPath);
+
   const lines = [
     `You are a software engineer implementing a new feature.`,
     `Read the ticket details below, explore the codebase structure, then write`,
@@ -175,12 +181,28 @@ function buildPrompt(ctx: WorkflowContext): string {
     lines.push('', '## Stories & Acceptance Criteria', ctx.backlogSummary);
   }
 
+  if (inDemoRepo) {
+    lines.push(
+      ``,
+      `## Codebase: TradeEasy Demo (React + TypeScript + Vite + Tailwind)`,
+      ``,
+      `You are working in the tradeeasy-demo repo. Do NOT reference or modify anything outside this directory.`,
+      ``,
+      `Key hook points:`,
+      `- src/App.tsx       — add import at /* ── AI FEATURE IMPORTS ──, add route at {/* ── AI FEATURE ROUTES ──`,
+      `- src/components/Sidebar.tsx — add nav entry at // ── AI FEATURE NAV ── in NAV_ITEMS (before Portfolio)`,
+      `- src/pages/        — create new page components here`,
+      ``,
+      `Design: dark theme, font-mono for data, bg-panel/border-border/text-accent classes, match existing pages.`,
+    );
+  }
+
   lines.push(
     ``,
     `Steps:`,
-    `1. Use the Glob tool to understand the project layout`,
-    `2. Read the most relevant existing files`,
-    `3. Write the implementation for the first story, following existing patterns`,
+    `1. Use Glob to understand the project layout`,
+    `2. Read src/App.tsx, src/components/Sidebar.tsx, and an existing page (e.g. src/pages/Markets.tsx)`,
+    `3. Implement the first story as a new page, wiring it into App.tsx and Sidebar.tsx via the comment hooks`,
     `4. List any additional files that would need to change`,
   );
 

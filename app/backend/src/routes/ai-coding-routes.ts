@@ -279,22 +279,47 @@ aiCodingRoutes.get('/workflow/:id/ticket-context', (req: Request, res: Response)
       }
     } catch { /* qa artifact missing */ }
 
-    // ── Tech stack context file ────────────────────────────────────────────
-    try {
-      const techStackPath = path.join(CONTEXT_DIR, 'tech-stack.md');
-      if (fs.existsSync(techStackPath)) {
-        sections.push('', '## Tech Stack', fs.readFileSync(techStackPath, 'utf-8').slice(0, 1500));
-      }
-    } catch { /* context file missing */ }
+    // ── Codebase context ───────────────────────────────────────────────────
+    // If DEMO_PROJECT_PATH is set, Claude runs in the tradeeasy-demo repo so
+    // inject its structure rather than product-hub's tech-stack.md.
+    const demoProjectPath = process.env.DEMO_PROJECT_PATH;
+    if (demoProjectPath && fs.existsSync(demoProjectPath)) {
+      sections.push(
+        '',
+        '## Codebase: TradeEasy Demo (React + TypeScript + Vite + Tailwind)',
+        '',
+        'You are working in the tradeeasy-demo repo. Do NOT reference or modify anything outside this directory.',
+        '',
+        'Key files to understand first:',
+        '- `src/App.tsx`          — BrowserRouter + Routes. Add new imports at the `/* ── AI FEATURE IMPORTS ──` comment; add routes at `{/* ── AI FEATURE ROUTES ──`.',
+        '- `src/components/Sidebar.tsx` — NAV_ITEMS array. Append new entry at the `// ── AI FEATURE NAV ──` comment (before Portfolio).',
+        '- `src/pages/`           — Existing pages: Dashboard.tsx, Markets.tsx, Portfolio.tsx. Create new pages here.',
+        '- `src/components/`      — Shared components.',
+        '',
+        'Design conventions (follow exactly):',
+        '- Dark theme: bg-panel, bg-accent/10, border-border, text-slate-300, text-slate-400',
+        '- Cards: `rounded-xl border border-border bg-panel p-4`',
+        '- Font: `font-mono` for data/numbers, `font-semibold` for headings',
+        '- Accent: `text-accent` (teal-400), `bg-accent/10` for highlights',
+        '- Match the visual density and spacing of existing pages — no extra whitespace',
+      );
+    } else {
+      try {
+        const techStackPath = path.join(CONTEXT_DIR, 'tech-stack.md');
+        if (fs.existsSync(techStackPath)) {
+          sections.push('', '## Tech Stack', fs.readFileSync(techStackPath, 'utf-8').slice(0, 1500));
+        }
+      } catch { /* context file missing */ }
+    }
 
     // ── Implementation instructions ────────────────────────────────────────
     sections.push(
       '',
       '## Instructions',
       '1. Use Glob to explore the project structure and understand existing patterns',
-      '2. Read key source files relevant to this feature',
-      '3. Implement the first story following existing code conventions',
-      '4. Write or update tests using TC-IDs from the QA section above',
+      '2. Read src/App.tsx, src/components/Sidebar.tsx, and one existing page (e.g. src/pages/Markets.tsx) to learn the patterns',
+      '3. Implement the feature as a new page in src/pages/ and wire it into App.tsx and Sidebar.tsx using the comment hooks',
+      '4. Write or update Playwright tests in e2e/smoke.spec.ts using TC-IDs from the QA section above',
       '5. Summarise what you changed and which files were modified',
     );
 
