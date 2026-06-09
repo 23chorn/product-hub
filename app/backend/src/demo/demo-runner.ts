@@ -100,7 +100,7 @@ export async function runDemoScript(workflowId: string): Promise<void> {
   for (const [k, v] of Object.entries(process.env)) {
     if (v !== undefined) childEnv[k] = v;
   }
-  childEnv.FORCE_COLOR = '0';
+  delete childEnv.FORCE_COLOR;
   childEnv.NO_COLOR = '1';
   childEnv.WORKFLOW_ID = workflowId;
   childEnv.PRODUCT_HUB_URL = PRODUCT_HUB_URL;

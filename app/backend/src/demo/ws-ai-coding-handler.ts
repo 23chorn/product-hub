@@ -275,7 +275,6 @@ async function spawnClaude(ws: WebSocket, prompt: string): Promise<boolean> {
         '--print',
         '--allowedTools', 'Read,Bash,Glob,Grep',
         '--max-turns', '8',
-        '--no-color',
       ],
       {
         stdio: ['pipe', 'pipe', 'pipe'],
