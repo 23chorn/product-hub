@@ -93,7 +93,7 @@ Constraints:
 
 let sampleIndex = 0;
 
-const DEFAULT_STAGES = ['analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'prototype', 'qa_engineer', 'tech_refinement', 'curator'];
+const DEFAULT_STAGES = ['analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'tech_refinement', 'prototype', 'qa_engineer', 'curator'];
 
 /**
  * POST /api/demo/webhook/trigger
