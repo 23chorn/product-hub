@@ -38,17 +38,21 @@ export function getDemoProjectPath(): string | null {
   return process.env.DEMO_PROJECT_PATH?.trim() ?? null;
 }
 
-/** Locate node.exe / node from PATH or the current process */
-function findNodeBin(): string {
-  // Try resolving 'node' from PATH first via `where` (Win) / `which` (Unix)
-  const isWin = process.platform === 'win32';
+const isWin = process.platform === 'win32';
+
+/** Locate an executable from PATH using where (Win) / which (Unix). */
+function findBin(name: string): string | null {
   try {
-    const result = spawnSync(isWin ? 'where' : 'which', ['node'], { encoding: 'utf-8' });
+    const result = spawnSync(isWin ? 'where' : 'which', [name], { encoding: 'utf-8' });
     const found = result.stdout?.trim().split('\n')[0].trim();
     if (found && fs.existsSync(found)) return found;
-  } catch { /* fall through */ }
-  // Fall back to the current process's node binary
-  return process.execPath;
+  } catch { /* ignore */ }
+  return null;
+}
+
+/** Locate node.exe / node from PATH or the current process */
+function findNodeBin(): string {
+  return findBin('node') ?? process.execPath;
 }
 
 export async function runDemoScript(workflowId: string): Promise<void> {
@@ -100,6 +104,10 @@ export async function runDemoScript(workflowId: string): Promise<void> {
   childEnv.NO_COLOR = '1';
   childEnv.WORKFLOW_ID = workflowId;
   childEnv.PRODUCT_HUB_URL = PRODUCT_HUB_URL;
+
+  const claudeBin = findBin('claude');
+  if (claudeBin) childEnv.CLAUDE_BIN = claudeBin;
+  logger.info(`Claude binary: ${claudeBin ?? 'not found — child will try PATH'}`);
 
   logger.info(`Demo run for ${workflowId}: node=${nodeBin} script=${demoScript} cwd=${demoPath}`);
 
