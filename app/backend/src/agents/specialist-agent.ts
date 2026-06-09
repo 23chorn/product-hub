@@ -22,7 +22,7 @@ const STAGE_TEMPLATE_MAP: Record<string, string> = {
   pm_prd:               'prd.template.md',
   solution_architect:   'architecture.template.md',
   pm_backlog:           'backlog.template.md',
-  tech_refinement:      'backlog.template.md',
+  tech_refinement:      'tech-refinement.template.md',
   gtm_strategy:         'gtm.template.md',
   prototype:            'prototype.template.md',
   feature_marketing:    'feature_marketing.template.md',

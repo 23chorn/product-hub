@@ -227,3 +227,33 @@ Apply the relevant section below based on which artifact you are reviewing. Gene
 - A LinkedIn post exceeding 150 words is **MINOR**.
 
 **PM Questions on Feature Marketing** should cover brand or audience tradeoffs — tone mismatches with the target audience, whether a channel is appropriate for the segment. Not product or feature decisions.
+
+---
+
+### Technical Refinement Backlog (Finn, Remi & Cole)
+
+**Platform field:**
+- Every story must have a `platform` field. A story missing `platform` is **MAJOR**.
+- A story that clearly involves cross-platform work (iOS + Android + backend) but is assigned `"platform": "all"` without being split into platform-specific stories is **MAJOR** — these stories cannot be picked up by a single engineer.
+
+**Technical section completeness:**
+- Every story's `technical.affectedComponents` must contain specific named components (files, classes, endpoints) — not category labels like "API layer". Generic placeholders are **MAJOR**.
+- If a story requires DB changes, `technical.dataChanges` must name the table and columns with types. A story that clearly needs a DB change but has `null` is **MAJOR**.
+- If a story requires API changes, `technical.apiChanges` must include method, path, and request/response shapes. A story that clearly needs a new endpoint but has `null` is **MAJOR**.
+
+**Dependency order:**
+- Backend/infra stories must precede frontend/consumer stories within a feature. A frontend story appearing before the API story it depends on is **MAJOR**.
+- A story that depends on another story appearing later in the same feature is **CRITICAL**.
+
+**Effort scoring:**
+- Stories scored 8 must have been decomposed into smaller stories. A story scored 8 that still covers multiple platforms or complex integrations is **MAJOR**.
+- Platform-specific stories (ios-only, android-only) scored 5+ should be examined — if the work is routine UI implementation, flag as **MINOR** underestimate concern.
+
+**PM scope preservation:**
+- Any PM story from the original backlog that is missing from the refined output is **CRITICAL** — scope may have been silently dropped.
+- Story titles, personas, goals, and acceptance criteria must not have been rewritten to change their meaning. Additions are fine; rewrites are **MAJOR**.
+
+**Risks field:**
+- Every story that carries a non-trivial technical risk must have a `risks` array entry. A story that obviously carries risk (DB migration, third-party dependency, platform permission) with an empty `risks` array is **MAJOR**.
+
+**PM Questions on a Technical Refinement** should cover unresolved architecture decisions that the tech leads flagged as risks — not product scope or story goals.

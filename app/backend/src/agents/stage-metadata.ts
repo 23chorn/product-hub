@@ -11,7 +11,7 @@ export const STAGE_SESSION_MAP: Record<string, { mode: AppMode; agentType: Agent
   gtm_strategy:         { mode: 'gtm',               agentType: 'gtm' },
   feature_marketing:    { mode: 'feature_marketing', agentType: 'marketer' },
   qa_engineer:          { mode: 'qa',                agentType: 'qa-engineer' },
-  tech_refinement:      { mode: 'backlog' as AppMode, agentType: 'pm' as AgentType },
+  tech_refinement:      { mode: 'tech_refinement', agentType: 'tech-refinement' },
 };
 
 // Per-stage output token ceiling. Backlog gets more headroom because the JSON
@@ -224,6 +224,20 @@ Do not propose budget figures. Do not redefine personas or success metrics from 
 Do not reference features or capabilities not in the approved PRD or GTM strategy. Do not suggest product changes.`,
   },
 
+  tech_refinement: {
+    label: 'Technical Refinement Backlog (Finn, Remi & Cole)',
+    format: `Produce a single valid JSON object wrapped in a \`\`\`json code block following the tech-refinement template injected into your system prompt. This is a technically enriched version of the PM backlog. No prose before or after the JSON block.
+
+Key requirements:
+- **Preserve PM scope**: do not remove or change the scope of PM stories. You may add engineering stories (infra, migrations, platform setup) but cannot drop product stories.
+- **Platform field required**: every story must have a \`platform\` field — use \`"ios"\`, \`"android"\`, \`"backend"\`, \`"all"\`, or a compound like \`"ios+android"\`.
+- **Fully populated \`technical\` section**: name specific files, classes, API endpoints (with method, path, request/response shapes), and DB changes (table name, columns, types). No vague placeholders.
+- **Dependency order enforced**: backend/infra stories before frontend/consumer stories within each feature.
+- **Split oversized stories**: any story scored 8 that covers multiple platforms must be split into platform-specific stories before output.
+- **Risks documented**: every story that carries a technical risk must have a \`risks\` array entry with severity and mitigation. Empty array is allowed when no risks exist.
+- **Add missing engineering stories**: if the PM backlog is missing infra setup, DB migrations, or platform permission stories that are prerequisites for product stories, add them.`,
+  },
+
   qa_engineer: {
     label: 'QA Test Suite (Vera)',
     format: `Produce a single valid JSON object wrapped in a \`\`\`json code block following the QA test suite template injected into your system prompt. No prose before or after the JSON block.
@@ -268,6 +282,7 @@ export function stageGoal(stage: string, goal: string): string {
     gtm_strategy:       `Produce a complete Go-to-Market strategy covering positioning, target segments, messaging, launch timeline, competitive positioning, and success metrics for: ${goal}`,
     feature_marketing:  `Produce a ready-to-use feature marketing content pack with channel copy and internal FAQ based on the approved PRD and GTM strategy for: ${goal}`,
     qa_engineer:        `Produce an exhaustive, automation-ready JSON test suite covering all happy paths, bad paths, and edge cases derived from the PRD and backlog for: ${goal}`,
+    tech_refinement:    `Review the PM backlog and produce a technically enriched version: break down oversized cross-platform stories, add implementation details (affected components, API changes, DB schema changes), enforce dependency ordering, and add missing engineering stories for: ${goal}`,
   };
   const outputLabel = STAGE_LABELS_BRIEF[stage] ?? stage;
   return STAGE_GOAL[stage] ?? `Produce the required ${outputLabel} for: ${goal}`;
@@ -310,6 +325,11 @@ export function stageNotDecide(stage: string): string {
       'Do not test implementation internals — test observable user-facing behaviour only. ' +
       'Do not write performance or load tests unless specific SLAs appear in the NFRs. ' +
       'Do not make product decisions; if a requirement is ambiguous, flag it in metadata.notes.',
+    tech_refinement:
+      'Do not change story titles, personas, goals, or acceptance criteria from the PM backlog. ' +
+      'Do not propose new product features or alter product scope. ' +
+      'Do not make unresolved architecture decisions — flag them as risks instead. ' +
+      'Do not remove PM stories even if they seem technically trivial.',
   };
   return NOT_DECIDE[stage]
     ?? 'Follow the output format and scope defined above. Do not add scope that was not in the workflow goal.';
