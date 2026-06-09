@@ -391,6 +391,43 @@ aiCodingRoutes.post('/workflow/:id/pipeline-result', (req: Request, res: Respons
 });
 
 /**
+ * POST /api/workflow/:id/pipeline-log
+ *
+ * Receives a batch of stdout lines from the demo pipeline's Claude CLI run
+ * and inserts them as a stage_progress event so they appear in the event log.
+ * Accepts: { lines: string[] }
+ */
+aiCodingRoutes.post('/workflow/:id/pipeline-log', (req: Request, res: Response) => {
+  const workflowId = req.params.id;
+  const { lines } = req.body ?? {};
+
+  if (!Array.isArray(lines) || lines.length === 0) {
+    return res.json({ ok: true });
+  }
+
+  try {
+    const workflow = db.prepare<[string], { id: string }>('SELECT id FROM workflows WHERE id = ?').get(workflowId);
+    if (!workflow) return res.status(404).json({ error: 'Workflow not found' });
+
+    // Show last 3 non-empty lines as a compact progress update
+    const meaningful = (lines as string[])
+      .map((l: string) => l.trim())
+      .filter((l: string) => l.length > 0 && !l.startsWith('>') && !l.startsWith('$'))
+      .slice(-3);
+
+    if (meaningful.length > 0) {
+      const snippet = meaningful.join(' · ').slice(0, 200);
+      insertEvent(workflowId, 'stage_progress', 'code_generation', `Claude: ${snippet}`);
+    }
+
+    return res.json({ ok: true });
+  } catch (err: any) {
+    logger.error('Failed to store pipeline log', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * POST /api/workflow/:id/pipeline-media
  *
  * Receives a base64-encoded screenshot or video from the demo pipeline and
