@@ -6,7 +6,7 @@
  * so the frontend can poll it.
  */
 
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import Logger from '../utils/logger';
 
 const logger = new Logger('DEMO-RUNNER');
@@ -56,13 +56,28 @@ export async function runDemoScript(workflowId: string): Promise<void> {
 
   logger.info(`Starting demo run for workflow ${workflowId} in ${demoPath}`);
 
-  // Reset first (clean slate), then run the demo
-  const cmd = 'npm run demo:reset 2>/dev/null; npm run demo';
+  const PRODUCT_HUB_URL = process.env.PRODUCT_HUB_URL ?? 'http://localhost:3001';
+  const isWin   = process.platform === 'win32';
+  // On Windows npm is a .cmd batch file — must use npm.cmd to avoid shell: true
+  const npmBin  = isWin ? 'npm.cmd' : 'npm';
 
-  const child = spawn(cmd, {
+  const childEnv = {
+    ...process.env,
+    FORCE_COLOR: '0',
+    NO_COLOR: '1',
+    WORKFLOW_ID: workflowId,
+    PRODUCT_HUB_URL,
+  };
+
+  // Install Playwright browsers synchronously (silent) before starting the demo
+  try {
+    execSync(`${npmBin} run demo:reset`, { cwd: demoPath, stdio: 'ignore', env: childEnv });
+  } catch { /* ignore — browsers may already be installed */ }
+
+  const child = spawn(npmBin, ['run', 'demo'], {
     cwd: demoPath,
-    shell: true,
-    env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' },
+    shell: false,
+    env: childEnv,
   });
 
   child.stdout.on('data', (chunk: Buffer) => {
