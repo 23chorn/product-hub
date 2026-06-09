@@ -9,7 +9,7 @@ import { TOGGLEABLE_STAGES } from '../constants/stage-labels';
 import { extractReadyPayload } from '../utils/coordinator-helpers';
 
 
-type WorkflowInfo = { id: string; status: string; currentStage: string | null; summary: string | null };
+type WorkflowInfo = { id: string; status: string; currentStage: string | null; summary: string | null; pipelineStatus?: string };
 type EnrichedItem = AirtableItem & { workflow?: WorkflowInfo };
 type LaunchPhase = 'analyzing' | 'confirming' | 'launching';
 type StatusFilter = 'all' | 'active' | 'review' | 'done' | 'new';
@@ -44,22 +44,28 @@ const STATUS_FILTERS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'new',    label: 'Not started' },
 ];
 
+function effectiveStatus(wf: WorkflowInfo): string {
+  if (wf.status === 'complete' && wf.pipelineStatus && wf.pipelineStatus !== 'complete') return 'active';
+  return wf.status;
+}
+
 function StatusBadge({ wf }: { wf?: WorkflowInfo }) {
   if (!wf) return null;
-  const label = wf.status === 'complete' ? 'Done'
-    : wf.status === 'paused_at_checkpoint' ? 'Review'
-    : wf.status === 'active' ? 'Running'
-    : wf.status;
-  const color = wf.status === 'complete'
+  const eff = effectiveStatus(wf);
+  const label = eff === 'complete' ? 'Done'
+    : eff === 'paused_at_checkpoint' ? 'Review'
+    : eff === 'active' ? 'Running'
+    : eff;
+  const color = eff === 'complete'
     ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-    : wf.status === 'paused_at_checkpoint'
+    : eff === 'paused_at_checkpoint'
     ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
-    : wf.status === 'active'
+    : eff === 'active'
     ? 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400'
     : 'bg-slate-100 dark:bg-slate-700 text-slate-500';
   return (
     <span className={`flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded ${color}`}>
-      {wf.status === 'active' && <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse" />}
+      {eff === 'active' && <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse" />}
       {label}
     </span>
   );
@@ -121,11 +127,15 @@ export function HomeScreen() {
     return () => window.removeEventListener('refresh-initiatives', handler);
   }, [loadLocalItems]);
 
-  // Poll for status updates while any workflow is active
+  // Poll for status updates while any workflow or pipeline is active
   useEffect(() => {
-    const hasActive = localItems.some(
-      i => i.workflow?.status === 'active' || i.workflow?.status === 'paused_at_checkpoint'
-    );
+    const hasActive = localItems.some(i => {
+      const wf = i.workflow;
+      if (!wf) return false;
+      if (wf.status === 'active' || wf.status === 'paused_at_checkpoint') return true;
+      if (wf.status === 'complete' && wf.pipelineStatus && wf.pipelineStatus !== 'complete') return true;
+      return false;
+    });
     if (!hasActive) return;
     const id = setInterval(loadLocalItems, 4000);
     return () => clearInterval(id);
@@ -269,7 +279,7 @@ export function HomeScreen() {
   const statusCounts = useMemo<Record<StatusFilter, number>>(() => {
     const c: Record<StatusFilter, number> = { all: localItems.length, active: 0, review: 0, done: 0, new: 0 };
     localItems.forEach(item => {
-      const s = item.workflow?.status;
+      const s = item.workflow ? effectiveStatus(item.workflow) : undefined;
       if (s === 'active') c.active++;
       else if (s === 'paused_at_checkpoint') c.review++;
       else if (s === 'complete') c.done++;
@@ -281,7 +291,7 @@ export function HomeScreen() {
   const filteredLocalItems = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     return localItems.filter(item => {
-      const s = item.workflow?.status;
+      const s = item.workflow ? effectiveStatus(item.workflow) : undefined;
       if (statusFilter === 'active' && s !== 'active') return false;
       if (statusFilter === 'review' && s !== 'paused_at_checkpoint') return false;
       if (statusFilter === 'done' && s !== 'complete') return false;
@@ -649,8 +659,9 @@ function InitiativeCard({
   onCancelDelete: () => void;
 }) {
   const wf = item.workflow;
-  const isActive = wf?.status === 'active' || wf?.status === 'paused_at_checkpoint';
-  const isComplete = wf?.status === 'complete';
+  const eff = wf ? effectiveStatus(wf) : undefined;
+  const isActive = eff === 'active' || eff === 'paused_at_checkpoint';
+  const isComplete = eff === 'complete';
 
   return (
     <div
@@ -737,8 +748,9 @@ function AirtableInitiativeCard({
   onResume: () => void;
 }) {
   const wf = item.workflow;
-  const isActive = wf?.status === 'active' || wf?.status === 'paused_at_checkpoint';
-  const isComplete = wf?.status === 'complete';
+  const eff = wf ? effectiveStatus(wf) : undefined;
+  const isActive = eff === 'active' || eff === 'paused_at_checkpoint';
+  const isComplete = eff === 'complete';
 
   return (
     <div

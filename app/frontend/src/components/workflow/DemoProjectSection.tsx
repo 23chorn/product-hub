@@ -63,21 +63,6 @@ export function DemoProjectSection({ workflowId }: Props) {
           <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400 font-mono">
             Demo Pipeline
           </span>
-          {isRunning && (
-            <span className="flex items-center gap-1 text-[10px] text-teal-500 font-mono">
-              <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse" /> running
-            </span>
-          )}
-          {isPassed && (
-            <span className="flex items-center gap-1 text-[10px] text-green-500 font-mono">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-500" /> passed
-            </span>
-          )}
-          {run.status === 'failed' && (
-            <span className="flex items-center gap-1 text-[10px] text-red-400 font-mono">
-              <span className="w-1.5 h-1.5 rounded-full bg-red-500" /> failed
-            </span>
-          )}
         </div>
 
         <div className="flex items-center gap-2">

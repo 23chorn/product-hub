@@ -85,11 +85,28 @@ router.get('/', (_req: Request, res: Response) => {
     `).all(...rows.map(r => r.id)) as { item_id: string; id: string; status: string; current_stage: string | null; summary: string | null }[];
     for (const wf of wfRows) workflowMap.set(wf.item_id, wf);
 
+    // Batch-fetch latest pipeline run status per workflow
+    const workflowIds = wfRows.map(w => w.id);
+    const pipelineMap = new Map<string, string>();
+    if (workflowIds.length > 0) {
+      const prRows = db.prepare(`
+        SELECT pr.workflow_id, pr.status
+        FROM pipeline_runs pr
+        INNER JOIN (
+          SELECT workflow_id, MAX(created_at) as max_created
+          FROM pipeline_runs GROUP BY workflow_id
+        ) latest ON pr.workflow_id = latest.workflow_id AND pr.created_at = latest.max_created
+        WHERE pr.workflow_id IN (${workflowIds.map(() => '?').join(',')})
+      `).all(...workflowIds) as { workflow_id: string; status: string }[];
+      for (const pr of prRows) pipelineMap.set(pr.workflow_id, pr.status);
+    }
+
     const items = rows.map(r => {
       const wf = workflowMap.get(r.id);
+      const pipelineStatus = wf ? pipelineMap.get(wf.id) : undefined;
       return {
         ...toAirtableItem(r),
-        workflow: wf ? { id: wf.id, status: wf.status, currentStage: wf.current_stage, summary: wf.summary } : undefined,
+        workflow: wf ? { id: wf.id, status: wf.status, currentStage: wf.current_stage, summary: wf.summary, pipelineStatus } : undefined,
       };
     });
 
