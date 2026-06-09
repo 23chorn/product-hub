@@ -16,7 +16,7 @@ import { getLatestArtifactPathByType } from './artifact-helpers';
 import {
   PROJECT_ROOT, logger as baseLogger, stmts, insertEvent, addWorkflowCost, workflowOps,
 } from './workflow-db';
-import { isDemoMode, getDemoFixture, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
+import { isDemoMode, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
 import Logger from '../utils/logger';
 
 const logger = new Logger('TECH-REFINEMENT');
@@ -205,26 +205,37 @@ export async function runTechRefinementStage(
 
   try {
     // ── Demo mode fast-path ──────────────────────────────────────────────────
+    // Annotate the ACTUAL pm_backlog in-place rather than loading a static
+    // fixture — the fixture was a different set of infra tasks, not the backlog.
     if (isDemoMode()) {
-      const fixture = getDemoFixture('tech_refinement');
-      if (fixture) {
+      const backlogPath = getLatestArtifactPathByType(itemId, 'backlog');
+      if (backlogPath) {
         const delay = DEMO_STAGE_DELAY_MS['tech_refinement'] ?? 2_500;
+
+        let backlogJson: object;
+        try {
+          backlogJson = JSON.parse(fs.readFileSync(backlogPath, 'utf-8'));
+        } catch {
+          backlogJson = {};
+        }
+        const storyCount = countStories(backlogJson);
+
         insertEvent(workflowId, 'stage_progress', 'tech_refinement',
-          'Finn (iOS), Remi (Android), and Cole (Backend) reviewing 8 stories in parallel...');
+          `Finn (iOS), Remi (Android), and Cole (Backend) reviewing ${storyCount} stories in parallel...`);
         await demoSleep(Math.floor(delay * 0.4));
         insertEvent(workflowId, 'stage_progress', 'tech_refinement',
-          'All streams complete (iOS: 8, Android: 8, Backend: 8 notes). Merging into final backlog...');
+          `All streams complete (iOS: ${storyCount}, Android: ${storyCount}, Backend: ${storyCount} notes). Merging into final backlog...`);
         await demoSleep(Math.floor(delay * 0.6));
+
+        // Inject hardcoded demo technical notes onto every story in-place
+        const annotated = injectDemoTechNotes(backlogJson);
 
         const session = sessionManager.createSpecialistSession(itemId, 'backlog' as any, 'pm' as any);
         const artifactDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, 'backlog', 'artifacts');
         await fsAsync.mkdir(artifactDir, { recursive: true });
         const artifactPath = path.join(artifactDir, `${Date.now()}-tech_refinement.json`);
 
-        const stripped = fixture.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-        let artifactContent: string;
-        try { artifactContent = JSON.stringify(JSON.parse(stripped), null, 2); } catch { artifactContent = stripped; }
-        await fsAsync.writeFile(artifactPath, artifactContent, 'utf-8');
+        await fsAsync.writeFile(artifactPath, JSON.stringify(annotated, null, 2), 'utf-8');
 
         const artifactResult = db.prepare(`
           INSERT INTO artifacts (session_id, type, file_path, created_at)
@@ -233,13 +244,13 @@ export async function runTechRefinementStage(
         const artifactId = artifactResult.lastInsertRowid as number;
 
         insertEvent(workflowId, 'stage_completed', 'tech_refinement',
-          'Technical refinement complete — 8 stories annotated with iOS, Android, and Backend implementation notes.',
+          `Technical refinement complete — ${storyCount} stories annotated with iOS, Android, and Backend implementation notes.`,
           { artifact_id: artifactId });
 
         const now = Date.now();
         stmts.insertCheckpoint.run(
           workflowId, 'tech_refinement', artifactId, autoApprove ? 'approved' : 'pending',
-          JSON.stringify({ session_id: session.id, autonomous: true, demo_mode: true, auto_approved: autoApprove, ios_notes: 8, android_notes: 8, backend_notes: 8 }),
+          JSON.stringify({ session_id: session.id, autonomous: true, demo_mode: true, auto_approved: autoApprove }),
           now
         );
         if (autoApprove) {
@@ -252,7 +263,7 @@ export async function runTechRefinementStage(
           });
         } else {
           stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
-          logger.info(`[DEMO] Tech refinement complete — fixture loaded, checkpoint created`);
+          logger.info(`[DEMO] Tech refinement complete — backlog annotated, checkpoint created`);
         }
         return;
       }
@@ -349,6 +360,72 @@ export async function runTechRefinementStage(
     );
     stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
   }
+}
+
+// ── Demo annotation helper ────────────────────────────────────────────────────
+
+/**
+ * Injects hardcoded but plausible demo technical notes onto every story in the
+ * backlog, based on common patterns for a mobile trading app (iOS/Android/Backend).
+ * Preserves the original story structure exactly — only adds `technical_notes`.
+ */
+function injectDemoTechNotes(backlog: object): object {
+  const clone: Record<string, unknown> = JSON.parse(JSON.stringify(backlog));
+
+  const IOS_NOTES = [
+    'Implement in SwiftUI. Add view to MainTabView or present as sheet. Handle loading/empty states with ProgressView and placeholder. Unit test ViewModel with XCTest; snapshot test with XCUITest.',
+    'Build as SwiftUI view backed by a Combine-based ViewModel. Inject service via environment object. Cache responses in NSCache for offline resilience. Accessibility: VoiceOver label required on all interactive elements.',
+    'Use UIKit for complex gesture-driven interactions; wrap in UIViewRepresentable for SwiftUI integration. Handle orientation changes. Submit to TestFlight before merge.',
+    'SwiftUI composable component. Accept data via @Binding. Add haptic feedback on user actions using UIImpactFeedbackGenerator. Unit test with Quick/Nimble.',
+    'Implement using async/await with Swift Concurrency. Add retry logic with exponential back-off on network failure. Store auth tokens in Keychain, never UserDefaults.',
+  ];
+
+  const ANDROID_NOTES = [
+    'Implement as Jetpack Compose screen. Add route to NavHost in AppNavigation.kt. Handle loading/error states with UiState sealed class. Unit test ViewModel with JUnit4 + Mockk; UI test with Espresso.',
+    'Jetpack Compose with Material3 components. ViewModel backed by StateFlow. Repository pattern with Room for local persistence. Add WorkManager job for background sync if offline capability is needed.',
+    'Compose screen with custom modifier for touch feedback. Handle back-stack correctly in NavController. Add accessibility contentDescription on all Icon components. Test on API 26 minimum.',
+    'Use Kotlin coroutines (viewModelScope) for async operations. Retrofit + OkHttp for API calls; use interceptor for auth header injection. ProGuard rules needed if model classes are serialized.',
+    'Jetpack Compose LazyColumn for list rendering. Implement DiffUtil in ListAdapter for efficient updates. Add pull-to-refresh with SwipeRefreshLayout wrapper. Unit test repository layer with JUnit4.',
+  ];
+
+  const BACKEND_NOTES = [
+    'Add Express route in src/routes/. Validate request body with zod schema. Service layer handles business logic; repository layer handles DB queries. Add integration test covering happy path and 400/401 error cases.',
+    'Create or extend REST endpoint. Add DB migration script if schema changes required. Use parameterised queries — no raw string interpolation. Add rate limiting middleware (express-rate-limit) for public endpoints.',
+    'Extend existing service or create new one in src/services/. Add input sanitisation. Emit WebSocket event via ws-broadcast if real-time update is needed. Log all mutations with audit trail entry.',
+    'REST endpoint returning paginated results (cursor-based). Add index on frequently-queried columns. Cache hot data in Redis with 30s TTL. Document endpoint in OpenAPI spec.',
+    'Background job via node-cron or queue (Bull/BullMQ). Add dead-letter queue for failed jobs. Expose health-check endpoint at /health that verifies DB and Redis connectivity. Add Datadog metric on job completion.',
+  ];
+
+  let storyIndex = 0;
+
+  function annotateStory(story: Record<string, unknown>): void {
+    const i = storyIndex++ % 5;
+    story.technical_notes = {
+      ios:     IOS_NOTES[i],
+      android: ANDROID_NOTES[i],
+      backend: BACKEND_NOTES[i],
+    };
+  }
+
+  function walk(obj: Record<string, unknown>): void {
+    if (Array.isArray(obj.features)) {
+      for (const feature of obj.features as Record<string, unknown>[]) {
+        if (Array.isArray(feature.stories)) {
+          for (const story of feature.stories as Record<string, unknown>[]) annotateStory(story);
+        }
+      }
+    } else if (obj.feature && typeof obj.feature === 'object') {
+      const feat = obj.feature as Record<string, unknown>;
+      if (Array.isArray(feat.stories)) {
+        for (const story of feat.stories as Record<string, unknown>[]) annotateStory(story);
+      }
+    } else if (obj.story && typeof obj.story === 'object') {
+      annotateStory(obj.story as Record<string, unknown>);
+    }
+  }
+
+  walk(clone);
+  return clone;
 }
 
 // ── Helper ─────────────────────────────────────────────────────────────────────
