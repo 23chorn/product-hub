@@ -10,6 +10,11 @@ import { InlineCheckpointActions } from '../coordinator/InlineCheckpointActions'
 import { PipelineStatusSection } from './PipelineStatusSection';
 import { DemoProjectSection } from './DemoProjectSection';
 
+interface PipelineRun {
+  id: number; stage: string; status: 'running' | 'complete' | 'failed';
+  pr_url: string | null; branch: string | null; test_results: string | null;
+}
+
 // ── Dancing creature ─────────────────────────────────────────────────────────
 
 const CREATURE_FRAMES = [
@@ -33,6 +38,86 @@ function DancingCreature() {
     >
       <pre className="text-[9px] leading-tight text-slate-400 dark:text-slate-400 text-center font-mono">{top}</pre>
       <pre className="text-[8px] leading-tight text-slate-500 dark:text-slate-500 text-center font-mono">{bottom}</pre>
+    </div>
+  );
+}
+
+// ── Demo pipeline stage summary for the left pane ────────────────────────────
+
+const PIPELINE_STAGE_LABELS: Record<string, string> = {
+  triggered:  'pipeline triggered',
+  cloning:    'cloning repo',
+  analyzing:  'reading ticket',
+  generating: 'writing code',
+  pr_created: 'running tests',
+};
+
+function DemoPipelineLeftPane({ workflowId }: { workflowId: string }) {
+  const [run, setRun] = useState<PipelineRun | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const r = await api.getPipelineRun(workflowId);
+        if (!cancelled) setRun(r as PipelineRun | null);
+      } catch { /* ignore */ }
+    };
+    check();
+    const t = setInterval(check, 3000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [workflowId]);
+
+  if (!run) return null;
+
+  const isDone    = run.status === 'complete' || run.status === 'failed';
+  const isRunning = run.status === 'running';
+  const isFailed  = run.status === 'failed';
+
+  let testSummary: { passed: number; failed: number; total: number } | null = null;
+  if (run.test_results) {
+    try { testSummary = JSON.parse(run.test_results); } catch { /* ignore */ }
+  }
+
+  const activeLabel = PIPELINE_STAGE_LABELS[run.stage] ?? run.stage.replace(/_/g, ' ');
+
+  const summaryColor = isFailed
+    ? 'text-red-500 dark:text-red-400'
+    : testSummary && testSummary.failed > 0
+    ? 'text-amber-600 dark:text-amber-400'
+    : isDone
+    ? 'text-green-600 dark:text-green-400'
+    : 'text-teal-600 dark:text-teal-400';
+
+  const summaryIcon = isFailed ? '✗'
+    : testSummary && testSummary.failed > 0 ? '⚠'
+    : isDone ? '✓'
+    : null;
+
+  return (
+    <div className="border-t border-slate-200 dark:border-slate-800/40 mx-2 mt-1 pt-1.5 pb-1">
+      <div className="text-[9px] font-mono uppercase tracking-widest text-slate-400 dark:text-slate-600 px-1 mb-1">
+        code + tests
+      </div>
+      <div className="flex items-center gap-2 px-1 py-0.5">
+        {isRunning && <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse flex-shrink-0" />}
+        {isDone && summaryIcon && <span className={`text-[10px] flex-shrink-0 ${summaryColor}`}>{summaryIcon}</span>}
+        {isDone && !summaryIcon && <span className="w-1.5 h-1.5 rounded-full border-2 border-slate-300 dark:border-slate-700 flex-shrink-0" />}
+        <span className={`text-[10px] font-mono truncate ${summaryColor}`}>
+          {isDone
+            ? testSummary
+              ? `${testSummary.passed}/${testSummary.total} tests passed`
+              : isFailed ? 'pipeline failed' : 'complete'
+            : activeLabel}
+        </span>
+      </div>
+      {isRunning && run.branch && (
+        <div className="px-1 mt-0.5">
+          <span className="text-[9px] font-mono text-slate-400 dark:text-slate-600 truncate block">
+            {run.branch}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -400,16 +485,17 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
         </div>
 
         {/* Creature lives outside the overflow-hidden stage rows */}
-        <DancingCreature />
+        {!isComplete && <DancingCreature />}
 
         {isComplete && (
-          <div className="px-3 py-2 border-t border-slate-200 dark:border-slate-800/40 flex-shrink-0">
+          <div className="flex-shrink-0 px-3 py-1.5 border-t border-slate-200 dark:border-slate-800/40">
             <div className="flex items-center gap-1 text-[10px] text-green-600 dark:text-green-400">
               <span className="w-1 h-1 rounded-full bg-green-500" />
-              all stages done
+              agents complete
             </div>
           </div>
         )}
+        {isComplete && <DemoPipelineLeftPane workflowId={activeWorkflow.id} />}
       </div>
 
       {/* ── Right: event log ──────────────────────────────────── */}
@@ -507,43 +593,39 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
           )}
 
           {isComplete && (
-            <div className="px-4 py-3 space-y-3">
-              <div className="flex items-center justify-between border-t border-slate-200 dark:border-slate-800/60 pt-3">
+            <div className="px-4 py-3 space-y-2 border-t border-slate-200 dark:border-slate-800/60 mt-2">
+              {/* Completion header row */}
+              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400 font-mono">
                   <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
                   workflow complete
                 </div>
-                {/* AI Coding Studio trigger — shown when board has been synced */}
-                {coordinatorMessages.some(m => m.eventType === 'board_synced') && onOpenCodeStudio && (
-                  <button
-                    onClick={onOpenCodeStudio}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-semibold font-mono text-white bg-violet-700 hover:bg-violet-600 border border-violet-600/50 hover:border-violet-500 transition-colors"
-                  >
-                    <span>⚡</span> Claude Code Studio
-                  </button>
-                )}
+                <div className="flex items-center gap-2">
+                  {/* ADO link */}
+                  {(() => {
+                    const boardMsg = coordinatorMessages.find(m => m.eventType === 'board_synced');
+                    const adoUrl = boardMsg?.content.split('\n').find(l => l.startsWith('→ '))?.replace(/^→\s*/, '');
+                    if (!adoUrl) return null;
+                    return (
+                      <a href={adoUrl} target="_blank" rel="noopener noreferrer"
+                        className="text-[11px] font-mono text-blue-600 dark:text-blue-400 hover:underline">
+                        View in ADO ↗
+                      </a>
+                    );
+                  })()}
+                  {coordinatorMessages.some(m => m.eventType === 'board_synced') && onOpenCodeStudio && (
+                    <button onClick={onOpenCodeStudio}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold font-mono text-white bg-violet-700 hover:bg-violet-600 transition-colors">
+                      ⚡ Code Studio
+                    </button>
+                  )}
+                </div>
               </div>
-              {/* ADO top-level ticket link — shown when board has been synced */}
-              {(() => {
-                const boardMsg = coordinatorMessages.find(m => m.eventType === 'board_synced');
-                const adoUrl = boardMsg?.content.split('\n').find(l => l.startsWith('→ '))?.replace(/^→\s*/, '');
-                if (!adoUrl) return null;
-                return (
-                  <a
-                    href={adoUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-mono font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 border border-blue-200 dark:border-blue-700/40 hover:border-blue-400 dark:hover:border-blue-500 bg-blue-50 dark:bg-blue-900/10 transition-colors"
-                  >
-                    View in Azure DevOps ↗
-                  </a>
-                );
-              })()}
 
-              {/* Azure pipeline + QA results — auto-starts on completion */}
+              {/* Coding + test pipeline section */}
               <PipelineStatusSection workflowId={activeWorkflow.id} />
 
-              {/* Demo React project — shown when workflow was created by demo webhook */}
+              {/* Demo terminal output */}
               <DemoProjectSection workflowId={activeWorkflow.id} />
             </div>
           )}

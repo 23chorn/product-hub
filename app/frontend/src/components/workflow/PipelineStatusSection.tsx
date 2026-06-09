@@ -406,20 +406,17 @@ export function PipelineStatusSection({ workflowId }: Props) {
         )}
       </div>
 
-      {/* ── Pipeline stages ─────────────────────────────────── */}
-      {displayPipelineStage !== 'idle' && (
+      {/* ── Pipeline stages — shown only while running ────────── */}
+      {displayPipelineStage !== 'idle' && !prCreated && (
         <div className="px-4 py-3 space-y-2 border-b border-slate-200 dark:border-slate-800">
           <div className="text-[10px] font-mono text-slate-400 dark:text-slate-600 mb-1.5 truncate">{branch}</div>
           {STAGE_ORDER.map(s => <StageIndicator key={s} stage={s} current={displayPipelineStage} />)}
         </div>
       )}
 
-      {/* ── Check suites ─────────────────────────────────────── */}
-      {prCreated && (
+      {/* ── Check suites — shown while animating or when tests running ─ */}
+      {prCreated && !allDone && (
         <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800">
-          <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-600 mb-2">
-            PR Checks
-          </div>
           <div className="space-y-0.5">
             {SUITE_CFG.map(({ key, icon, label }) => (
               <CheckSuiteRow
@@ -428,49 +425,46 @@ export function PipelineStatusSection({ workflowId }: Props) {
               />
             ))}
           </div>
-          {allDone && (
-            <div className={`mt-2 text-[10px] font-mono font-semibold ${totalFail > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'}`}>
-              {totalFail > 0
-                ? `⚠ ${totalPass}/${totalTests} tests passed — ${totalFail} failing`
-                : `✓ All ${totalTests} tests passed`}
-            </div>
-          )}
         </div>
       )}
 
-      {/* ── Test case breakdown ──────────────────────────────── */}
+      {/* ── Test results + video (when done) ─────────────────── */}
       {allDone && totalTests > 0 && (
-        <div className="px-4 py-3">
-          <div className="flex items-center justify-between mb-2">
+        <div className="px-4 py-3 space-y-3">
+
+          {/* Test summary header */}
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-600">Test Results</span>
-              <span className="text-[10px] font-mono text-slate-400 dark:text-slate-600">
-                {isReal ? 'Playwright' : 'Vera'} · {totalTests} cases
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className={`text-sm font-bold font-mono ${pct >= 80 ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}`}>
-                {visible > 0 ? pct : 0}%
+              <span className={`text-[10px] font-semibold font-mono ${totalFail > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'}`}>
+                {totalFail > 0 ? `⚠ ${totalPass}/${totalTests} passed · ${totalFail} failing` : `✓ ${totalTests}/${totalTests} passed`}
               </span>
               <span className="text-[10px] font-mono text-slate-400 dark:text-slate-600">
-                {passCount}/{visible} passing
+                {isReal ? 'Playwright' : 'Vera'}
               </span>
             </div>
+            {(hasMore || expanded) && (
+              <button onClick={() => setExpanded(e => !e)}
+                className="text-[10px] font-mono text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 transition-colors">
+                {expanded ? '▲ less' : `▼ all ${totalTests}`}
+              </button>
+            )}
           </div>
 
-          <div className="h-1 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden mb-2.5">
+          {/* Progress bar */}
+          <div className="h-0.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all duration-200 ${pct >= 80 ? 'bg-green-500' : 'bg-amber-500'}`}
-              style={{ width: `${visible > 0 ? pct : 0}%` }}
+              className={`h-full rounded-full transition-all duration-500 ${totalFail > 0 ? 'bg-amber-500' : 'bg-green-500'}`}
+              style={{ width: `${totalTests > 0 ? Math.round((totalPass / totalTests) * 100) : 0}%` }}
             />
           </div>
 
+          {/* Test case list */}
           <div className="space-y-px">
             {displayedTests.map(tc => {
               const pass = results.get(tc.id) ?? true;
               return (
                 <div key={tc.id}
-                  className="flex items-center gap-2 py-0.5 px-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+                  className="flex items-center gap-2 py-0.5 px-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800/40 transition-colors">
                   {pass ? (
                     <span className="flex-shrink-0 w-3 h-3 rounded-full bg-green-100 dark:bg-green-900/40 flex items-center justify-center">
                       <svg className="w-1.5 h-1.5 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
@@ -484,84 +478,45 @@ export function PipelineStatusSection({ workflowId }: Props) {
                       </svg>
                     </span>
                   )}
-                  <span className="flex-shrink-0 w-12 text-[10px] font-mono text-slate-400 dark:text-slate-600">{tc.id}</span>
-                  <span className={`flex-1 text-[11px] font-mono truncate ${pass ? 'text-slate-700 dark:text-slate-300' : 'text-red-700 dark:text-red-400'}`}>
+                  <span className="flex-shrink-0 w-12 text-[9px] font-mono text-slate-400 dark:text-slate-600">{tc.id}</span>
+                  <span className={`flex-1 text-[11px] font-mono truncate ${pass ? 'text-slate-600 dark:text-slate-400' : 'text-red-600 dark:text-red-400'}`}>
                     {tc.title}
                   </span>
-                  <span className="flex-shrink-0 text-[9px] font-mono text-slate-400 dark:text-slate-600">
-                    {TYPE_LABEL[tc.type] ?? tc.type}
-                  </span>
-                  <span className={`flex-shrink-0 text-[9px] font-mono ${PRIORITY_COLOR[tc.priority] ?? 'text-slate-400'}`}>
-                    {tc.priority}
-                  </span>
+                  {!pass && (
+                    <span className="flex-shrink-0 text-[9px] font-mono px-1 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400">
+                      failing
+                    </span>
+                  )}
                 </div>
               );
             })}
           </div>
 
-          {(hasMore || expanded) && (
-            <button onClick={() => setExpanded(e => !e)}
-              className="mt-1.5 text-[10px] font-mono text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
-              {expanded ? '▲ show less' : `▼ ${totalTests - PREVIEW} more tests`}
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* ── Test media: videos + screenshots ────────────────── */}
-      {media.length > 0 && (
-        <div className="px-4 py-3 border-t border-slate-200 dark:border-slate-800">
-          <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-600 mb-2.5">
-            Test Artifacts
-          </div>
-
-          {/* Video player */}
+          {/* Failing test recording */}
           {activeVideo && (
-            <div className="mb-3">
+            <div>
+              <div className="text-[10px] font-mono text-slate-400 dark:text-slate-600 mb-1.5">
+                failing test recording
+              </div>
               <video
                 key={activeVideo}
                 src={activeVideo}
                 controls
                 className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-black"
-                style={{ maxHeight: 220 }}
+                style={{ maxHeight: 200 }}
               />
-              {media.filter(m => m.type === 'video').length > 1 && (
-                <div className="flex gap-1.5 mt-1.5 flex-wrap">
-                  {media.filter(m => m.type === 'video').map((v, i) => (
-                    <button
-                      key={v.url}
-                      onClick={() => setActiveVideo(v.url)}
-                      className={`text-[10px] font-mono px-2 py-0.5 rounded transition-colors ${
-                        activeVideo === v.url
-                          ? 'bg-teal-600 text-white'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                      }`}
-                    >
-                      test {i + 1}
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
           )}
 
-          {/* Screenshots grid */}
+          {/* Screenshots — link only, no inline grid */}
           {media.filter(m => m.type === 'screenshot').length > 0 && (
-            <div>
-              <div className="text-[9px] font-mono text-slate-400 dark:text-slate-600 mb-1.5 uppercase tracking-wider">
-                Screenshots ({media.filter(m => m.type === 'screenshot').length})
-              </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {media.filter(m => m.type === 'screenshot').map(s => (
-                  <a key={s.url} href={s.url} target="_blank" rel="noopener noreferrer">
-                    <img
-                      src={s.url}
-                      alt={s.name}
-                      className="w-full rounded border border-slate-200 dark:border-slate-700 hover:opacity-90 transition-opacity"
-                    />
-                  </a>
-                ))}
-              </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {media.filter(m => m.type === 'screenshot').map((s, i) => (
+                <a key={s.url} href={s.url} target="_blank" rel="noopener noreferrer"
+                  className="text-[10px] font-mono text-blue-600 dark:text-blue-400 hover:underline">
+                  screenshot {i + 1} ↗
+                </a>
+              ))}
             </div>
           )}
         </div>

@@ -604,6 +604,21 @@ export class AzureDevOpsClient {
   }
 
   /**
+   * Add a comment (discussion) to a work item via the System.History field.
+   */
+  async addComment(id: number, html: string): Promise<void> {
+    logger.info(`Adding comment to work item #${id}`);
+    try {
+      await this.client.patch(`/wit/workitems/${id}`, [
+        { op: 'add', path: '/fields/System.History', value: html },
+      ]);
+    } catch (error: any) {
+      logger.error(`Failed to add comment to work item #${id}`, error);
+      throw new Error(`Azure DevOps API error: ${error.response?.data?.message || error.message}`);
+    }
+  }
+
+  /**
    * Get work item by ID
    */
   async getWorkItem(id: number): Promise<WorkItem> {

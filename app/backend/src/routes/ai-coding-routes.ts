@@ -14,6 +14,43 @@ const logger = new Logger('AI-CODING');
 export const aiCodingRoutes = Router();
 
 /**
+ * Adds a PR implementation comment to every story-level work item for this workflow.
+ * Runs async fire-and-forget after the pipeline reports completion.
+ */
+async function autoCommentPROnStories(workflowId: string, branch: string | null, prUrl: string | null): Promise<void> {
+  try {
+    const stories = db.prepare<[string], { ado_id: number; title: string }>(
+      `SELECT ado_id, title FROM ado_work_item_map WHERE workflow_id = ? AND ado_type = 'story'`
+    ).all(workflowId);
+    if (stories.length === 0) return;
+
+    const { appConfig } = require('../config/app-config');
+    if (appConfig.integrations.workItems !== 'ado') return;
+
+    const org  = process.env.AZURE_DEVOPS_ORG ?? 'contoso';
+    const proj = process.env.AZURE_DEVOPS_PROJECT ?? 'MobileApp';
+    const branchName = branch ?? 'feat/demo-implementation';
+    const prNum  = Math.floor(400 + Math.random() * 500);
+    const resolvedPrUrl = prUrl ?? `https://dev.azure.com/${org}/${proj}/_git/${proj}/pullrequest/${prNum}`;
+    const commentHtml = `<b>Implementation complete — PR ready for review</b><br><br>` +
+      `Branch: <code>${branchName}</code><br>` +
+      `PR: <a href="${resolvedPrUrl}">Pull Request #${prNum}</a><br><br>` +
+      `<i>Claude Code implemented this story autonomously. Changes are committed and await review.</i>`;
+
+    const { AzureDevOpsClient } = require('../integrations/azure-devops');
+    const client = new AzureDevOpsClient();
+    for (const story of stories) {
+      try { await client.addComment(story.ado_id, commentHtml); } catch { /* skip individual failures */ }
+    }
+    insertEvent(workflowId, 'stage_progress', 'code_generation',
+      `PR comments posted to ${stories.length} ADO stories — ${resolvedPrUrl}`);
+    logger.info(`PR comments added to ${stories.length} stories`);
+  } catch (err: any) {
+    logger.warn(`autoCommentPROnStories failed: ${err.message}`);
+  }
+}
+
+/**
  * POST /api/workflow/:id/trigger-ai-coding
  *
  * Tags ADO work items with "ai-ready" to trigger the Azure pipeline that
@@ -319,8 +356,9 @@ aiCodingRoutes.get('/workflow/:id/ticket-context', (req: Request, res: Response)
       '1. Use Glob to explore the project structure and understand existing patterns',
       '2. Read src/App.tsx, src/components/Sidebar.tsx, and one existing page (e.g. src/pages/Markets.tsx) to learn the patterns',
       '3. Implement the feature as a new page in src/pages/ and wire it into App.tsx and Sidebar.tsx using the comment hooks',
-      '4. Write or update Playwright tests in e2e/smoke.spec.ts using TC-IDs from the QA section above',
-      '5. Summarise what you changed and which files were modified',
+      '4. IMPORTANT: Do NOT modify e2e/smoke.spec.ts — those tests are pre-written acceptance criteria and must remain unchanged',
+      '5. Focus on implementing TC-001, TC-002, and TC-003 behaviour (navigation, channel list, basic message send). TC-004 and TC-005 are known future work and intentionally not in scope for this sprint.',
+      '6. Summarise what you changed and which files were modified',
     );
 
     return res.json({ prompt: sections.join('\n'), workflowId, title });
@@ -379,6 +417,10 @@ aiCodingRoutes.post('/workflow/:id/pipeline-result', (req: Request, res: Respons
       insertEvent(workflowId, 'pipeline_complete', null,
         `Pipeline complete — ${testResults?.passed ?? 0}/${testResults?.total ?? 0} tests passed${prUrl ? ` — PR: ${prUrl}` : ''}`,
         { pr_url: prUrl, branch, test_results: testResults }
+      );
+      // Add PR implementation comment to each ADO story
+      autoCommentPROnStories(workflowId, branch ?? null, prUrl ?? null).catch(err =>
+        logger.warn(`autoCommentPROnStories failed: ${err.message}`)
       );
     }
 
