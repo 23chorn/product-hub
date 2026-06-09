@@ -181,7 +181,7 @@ export async function runAutonomousStage(
 
         const artifactDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, stageMap.mode, 'artifacts');
         await fsAsync.mkdir(artifactDir, { recursive: true });
-        const isJson = stage === 'pm_backlog' || stage === 'prototype' || stage === 'qa_engineer';
+        const isJson = stage === 'pm_backlog' || stage === 'prototype' || stage === 'qa_engineer' || stage === 'tech_refinement';
         const ext = isJson ? 'json' : 'md';
         const artifactPath = path.join(artifactDir, `${Date.now()}-${stage}.${ext}`);
 
@@ -383,6 +383,30 @@ export async function runAutonomousStage(
         } catch { /* ignore */ }
       }
       if (parts.length > 0) itemContext = parts.join('\n\n---\n\n');
+    } else if (stage === 'tech_refinement') {
+      const parts: string[] = [];
+      const backlogPath = getLatestArtifactPathByType(itemId, 'backlog');
+      if (backlogPath) {
+        try {
+          const content = fs.readFileSync(backlogPath, 'utf-8');
+          parts.push(`**PM Backlog (THIS IS YOUR PRIMARY INPUT — enrich every story with technical details, add platform fields, split oversized stories, enforce dependency ordering, add missing infra stories):**\n\n${content}`);
+        } catch { /* ignore */ }
+      }
+      const archPath = getLatestArchitectureArtifactPath(itemId);
+      if (archPath) {
+        try {
+          const content = fs.readFileSync(archPath, 'utf-8');
+          parts.push(`**Architecture Document (use to populate specific component names, API endpoints, data model changes):**\n\n${content}`);
+        } catch { /* ignore */ }
+      }
+      const prdPath = sessionManager.getLatestPrdArtifactPath(itemId);
+      if (prdPath) {
+        try {
+          const content = fs.readFileSync(prdPath, 'utf-8');
+          parts.push(`**PRD Document (reference for FR traceability and NFR constraints):**\n\n${content}`);
+        } catch { /* ignore */ }
+      }
+      if (parts.length > 0) itemContext = parts.join('\n\n---\n\n');
     } else if (stage === 'qa_engineer') {
       const parts: string[] = [];
       const prdPath = sessionManager.getLatestPrdArtifactPath(itemId);
@@ -432,7 +456,7 @@ export async function runAutonomousStage(
             `Do not rewrite, restructure, or modify any section that was not flagged. ` +
             `Return the complete revised ${artifactLabel} with all sections included.`;
           // Wrap JSON artifacts in code fences for the assistant turn
-          const formattedDraft = (stage === 'prototype' || stage === 'pm_backlog')
+          const formattedDraft = (stage === 'prototype' || stage === 'pm_backlog' || stage === 'tech_refinement' || stage === 'qa_engineer')
             ? '```json\n' + priorDraftContent + '\n```'
             : priorDraftContent;
           return [
@@ -499,7 +523,7 @@ export async function runAutonomousStage(
     // Write artifact to disk
     const artifactDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, stageMap.mode, 'artifacts');
     await fsAsync.mkdir(artifactDir, { recursive: true });
-    const ext = (stage === 'pm_backlog' || stage === 'prototype') ? 'json' : 'md';
+    const ext = (stage === 'pm_backlog' || stage === 'prototype' || stage === 'tech_refinement' || stage === 'qa_engineer') ? 'json' : 'md';
     const artifactPath = path.join(artifactDir, `${Date.now()}-${stage}.${ext}`);
     // Clean up LLM output before saving
     let artifactContent: string;
@@ -520,6 +544,14 @@ export async function runAutonomousStage(
         artifactContent = await injectSprintEstimates(parsed);
       } catch {
         // If JSON parse fails, save as-is and let downstream error handling catch it
+        artifactContent = stripped;
+      }
+    } else if (stage === 'tech_refinement' || stage === 'qa_engineer') {
+      // Strip markdown code fences, pretty-print JSON
+      const stripped = fullResponse.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+      try {
+        artifactContent = JSON.stringify(JSON.parse(stripped), null, 2);
+      } catch {
         artifactContent = stripped;
       }
     } else {
@@ -560,13 +592,13 @@ export async function runAutonomousStage(
 
     // Log stage completion event with excerpt
     const excerpt = fullResponse.slice(0, 200).replace(/\n+/g, ' ').trim();
-    const stageLabel = stage === 'analyst' ? 'Research' : stage === 'pm_prd' ? 'PRD' : stage === 'solution_architect' ? 'Architecture' : stage === 'prototype' ? 'Prototype' : stage === 'pm_backlog' ? 'Backlog' : stage === 'gtm_strategy' ? 'GTM Strategy' : stage === 'feature_marketing' ? 'Feature Marketing' : stage;
+    const stageLabel = stage === 'analyst' ? 'Research' : stage === 'pm_prd' ? 'PRD' : stage === 'solution_architect' ? 'Architecture' : stage === 'prototype' ? 'Prototype' : stage === 'pm_backlog' ? 'Backlog' : stage === 'gtm_strategy' ? 'GTM Strategy' : stage === 'feature_marketing' ? 'Feature Marketing' : stage === 'tech_refinement' ? 'Technical Refinement' : stage === 'qa_engineer' ? 'QA Test Suite' : stage;
 
     // ── Inline critic review for specialist stages ────────────────────────────
     // After each specialist produces an artifact, the critic reviews it.
     // If issues are found, auto-revise once. If still unresolved,
     // pause and ask the human for input.
-    const specialistStages = new Set(['analyst', 'pm_prd', 'solution_architect', 'prototype', 'pm_backlog', 'gtm_strategy', 'feature_marketing', 'qa_engineer']);
+    const specialistStages = new Set(['analyst', 'pm_prd', 'solution_architect', 'prototype', 'pm_backlog', 'gtm_strategy', 'feature_marketing', 'qa_engineer', 'tech_refinement']);
     const policies = loadGlobalPolicies();
     const criticEnabled = policies.get('require_critic_review') !== 'false' && policies.get('require_critic_review') !== (false as any);
 
@@ -585,7 +617,24 @@ export async function runAutonomousStage(
       // gtm_strategy: needs PRD (persona/scope consistency)
       // feature_marketing: needs PRD + GTM strategy (copy scope verification)
       let criticReferenceDocuments: string | undefined;
-      if (stage === 'pm_backlog' || stage === 'solution_architect' || stage === 'prototype' || stage === 'gtm_strategy') {
+      if (stage === 'tech_refinement') {
+        const refParts: string[] = [];
+        const backlogPath = getLatestArtifactPathByType(itemId, 'backlog');
+        if (backlogPath) {
+          try {
+            const content = fs.readFileSync(backlogPath, 'utf-8');
+            refParts.push(`### Original PM Backlog\n\n${content}`);
+          } catch { /* ignore */ }
+        }
+        const prdPath = sessionManager.getLatestPrdArtifactPath(itemId);
+        if (prdPath) {
+          try {
+            const content = fs.readFileSync(prdPath, 'utf-8');
+            refParts.push(`### PRD Document\n\n${content}`);
+          } catch { /* ignore */ }
+        }
+        if (refParts.length > 0) criticReferenceDocuments = refParts.join('\n\n---\n\n');
+      } else if (stage === 'pm_backlog' || stage === 'solution_architect' || stage === 'prototype' || stage === 'gtm_strategy') {
         const refParts: string[] = [];
         const prdPath = sessionManager.getLatestPrdArtifactPath(itemId);
         if (prdPath) {
