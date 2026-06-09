@@ -8,29 +8,12 @@ import { useToast } from '../hooks/useToast';
 import { TOGGLEABLE_STAGES } from '../constants/stage-labels';
 import { extractReadyPayload } from '../utils/coordinator-helpers';
 
-function WebhookToast({ title, onDismiss }: { title: string; onDismiss: () => void }) {
-  useEffect(() => {
-    const t = setTimeout(onDismiss, 4000);
-    return () => clearTimeout(t);
-  }, [onDismiss]);
-  return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 px-4 py-3 rounded-xl bg-[#161b22] border border-teal-700/50 shadow-xl text-sm font-mono animate-fade-in">
-      <span className="text-teal-400">📨</span>
-      <div>
-        <span className="text-teal-300 font-semibold">Airtable webhook received</span>
-        <span className="text-slate-400 ml-2 text-xs">"{title}" pipeline started</span>
-      </div>
-      <button onClick={onDismiss} className="ml-2 text-slate-600 hover:text-slate-400 text-xs">✕</button>
-    </div>
-  );
-}
 
 type WorkflowInfo = { id: string; status: string; currentStage: string | null; summary: string | null };
 type EnrichedItem = AirtableItem & { workflow?: WorkflowInfo };
 type LaunchPhase = 'analyzing' | 'confirming' | 'launching';
 type StatusFilter = 'all' | 'active' | 'review' | 'done' | 'new';
 
-let _cachedItems: EnrichedItem[] = [];
 let _cachedLocalItems: EnrichedItem[] = [];
 
 const SAMPLE_TITLE = 'Price Alerts & Watchlist — TradeEasy';
@@ -83,15 +66,12 @@ function StatusBadge({ wf }: { wf?: WorkflowInfo }) {
 }
 
 export function HomeScreen() {
-  const [items, setItemsRaw] = useState<EnrichedItem[]>(_cachedItems);
   const [localItems, setLocalItemsRaw] = useState<EnrichedItem[]>(_cachedLocalItems);
-  const [loading, setLoading] = useState(_cachedItems.length === 0 && _cachedLocalItems.length === 0);
-  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(_cachedLocalItems.length === 0);
+  const [pipelineReadyItems, setPipelineReadyItems] = useState<EnrichedItem[]>([]);
+  const [syncing, setSyncing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-
-  const [webhookToast, setWebhookToast] = useState<string | null>(null);
-  const [isWebhookFiring, setIsWebhookFiring] = useState(false);
 
   const [showForm, setShowForm] = useState(false);
   const [formTitle, setFormTitle] = useState('');
@@ -116,27 +96,12 @@ export function HomeScreen() {
   const { config } = useConfigStore();
   const toast = useToast();
 
-  const showRoadmap = config?.integrations.roadmap !== 'none';
   const configEnabledStages = config?.stages?.enabledStages;
   const availableStages = TOGGLEABLE_STAGES.filter(
     s => s.key === 'curator' || !configEnabledStages || configEnabledStages[s.key] !== false
   );
 
-  const setItems = (d: EnrichedItem[]) => { _cachedItems = d; setItemsRaw(d); };
   const setLocalItems = (d: EnrichedItem[]) => { _cachedLocalItems = d; setLocalItemsRaw(d); };
-
-  const loadItems = async () => {
-    try {
-      if (_cachedItems.length === 0) setLoading(true);
-      setFetchError(null);
-      const data = await api.getItemsNeedingPRD();
-      setItems(data);
-    } catch (err: any) {
-      if (_cachedItems.length === 0) setFetchError(err.message || 'Failed to load items');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const loadLocalItems = useCallback(async () => {
     try {
@@ -147,10 +112,14 @@ export function HomeScreen() {
     }
   }, []);
 
+  useEffect(() => { loadLocalItems(); }, []);
+
+  // Listen for refresh signal from App.tsx (e.g. after Full Demo triggers)
   useEffect(() => {
-    if (showRoadmap) loadItems();
-    loadLocalItems();
-  }, [showRoadmap]);
+    const handler = () => loadLocalItems();
+    window.addEventListener('refresh-initiatives', handler);
+    return () => window.removeEventListener('refresh-initiatives', handler);
+  }, [loadLocalItems]);
 
   // Poll for status updates while any workflow is active
   useEffect(() => {
@@ -161,6 +130,19 @@ export function HomeScreen() {
     const id = setInterval(loadLocalItems, 4000);
     return () => clearInterval(id);
   }, [localItems, loadLocalItems]);
+
+  const handleSyncAirtable = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const data = await api.getItemsPipelineReady();
+      setPipelineReadyItems(data);
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.message || 'Failed to sync from Airtable');
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const cancelForm = () => { setFormTitle(''); setFormDesc(''); setShowForm(false); };
 
@@ -282,60 +264,6 @@ export function HomeScreen() {
     setLaunchError(null);
   };
 
-  const handleSimulateWebhook = async () => {
-    if (isWebhookFiring) return;
-    setIsWebhookFiring(true);
-    try {
-      const result = await api.triggerDemoWebhook();
-      setWebhookToast(result.initiative);
-      await loadLocalItems();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || err.message || 'Webhook trigger failed');
-    } finally {
-      setIsWebhookFiring(false);
-    }
-  };
-
-  const handleFullDemo = async () => {
-    if (isWebhookFiring) return;
-    setIsWebhookFiring(true);
-    try {
-      // forceIndex 0 = In-App Messaging, which is the feature the tradeeasy-demo script writes
-      const result = await api.triggerDemoWebhook(0);
-      // Reload items to get the new initiative
-      await loadLocalItems();
-      // Auto-navigate into the new workflow so the user sees the full pipeline
-      try {
-        const status = await api.getWorkflowStatus(result.workflowId);
-        const newItem = {
-          id: result.itemId,
-          initiative: result.initiative,
-          description: '',
-          status: 'In Progress' as const,
-          businessValue: 0,
-          priorityScore: 0,
-          estimate: 'M' as const,
-          confidence: 0,
-          workflow: { id: result.workflowId, status: status.workflow.status, currentStage: status.currentStage, summary: null },
-        } as EnrichedItem;
-        setSelectedItem(newItem);
-        clearSession();
-        resetWorkflow();
-        applyWorkflowStatus(status);
-        addCoordinatorMessage({
-          role: 'coordinator',
-          content: `Full demo pipeline started for **${result.initiative}**. Docs pipeline running — code generation and Playwright tests will follow automatically.`,
-          timestamp: Date.now(),
-        });
-      } catch { /* navigate failed — still leave the toast */ }
-      setWebhookToast(result.initiative);
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || err.message || 'Full demo trigger failed');
-    } finally {
-      setIsWebhookFiring(false);
-    }
-  };
-
   const enabledCount = Object.values(enabledStages).filter(Boolean).length;
 
   const statusCounts = useMemo<Record<StatusFilter, number>>(() => {
@@ -363,20 +291,12 @@ export function HomeScreen() {
     });
   }, [localItems, statusFilter, searchQuery]);
 
-  const filteredRoadmapItems = useMemo(() => {
-    const q = searchQuery.toLowerCase().trim();
-    if (!q) return items;
-    return items.filter(i =>
-      i.initiative.toLowerCase().includes(q) || (i.description?.toLowerCase().includes(q) ?? false)
-    );
-  }, [items, searchQuery]);
-
   const openForm = () => {
     setShowForm(true);
     Promise.resolve().then(() => titleInputRef.current?.focus());
   };
 
-  const hasResults = filteredLocalItems.length > 0 || (showRoadmap && filteredRoadmapItems.length > 0);
+  const hasResults = filteredLocalItems.length > 0;
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-slate-950">
@@ -395,36 +315,15 @@ export function HomeScreen() {
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
               <button
-                onClick={handleSimulateWebhook}
-                disabled={isWebhookFiring}
-                title="Simulate an Airtable webhook — creates a new initiative and kicks off the full pipeline automatically"
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-800/50 hover:border-teal-400 hover:text-teal-600 dark:hover:text-teal-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                onClick={handleSyncAirtable}
+                disabled={syncing}
+                title="Sync Pipeline Ready initiatives from Airtable"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-700/70 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
               >
-                {isWebhookFiring ? (
-                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                  </svg>
-                ) : (
-                  <span className="text-xs">📨</span>
-                )}
-                Simulate webhook
-              </button>
-              <button
-                onClick={handleFullDemo}
-                disabled={isWebhookFiring}
-                title="Full demo: runs the complete AI pipeline, then writes code to the demo project and runs Playwright tests — with all output streamed live"
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300 bg-white dark:bg-slate-800/50 hover:bg-violet-50 dark:hover:bg-violet-900/20 hover:border-violet-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
-              >
-                {isWebhookFiring ? (
-                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                  </svg>
-                ) : (
-                  <span className="text-xs">⚡</span>
-                )}
-                Full Demo
+                <svg className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {syncing ? 'Syncing…' : 'Sync Airtable'}
               </button>
               <button
                 onClick={openForm}
@@ -593,14 +492,9 @@ export function HomeScreen() {
             </div>
           )}
 
-          {/* Local initiatives */}
-          {(filteredLocalItems.length > 0 || (loading && localItems.length === 0)) && (
+          {/* Initiatives */}
+          {(filteredLocalItems.length > 0 || pipelineReadyItems.length > 0 || (loading && localItems.length === 0)) && (
             <section>
-              {showRoadmap && (
-                <h3 className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-3">
-                  Local
-                </h3>
-              )}
               {loading && localItems.length === 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {[...Array(4)].map((_, i) => (
@@ -623,40 +517,8 @@ export function HomeScreen() {
                       onCancelDelete={() => setConfirmDeleteId(null)}
                     />
                   ))}
-                </div>
-              )}
-            </section>
-          )}
-
-          {/* Roadmap items */}
-          {showRoadmap && filteredRoadmapItems.length > 0 && (
-            <section>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500">
-                  Roadmap
-                </h3>
-                <button onClick={loadItems} title="Refresh" className="text-slate-400 hover:text-teal-500 transition-colors">
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                </button>
-              </div>
-
-              {fetchError ? (
-                <div className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-4 text-sm text-red-600 dark:text-red-400">
-                  {fetchError}
-                  <button onClick={loadItems} className="ml-3 underline text-xs">Retry</button>
-                </div>
-              ) : loading && items.length === 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {[...Array(3)].map((_, i) => (
-                    <div key={i} className="h-20 rounded-xl bg-slate-200 dark:bg-slate-800 animate-pulse" />
-                  ))}
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {filteredRoadmapItems.map(item => (
-                    <RoadmapCard
+                  {pipelineReadyItems.map(item => (
+                    <AirtableInitiativeCard
                       key={item.id}
                       item={item}
                       isAnalysing={launchItem?.id === item.id && (launchPhase === 'analyzing' || launchPhase === 'launching')}
@@ -668,13 +530,9 @@ export function HomeScreen() {
               )}
             </section>
           )}
+
         </div>
       </div>
-
-      {/* Webhook toast */}
-      {webhookToast && (
-        <WebhookToast title={webhookToast} onDismiss={() => setWebhookToast(null)} />
-      )}
 
       {/* Launch confirmation modal */}
       {launchItem && launchPhase && (
@@ -869,8 +727,8 @@ function InitiativeCard({
   );
 }
 
-// ── Roadmap card (Airtable) ──────────────────────────────────────────────────
-function RoadmapCard({
+// ── Airtable Pipeline Ready card ─────────────────────────────────────────────
+function AirtableInitiativeCard({
   item, isAnalysing, onLaunch, onResume,
 }: {
   item: EnrichedItem;
@@ -885,7 +743,7 @@ function RoadmapCard({
   return (
     <div
       title={item.description || undefined}
-      className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 hover:border-slate-300 dark:hover:border-slate-600 hover:shadow-sm transition-all"
+      className="relative group rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 hover:border-slate-300 dark:hover:border-slate-600 hover:shadow-sm transition-all"
     >
       <div className="p-4 flex items-start gap-3">
         <div className="flex-1 min-w-0">
@@ -893,38 +751,35 @@ function RoadmapCard({
             <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 leading-snug break-words min-w-0">
               {item.initiative}
             </h3>
-            {item.estimate && (
-              <span className={`flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded ${
-                item.estimate === 'XS' || item.estimate === 'S'
-                  ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                  : item.estimate === 'M'
-                  ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
-                  : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-              }`}>
-                {item.estimate}
-              </span>
-            )}
-            {item.businessValue !== undefined && (
-              <span className="flex-shrink-0 text-[10px] text-slate-400 dark:text-slate-500">{item.businessValue}/10</span>
-            )}
             <StatusBadge wf={wf} />
           </div>
+          {item.description && (
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">{item.description}</p>
+          )}
+          <div className="flex flex-wrap gap-1 mt-1.5">
+            {item.productArea && (
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400">
+                {item.productArea}
+              </span>
+            )}
+            {item.strategicTheme && (
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                {item.strategicTheme}
+              </span>
+            )}
+          </div>
         </div>
-
         <div className="flex-shrink-0 mt-0.5">
           {isActive ? (
-            <button onClick={onResume}
-              className="text-xs px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-medium transition-colors">
+            <button onClick={onResume} className="text-xs px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-medium transition-colors">
               Continue →
             </button>
           ) : isComplete ? (
-            <button onClick={onResume}
-              className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:border-teal-300 hover:text-teal-600 dark:hover:text-teal-400 font-medium transition-colors">
+            <button onClick={onResume} className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:border-teal-300 hover:text-teal-600 dark:hover:text-teal-400 font-medium transition-colors">
               View →
             </button>
           ) : (
-            <button onClick={onLaunch} disabled={isAnalysing}
-              className="text-xs px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white font-medium transition-colors flex items-center gap-1.5">
+            <button onClick={onLaunch} disabled={isAnalysing} className="text-xs px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white font-medium transition-colors flex items-center gap-1.5">
               {isAnalysing ? (
                 <>
                   <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -941,3 +796,4 @@ function RoadmapCard({
     </div>
   );
 }
+

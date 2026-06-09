@@ -3,7 +3,7 @@ import { AirtableItem } from '@pap/shared';
 import Logger from '../utils/logger';
 import { handleIntegrationError } from '../utils/error-handler';
 import { appConfig } from '../config/app-config';
-import { MOCK_ITEMS_NEEDING_PRD, MOCK_ITEMS_NEEDING_BACKLOG, MOCK_ITEMS } from '../../../../tests/fixtures/mock-airtable-data';
+import { MOCK_ITEMS_NEEDING_BACKLOG, MOCK_ITEMS } from '../../../../tests/fixtures/mock-airtable-data';
 
 const logger = new Logger('AIRTABLE');
 
@@ -79,24 +79,33 @@ export class AirtableClient {
     }
   }
 
-  /**
-   * List items that need PRDs
-   * Criteria: Status is "Discovery" or "Ready", no PRD Link, and requires dev work
-   */
-  async getItemsNeedingPRD(): Promise<AirtableItem[]> {
-    if (isMockMode()) {
-      logger.info('[MOCK] getItemsNeedingPRD');
-      return MOCK_ITEMS_NEEDING_PRD;
-    }
-    return this.listItems(
-      "AND(OR({Status} = 'Discovery', {Status} = 'Ready'), NOT({PRD Link}), {Requires Dev Work} = 'Yes')"
-    );
-  }
-
-  /**
+/**
    * List items ready for backlog creation
    * Criteria: Status is "In Progress", has PRD Link, no Epic Link yet
    */
+  async getItemsPipelineReady(): Promise<AirtableItem[]> {
+    if (isMockMode()) {
+      logger.info('[MOCK] getItemsPipelineReady');
+      return [];
+    }
+    const formula = "{Pipeline Ready} = 'Yes'";
+    logger.info('[AIRTABLE] getItemsPipelineReady formula:', formula);
+    try {
+      const params: any = { filterByFormula: formula };
+      const response = await axios.get(this.baseUrl, { headers: this.headers, params });
+      const records = response.data.records ?? [];
+      logger.info(`[AIRTABLE] getItemsPipelineReady raw count: ${records.length}`);
+      if (records.length > 0) {
+        logger.info('[AIRTABLE] first record fields:', JSON.stringify(Object.keys(records[0].fields)));
+        logger.info('[AIRTABLE] Pipeline Ready value on first record:', JSON.stringify(records[0].fields['Pipeline Ready']));
+      }
+      return records.map((record: any) => this.transformRecord(record));
+    } catch (error: any) {
+      logger.error('[AIRTABLE] getItemsPipelineReady error:', error.response?.data ?? error.message);
+      handleIntegrationError(error, 'Airtable');
+    }
+  }
+
   async getItemsNeedingBacklog(): Promise<AirtableItem[]> {
     if (isMockMode()) {
       logger.info('[MOCK] getItemsNeedingBacklog');

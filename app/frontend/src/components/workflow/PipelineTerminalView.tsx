@@ -523,6 +523,22 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                   </button>
                 )}
               </div>
+              {/* ADO top-level ticket link — shown when board has been synced */}
+              {(() => {
+                const boardMsg = coordinatorMessages.find(m => m.eventType === 'board_synced');
+                const adoUrl = boardMsg?.content.split('\n').find(l => l.startsWith('→ '))?.replace(/^→\s*/, '');
+                if (!adoUrl) return null;
+                return (
+                  <a
+                    href={adoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-mono font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 border border-blue-200 dark:border-blue-700/40 hover:border-blue-400 dark:hover:border-blue-500 bg-blue-50 dark:bg-blue-900/10 transition-colors"
+                  >
+                    View in Azure DevOps ↗
+                  </a>
+                );
+              })()}
 
               {/* Azure pipeline + QA results — auto-starts on completion */}
               <PipelineStatusSection workflowId={activeWorkflow.id} />

@@ -9,6 +9,7 @@ import { STAGE_LABELS } from '../../constants/stage-labels';
 import { tryParseBacklog } from '../../utils/backlog-helpers';
 import { BacklogView } from './BacklogView';
 import { QATestsView, tryParseQATests } from './QATestsView';
+import { TechRefinementView, tryParseTechRefinement } from './TechRefinementView';
 import { extractPersonas, PersonaPanel } from './PersonaPanel';
 import { PrototypePreview, type PrototypeData } from '../coordinator/PrototypePreview';
 
@@ -404,6 +405,7 @@ export function ArtifactViewer() {
           {/* Content */}
           {(() => {
             const backlogData = content && artifactType === 'backlog' ? tryParseBacklog(content) : null;
+            const techData = content && artifactType === 'backlog' && !backlogData ? tryParseTechRefinement(content) : null;
             const showPersonaPanel = isFullscreen && backlogData && extractPersonas(backlogData).length > 0;
 
             return (
@@ -422,6 +424,7 @@ export function ArtifactViewer() {
                       />
                     ) : content ? (() => {
                       if (backlogData) return <BacklogView data={backlogData} />;
+                      if (techData) return <TechRefinementView data={techData} />;
                       const qaData = artifactType === 'qa_tests' ? tryParseQATests(content) : null;
                       if (qaData) return <QATestsView data={qaData} />;
                       if (artifactType === 'prototype') {

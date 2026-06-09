@@ -39,6 +39,20 @@ export function isDemoMode(): boolean {
 }
 
 /**
+ * Returns demo fixture content for the given theme and stage, or null if no fixture exists.
+ */
+export function getDemoFixtureForTheme(theme: string, stage: string): string | null {
+  const filename = DEMO_FIXTURE_FILES[stage];
+  if (!filename) return null;
+  const fixturePath = path.join(__dirname, 'fixtures', theme, filename);
+  try {
+    return fs.readFileSync(fixturePath, 'utf-8');
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Returns demo fixture content for the given stage, or null if no fixture exists.
  * JSON stages (backlog, qa_engineer) return the raw JSON string.
  */

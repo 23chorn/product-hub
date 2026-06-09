@@ -63,6 +63,22 @@ try {
   db.exec('CREATE INDEX IF NOT EXISTS idx_context_file_versions_file ON context_file_versions(file_name, created_at)');
 } catch { /* already exists */ }
 
+try {
+  db.exec(`CREATE TABLE IF NOT EXISTS pipeline_runs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    workflow_id  TEXT    NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+    pr_url       TEXT,
+    branch       TEXT,
+    pipeline_id  TEXT,
+    stage        TEXT    NOT NULL DEFAULT 'triggered',
+    status       TEXT    NOT NULL DEFAULT 'running',
+    test_results TEXT,
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_pipeline_runs_workflow ON pipeline_runs(workflow_id, created_at)');
+} catch { /* already exists */ }
+
 // ---------------------------------------------------------------------------
 // Helper: getPolicies
 // ---------------------------------------------------------------------------

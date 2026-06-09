@@ -34,7 +34,7 @@ import {
   setCheckpointTokenUsage, loadGlobalPolicies, workflowOps,
   type StageTokenData,
 } from './workflow-db';
-import { isDemoMode, getDemoFixture, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
+import { isDemoMode, getDemoFixture, getDemoFixtureForTheme, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
 
 /**
  * Stages that run silently with no human review gate.
@@ -256,6 +256,43 @@ export async function runAutonomousStage(
         stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
         insertEvent(workflowId, 'stage_completed', stage, `Demo output ready — approve to continue.`, { artifact_id: artifactId });
         logger.info(`[DEMO] Stage "${stage}" complete — fixture loaded, checkpoint created`);
+        return;
+      }
+    }
+
+    // ── Demo auto-approve prototype fast-path ─────────────────────────────────
+    // When the demo webhook creates a workflow (demo_auto_approve=true), use the
+    // pre-built messaging prototype fixture instead of calling the LLM, which is
+    // slow and produces inconsistent output in a demo setting.
+    if (!isDemoMode() && autoApprove && stage === 'prototype') {
+      const fixture = getDemoFixtureForTheme('messaging', stage);
+      if (fixture) {
+        insertEvent(workflowId, 'stage_progress', stage, 'Generating prototype...');
+        await demoSleep(DEMO_STAGE_DELAY_MS[stage] ?? 3_000);
+        const artifactDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, stageMap.mode, 'artifacts');
+        await fsAsync.mkdir(artifactDir, { recursive: true });
+        const artifactPath = path.join(artifactDir, `${Date.now()}-${stage}.json`);
+        const stripped = fixture.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+        let artifactContent = stripped;
+        try { artifactContent = JSON.stringify(JSON.parse(stripped), null, 2); } catch { /* use stripped */ }
+        await fsAsync.writeFile(artifactPath, artifactContent, 'utf-8');
+        const protoArtifactType = STAGE_ARTIFACT_TYPE[stage] ?? stage;
+        const protoArtifactId = (db.prepare(
+          `INSERT INTO artifacts (session_id, type, file_path, created_at) VALUES (?, ?, ?, ?)`
+        ).run(sessionId, protoArtifactType, artifactPath, Date.now())).lastInsertRowid as number;
+        const now = Date.now();
+        stmts.insertCheckpoint.run(
+          workflowId, stage, protoArtifactId, 'approved',
+          JSON.stringify({ session_id: sessionId, autonomous: true, demo_fixture: true, auto_approved: true }),
+          now
+        );
+        stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
+        insertEvent(workflowId, 'stage_completed', stage, 'Prototype ready.', { artifact_id: protoArtifactId });
+        logger.info(`[DEMO-FIXTURE] Stage "${stage}" complete — messaging prototype fixture loaded`);
+        workflowOps.advanceStage(workflowId).catch(err => {
+          if (err.message?.startsWith('WORKFLOW_COMPLETE')) logger.info(`Workflow ${workflowId} complete after prototype fixture`);
+          else logger.error(`advanceStage after prototype fixture failed: ${err.message}`);
+        });
         return;
       }
     }

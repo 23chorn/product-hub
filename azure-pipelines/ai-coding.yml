@@ -1,0 +1,166 @@
+# AI Coding Pipeline — Web App
+#
+# Triggered when an ADO work item tagged "ai-ready" moves to Active.
+# Fetches ticket context from Product Hub, runs Claude Code to implement
+# the feature, creates a PR, runs Playwright tests, and reports results back.
+#
+# Scope: web application only (Playwright). Mobile stages are not included.
+#
+# Required pipeline variables / variable group "claude-secrets":
+#   ANTHROPIC_API_KEY  — Anthropic API key for Claude Code CLI
+#   GH_TOKEN           — GitHub token with repo:write for PR creation
+#   PRODUCT_HUB_URL    — Base URL of this Product Hub instance (e.g. https://hub.internal)
+#   PRODUCT_HUB_TOKEN  — (optional) Bearer token if Product Hub has auth
+
+trigger: none
+
+parameters:
+  - name: workflowId
+    type: string
+    default: ''
+  - name: workItemId
+    type: string
+    default: ''
+  - name: epicTitle
+    type: string
+    default: 'Feature implementation'
+
+variables:
+  - group: claude-secrets
+  - name: BRANCH_NAME
+    value: feat/$(echo "${{ parameters.epicTitle }}" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | cut -c1-50)
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - checkout: self
+    fetchDepth: 0
+
+  - script: npm install -g @anthropic-ai/claude-code
+    displayName: Install Claude Code CLI
+
+  - script: |
+      # Report pipeline as triggered
+      curl -s -X POST "$PRODUCT_HUB_URL/api/workflow/${{ parameters.workflowId }}/pipeline-result" \
+        -H "Content-Type: application/json" \
+        -d '{"stage":"triggered","status":"running","pipelineId":"$(Build.BuildId)"}'
+    displayName: Report triggered
+    env:
+      PRODUCT_HUB_URL: $(PRODUCT_HUB_URL)
+
+  - script: |
+      # Fetch the Claude Code prompt from Product Hub
+      curl -s "$PRODUCT_HUB_URL/api/workflow/${{ parameters.workflowId }}/ticket-context?workItemId=${{ parameters.workItemId }}" \
+        -o ticket-context.json
+      cat ticket-context.json | jq -r '.prompt' > claude-prompt.txt
+
+      # Report analyzing stage
+      curl -s -X POST "$PRODUCT_HUB_URL/api/workflow/${{ parameters.workflowId }}/pipeline-result" \
+        -H "Content-Type: application/json" \
+        -d '{"stage":"analyzing","status":"running"}'
+    displayName: Fetch ticket context
+    env:
+      PRODUCT_HUB_URL: $(PRODUCT_HUB_URL)
+
+  - script: |
+      # Report generating stage
+      curl -s -X POST "$PRODUCT_HUB_URL/api/workflow/${{ parameters.workflowId }}/pipeline-result" \
+        -H "Content-Type: application/json" \
+        -d '{"stage":"generating","status":"running"}'
+
+      # Run Claude Code with the ticket prompt
+      cat claude-prompt.txt | claude --print \
+        --allowedTools Read,Bash,Edit,Glob,Grep,Write \
+        --max-turns 25 \
+        --no-color \
+        --output-format json > claude-output.json 2>&1 || true
+
+      echo "Claude Code complete"
+    displayName: Run Claude Code
+    env:
+      ANTHROPIC_API_KEY: $(ANTHROPIC_API_KEY)
+
+  - script: |
+      # Create branch and PR
+      BRANCH="${{ variables.BRANCH_NAME }}-$(Build.BuildId)"
+      git config user.email "claude-code@pipeline"
+      git config user.name "Claude Code"
+      git checkout -b "$BRANCH"
+      git add -A
+      git diff --cached --quiet || git commit -m "feat: ${{ parameters.epicTitle }} [ADO#${{ parameters.workItemId }}]"
+      git push origin "$BRANCH" || true
+
+      PR_URL=$(gh pr create \
+        --title "feat: ${{ parameters.epicTitle }}" \
+        --body "$(cat claude-output.json | jq -r '.result // "AI-generated implementation"' 2>/dev/null || echo 'AI-generated implementation')" \
+        --label "ai-generated" 2>/dev/null || echo "")
+
+      # Report pr_created stage
+      curl -s -X POST "$PRODUCT_HUB_URL/api/workflow/${{ parameters.workflowId }}/pipeline-result" \
+        -H "Content-Type: application/json" \
+        -d "{\"stage\":\"pr_created\",\"status\":\"running\",\"prUrl\":\"$PR_URL\",\"branch\":\"$BRANCH\",\"pipelineId\":\"$(Build.BuildId)\"}"
+    displayName: Create PR
+    env:
+      GH_TOKEN: $(GH_TOKEN)
+      PRODUCT_HUB_URL: $(PRODUCT_HUB_URL)
+
+  - script: npm ci
+    displayName: Install dependencies
+
+  - script: npx playwright install chromium --with-deps
+    displayName: Install Playwright
+
+  - script: npx playwright test --reporter=json --output=playwright-results
+    displayName: Run Playwright tests
+    continueOnError: true
+
+  - script: |
+      # Parse Playwright JSON output and POST to Product Hub
+      node -e "
+        const fs = require('fs');
+        let results = { passed: 0, failed: 0, total: 0, cases: [] };
+        try {
+          const raw = JSON.parse(fs.readFileSync('playwright-results/results.json', 'utf-8'));
+          for (const suite of raw.suites ?? []) {
+            for (const spec of suite.specs ?? []) {
+              const passed = spec.ok;
+              results.total++;
+              passed ? results.passed++ : results.failed++;
+              results.cases.push({
+                id: spec.title.match(/TC-\d+/)?.[0] ?? \`TC-\${results.total.toString().padStart(3,'0')}\`,
+                title: spec.title.replace(/^TC-\d+\s*[—-]\s*/, ''),
+                passed,
+                type: 'happy_path',
+                priority: 'medium',
+              });
+            }
+          }
+        } catch (e) { console.error('Parse error:', e.message); }
+
+        const pr_url = process.env.PR_URL || null;
+        const body = JSON.stringify({
+          stage: 'pr_created',
+          status: results.failed === 0 ? 'complete' : 'complete',
+          prUrl: pr_url,
+          pipelineId: process.env.BUILD_ID,
+          testResults: results,
+        });
+        const http = require('https');
+        const url = new URL(\`\${process.env.PRODUCT_HUB_URL}/api/workflow/\${process.env.WORKFLOW_ID}/pipeline-result\`);
+        const req = http.request({ hostname: url.hostname, port: url.port || 443, path: url.pathname, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }, r => r.resume());
+        req.write(body); req.end();
+        console.log('Results reported:', JSON.stringify(results));
+      "
+    displayName: Report test results to Product Hub
+    env:
+      PRODUCT_HUB_URL: $(PRODUCT_HUB_URL)
+      WORKFLOW_ID: ${{ parameters.workflowId }}
+      BUILD_ID: $(Build.BuildId)
+
+  - task: PublishTestResults@2
+    inputs:
+      testResultsFormat: JUnit
+      testResultsFiles: playwright-results/*.xml
+    condition: always()
+    displayName: Publish test results to ADO

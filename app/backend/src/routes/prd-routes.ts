@@ -18,33 +18,17 @@ function getAirtableClient() {
 }
 
 /**
- * GET /api/prd/items/needingPRD
- * Get list of items from Airtable
+ * GET /api/prd/items/pipelineReady
+ * Get Airtable items where Pipeline Ready = Yes
  */
-router.get('/items/needingPRD', async (req: Request, res: Response) => {
-  if (appConfig.integrations.roadmap === 'none') {
-    // Return local initiatives in AirtableItem shape
-    const rows = db.prepare(
-      `SELECT id, title, description, created_at FROM items WHERE source = 'local' ORDER BY created_at DESC`
-    ).all() as { id: string; title: string; description: string | null; created_at: number }[];
-    const items: AirtableItem[] = rows.map(r => ({
-      id: r.id,
-      initiative: r.title,
-      description: r.description ?? '',
-      status: 'Ready',
-      businessValue: 5,
-      priorityScore: 5,
-      estimate: 'M',
-      confidence: 0.8,
-      createdAt: new Date(r.created_at).toISOString(),
-    }));
-    return res.json(items);
+router.get('/items/pipelineReady', async (req: Request, res: Response) => {
+  if (appConfig.integrations.roadmap !== 'airtable') {
+    return res.json([]);
   }
   try {
     const client = getAirtableClient();
-    const items = await client.getItemsNeedingPRD();
+    const items = await client.getItemsPipelineReady();
 
-    // Enrich with latest workflow status per item
     if (items.length > 0) {
       const wfRows = db.prepare(`
         SELECT w.item_id, w.id, w.status, w.current_stage, w.summary
@@ -57,7 +41,6 @@ router.get('/items/needingPRD', async (req: Request, res: Response) => {
       `).all(...items.map(i => i.id)) as { item_id: string; id: string; status: string; current_stage: string | null; summary: string | null }[];
 
       const wfMap = new Map(wfRows.map(wf => [wf.item_id, wf]));
-
       const enriched = items.map(item => {
         const wf = wfMap.get(item.id);
         return wf
@@ -69,7 +52,7 @@ router.get('/items/needingPRD', async (req: Request, res: Response) => {
 
     res.json(items);
   } catch (error: any) {
-    logger.error('Failed to get items needing PRD', error);
+    logger.error('Failed to get pipeline ready items', error);
     res.status(500).json({ error: error.message || 'Failed to get items' });
   }
 });

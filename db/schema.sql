@@ -393,3 +393,24 @@ CREATE TABLE context_file_versions (
 );
 
 CREATE INDEX idx_context_file_versions_file ON context_file_versions(file_name, created_at);
+
+-- ------------------------------------------------------------
+-- pipeline_runs — CI/CD Pipeline Execution Records
+-- Stores results from real or demo pipeline runs triggered by
+-- the ai-ready tag on ADO work items. Enables PipelineStatus-
+-- Section to display real test results instead of mock timers.
+-- ------------------------------------------------------------
+CREATE TABLE pipeline_runs (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  workflow_id  TEXT    NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+  pr_url       TEXT,
+  branch       TEXT,
+  pipeline_id  TEXT,
+  stage        TEXT    NOT NULL DEFAULT 'triggered',
+  status       TEXT    NOT NULL DEFAULT 'running',
+  test_results TEXT,
+  created_at   INTEGER NOT NULL,
+  updated_at   INTEGER NOT NULL
+);
+
+CREATE INDEX idx_pipeline_runs_workflow ON pipeline_runs(workflow_id, created_at);

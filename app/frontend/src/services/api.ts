@@ -31,8 +31,8 @@ class APIClient {
   // Airtable
   // ============================================
 
-  async getItemsNeedingPRD(): Promise<AirtableItem[]> {
-    const response = await axios.get(`${this.baseURL}/api/prd/items/needingPRD`);
+  async getItemsPipelineReady(): Promise<AirtableItem[]> {
+    const response = await axios.get(`${this.baseURL}/api/prd/items/pipelineReady`);
     return response.data;
   }
 
@@ -783,6 +783,23 @@ class APIClient {
     epicId: number; epicUrl: string; taggedCount: number; pipelineRunId?: number; pipelineUrl?: string; demo?: boolean;
   }> {
     const response = await axios.post(`${this.baseURL}/api/workflow/${workflowId}/trigger-ai-coding`);
+    return response.data;
+  }
+
+  async getPipelineRun(workflowId: string): Promise<{
+    id: number; workflow_id: string; stage: string; status: string;
+    pr_url: string | null; branch: string | null; pipeline_id: string | null;
+    test_results: string | null; created_at: number; updated_at: number;
+  } | null> {
+    try {
+      const response = await axios.get(`${this.baseURL}/api/workflow/${workflowId}/pipeline-runs`);
+      return response.data.run;
+    } catch { return null; }
+  }
+
+  async getTicketContext(workflowId: string, workItemId?: number): Promise<{ prompt: string; title: string }> {
+    const params = workItemId ? `?workItemId=${workItemId}` : '';
+    const response = await axios.get(`${this.baseURL}/api/workflow/${workflowId}/ticket-context${params}`);
     return response.data;
   }
 

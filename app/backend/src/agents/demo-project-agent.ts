@@ -458,9 +458,9 @@ export async function generateDemoProject(
   // ── Load artifacts ────────────────────────────────────────────────────────
   onStatus({ phase: 'generating', message: 'Reading workflow artifacts…' });
 
-  const prdPath     = db.prepare(`SELECT file_path FROM artifacts a JOIN sessions s ON a.session_id = s.id WHERE s.workflow_id = ? AND a.type = 'prd' ORDER BY a.created_at DESC LIMIT 1`).get(workflowId) as any;
+  const prdPath     = db.prepare(`SELECT file_path FROM artifacts a JOIN sessions s ON a.session_id = s.id WHERE s.item_id = ? AND a.type = 'prd' ORDER BY a.created_at DESC LIMIT 1`).get(workflow.item_id) as any;
   const backlogPath = getLatestArtifactPathByType(workflow.item_id, 'backlog');
-  const qaPath      = db.prepare(`SELECT file_path FROM artifacts a JOIN sessions s ON a.session_id = s.id WHERE s.workflow_id = ? AND a.type = 'qa_tests' ORDER BY a.created_at DESC LIMIT 1`).get(workflowId) as any;
+  const qaPath      = db.prepare(`SELECT file_path FROM artifacts a JOIN sessions s ON a.session_id = s.id WHERE s.item_id = ? AND a.type = 'qa_tests' ORDER BY a.created_at DESC LIMIT 1`).get(workflow.item_id) as any;
 
   const prdText     = prdPath     ? loadArtifactText(prdPath.file_path)     : '';
   const backlogText = backlogPath ? loadArtifactText(backlogPath)            : '';
