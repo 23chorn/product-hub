@@ -127,7 +127,7 @@ export function ArtifactViewer() {
   const showTestPlanButton = isQATests && workItemsEnabled && qaApproved && workflowComplete;
 
   // Wiki sync button for research, PRD, and architecture documents
-  const isWikiDocument = ['research', 'prd', 'architecture'].includes(artifactType);
+  const isWikiDocument = ['analyst', 'research', 'prd', 'architecture'].includes(artifactType);
   const showWikiSyncButton = isWikiDocument && workItemsEnabled && workflowComplete;
 
   async function pushToBoard() {
