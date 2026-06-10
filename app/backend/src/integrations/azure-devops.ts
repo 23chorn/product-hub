@@ -874,20 +874,35 @@ export class AzureDevOpsClient {
 
     // GET existing page to retrieve ETag (needed for updates — ADO requires it)
     let currentETag: string | undefined;
+    let pageExists = false;
     try {
       const existing = await this.client.get(apiUrl, {
         headers: { 'Content-Type': 'application/json' },
         params: wikiParams,
       });
       currentETag = existing.headers['etag'];
-    } catch { /* page doesn't exist yet — will create */ }
+      pageExists = true;
+      logger.info(`Existing wiki page found, ETag: ${currentETag}`);
+    } catch (err: any) {
+      if (err.response?.status === 404) {
+        logger.info(`Wiki page does not exist yet, will create new`);
+      } else {
+        logger.warn(`Failed to check existing wiki page: ${err.response?.status} ${err.message}`);
+      }
+    }
 
     try {
+      const headers: any = { 'Content-Type': 'application/json' };
+      // Only include If-Match if we successfully retrieved an ETag
+      if (pageExists && currentETag) {
+        headers['If-Match'] = currentETag;
+      }
+
       const response = await this.client.put(
         apiUrl,
         { content },
         {
-          headers: { 'Content-Type': 'application/json', 'If-Match': currentETag ?? '*' },
+          headers,
           params: wikiParams,
         }
       );
