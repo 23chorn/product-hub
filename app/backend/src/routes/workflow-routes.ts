@@ -1457,7 +1457,7 @@ workflowRoutes.post('/:id/sync-to-wiki', async (req: Request, res: Response) => 
 
     for (const stage of stagesToSync) {
       const stageArtifactMap: Record<string, { type: string; pageName: string }> = {
-        'analyst': { type: 'research', pageName: 'Research Brief' },
+        'analyst': { type: 'analyst', pageName: 'Research Brief' },
         'pm_prd': { type: 'prd', pageName: 'PRD' },
         'solution_architect': { type: 'architecture', pageName: 'Architecture' },
       };
