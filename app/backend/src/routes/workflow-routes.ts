@@ -588,16 +588,6 @@ workflowRoutes.post('/checkpoint/resolve', async (req: Request, res: Response) =
         }
       }
 
-      // After QA tests are approved, comment on the ADO epic with the test cases
-      if (cpDetail?.stage === 'qa_engineer') {
-        const wfRow = db.prepare<[string], { item_id: string }>('SELECT item_id FROM workflows WHERE id = ?').get(workflowId);
-        if (wfRow) {
-          autoCommentQATestsOnEpic(workflowId, wfRow.item_id).catch(err =>
-            logger.warn(`autoCommentQATestsOnEpic failed: ${err.message}`)
-          );
-        }
-      }
-
       // Advance to the next stage asynchronously — don't block the response.
       // The checkpoint is already approved; the frontend polls for status updates.
       advanceStage(workflowId)
@@ -918,51 +908,6 @@ async function autoPushToBoard(workflowId: string, itemId: string): Promise<void
     logger.error(`Auto push-to-board failed for workflow ${workflowId}: ${err.message}`);
     insertEvent(workflowId, 'error', 'tech_refinement',
       `Board sync failed: ${err.message}`, { error: err.message });
-  }
-}
-
-/**
- * Called automatically when the qa_engineer checkpoint is created.
- * Adds a comment to the ADO epic listing the test cases that will be covered.
- */
-async function autoCommentQATestsOnEpic(workflowId: string, itemId: string): Promise<void> {
-  const fs = require('fs');
-  try {
-    // Load QA artifact
-    const qaArtifact = db.prepare<[string], { file_path: string }>(`
-      SELECT a.file_path FROM artifacts a
-      JOIN sessions s ON a.session_id = s.id
-      WHERE s.item_id = ? AND a.type = 'qa_tests'
-      ORDER BY a.created_at DESC LIMIT 1
-    `).get(itemId);
-    if (!qaArtifact) return;
-
-    const raw = fs.readFileSync(resolveArtifactPath(qaArtifact.file_path), 'utf-8')
-      .replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-    let qa: any;
-    try { qa = JSON.parse(raw); } catch { return; }
-
-    const cases = (qa.test_cases ?? []).slice(0, 10) as Array<{ id: string; title: string; type?: string; priority?: string }>;
-    if (cases.length === 0) return;
-
-    const caseLines = cases.map(tc => `<li>[${tc.id}] ${tc.title} — ${tc.type ?? 'test'}/${tc.priority ?? 'medium'}</li>`).join('');
-    const commentHtml = `<b>QA Coverage — ${cases.length} test cases queued</b><br><ul>${caseLines}</ul><br><i>Tests will run automatically when Claude Code implements this feature.</i>`;
-
-    const { appConfig } = require('../config/app-config');
-    if (appConfig.integrations.workItems !== 'ado') return;
-
-    const epicMapping = db.prepare<[string], { ado_id: number }>(
-      `SELECT ado_id FROM ado_work_item_map WHERE workflow_id = ? AND local_key = 'epic' LIMIT 1`
-    ).get(workflowId);
-    if (!epicMapping) return;
-
-    const { AzureDevOpsClient } = require('../integrations/azure-devops');
-    await new AzureDevOpsClient().addComment(epicMapping.ado_id, commentHtml);
-    insertEvent(workflowId, 'stage_progress', 'qa_engineer',
-      `QA comment posted to ADO Epic #${epicMapping.ado_id}: ${cases.length} test cases documented`);
-    logger.info(`QA comment added to Epic #${epicMapping.ado_id}`);
-  } catch (err: any) {
-    logger.warn(`autoCommentQATestsOnEpic failed: ${err.message}`);
   }
 }
 
