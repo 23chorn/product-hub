@@ -29,6 +29,8 @@ export function ArtifactViewer() {
   const [testPlanPushLoading, setTestPlanPushLoading] = useState(false);
   const [testPlanResult, setTestPlanResult] = useState<{ planUrl: string; created: number; updated: number } | null>(null);
   const [hasTestPlanMappings, setHasTestPlanMappings] = useState(false);
+  const [wikiSyncLoading, setWikiSyncLoading] = useState(false);
+  const [wikiSyncResult, setWikiSyncResult] = useState<{ synced: number; results: Array<{ stage: string; pageName: string; url: string }> } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showCriticFlyout, setShowCriticFlyout] = useState(false);
@@ -124,6 +126,10 @@ export function ArtifactViewer() {
   const qaApproved = isQATests && checkpoints.some(c => c.stage === 'qa_engineer' && c.status === 'approved');
   const showTestPlanButton = isQATests && workItemsEnabled && qaApproved && workflowComplete;
 
+  // Wiki sync button for research, PRD, and architecture documents
+  const isWikiDocument = ['research', 'prd', 'architecture'].includes(artifactType);
+  const showWikiSyncButton = isWikiDocument && workItemsEnabled && workflowComplete;
+
   async function pushToBoard() {
     if (!activeWorkflow) return;
     setPushLoading(true);
@@ -162,6 +168,31 @@ export function ArtifactViewer() {
       setError(err.response?.data?.error ?? err.message ?? 'Failed to push test plan');
     } finally {
       setTestPlanPushLoading(false);
+    }
+  }
+
+  async function syncToWiki() {
+    if (!activeWorkflow) return;
+    setWikiSyncLoading(true);
+    setError(null);
+    try {
+      // Determine which stage to sync based on artifact type
+      const stageMap: Record<string, string> = {
+        research: 'analyst',
+        prd: 'pm_prd',
+        architecture: 'solution_architect',
+      };
+      const stage = stageMap[artifactType];
+      const result = await api.syncToWiki(activeWorkflow.id, stage ? [stage] : undefined);
+      setWikiSyncResult(result);
+      const msg = result.results.length > 0
+        ? `Wiki synced: ${result.results.map(r => `[${r.pageName}](${r.url})`).join(', ')}`
+        : 'Wiki sync completed';
+      addCoordinatorMessage({ role: 'coordinator', content: msg, timestamp: Date.now() });
+    } catch (err: any) {
+      setError(err.response?.data?.error ?? err.message ?? 'Failed to sync to wiki');
+    } finally {
+      setWikiSyncLoading(false);
     }
   }
 
@@ -397,6 +428,38 @@ export function ArtifactViewer() {
                   </svg>
                   View Test Plan ↗
                 </a>
+              )}
+              {showWikiSyncButton && !wikiSyncResult && (
+                <button
+                  onClick={syncToWiki}
+                  disabled={wikiSyncLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white transition-colors"
+                >
+                  {wikiSyncLoading ? (
+                    <>
+                      <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Syncing...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                      </svg>
+                      Sync to Wiki
+                    </>
+                  )}
+                </button>
+              )}
+              {wikiSyncResult && (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Synced to Wiki
+                </div>
               )}
               {hasCriticData && !showSidePanel && (
                 <button

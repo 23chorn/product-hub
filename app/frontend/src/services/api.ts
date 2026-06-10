@@ -322,6 +322,14 @@ class APIClient {
     }
   }
 
+  async syncToWiki(workflowId: string, stages?: string[]): Promise<{
+    synced: number;
+    results: Array<{ stage: string; pageName: string; url: string }>;
+  }> {
+    const response = await axios.post(`${this.baseURL}/api/workflow/${workflowId}/sync-to-wiki`, { stages });
+    return response.data;
+  }
+
   async deleteWorkflow(workflowId: string): Promise<void> {
     await axios.delete(`${this.baseURL}/api/workflow/${workflowId}`);
   }

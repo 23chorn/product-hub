@@ -1410,6 +1410,104 @@ workflowRoutes.post('/:id/push-to-test-plans', async (req: Request, res: Respons
   }
 });
 
+// ── POST /api/workflow/:id/sync-to-wiki ─────────────────────────────────────────
+
+/**
+ * POST /api/workflow/:id/sync-to-wiki
+ * Manually sync research, PRD, and architecture documents to Azure DevOps Wiki.
+ * Body: { stages?: string[] } - optional array of stages to sync ('analyst', 'pm_prd', 'solution_architect')
+ * If not provided, syncs all three document types.
+ */
+workflowRoutes.post('/:id/sync-to-wiki', async (req: Request, res: Response) => {
+  const workflowId = req.params.id;
+  const { stages } = req.body as { stages?: string[] };
+
+  try {
+    const { appConfig } = require('../config/app-config');
+    if (appConfig.integrations.workItems !== 'ado') {
+      return res.status(400).json({ error: 'ADO integration not configured' });
+    }
+
+    const workflow = db.prepare<[string], { item_id: string }>('SELECT item_id FROM workflows WHERE id = ?').get(workflowId);
+    if (!workflow) return res.status(404).json({ error: 'Workflow not found' });
+
+    const itemRow = db.prepare<[string], { title: string }>(
+      'SELECT title FROM items WHERE id = ?'
+    ).get(workflow.item_id);
+    if (!itemRow) return res.status(404).json({ error: 'Item not found' });
+
+    // Default to all three document stages
+    const stagesToSync = stages ?? ['analyst', 'pm_prd', 'solution_architect'];
+    const validStages = ['analyst', 'pm_prd', 'solution_architect'];
+    for (const stage of stagesToSync) {
+      if (!validStages.includes(stage)) {
+        return res.status(400).json({ error: `Invalid stage: ${stage}. Must be one of: ${validStages.join(', ')}` });
+      }
+    }
+
+    const { AzureDevOpsClient } = require('../integrations/azure-devops');
+    const client = new AzureDevOpsClient();
+    const wikiId = client.wikiIdentifier;
+    const fs = require('fs');
+
+    const results: Array<{ stage: string; pageName: string; url: string }> = [];
+
+    // Sanitize feature name for wiki path
+    const featureName = itemRow.title.replace(/[^a-zA-Z0-9 -]/g, '').trim().slice(0, 50);
+
+    for (const stage of stagesToSync) {
+      const stageArtifactMap: Record<string, { type: string; pageName: string }> = {
+        'analyst': { type: 'research', pageName: 'Research Brief' },
+        'pm_prd': { type: 'prd', pageName: 'PRD' },
+        'solution_architect': { type: 'architecture', pageName: 'Architecture' },
+      };
+
+      const config = stageArtifactMap[stage];
+      if (!config) continue;
+
+      // Load artifact
+      const artifact = db.prepare<[string, string], { file_path: string }>(`
+        SELECT a.file_path FROM artifacts a
+        JOIN sessions s ON a.session_id = s.id
+        WHERE s.item_id = ? AND a.type = ?
+        ORDER BY a.created_at DESC LIMIT 1
+      `).get(workflow.item_id, config.type);
+
+      if (!artifact) {
+        logger.warn(`Sync to wiki: no ${config.type} artifact for item ${workflow.item_id}`);
+        continue;
+      }
+
+      const content = fs.readFileSync(resolveArtifactPath(artifact.file_path), 'utf-8')
+        .replace(/^```(?:markdown|md)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+
+      // Wiki path: /Product Documentation/Features/{FeatureName}/{PageName}
+      const wikiPath = `/Product Documentation/Features/${featureName}/${config.pageName}`;
+
+      // Ensure parent folders exist
+      await client.ensureWikiPath(wikiId, wikiPath);
+
+      // Upsert wiki page
+      const { url } = await client.upsertWikiPage(wikiId, wikiPath, content);
+
+      results.push({ stage, pageName: config.pageName, url });
+    }
+
+    // Insert success event
+    const summary = results.map(r => `${r.pageName}: ${r.url}`).join('\n');
+    insertEvent(workflowId, 'stage_progress', null,
+      `Wiki pages synced (${results.length})\n${summary}`,
+      { synced_count: results.length, results }
+    );
+
+    logger.info(`Wiki sync complete for workflow ${workflowId}: ${results.length} pages`);
+    return res.json({ synced: results.length, results });
+  } catch (err: any) {
+    logger.error('Failed to sync to wiki', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── DELETE /api/workflow/:id ────────────────────────────────────────────────────
 
 /**
