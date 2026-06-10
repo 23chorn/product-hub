@@ -330,6 +330,13 @@ class APIClient {
     return response.data;
   }
 
+  async getWorkflowArtifacts(workflowId: string): Promise<{
+    artifacts: Array<{ id: number; type: string; stage: string | null; created_at: number }>;
+  }> {
+    const response = await axios.get(`${this.baseURL}/api/workflow/${workflowId}/artifacts`);
+    return response.data;
+  }
+
   async deleteWorkflow(workflowId: string): Promise<void> {
     await axios.delete(`${this.baseURL}/api/workflow/${workflowId}`);
   }

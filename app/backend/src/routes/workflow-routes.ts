@@ -1508,6 +1508,36 @@ workflowRoutes.post('/:id/sync-to-wiki', async (req: Request, res: Response) => 
   }
 });
 
+// ── GET /api/workflow/:id/artifacts ─────────────────────────────────────────────
+
+/**
+ * GET /api/workflow/:id/artifacts
+ * Returns all artifacts produced during this workflow, ordered by creation time.
+ * Used to show an artifacts list in the pipeline terminal view.
+ */
+workflowRoutes.get('/:id/artifacts', (req: Request, res: Response) => {
+  const workflowId = req.params.id;
+
+  try {
+    const workflow = db.prepare<[string], { item_id: string }>('SELECT item_id FROM workflows WHERE id = ?').get(workflowId);
+    if (!workflow) return res.status(404).json({ error: 'Workflow not found' });
+
+    const artifacts = db.prepare<[string], { id: number; type: string; stage: string | null; created_at: number }>(`
+      SELECT a.id, a.type, s.stage, a.created_at
+      FROM artifacts a
+      JOIN sessions s ON a.session_id = s.id
+      WHERE s.item_id = ?
+      AND a.type NOT IN ('critic_review', 'analyst_diff', 'pm_backlog_diff', 'prototype_diff', 'qa_engineer_diff')
+      ORDER BY a.created_at
+    `).all(workflow.item_id);
+
+    res.json({ artifacts });
+  } catch (err: any) {
+    logger.error('Failed to fetch artifacts', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── DELETE /api/workflow/:id ────────────────────────────────────────────────────
 
 /**
