@@ -3,6 +3,7 @@ import db from '../data/database';
 import Logger from '../utils/logger';
 import type { WorkflowRow, CheckpointRow } from './workflow-types';
 import { resolveArtifactPath } from './artifact-helpers';
+import { STAGE_SESSION_MAP } from './stage-metadata';
 
 const logger = new Logger('WORKFLOW-LIFECYCLE');
 
@@ -157,8 +158,22 @@ export function recoverStaleWorkflows(): number {
       `Stage "${stage}" appears stuck (no activity for ${staleMinutes} minutes). You can retry or dismiss this stage.`,
       { error: 'stale_workflow_recovery', stale_minutes: staleMinutes });
 
+    // Try to recover the artifact_id that the specialist may have already written
+    let artifactId: number | null = null;
+    const stageMap = STAGE_SESSION_MAP[stage];
+    if (stageMap) {
+      const latestArtifact = db.prepare<[string, string], { id: number }>(
+        `SELECT a.id FROM artifacts a
+         JOIN sessions s ON a.session_id = s.id
+         WHERE s.item_id = (SELECT item_id FROM workflows WHERE id = ?)
+           AND s.mode = ?
+         ORDER BY a.created_at DESC LIMIT 1`
+      ).get(wf.id, stageMap.mode);
+      artifactId = latestArtifact?.id ?? null;
+    }
+
     stmts.insertCheckpoint.run(
-      wf.id, stage, null, 'pending',
+      wf.id, stage, artifactId, 'pending',
       JSON.stringify({ error: `Stage stalled after ${staleMinutes} minutes of inactivity`, autonomous: true, stale_recovery: true }),
       now
     );

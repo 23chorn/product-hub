@@ -558,7 +558,9 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
 
             const pendingCp = checkpoints.find(c => c.stage === stageName && c.status === 'pending');
             const approvedCp = checkpoints.filter(c => c.stage === stageName && c.status === 'approved').at(-1);
-            const stageArtifactId = approvedCp?.artifact_id ?? pendingCp?.artifact_id ?? null;
+            // Fall back to any checkpoint with an artifact_id (e.g. revised) when approved/pending ones lack one
+            const anyWithArtifact = checkpoints.filter(c => c.stage === stageName && c.artifact_id !== null).at(-1);
+            const stageArtifactId = approvedCp?.artifact_id ?? pendingCp?.artifact_id ?? anyWithArtifact?.artifact_id ?? null;
 
             return (
               <div key={stageName}>

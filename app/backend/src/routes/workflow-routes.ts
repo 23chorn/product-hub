@@ -568,11 +568,11 @@ workflowRoutes.post('/checkpoint/resolve', async (req: Request, res: Response) =
         }
       }
 
-      // Auto publish wiki pages after research and PRD approvals
-      if (cpDetail?.stage === 'analyst' || cpDetail?.stage === 'pm_prd') {
+      // Auto publish wiki pages after research, PRD, and architecture approvals
+      if (cpDetail?.stage === 'analyst' || cpDetail?.stage === 'pm_prd' || cpDetail?.stage === 'solution_architect') {
         const wfRow = db.prepare<[string], { item_id: string }>('SELECT item_id FROM workflows WHERE id = ?').get(workflowId);
         if (wfRow) {
-          autoPublishWikiPages(workflowId, wfRow.item_id, cpDetail.stage as 'analyst' | 'pm_prd').catch(err =>
+          autoPublishWikiPages(workflowId, wfRow.item_id, cpDetail.stage as 'analyst' | 'pm_prd' | 'solution_architect').catch(err =>
             logger.warn(`autoPublishWikiPages failed: ${err.message}`)
           );
         }
@@ -987,11 +987,11 @@ async function pushLinksToAirtable(airtableId: string, updates: Record<string, s
 // ── Auto publish wiki pages after analyst / pm_prd approvals ──────────────────
 
 /**
- * Publishes a research brief or PRD to the Azure DevOps Wiki under
+ * Publishes a research brief, PRD, or architecture document to the Azure DevOps Wiki under
  * "Product Documentation/Features/{FeatureName}/{PageName}".
  * After publishing, pushes the wiki URL back to the Airtable record.
  */
-async function autoPublishWikiPages(workflowId: string, itemId: string, stage: 'analyst' | 'pm_prd'): Promise<void> {
+async function autoPublishWikiPages(workflowId: string, itemId: string, stage: 'analyst' | 'pm_prd' | 'solution_architect'): Promise<void> {
   const fs = require('fs');
   try {
     const { appConfig } = require('../config/app-config');
@@ -1009,11 +1009,10 @@ async function autoPublishWikiPages(workflowId: string, itemId: string, stage: '
     // Sanitise the feature name for a wiki path segment
     const featureName = itemRow.title.replace(/[/\\:*?"<>|#]/g, '').trim();
     const basePath = `/Product Documentation/Features/${featureName}`;
-    const isResearch = stage === 'analyst';
-    const artifactType = isResearch ? 'analyst' : 'prd';
-    const pageName = isResearch ? 'Research Brief' : 'PRD';
+    const artifactType = stage === 'analyst' ? 'analyst' : stage === 'pm_prd' ? 'prd' : 'architecture';
+    const pageName = stage === 'analyst' ? 'Research Brief' : stage === 'pm_prd' ? 'PRD' : 'Architecture';
     const pagePath = `${basePath}/${pageName}`;
-    const airtableFieldKey = isResearch ? 'researchBriefLink' : 'prdLink';
+    const airtableFieldKey = stage === 'analyst' ? 'researchBriefLink' : stage === 'pm_prd' ? 'prdLink' : 'architectureLink';
 
     // Load latest artifact for this stage
     const artifact = db.prepare<[string, string], { file_path: string }>(

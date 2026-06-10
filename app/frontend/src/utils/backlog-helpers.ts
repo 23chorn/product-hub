@@ -81,19 +81,28 @@ export function getAllFeatures(data: BacklogData): BacklogFeature[] {
 
 /** Try to parse artifact content as backlog JSON. */
 export function tryParseBacklog(content: string): BacklogData | null {
-  try {
-    // Strip markdown code fences if present
-    const stripped = content
-      .replace(/^```(?:json)?\s*\n?/m, '')
-      .replace(/\n?```\s*$/m, '')
-      .trim();
-    const parsed = JSON.parse(stripped);
-    // Must have at least one of the expected top-level keys
-    if (parsed.epic || parsed.features || parsed.feature || parsed.story) {
-      return parsed as BacklogData;
-    }
+  const stripped = content
+    .replace(/^```(?:json)?\s*\n?/m, '')
+    .replace(/\n?```\s*$/m, '')
+    .trim();
+
+  const tryParse = (text: string): BacklogData | null => {
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed.epic || parsed.features || parsed.feature || parsed.story) {
+        return parsed as BacklogData;
+      }
+    } catch {}
     return null;
-  } catch {
-    return null;
-  }
+  };
+
+  // Direct parse first
+  const direct = tryParse(stripped);
+  if (direct) return direct;
+
+  // If LLM prefixed a preamble before the JSON, extract from first '{'
+  const jsonStart = stripped.indexOf('{');
+  if (jsonStart > 0) return tryParse(stripped.slice(jsonStart));
+
+  return null;
 }

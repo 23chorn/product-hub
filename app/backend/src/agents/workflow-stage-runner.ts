@@ -581,22 +581,25 @@ export async function runAutonomousStage(
         artifactContent = repaired;
       }
     } else if (stage === 'pm_backlog') {
-      // Strip markdown code fences from JSON output
+      // Strip markdown code fences from JSON output, then skip any preamble before the JSON object
       const stripped = fullResponse.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+      const jsonStart = stripped.indexOf('{');
+      const jsonContent = jsonStart > 0 ? stripped.slice(jsonStart) : stripped;
       try {
-        const parsed = JSON.parse(stripped);
+        const parsed = JSON.parse(jsonContent);
         artifactContent = await injectSprintEstimates(parsed);
       } catch {
-        // If JSON parse fails, save as-is and let downstream error handling catch it
-        artifactContent = stripped;
+        artifactContent = jsonContent;
       }
     } else if (stage === 'tech_refinement' || stage === 'qa_engineer') {
-      // Strip markdown code fences, pretty-print JSON
+      // Strip markdown code fences, skip any preamble before the JSON object, pretty-print
       const stripped = fullResponse.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+      const jsonStart = stripped.indexOf('{');
+      const jsonContent = jsonStart > 0 ? stripped.slice(jsonStart) : stripped;
       try {
-        artifactContent = JSON.stringify(JSON.parse(stripped), null, 2);
+        artifactContent = JSON.stringify(JSON.parse(jsonContent), null, 2);
       } catch {
-        artifactContent = stripped;
+        artifactContent = jsonContent;
       }
     } else {
       // Strip any preamble before the first markdown heading (e.g. "Here's the research brief:")
