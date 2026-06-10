@@ -338,6 +338,25 @@ CREATE TABLE ado_work_item_map (
 CREATE UNIQUE INDEX idx_ado_map_key ON ado_work_item_map(workflow_id, local_key);
 
 -- ------------------------------------------------------------
+-- qa_test_plan_map — ADO Test Plans Persistence
+-- One row per workflow. Tracks the ADO Test Plan ID, the IDs of
+-- each test suite (keyed by test type), and a map of QA test
+-- case IDs (TC-001 etc.) to ADO work item IDs for idempotent sync.
+-- ------------------------------------------------------------
+CREATE TABLE qa_test_plan_map (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  workflow_id     TEXT    NOT NULL REFERENCES workflows(id),
+  artifact_id     INTEGER REFERENCES artifacts(id),
+  plan_id         INTEGER NOT NULL,
+  plan_url        TEXT    NOT NULL,
+  suite_ids       TEXT    NOT NULL DEFAULT '{}',  -- JSON: { "happy_path": 1234, … }
+  test_case_ids   TEXT    NOT NULL DEFAULT '{}',  -- JSON: { "TC-001": 5678, … }
+  test_case_count INTEGER,
+  created_at      INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX idx_qa_plan_workflow ON qa_test_plan_map(workflow_id);
+
+-- ------------------------------------------------------------
 -- skill_versions — Versioned Skill Registry
 -- Each row is an immutable snapshot of an agent skill at a
 -- given version. Agents load from here first; disk files are

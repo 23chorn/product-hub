@@ -9,6 +9,7 @@ interface Scenario {
 interface TestCase {
   id: string;
   title: string;
+  description?: string;
   type: string;
   priority: string;
   category?: string;
@@ -126,6 +127,13 @@ function TestCaseCard({ tc }: { tc: TestCase }) {
 
       {open && (
         <div className="border-t border-slate-100 dark:border-slate-700 px-3 py-3 space-y-3 bg-slate-50/50 dark:bg-slate-800/30 text-sm">
+          {tc.description && (
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-1">Description</p>
+              <p className="text-xs text-slate-700 dark:text-slate-300">{tc.description}</p>
+            </div>
+          )}
+
           {tc.preconditions && tc.preconditions.length > 0 && (
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-1">Preconditions</p>

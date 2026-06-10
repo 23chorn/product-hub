@@ -80,6 +80,21 @@ try {
   db.exec('CREATE INDEX IF NOT EXISTS idx_pipeline_runs_workflow ON pipeline_runs(workflow_id, created_at)');
 } catch { /* already exists */ }
 
+try {
+  db.exec(`CREATE TABLE IF NOT EXISTS qa_test_plan_map (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    workflow_id     TEXT    NOT NULL REFERENCES workflows(id),
+    artifact_id     INTEGER REFERENCES artifacts(id),
+    plan_id         INTEGER NOT NULL,
+    plan_url        TEXT    NOT NULL,
+    suite_ids       TEXT    NOT NULL DEFAULT '{}',
+    test_case_ids   TEXT    NOT NULL DEFAULT '{}',
+    test_case_count INTEGER,
+    created_at      INTEGER NOT NULL
+  )`);
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_qa_plan_workflow ON qa_test_plan_map(workflow_id)');
+} catch { /* already exists */ }
+
 // ---------------------------------------------------------------------------
 // Helper: getPolicies
 // ---------------------------------------------------------------------------

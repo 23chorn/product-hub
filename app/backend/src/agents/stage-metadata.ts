@@ -25,7 +25,7 @@ export const STAGE_MAX_OUTPUT_TOKENS: Record<string, number> = {
   gtm_strategy:       12_000,
   prototype:          64_000,
   feature_marketing:  12_000,
-  qa_engineer:        32_000,
+  qa_engineer:        64_000,
   tech_refinement:    32_000,
 };
 
@@ -244,7 +244,7 @@ Key requirements:
 
 Key requirements:
 - **Trace every FR**: every Functional Requirement from the PRD must appear in \`coverage.by_fr\` and have at least one \`critical\` happy path test and one \`bad_path\` test.
-- **Trace every story AC**: every backlog story acceptance criterion (Given/When/Then) must map to at least one test case via \`story_ref\`.
+- **Trace every story AC**: every backlog story acceptance criterion (Given/When/Then) must map to at least one test case via \`story_ref\`. Use the exact format \`F1.S1\`, \`F2.S3\`, etc. matching the backlog structure (Feature number dot Story number).
 - **Concrete test data**: every test case's \`test_data\` object must contain the exact field names and values to use — no placeholders like "valid input".
 - **Automation-first Given/When/Then**: steps must be specific enough to implement in Playwright or Cypress without interpretation.
 - **Priority tagging**: mark at minimum one test per FR as \`critical\` and include \`@smoke\` tags on the smallest set of tests that confirm the feature fundamentally works.

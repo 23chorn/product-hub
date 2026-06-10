@@ -1026,7 +1026,7 @@ async function autoPublishWikiPages(workflowId: string, itemId: string, stage: '
       return;
     }
 
-    const content = fs.readFileSync(artifact.file_path, 'utf-8');
+    const content = fs.readFileSync(resolveArtifactPath(artifact.file_path), 'utf-8');
 
     // Ensure parent pages exist, then upsert the leaf page
     await client.ensureWikiPath(wikiId, pagePath);
@@ -1224,6 +1224,118 @@ workflowRoutes.post('/:id/push-to-board', async (req: Request, res: Response) =>
     return res.status(400).json({ error: `Push to board is not yet supported for provider: ${appConfig.integrations.workItems}` });
   } catch (err: any) {
     logger.error('Failed to push to board', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/workflow/:id/push-to-test-plans ────────────────────────────────────
+
+/**
+ * POST /api/workflow/:id/push-to-test-plans
+ * Pushes or syncs the approved QA test artifact to ADO Test Plans.
+ * Creates one suite per test type; test cases are linked to their ADO story via TestedBy.
+ * Subsequent pushes update existing test cases idempotently.
+ */
+workflowRoutes.post('/:id/push-to-test-plans', async (req: Request, res: Response) => {
+  const workflowId = req.params.id;
+  const fs = require('fs');
+
+  try {
+    const { appConfig } = require('../config/app-config');
+    if (appConfig.integrations.workItems !== 'ado') {
+      return res.status(400).json({ error: 'ADO work items integration is not configured.' });
+    }
+
+    const workflow = db.prepare<[string], { item_id: string; summary: string | null; goal: string }>(
+      'SELECT item_id, summary, goal FROM workflows WHERE id = ?'
+    ).get(workflowId);
+    if (!workflow) return res.status(404).json({ error: 'Workflow not found' });
+
+    // Load latest QA artifact
+    const qaArtifact = db.prepare<[string], { file_path: string; id: number }>(`
+      SELECT a.file_path, a.id FROM artifacts a
+      JOIN sessions s ON a.session_id = s.id
+      WHERE s.item_id = ? AND a.type = 'qa_tests'
+      ORDER BY a.created_at DESC LIMIT 1
+    `).get(workflow.item_id);
+    if (!qaArtifact) return res.status(404).json({ error: 'No QA test artifact found for this workflow' });
+
+    const raw = fs.readFileSync(resolveArtifactPath(qaArtifact.file_path), 'utf-8')
+      .replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+    let qa: any;
+    try { qa = JSON.parse(raw); } catch {
+      return res.status(400).json({ error: 'QA artifact is not valid JSON — retry the qa_engineer stage' });
+    }
+
+    const testCases = (qa.test_cases ?? []) as any[];
+    if (testCases.length === 0) {
+      return res.status(400).json({ error: 'No test cases found in QA artifact' });
+    }
+
+    // Build story map: local_key (F1.S1) → ado_id
+    const storyMappings = db.prepare<[string], { local_key: string; ado_id: number }>(
+      `SELECT local_key, ado_id FROM ado_work_item_map WHERE workflow_id = ? AND ado_type = 'story'`
+    ).all(workflowId);
+    const storyMap = new Map(storyMappings.map(m => [m.local_key, m.ado_id]));
+    logger.info(`Story map for test plan linking: ${JSON.stringify(Array.from(storyMap.entries()))}`);
+
+    // Log test case story references
+    const testCaseRefs = testCases
+      .filter(tc => tc.story_ref || tc.linkedStory)
+      .map(tc => ({ id: tc.id, ref: tc.story_ref ?? tc.linkedStory }));
+    logger.info(`Test cases with story references: ${JSON.stringify(testCaseRefs)}`);
+
+    // Check for existing test plan mapping
+    const existingMap = db.prepare<[string], { plan_id: number; plan_url: string; suite_ids: string; test_case_ids: string; root_suite_id?: number }>(
+      'SELECT plan_id, plan_url, suite_ids, test_case_ids FROM qa_test_plan_map WHERE workflow_id = ?'
+    ).get(workflowId);
+
+    const existing = existingMap ? {
+      planId: existingMap.plan_id,
+      rootSuiteId: existingMap.root_suite_id,
+      suiteIds: JSON.parse(existingMap.suite_ids ?? '{}'),
+      testCaseIds: JSON.parse(existingMap.test_case_ids ?? '{}'),
+    } : undefined;
+
+    const planName = (workflow.summary ?? workflow.goal.split('\n')[0]).slice(0, 60);
+
+    const { AzureDevOpsClient } = require('../integrations/azure-devops');
+    const client = new AzureDevOpsClient();
+
+    const result = await client.pushQATestPlan({ planName, testCases, storyMap, existing });
+
+    // Persist the mapping
+    const now = Date.now();
+    db.prepare(`
+      INSERT OR REPLACE INTO qa_test_plan_map
+        (workflow_id, artifact_id, plan_id, plan_url, suite_ids, test_case_ids, test_case_count, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      workflowId,
+      qaArtifact.id,
+      result.planId,
+      result.planUrl,
+      JSON.stringify(result.suiteIds),
+      JSON.stringify(result.testCaseIds),
+      testCases.length,
+      now
+    );
+
+    insertEvent(workflowId, 'stage_progress', 'qa_engineer',
+      `QA Test Plan synced to ADO — ${result.created} created, ${result.updated} updated\n→ ${result.planUrl}`,
+      { plan_id: result.planId, plan_url: result.planUrl, created: result.created, updated: result.updated }
+    );
+
+    logger.info(`Test plan push complete for workflow ${workflowId}: ${result.created} created, ${result.updated} updated`);
+    return res.json({
+      planId: result.planId,
+      planUrl: result.planUrl,
+      created: result.created,
+      updated: result.updated,
+      testCaseCount: testCases.length,
+    });
+  } catch (err: any) {
+    logger.error('Failed to push to test plans', err);
     res.status(500).json({ error: err.message });
   }
 });

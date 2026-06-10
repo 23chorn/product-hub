@@ -163,6 +163,17 @@ changeRequestRoutes.get('/workflow/:id/ado-mappings', (req: Request, res: Respon
 });
 
 /**
+ * GET /api/workflow/:id/qa-test-plan-mappings
+ * Check if a QA test plan has already been pushed for this workflow.
+ */
+changeRequestRoutes.get('/workflow/:id/qa-test-plan-mappings', (req: Request, res: Response) => {
+  const row = db.prepare<[string], { cnt: number }>(
+    'SELECT COUNT(*) as cnt FROM qa_test_plan_map WHERE workflow_id = ?'
+  ).get(req.params.id);
+  res.json({ hasMappings: (row?.cnt ?? 0) > 0 });
+});
+
+/**
  * GET /api/workflow/artifact/:id/version-info
  * Get CR version info for an artifact (for the version badge in ArtifactViewer).
  */

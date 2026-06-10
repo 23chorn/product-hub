@@ -464,7 +464,7 @@ export async function runAutonomousStage(
       if (backlogPath) {
         try {
           const content = fs.readFileSync(backlogPath, 'utf-8');
-          parts.push(`**Backlog (use story IDs and acceptance criteria to populate story_ref and scenario fields):**\n\n${content}`);
+          parts.push(`**Backlog (use story IDs in format F1.S1, F2.S3, etc. to populate story_ref field — stories are indexed by their position in each feature's stories array):**\n\n${content}`);
         } catch { /* ignore */ }
       }
       if (parts.length > 0) itemContext = parts.join('\n\n---\n\n');

@@ -17,11 +17,12 @@ The JSON must follow this exact schema:
     {
       "id": "TC-001",
       "title": "Concise, specific test case name",
+      "description": "Clear summary of what is being tested and why it matters — 1-2 sentences",
       "type": "happy_path",
       "priority": "critical",
       "category": "Logical grouping, e.g. Authentication, Form Validation, Data Display",
       "prd_ref": "FR-01",
-      "story_ref": "F1.S1 or null",
+      "story_ref": "F1.S1 (Feature.Story format) or null",
       "scenario": {
         "given": [
           "Specific precondition — state of the system or user context"
@@ -88,7 +89,7 @@ Every PRD Functional Requirement (FR-XX) must have at least:
 - 1 `bad_path` test for each distinct failure mode
 - 1 `edge_case` test for any boundary value mentioned in the AC
 
-Every backlog story acceptance criterion (Given/When/Then) must map to at least one test case.
+Every backlog story acceptance criterion (Given/When/Then) must map to at least one test case via `story_ref` using the format `F1.S1` (Feature 1, Story 1), `F2.S3` (Feature 2, Story 3), etc.
 
 The `coverage.by_fr` object must list every FR from the PRD that has at least one test case.
 

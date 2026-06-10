@@ -81,6 +81,175 @@ function buildTechnicalSuggestions(technical: { constraints?: string[]; affected
   ].join('');
 }
 
+/**
+ * Format per-platform technical notes from tech_refinement into an HTML section.
+ * technical_notes: { ios, android, backend } — each is a free-text string.
+ * Returns an empty string when no meaningful notes are present.
+ */
+function buildPlatformNotes(notes: { ios?: string | null; android?: string | null; backend?: string | null } | undefined): string {
+  if (!notes) return '';
+
+  const platforms = [
+    { label: 'iOS', value: notes.ios },
+    { label: 'Android', value: notes.android },
+    { label: 'Backend', value: notes.backend },
+  ].filter(p => p.value && p.value !== 'null' && p.value.trim() !== '' && p.value.trim().toLowerCase() !== 'n/a');
+
+  if (!platforms.length) return '';
+
+  return [
+    '<hr>',
+    '<b>Technical Notes</b> <i>(AI-generated · pending engineering review)</i><br>',
+    platforms.map(p => `<b>${p.label}:</b> ${escapeHtml(p.value!)}`).join('<br>'),
+  ].join('');
+}
+
+/**
+ * Derive team tags from per-platform technical_notes.
+ * A platform is tagged when its notes field is present and non-trivial.
+ * Future streams (web) can be added here once the tech_refinement agent supports them.
+ * Returns a semicolon-separated ADO tag string, or undefined when no tags apply.
+ */
+function deriveTeamTags(notes: { ios?: string | null; android?: string | null; backend?: string | null } | undefined): string | undefined {
+  if (!notes) return undefined;
+
+  const isPresent = (v: string | null | undefined) =>
+    !!v && v !== 'null' && v.trim() !== '' && v.trim().toLowerCase() !== 'n/a';
+
+  const tags: string[] = [];
+  if (isPresent(notes.backend)) tags.push('Backend');
+  if (isPresent(notes.ios))     tags.push('iOS');
+  if (isPresent(notes.android)) tags.push('Android');
+  // Web: not yet supported — add here when web tech_refinement agent is introduced
+
+  return tags.length ? tags.join('; ') : undefined;
+}
+
+// ── Test Plans constants ──────────────────────────────────────────────────────
+
+const SUITE_TYPE_LABELS: Record<string, string> = {
+  happy_path: 'Happy Path',
+  bad_path: 'Bad Path',
+  edge_case: 'Edge Case',
+  functional: 'Functional',
+  performance: 'Performance',
+  compliance: 'Compliance',
+};
+
+const TC_PRIORITY_MAP: Record<string, number> = {
+  critical: 1, high: 2, medium: 3, low: 4,
+};
+
+interface TestCaseInput {
+  id?: string;
+  title: string;
+  type?: string;
+  priority?: string;
+  story_ref?: string | null;
+  linkedStory?: string | null;
+  tags?: string[];
+  scenario?: { given: string[]; when?: string[]; then: string[] };
+  steps?: string[];
+  expectedResult?: string;
+  preconditions?: string[];
+  description?: string;
+}
+
+/**
+ * Build a human-readable test case description summarizing what is being tested.
+ * Includes test type, linked story, preconditions, and scenario/expected result.
+ */
+function buildTestCaseDescription(tc: TestCaseInput): string {
+  const parts: string[] = [];
+
+  // Use explicit description if provided
+  if (tc.description) {
+    parts.push(escapeHtml(tc.description));
+  }
+
+  // Test type and linked story
+  const metadata: string[] = [];
+  if (tc.type) {
+    const typeLabel = SUITE_TYPE_LABELS[tc.type] ?? tc.type;
+    metadata.push(`<b>Type:</b> ${escapeHtml(typeLabel)}`);
+  }
+  if (tc.story_ref || tc.linkedStory) {
+    metadata.push(`<b>Linked Story:</b> ${escapeHtml(tc.story_ref ?? tc.linkedStory!)}`);
+  }
+  if (metadata.length) {
+    parts.push(metadata.join(' | '));
+  }
+
+  // Preconditions
+  if (tc.preconditions && tc.preconditions.length > 0) {
+    parts.push('<b>Preconditions:</b>');
+    parts.push('<ul>' + tc.preconditions.map(p => `<li>${escapeHtml(p)}</li>`).join('') + '</ul>');
+  }
+
+  // Scenario summary (Gherkin)
+  if (tc.scenario) {
+    parts.push('<b>Scenario:</b>');
+    const scenarioParts: string[] = [];
+    if (tc.scenario.given && tc.scenario.given.length > 0) {
+      scenarioParts.push(`<b>Given</b> ${escapeHtml(tc.scenario.given.join(', '))}`);
+    }
+    if (tc.scenario.when && tc.scenario.when.length > 0) {
+      scenarioParts.push(`<b>When</b> ${escapeHtml(tc.scenario.when.join(', '))}`);
+    }
+    if (tc.scenario.then && tc.scenario.then.length > 0) {
+      scenarioParts.push(`<b>Then</b> ${escapeHtml(tc.scenario.then.join(', '))}`);
+    }
+    parts.push(scenarioParts.join('<br>'));
+  }
+
+  // Expected result (procedural tests)
+  if (tc.expectedResult && !tc.scenario) {
+    parts.push(`<b>Expected Result:</b> ${escapeHtml(tc.expectedResult)}`);
+  }
+
+  return parts.length > 0 ? parts.join('<br><br>') : '';
+}
+
+/**
+ * Convert a TestCase's Gherkin scenario or procedural steps into ADO step XML.
+ * Gherkin: Given/When → ActionStep; Then → ValidateStep (last Then = expected result).
+ * Procedural: each step → ActionStep + final ValidateStep for expectedResult.
+ */
+function buildTestStepsXml(tc: TestCaseInput): string {
+  type StepEntry = { type: 'ActionStep' | 'ValidateStep'; action: string; expected: string };
+  const stepItems: StepEntry[] = [];
+
+  if (tc.scenario) {
+    const given = tc.scenario.given ?? [];
+    const when = tc.scenario.when ?? [];
+    const then = tc.scenario.then ?? [];
+    for (const s of given) stepItems.push({ type: 'ActionStep', action: s, expected: '' });
+    for (const s of when)  stepItems.push({ type: 'ActionStep', action: s, expected: '' });
+    for (let i = 0; i < then.length; i++) {
+      stepItems.push({
+        type: 'ValidateStep',
+        action: then[i],
+        expected: i === then.length - 1 ? then[i] : '',
+      });
+    }
+  } else if (tc.steps && tc.steps.length > 0) {
+    for (const s of tc.steps) stepItems.push({ type: 'ActionStep', action: s, expected: '' });
+    const expected = tc.expectedResult ?? 'Verify expected behaviour';
+    stepItems.push({ type: 'ValidateStep', action: expected, expected });
+  } else {
+    const expected = tc.expectedResult ?? 'Verify expected behaviour';
+    stepItems.push({ type: 'ActionStep', action: `Execute: ${escapeHtml(tc.title)}`, expected: '' });
+    stepItems.push({ type: 'ValidateStep', action: expected, expected });
+  }
+
+  const stepXml = stepItems.map((step, i) => {
+    const n = i + 1;
+    return `<step id="${n}" type="${step.type}"><parameterizedString isformatted="true">${escapeHtml(step.action)}</parameterizedString><parameterizedString isformatted="true">${escapeHtml(step.expected)}</parameterizedString><description/></step>`;
+  }).join('');
+
+  return `<steps id="0" last="${stepItems.length}">${stepXml}</steps>`;
+}
+
 export interface WorkItem {
   id?: number;
   fields: {
@@ -108,6 +277,7 @@ export interface CreateWorkItemRequest {
   effort?: number;
   aiEstimateDevHours?: number;
   aiEstimateQaHours?: number;
+  tags?: string;
 }
 
 /**
@@ -268,6 +438,14 @@ export class AzureDevOpsClient {
       });
     }
 
+    if (request.tags) {
+      operations.push({
+        op: 'add',
+        path: '/fields/System.Tags',
+        value: request.tags,
+      });
+    }
+
     // Add parent link if specified
     if (request.parentId) {
       operations.push({
@@ -341,7 +519,7 @@ export class AzureDevOpsClient {
             `<b>As a</b> ${escapeHtml(stripStoryPrefix(storyData.persona, /^as an?\s+/i))}`,
             `<b>I want</b> ${escapeHtml(stripStoryPrefix(storyData.goal, /^i want\s+(to\s+)?/i))}`,
             `<b>So that</b> ${escapeHtml(stripStoryPrefix(storyData.benefit, /^so that\s+/i))}`,
-          ].join('<br>') + buildTechnicalSuggestions(storyData.technical);
+          ].join('<br>') + buildTechnicalSuggestions(storyData.technical) + buildPlatformNotes(storyData.technical_notes);
 
           let acceptanceCriteriaHtml: string | undefined;
           if (storyData.acceptanceCriteria && storyData.acceptanceCriteria.length > 0) {
@@ -361,6 +539,7 @@ export class AzureDevOpsClient {
             effort: storyData.effort,
             aiEstimateDevHours: storyData.aiEstimatedHours !== undefined ? toNearestFibonacci(storyData.aiEstimatedHours) : undefined,
             aiEstimateQaHours: storyData.aiEstimatedQaHours,
+            tags: deriveTeamTags(storyData.technical_notes),
             parentId: feature.id,
           });
           storyIds.push(story.id!);
@@ -428,7 +607,7 @@ export class AzureDevOpsClient {
    */
   async updateWorkItem(
     id: number,
-    updates: { title?: string; description?: string; effort?: number; acceptanceCriteria?: string; aiEstimateDevHours?: number; aiEstimateQaHours?: number }
+    updates: { title?: string; description?: string; effort?: number; acceptanceCriteria?: string; aiEstimateDevHours?: number; aiEstimateQaHours?: number; tags?: string }
   ): Promise<WorkItem> {
     logger.info(`Updating work item #${id}`);
 
@@ -451,6 +630,9 @@ export class AzureDevOpsClient {
     }
     if (updates.aiEstimateQaHours !== undefined) {
       operations.push({ op: 'add', path: `/fields/${this.customFields.aiEstimateQa}`, value: updates.aiEstimateQaHours });
+    }
+    if (updates.tags !== undefined) {
+      operations.push({ op: 'replace', path: '/fields/System.Tags', value: updates.tags });
     }
 
     if (operations.length === 0) {
@@ -551,7 +733,7 @@ export class AzureDevOpsClient {
           `<b>As a</b> ${escapeHtml(storyData.persona)}`,
           `<b>I want</b> ${escapeHtml(storyData.goal)}`,
           `<b>So that</b> ${escapeHtml(storyData.benefit)}`,
-        ].join('<br>') + buildTechnicalSuggestions(storyData.technical);
+        ].join('<br>') + buildTechnicalSuggestions(storyData.technical) + buildPlatformNotes(storyData.technical_notes);
 
         let acceptanceCriteriaHtml: string | undefined;
         if (storyData.acceptanceCriteria && storyData.acceptanceCriteria.length > 0) {
@@ -573,6 +755,7 @@ export class AzureDevOpsClient {
             acceptanceCriteria: acceptanceCriteriaHtml,
             aiEstimateDevHours: fibAiHours,
             aiEstimateQaHours: storyData.aiEstimatedQaHours,
+            tags: deriveTeamTags(storyData.technical_notes),
           });
           updated++;
         } else {
@@ -587,6 +770,7 @@ export class AzureDevOpsClient {
             effort: storyData.effort,
             aiEstimateDevHours: fibAiHours,
             aiEstimateQaHours: storyData.aiEstimatedQaHours,
+            tags: deriveTeamTags(storyData.technical_notes),
             parentId: featureAdoId,
           });
           created++;
@@ -672,12 +856,15 @@ export class AzureDevOpsClient {
 
   async upsertWikiPage(wikiIdentifier: string, path: string, content: string): Promise<{ eTag: string; url: string }> {
     const apiUrl = this.wikiUrl(wikiIdentifier, path);
+    // The wiki pages endpoint is preview-only — override the instance default api-version.
+    const wikiParams = { 'api-version': '7.1-preview.1' };
 
     // GET existing page to retrieve ETag (needed for updates — ADO requires it)
     let currentETag: string | undefined;
     try {
       const existing = await this.client.get(apiUrl, {
         headers: { 'Content-Type': 'application/json' },
+        params: wikiParams,
       });
       currentETag = existing.headers['etag'];
     } catch { /* page doesn't exist yet — will create */ }
@@ -686,7 +873,10 @@ export class AzureDevOpsClient {
       const response = await this.client.put(
         apiUrl,
         { content },
-        { headers: { 'Content-Type': 'application/json', 'If-Match': currentETag ?? '*' } }
+        {
+          headers: { 'Content-Type': 'application/json', 'If-Match': currentETag ?? '*' },
+          params: wikiParams,
+        }
       );
       const eTag: string = response.headers['etag'] ?? '';
       const pageUrl = this.getWikiPageUrl(wikiIdentifier, path);
@@ -705,20 +895,282 @@ export class AzureDevOpsClient {
    */
   async ensureWikiPath(wikiIdentifier: string, path: string): Promise<void> {
     const segments = path.split('/').filter(Boolean);
+    const wikiParams = { 'api-version': '7.1-preview.1' };
     for (let i = 1; i < segments.length; i++) {
       const ancestorPath = '/' + segments.slice(0, i).join('/');
       const apiUrl = this.wikiUrl(wikiIdentifier, ancestorPath);
       try {
-        await this.client.get(apiUrl, { headers: { 'Content-Type': 'application/json' } });
+        await this.client.get(apiUrl, {
+          headers: { 'Content-Type': 'application/json' },
+          params: wikiParams,
+        });
       } catch {
         try {
           await this.client.put(
             apiUrl,
             { content: `# ${segments[i - 1]}` },
-            { headers: { 'Content-Type': 'application/json', 'If-Match': '*' } }
+            { headers: { 'Content-Type': 'application/json', 'If-Match': '*' }, params: wikiParams }
           );
         } catch { /* may already exist from concurrent call — ignore */ }
       }
     }
+  }
+
+  // ── Test Plans API ────────────────────────────────────────────────────────────
+
+  /** Create a new ADO Test Plan. Returns planId, rootSuiteId, and browser URL. */
+  async createTestPlan(name: string): Promise<{ planId: number; rootSuiteId: number; planUrl: string }> {
+    try {
+      const response = await this.client.post('/testplan/plans', { name }, {
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const planId = response.data.id as number;
+      const rootSuiteId = response.data.rootSuite?.id as number;
+      return {
+        planId,
+        rootSuiteId,
+        planUrl: `https://dev.azure.com/${this.organization}/${this.project}/_testPlans/define?planId=${planId}`,
+      };
+    } catch (error: any) {
+      throw new Error(`Failed to create test plan: ${error.response?.data?.message || error.message}`);
+    }
+  }
+
+  /** Create a static test suite as a child of parentSuiteId inside a plan. */
+  async createTestSuite(planId: number, name: string, parentSuiteId: number): Promise<{ suiteId: number }> {
+    try {
+      const response = await this.client.post(`/testplan/plans/${planId}/suites`, {
+        suiteType: 'StaticTestSuite',
+        name,
+        parentSuite: { id: parentSuiteId },
+      }, {
+        headers: { 'Content-Type': 'application/json' },
+      });
+      return { suiteId: response.data.id as number };
+    } catch (error: any) {
+      throw new Error(`Failed to create test suite "${name}": ${error.response?.data?.message || error.message}`);
+    }
+  }
+
+  /** Create a Test Case work item with steps XML and optional TestedBy link. */
+  async createTestCaseWorkItem(params: {
+    title: string;
+    description?: string;
+    stepsXml: string;
+    priority: number;
+    tags?: string;
+    storyAdoId?: number;
+  }): Promise<{ testCaseId: number }> {
+    const operations: any[] = [
+      { op: 'add', path: '/fields/System.Title', value: params.title },
+      { op: 'add', path: '/fields/Microsoft.VSTS.TCM.Steps', value: params.stepsXml },
+      { op: 'add', path: '/fields/Microsoft.VSTS.Common.Priority', value: params.priority },
+    ];
+
+    if (params.description) {
+      operations.push({ op: 'add', path: '/fields/System.Description', value: params.description });
+    }
+
+    if (params.tags) {
+      operations.push({ op: 'add', path: '/fields/System.Tags', value: params.tags });
+    }
+
+    if (params.storyAdoId) {
+      operations.push({
+        op: 'add',
+        path: '/relations/-',
+        value: {
+          rel: 'Microsoft.VSTS.Common.TestedBy-Reverse',
+          url: `https://dev.azure.com/${this.organization}/${this.project}/_apis/wit/workItems/${params.storyAdoId}`,
+        },
+      });
+    }
+
+    try {
+      const response = await this.client.post('/wit/workitems/$Test%20Case', operations);
+      return { testCaseId: response.data.id as number };
+    } catch (error: any) {
+      throw new Error(`Failed to create test case "${params.title}": ${error.response?.data?.message || error.message}`);
+    }
+  }
+
+  /**
+   * Add a TestedBy-Reverse relation from a test case to a user story.
+   * Silently swallows duplicate-link errors so re-syncs are idempotent.
+   */
+  async addTestedByLink(testCaseId: number, storyAdoId: number): Promise<void> {
+    try {
+      await this.client.patch(`/wit/workitems/${testCaseId}`, [
+        {
+          op: 'add',
+          path: '/relations/-',
+          value: {
+            rel: 'Microsoft.VSTS.Common.TestedBy-Reverse',
+            url: `https://dev.azure.com/${this.organization}/${this.project}/_apis/wit/workItems/${storyAdoId}`,
+          },
+        },
+      ]);
+    } catch (error: any) {
+      const msg: string = error.response?.data?.message ?? error.message ?? '';
+      // ADO returns a 400 with "duplicate" in the message when the link already exists
+      if (/duplicate|already exists/i.test(msg)) return;
+      logger.warn(`addTestedByLink: tc #${testCaseId} → story #${storyAdoId}: ${msg}`);
+    }
+  }
+
+  /** Update an existing Test Case work item's title, steps, priority, tags, and description. */
+  async updateTestCaseWorkItem(testCaseId: number, params: {
+    title: string;
+    description?: string;
+    stepsXml: string;
+    priority: number;
+    tags?: string;
+  }): Promise<void> {
+    const operations: any[] = [
+      { op: 'replace', path: '/fields/System.Title', value: params.title },
+      { op: 'replace', path: '/fields/Microsoft.VSTS.TCM.Steps', value: params.stepsXml },
+      { op: 'replace', path: '/fields/Microsoft.VSTS.Common.Priority', value: params.priority },
+    ];
+
+    if (params.description !== undefined) {
+      operations.push({ op: 'replace', path: '/fields/System.Description', value: params.description });
+    }
+
+    if (params.tags !== undefined) {
+      operations.push({ op: 'replace', path: '/fields/System.Tags', value: params.tags });
+    }
+
+    try {
+      await this.client.patch(`/wit/workitems/${testCaseId}`, operations);
+    } catch (error: any) {
+      throw new Error(`Failed to update test case #${testCaseId}: ${error.response?.data?.message || error.message}`);
+    }
+  }
+
+  /** Add existing test case work items to a test suite. */
+  async addTestCasesToSuite(planId: number, suiteId: number, testCaseIds: number[]): Promise<void> {
+    if (testCaseIds.length === 0) return;
+    // Use the older /test API — it accepts comma-separated IDs in the URL and is reliably supported.
+    // The newer /testplan POST endpoint is preview-only and returns 404 with api-version 7.1.
+    const ids = testCaseIds.join(',');
+    try {
+      await this.client.post(
+        `/test/plans/${planId}/suites/${suiteId}/testcases/${ids}`,
+        null,
+        { headers: { 'Content-Type': 'application/json' } }
+      );
+    } catch (error: any) {
+      throw new Error(`Failed to add test cases to suite: ${error.response?.data?.message || error.message}`);
+    }
+  }
+
+  /**
+   * Push or sync a QA test suite to ADO Test Plans.
+   * Creates a plan + per-type suites on first push; updates existing test cases and
+   * adds new ones on subsequent pushes. Returns accumulated IDs and counts.
+   */
+  async pushQATestPlan(params: {
+    planName: string;
+    testCases: TestCaseInput[];
+    storyMap: Map<string, number>;
+    existing?: {
+      planId: number;
+      rootSuiteId?: number;
+      suiteIds: Record<string, number>;
+      testCaseIds: Record<string, number>;
+    };
+  }): Promise<{
+    planId: number;
+    rootSuiteId: number;
+    planUrl: string;
+    suiteIds: Record<string, number>;
+    testCaseIds: Record<string, number>;
+    created: number;
+    updated: number;
+  }> {
+    const { planName, testCases, storyMap, existing } = params;
+
+    let planId: number;
+    let rootSuiteId: number;
+    let planUrl: string;
+
+    if (existing) {
+      planId = existing.planId;
+      planUrl = `https://dev.azure.com/${this.organization}/${this.project}/_testPlans/define?planId=${planId}`;
+      // Fetch root suite from ADO if not cached
+      if (existing.rootSuiteId) {
+        rootSuiteId = existing.rootSuiteId;
+      } else {
+        const planRes = await this.client.get(`/testplan/plans/${planId}`, {
+          headers: { 'Content-Type': 'application/json' },
+        });
+        rootSuiteId = planRes.data.rootSuite?.id as number;
+      }
+    } else {
+      const plan = await this.createTestPlan(planName);
+      planId = plan.planId;
+      rootSuiteId = plan.rootSuiteId;
+      planUrl = plan.planUrl;
+    }
+
+    const suiteIds: Record<string, number> = existing?.suiteIds ? { ...existing.suiteIds } : {};
+    const testCaseIds: Record<string, number> = existing?.testCaseIds ? { ...existing.testCaseIds } : {};
+    let created = 0;
+    let updated = 0;
+
+    // Group test cases by type
+    const byType = new Map<string, TestCaseInput[]>();
+    for (const tc of testCases) {
+      const type = tc.type ?? 'functional';
+      if (!byType.has(type)) byType.set(type, []);
+      byType.get(type)!.push(tc);
+    }
+
+    for (const [type, cases] of byType) {
+      if (!suiteIds[type]) {
+        const label = SUITE_TYPE_LABELS[type] ?? type;
+        const suite = await this.createTestSuite(planId, label, rootSuiteId);
+        suiteIds[type] = suite.suiteId;
+      }
+      const suiteId = suiteIds[type];
+      const newTestCaseAdoIds: number[] = [];
+
+      for (const tc of cases) {
+        const stepsXml = buildTestStepsXml(tc);
+        const description = buildTestCaseDescription(tc);
+        const priority = TC_PRIORITY_MAP[(tc.priority ?? 'medium').toLowerCase()] ?? 3;
+        const tags = Array.isArray(tc.tags) && tc.tags.length ? tc.tags.join('; ') : undefined;
+        const storyRef = tc.story_ref ?? tc.linkedStory ?? null;
+        const storyAdoId = storyRef ? storyMap.get(storyRef) : undefined;
+
+        if (storyRef && !storyAdoId) {
+          logger.warn(`Test case ${tc.id} references story "${storyRef}" but no ADO ID found in storyMap`);
+        }
+
+        if (tc.id && testCaseIds[tc.id]) {
+          await this.updateTestCaseWorkItem(testCaseIds[tc.id], { title: tc.title, description, stepsXml, priority, tags });
+          if (storyAdoId) {
+            logger.info(`Adding TestedBy link: tc #${testCaseIds[tc.id]} → story #${storyAdoId} (${storyRef})`);
+            await this.addTestedByLink(testCaseIds[tc.id], storyAdoId);
+          }
+          updated++;
+        } else {
+          if (storyAdoId) {
+            logger.info(`Creating test case with TestedBy link: "${tc.title}" → story #${storyAdoId} (${storyRef})`);
+          }
+          const { testCaseId } = await this.createTestCaseWorkItem({ title: tc.title, description, stepsXml, priority, tags, storyAdoId });
+          if (tc.id) testCaseIds[tc.id] = testCaseId;
+          newTestCaseAdoIds.push(testCaseId);
+          created++;
+        }
+      }
+
+      if (newTestCaseAdoIds.length > 0) {
+        await this.addTestCasesToSuite(planId, suiteId, newTestCaseAdoIds);
+      }
+    }
+
+    logger.info(`Test plan push: planId=${planId}, ${created} created, ${updated} updated`);
+    return { planId, rootSuiteId, planUrl, suiteIds, testCaseIds, created, updated };
   }
 }

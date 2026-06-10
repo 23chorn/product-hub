@@ -305,6 +305,23 @@ class APIClient {
     }
   }
 
+  async pushToTestPlans(workflowId: string): Promise<{
+    planId: number; planUrl: string;
+    created: number; updated: number; testCaseCount: number;
+  }> {
+    const response = await axios.post(`${this.baseURL}/api/workflow/${workflowId}/push-to-test-plans`);
+    return response.data;
+  }
+
+  async getQATestPlanMappings(workflowId: string): Promise<{ hasMappings: boolean }> {
+    try {
+      const response = await axios.get(`${this.baseURL}/api/workflow/${workflowId}/qa-test-plan-mappings`);
+      return response.data;
+    } catch {
+      return { hasMappings: false };
+    }
+  }
+
   async deleteWorkflow(workflowId: string): Promise<void> {
     await axios.delete(`${this.baseURL}/api/workflow/${workflowId}`);
   }

@@ -240,6 +240,10 @@ function EventRow({ msg }: { msg: CoordinatorMessage }) {
 
 // ── Checkpoint inline review ──────────────────────────────────────────────────
 
+function isStaleRecoveryCheckpoint(coordinatorAction: string | null): boolean {
+  try { return !!JSON.parse(coordinatorAction ?? '{}').stale_recovery; } catch { return false; }
+}
+
 function CheckpointRow({
   stageName,
   onResolved,
@@ -251,13 +255,18 @@ function CheckpointRow({
   const checkpoint = checkpoints.find(c => c.stage === stageName && c.status === 'pending');
   if (!checkpoint) return null;
 
+  // Stale-recovery checkpoints may have a critic artifact_id — don't use it for preview
+  const safeArtifactId = isStaleRecoveryCheckpoint(checkpoint.coordinator_action)
+    ? null
+    : checkpoint.artifact_id;
+
   return (
     <div className="mx-2 mt-1 mb-2 rounded border border-sky-200 dark:border-sky-700/40 bg-sky-50 dark:bg-sky-900/10 p-2 space-y-2">
       <div className="flex items-center gap-2">
         <span className="text-[10px] text-sky-600 dark:text-sky-400 font-mono">⏸ awaiting approval</span>
-        {checkpoint.artifact_id && (
+        {safeArtifactId && (
           <button
-            onClick={() => setViewingArtifactId(checkpoint.artifact_id!)}
+            onClick={() => setViewingArtifactId(safeArtifactId)}
             className="text-[10px] text-sky-600 hover:text-sky-800 dark:text-sky-400 dark:hover:text-sky-200 font-mono border border-sky-200 hover:border-sky-400 dark:border-sky-700/40 dark:hover:border-sky-500 px-1.5 py-0.5 rounded transition-colors"
           >
             review output →
@@ -558,9 +567,14 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
 
             const pendingCp = checkpoints.find(c => c.stage === stageName && c.status === 'pending');
             const approvedCp = checkpoints.filter(c => c.stage === stageName && c.status === 'approved').at(-1);
-            // Fall back to any checkpoint with an artifact_id (e.g. revised) when approved/pending ones lack one
-            const anyWithArtifact = checkpoints.filter(c => c.stage === stageName && c.artifact_id !== null).at(-1);
-            const stageArtifactId = approvedCp?.artifact_id ?? pendingCp?.artifact_id ?? anyWithArtifact?.artifact_id ?? null;
+            // Stale-recovery checkpoints may carry a critic artifact_id — exclude them
+            // from both the fallback scan and the pending checkpoint's own artifact_id.
+            const anyWithArtifact = checkpoints
+              .filter(c => c.stage === stageName && c.artifact_id !== null && !isStaleRecoveryCheckpoint(c.coordinator_action))
+              .at(-1);
+            const pendingArtifactId = pendingCp && !isStaleRecoveryCheckpoint(pendingCp.coordinator_action)
+              ? pendingCp.artifact_id : null;
+            const stageArtifactId = approvedCp?.artifact_id ?? pendingArtifactId ?? anyWithArtifact?.artifact_id ?? null;
 
             return (
               <div key={stageName}>

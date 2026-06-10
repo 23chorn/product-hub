@@ -26,6 +26,9 @@ export function ArtifactViewer() {
   const [resolveLoading, setResolveLoading] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
   const [pushResult, setPushResult] = useState<{ epicUrl: string; featureCount?: number; storyCount?: number; created?: number; updated?: number; synced?: boolean } | null>(null);
+  const [testPlanPushLoading, setTestPlanPushLoading] = useState(false);
+  const [testPlanResult, setTestPlanResult] = useState<{ planUrl: string; created: number; updated: number } | null>(null);
+  const [hasTestPlanMappings, setHasTestPlanMappings] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showCriticFlyout, setShowCriticFlyout] = useState(false);
@@ -72,6 +75,9 @@ export function ArtifactViewer() {
       api.getAdoMappings(activeWorkflow.id)
         .then(({ hasMappings }) => { if (!stale) setHasAdoMappings(hasMappings); })
         .catch(() => {});
+      api.getQATestPlanMappings(activeWorkflow.id)
+        .then(({ hasMappings }) => { if (!stale) setHasTestPlanMappings(hasMappings); })
+        .catch(() => {});
     }
 
     return () => { stale = true; };
@@ -114,6 +120,10 @@ export function ArtifactViewer() {
   const workflowComplete = activeWorkflow?.status === 'complete';
   const showPushButton = isBacklog && workItemsEnabled && backlogApproved && workflowComplete;
 
+  const isQATests = artifactType === 'qa_tests';
+  const qaApproved = isQATests && checkpoints.some(c => c.stage === 'qa_engineer' && c.status === 'approved');
+  const showTestPlanButton = isQATests && workItemsEnabled && qaApproved && workflowComplete;
+
   async function pushToBoard() {
     if (!activeWorkflow) return;
     setPushLoading(true);
@@ -133,6 +143,25 @@ export function ArtifactViewer() {
       setError(err.response?.data?.error ?? err.message ?? 'Failed to push to board');
     } finally {
       setPushLoading(false);
+    }
+  }
+
+  async function pushToTestPlans() {
+    if (!activeWorkflow) return;
+    setTestPlanPushLoading(true);
+    setError(null);
+    try {
+      const result = await api.pushToTestPlans(activeWorkflow.id);
+      setTestPlanResult(result);
+      setHasTestPlanMappings(true);
+      const msg = hasTestPlanMappings
+        ? `Test plan synced: **${result.updated} updated**, **${result.created} created**. [View in ADO](${result.planUrl})`
+        : `Test plan created with **${result.testCaseCount} test cases**. [View in ADO](${result.planUrl})`;
+      addCoordinatorMessage({ role: 'coordinator', content: msg, timestamp: Date.now() });
+    } catch (err: any) {
+      setError(err.response?.data?.error ?? err.message ?? 'Failed to push test plan');
+    } finally {
+      setTestPlanPushLoading(false);
     }
   }
 
@@ -332,6 +361,43 @@ export function ArtifactViewer() {
                   }
                 </a>
               )}
+              {showTestPlanButton && !testPlanResult && (
+                <button
+                  onClick={pushToTestPlans}
+                  disabled={testPlanPushLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white transition-colors"
+                >
+                  {testPlanPushLoading ? (
+                    <>
+                      <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Pushing...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                      </svg>
+                      {hasTestPlanMappings ? 'Sync Test Plan' : 'Push to Test Plans'}
+                    </>
+                  )}
+                </button>
+              )}
+              {testPlanResult && (
+                <a
+                  href={testPlanResult.planUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  View Test Plan ↗
+                </a>
+              )}
               {hasCriticData && !showSidePanel && (
                 <button
                   onClick={() => setShowCriticFlyout(f => !f)}
@@ -427,6 +493,22 @@ export function ArtifactViewer() {
                       if (techData) return <TechRefinementView data={techData} />;
                       const qaData = artifactType === 'qa_tests' ? tryParseQATests(content) : null;
                       if (qaData) return <QATestsView data={qaData} />;
+                      // JSON artifact types that failed to parse — render as code block with warning
+                      if (artifactType === 'qa_tests' || artifactType === 'backlog') {
+                        return (
+                          <div className="space-y-3">
+                            <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                              <svg className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                              </svg>
+                              <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
+                                This artifact appears incomplete — the stage was likely interrupted mid-stream. Retry the stage to regenerate a complete output.
+                              </p>
+                            </div>
+                            <pre className="text-xs font-mono text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-4 overflow-auto whitespace-pre-wrap break-words leading-relaxed">{content}</pre>
+                          </div>
+                        );
+                      }
                       if (artifactType === 'prototype') {
                         try {
                           const protoData: PrototypeData = JSON.parse(content);

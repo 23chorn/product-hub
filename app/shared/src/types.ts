@@ -91,6 +91,12 @@ export interface StoryTechnical {
   apiChanges?: string | null;
 }
 
+export interface StoryTechnicalNotes {
+  ios?: string | null;
+  android?: string | null;
+  backend?: string | null;
+}
+
 export interface Story {
   title: string;
   persona: string;
@@ -101,6 +107,7 @@ export interface Story {
   aiEstimatedHours?: number;
   aiEstimatedQaHours?: number;
   technical?: StoryTechnical;
+  technical_notes?: StoryTechnicalNotes;
 }
 
 // ============================================

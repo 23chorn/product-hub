@@ -3,7 +3,7 @@ import db from '../data/database';
 import Logger from '../utils/logger';
 import type { WorkflowRow, CheckpointRow } from './workflow-types';
 import { resolveArtifactPath } from './artifact-helpers';
-import { STAGE_SESSION_MAP } from './stage-metadata';
+import { STAGE_SESSION_MAP, STAGE_ARTIFACT_TYPE } from './stage-metadata';
 
 const logger = new Logger('WORKFLOW-LIFECYCLE');
 
@@ -158,17 +158,21 @@ export function recoverStaleWorkflows(): number {
       `Stage "${stage}" appears stuck (no activity for ${staleMinutes} minutes). You can retry or dismiss this stage.`,
       { error: 'stale_workflow_recovery', stale_minutes: staleMinutes });
 
-    // Try to recover the artifact_id that the specialist may have already written
+    // Try to recover the artifact_id that the specialist may have already written.
+    // Filter by STAGE_ARTIFACT_TYPE to avoid picking up critic artifacts stored
+    // in the same session (e.g. qa_engineer_critic instead of qa_tests).
     let artifactId: number | null = null;
     const stageMap = STAGE_SESSION_MAP[stage];
-    if (stageMap) {
-      const latestArtifact = db.prepare<[string, string], { id: number }>(
+    const artifactType = STAGE_ARTIFACT_TYPE[stage];
+    if (stageMap && artifactType) {
+      const latestArtifact = db.prepare<[string, string, string], { id: number }>(
         `SELECT a.id FROM artifacts a
          JOIN sessions s ON a.session_id = s.id
          WHERE s.item_id = (SELECT item_id FROM workflows WHERE id = ?)
            AND s.mode = ?
+           AND a.type = ?
          ORDER BY a.created_at DESC LIMIT 1`
-      ).get(wf.id, stageMap.mode);
+      ).get(wf.id, stageMap.mode, artifactType);
       artifactId = latestArtifact?.id ?? null;
     }
 
@@ -189,8 +193,51 @@ export function recoverStaleWorkflows(): number {
   return recovered;
 }
 
+/**
+ * One-time heal: stale-recovery checkpoints created before the artifact-type
+ * filter fix may have been assigned a critic artifact_id instead of the
+ * specialist artifact_id. Find and correct them on startup.
+ */
+function healStaleRecoveryCheckpoints(): void {
+  const bad = db.prepare<[], { id: number; stage: string; workflow_id: string; art_type: string }>(
+    `SELECT c.id, c.stage, c.workflow_id, a.type as art_type
+     FROM checkpoints c
+     JOIN artifacts a ON a.id = c.artifact_id
+     WHERE c.coordinator_action LIKE '%"stale_recovery":true%'
+       AND a.type = 'critic_review'`
+  ).all();
+
+  if (bad.length === 0) return;
+
+  let healed = 0;
+  for (const row of bad) {
+    const stageMap = STAGE_SESSION_MAP[row.stage];
+    const artifactType = STAGE_ARTIFACT_TYPE[row.stage];
+    if (!stageMap || !artifactType) continue;
+
+    const correct = db.prepare<[string, string, string], { id: number }>(
+      `SELECT a.id FROM artifacts a
+       JOIN sessions s ON a.session_id = s.id
+       WHERE s.item_id = (SELECT item_id FROM workflows WHERE id = ?)
+         AND s.mode = ?
+         AND a.type = ?
+       ORDER BY a.created_at DESC LIMIT 1`
+    ).get(row.workflow_id, stageMap.mode, artifactType);
+
+    if (correct) {
+      db.prepare('UPDATE checkpoints SET artifact_id = ? WHERE id = ?')
+        .run(correct.id, row.id);
+      logger.info(`Healed checkpoint ${row.id} (stage=${row.stage}): replaced critic artifact with specialist artifact ${correct.id}`);
+      healed++;
+    }
+  }
+
+  if (healed > 0) logger.info(`Healed ${healed} stale-recovery checkpoint(s) with wrong artifact_id`);
+}
+
 /** Start stale recovery on module load (server startup) and every 5 minutes. */
 export function startStaleRecoveryTimer(): void {
+  healStaleRecoveryCheckpoints();
   recoverStaleWorkflows();
   setInterval(recoverStaleWorkflows, 5 * 60 * 1000);
 }
