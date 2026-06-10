@@ -320,7 +320,16 @@ export class AzureDevOpsClient {
     this.pat = process.env.AZURE_DEVOPS_PAT || '';
     // Default wiki identifier: sanitize project name to avoid colons/special chars that ASP.NET blocks in URL paths
     const sanitizedProject = this.project.replace(/[^a-zA-Z0-9-_]/g, '-');
-    this.wikiIdentifier = process.env.AZURE_DEVOPS_WIKI_ID || `${sanitizedProject}.wiki`;
+    let wikiIdValue = process.env.AZURE_DEVOPS_WIKI_ID || `${sanitizedProject}.wiki`;
+    // If AZURE_DEVOPS_WIKI_ID is a full URL, extract just the identifier
+    if (wikiIdValue.includes('_wiki/wikis/')) {
+      const match = wikiIdValue.match(/_wiki\/wikis\/([^\/]+)/);
+      if (match) {
+        wikiIdValue = match[1];
+        logger.info(`Extracted wiki identifier from URL: ${wikiIdValue}`);
+      }
+    }
+    this.wikiIdentifier = wikiIdValue;
 
     // Configure work item types based on process template
     // Defaults are for Agile, but can be customized via env variables
