@@ -932,14 +932,24 @@ export class AzureDevOpsClient {
           headers: { 'Content-Type': 'application/json' },
           params: wikiParams,
         });
-      } catch {
-        try {
-          await this.client.put(
-            apiUrl,
-            { content: `# ${segments[i - 1]}` },
-            { headers: { 'Content-Type': 'application/json', 'If-Match': '*' }, params: wikiParams }
-          );
-        } catch { /* may already exist from concurrent call — ignore */ }
+        logger.info(`Wiki ancestor path exists: ${ancestorPath}`);
+      } catch (getErr: any) {
+        if (getErr.response?.status === 404) {
+          // Page doesn't exist, create it without If-Match header
+          try {
+            await this.client.put(
+              apiUrl,
+              { content: `# ${segments[i - 1]}` },
+              { headers: { 'Content-Type': 'application/json' }, params: wikiParams }
+            );
+            logger.info(`Created wiki ancestor page: ${ancestorPath}`);
+          } catch (putErr: any) {
+            // Ignore if it was created concurrently or already exists
+            if (putErr.response?.status !== 409) {
+              logger.warn(`Failed to create wiki ancestor ${ancestorPath}: ${putErr.response?.status}`);
+            }
+          }
+        }
       }
     }
   }
