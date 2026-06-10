@@ -314,7 +314,6 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   const [demoConfigured, setDemoConfigured] = useState<boolean>(false);
   const [generalExpanded, setGeneralExpanded] = useState(false);
   const [crExpanded, setCrExpanded] = useState(false);
-  const [artifactsExpanded, setArtifactsExpanded] = useState(true);
   const [artifacts, setArtifacts] = useState<Array<{ id: number; type: string; stage: string; created_at: number }>>([]);
 
   // Demo sections only show when demo mode is enabled in settings AND DEMO_PROJECT_PATH is configured
@@ -721,52 +720,38 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
             </div>
           )}
 
-          {/* Artifacts section (collapsible, pinned at bottom) */}
-          {artifacts.length > 0 && (
-            <div className="mt-2 mb-1 border-t border-slate-200 dark:border-slate-700/60 pt-2">
-              <button
-                onClick={() => setArtifactsExpanded(e => !e)}
-                className="w-full flex items-center gap-1.5 px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-500 transition-colors text-left"
-              >
-                <svg
-                  className={`w-2.5 h-2.5 flex-shrink-0 transition-transform duration-150 ${artifactsExpanded ? 'rotate-90' : ''}`}
-                  fill="currentColor" viewBox="0 0 6 10"
-                >
-                  <path d="M1 1l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-                </svg>
-                artifacts
-                {!artifactsExpanded && (
-                  <span className="ml-1 normal-case tracking-normal font-normal text-slate-300 dark:text-slate-700">
-                    ({artifacts.length})
-                  </span>
-                )}
-              </button>
-              {artifactsExpanded && (
-                <div className="px-2 py-1 space-y-0.5">
-                  {artifacts.map((artifact) => {
-                    const typeLabel = STAGE_LABELS[artifact.stage ?? ''] ?? artifact.type;
+          {/* Artifacts section (pinned at bottom) */}
+          {artifacts.length > 0 && (() => {
+            // Group by stage and keep only the latest per stage
+            const latestByStage = new Map<string, typeof artifacts[0]>();
+            artifacts.forEach(artifact => {
+              const stage = artifact.stage ?? 'unknown';
+              const existing = latestByStage.get(stage);
+              if (!existing || artifact.created_at > existing.created_at) {
+                latestByStage.set(stage, artifact);
+              }
+            });
+            const latestArtifacts = Array.from(latestByStage.values());
+
+            return (
+              <div className="mt-2 mb-1 border-t border-slate-200 dark:border-slate-700/60 pt-2 px-2">
+                <div className="flex flex-wrap gap-1.5">
+                  {latestArtifacts.map((artifact) => {
+                    const stageLabel = STAGE_LABELS[artifact.stage ?? ''] ?? artifact.type;
                     return (
                       <button
                         key={artifact.id}
                         onClick={() => setViewingArtifactId(artifact.id)}
-                        className="w-full flex items-center gap-2 px-2 py-1.5 text-left text-xs rounded hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors group"
+                        className="px-2.5 py-1 text-xs font-medium rounded bg-slate-100 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors"
                       >
-                        <svg className="w-3 h-3 text-slate-400 dark:text-slate-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        <span className="flex-1 truncate text-slate-700 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-slate-100">
-                          {typeLabel}
-                        </span>
-                        <span className="text-[10px] text-slate-400 dark:text-slate-600 font-mono">
-                          {artifact.type}
-                        </span>
+                        {stageLabel}
                       </button>
                     );
                   })}
                 </div>
-              )}
-            </div>
-          )}
+              </div>
+            );
+          })()}
 
           <div ref={bottomRef} />
         </div>
