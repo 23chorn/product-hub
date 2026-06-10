@@ -21,7 +21,7 @@ import { ChangeRequestSection } from './ChangeRequestSection';
 import { ExtendStagesPanel } from './ExtendStagesPanel';
 import { PipelineTerminalView } from '../workflow';
 
-export function CoordinatorChat({ onOpenCodeStudio }: { onOpenCodeStudio?: () => void } = {}) {
+export function CoordinatorChat() {
   const {
     activeWorkflow, stageSequence, completedStages, currentStage, pendingStage, checkpoints,
     applyWorkflowStatus, resetWorkflow, setViewingArtifactId,
@@ -533,7 +533,6 @@ export function CoordinatorChat({ onOpenCodeStudio }: { onOpenCodeStudio?: () =>
               });
             }}
             onBack={() => { localStorage.removeItem('coordinatorPlanningSessionId'); resetWorkflow(); }}
-            onOpenCodeStudio={onOpenCodeStudio}
           />
 
           {/* Completion / CR / streaming footer */}

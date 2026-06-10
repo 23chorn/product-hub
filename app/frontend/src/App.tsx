@@ -7,7 +7,6 @@ import { ArtifactViewer } from './components/artifact';
 import { SkillManagerPanel } from './components/SkillManagerPanel';
 import { SettingsPanel } from './components/SettingsPanel';
 import { QuickTicketPanel } from './components/QuickTicketPanel';
-import { ClaudeCodeStudio } from './components/ClaudeCodeStudio';
 import { useThemeStore } from './stores/themeStore';
 import { useModelStore } from './stores/modelStore';
 import { useDecisionLogStore } from './stores/decisionLogStore';
@@ -50,7 +49,6 @@ function App() {
   const toast = useToast();
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
   const [isQTOpen, setIsQTOpen] = useState(false);
-  const [isCodeStudioOpen, setIsCodeStudioOpen] = useState(false);
   const [isDemoFiring, setIsDemoFiring] = useState(false);
   const [demoToast, setDemoToast] = useState<string | null>(null);
   // Fetch app config, available models, and context status on mount
@@ -241,7 +239,7 @@ function App() {
       <div className="flex-1 flex overflow-hidden relative">
         <main className="flex-1 overflow-hidden min-w-0 relative">
           {activeWorkflow
-            ? <CoordinatorChat onOpenCodeStudio={() => setIsCodeStudioOpen(true)} />
+            ? <CoordinatorChat />
             : <HomeScreen />}
         </main>
 
@@ -275,14 +273,6 @@ function App() {
               <QuickTicketPanel onClose={() => setIsQTOpen(false)} />
             </div>
           </div>
-        )}
-
-        {/* AI Code Studio Overlay */}
-        {isCodeStudioOpen && activeWorkflow && (
-          <ClaudeCodeStudio
-            workflowId={activeWorkflow.id}
-            onClose={() => setIsCodeStudioOpen(false)}
-          />
         )}
 
       </div>

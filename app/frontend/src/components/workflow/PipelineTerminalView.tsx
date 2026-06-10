@@ -293,10 +293,9 @@ interface Props {
   isRunning: boolean;
   onCheckpointResolved: (result: any) => void;
   onBack: () => void;
-  onOpenCodeStudio?: () => void;
 }
 
-export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpointResolved, onBack, onOpenCodeStudio }: Props) {
+export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpointResolved, onBack }: Props) {
   const {
     activeWorkflow,
     stageSequence,
@@ -688,12 +687,6 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                       </a>
                     );
                   })()}
-                  {!isCancelled && coordinatorMessages.some(m => m.eventType === 'board_synced') && onOpenCodeStudio && (
-                    <button onClick={onOpenCodeStudio}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold font-mono text-white bg-violet-700 hover:bg-violet-600 transition-colors">
-                      ⚡ Code Studio
-                    </button>
-                  )}
                 </div>
               </div>
 
