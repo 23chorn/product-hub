@@ -48,6 +48,11 @@ const EVENT_CFG: Record<string, { icon: string; color: string; bgColor: string }
   checkpoint_created:  { icon: '⏸', color: 'text-amber-600 dark:text-amber-400',  bgColor: 'bg-amber-100 dark:bg-amber-900/30' },
   revision_started:    { icon: '↻', color: 'text-violet-600 dark:text-violet-400', bgColor: 'bg-violet-100 dark:bg-violet-900/30' },
   human_edit:          { icon: '✎', color: 'text-blue-600 dark:text-blue-400',    bgColor: 'bg-blue-100 dark:bg-blue-900/30' },
+  cr_created:          { icon: '⊕', color: 'text-indigo-600 dark:text-indigo-400', bgColor: 'bg-indigo-100 dark:bg-indigo-900/30' },
+  cr_assessed:         { icon: '◉', color: 'text-indigo-600 dark:text-indigo-400', bgColor: 'bg-indigo-100 dark:bg-indigo-900/30' },
+  cr_stage_started:    { icon: '▶', color: 'text-indigo-600 dark:text-indigo-400', bgColor: 'bg-indigo-100 dark:bg-indigo-900/30' },
+  cr_stage_completed:  { icon: '✓', color: 'text-indigo-600 dark:text-indigo-400', bgColor: 'bg-indigo-100 dark:bg-indigo-900/30' },
+  cr_complete:         { icon: '✓', color: 'text-green-600 dark:text-green-400',    bgColor: 'bg-green-100 dark:bg-green-900/30' },
   curator_reasoning:   { icon: '📝', color: 'text-teal-600 dark:text-teal-300',   bgColor: 'bg-teal-100 dark:bg-teal-900/20' },
   board_synced:        { icon: '⬆', color: 'text-blue-600 dark:text-blue-400',    bgColor: 'bg-blue-100 dark:bg-blue-900/30' },
   workflow_started:    { icon: '🚀', color: 'text-teal-600 dark:text-teal-400',   bgColor: 'bg-teal-100 dark:bg-teal-900/30' },
@@ -309,6 +314,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   const [restarting, setRestarting] = useState(false);
   const [demoConfigured, setDemoConfigured] = useState<boolean>(false);
   const [generalExpanded, setGeneralExpanded] = useState(false);
+  const [crExpanded, setCrExpanded] = useState(false);
 
   // Demo sections only show when demo mode is enabled in settings AND DEMO_PROJECT_PATH is configured
   const isDemoMode = demoModeEnabled && demoConfigured;
@@ -385,9 +391,11 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
 
   // Lifecycle events shown as a pinned banner at the top of the event log
   const LIFECYCLE_EVENT_TYPES = new Set(['workflow_started', 'workflow_cancelled', 'reiteration']);
+  const CR_EVENT_TYPES = new Set(['cr_created', 'cr_assessed', 'cr_stage_started', 'cr_stage_completed', 'cr_complete']);
   const generalEvents = eventsByStage.get('general') ?? [];
   const topLifecycleEvents = generalEvents.filter(m => LIFECYCLE_EVENT_TYPES.has(m.eventType ?? ''));
-  const bottomGeneralEvents = generalEvents.filter(m => !LIFECYCLE_EVENT_TYPES.has(m.eventType ?? '') && !!m.eventType);
+  const crEvents = generalEvents.filter(m => CR_EVENT_TYPES.has(m.eventType ?? ''));
+  const bottomGeneralEvents = generalEvents.filter(m => !LIFECYCLE_EVENT_TYPES.has(m.eventType ?? '') && !CR_EVENT_TYPES.has(m.eventType ?? '') && !!m.eventType);
 
   // Stages to show in the event log (exclude stages with no events yet if pending)
   const activeStages = stageSequence.filter(s => {
@@ -670,6 +678,32 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
 
               {/* Terminal output (demo-only) */}
               {isDemoMode && <DemoProjectSection workflowId={activeWorkflow.id} />}
+            </div>
+          )}
+
+          {/* Change Requests section (collapsible, pinned at bottom) */}
+          {crEvents.length > 0 && (
+            <div className="mt-2 mb-1">
+              <button
+                onClick={() => setCrExpanded(e => !e)}
+                className="w-full flex items-center gap-1.5 px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-500 transition-colors text-left"
+              >
+                <svg
+                  className={`w-2.5 h-2.5 flex-shrink-0 transition-transform duration-150 ${crExpanded ? 'rotate-90' : ''}`}
+                  fill="currentColor" viewBox="0 0 6 10"
+                >
+                  <path d="M1 1l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                </svg>
+                change requests
+                {!crExpanded && (
+                  <span className="ml-1 normal-case tracking-normal font-normal text-slate-300 dark:text-slate-700">
+                    ({crEvents.length})
+                  </span>
+                )}
+              </button>
+              {crExpanded && crEvents.map((msg, i) => (
+                <EventRow key={i} msg={msg} />
+              ))}
             </div>
           )}
 
