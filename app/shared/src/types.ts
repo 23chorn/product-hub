@@ -29,11 +29,12 @@ export interface AirtableItem {
 
   // Automation tracking fields
   owner?: string;
+  researchBriefLink?: string;
   prdLink?: string;
   epicLink?: string;
-  azureEpicId?: string; // NEW: Azure DevOps Epic ID
-  azureFeatureIds?: string; // NEW: Comma-separated Feature IDs
-  azureStoryIds?: string; // NEW: Comma-separated Story IDs
+  azureEpicId?: string;
+  azureFeatureIds?: string;
+  azureStoryIds?: string;
 
   // System fields
   createdAt: string;

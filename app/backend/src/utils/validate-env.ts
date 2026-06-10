@@ -26,6 +26,7 @@ const ENV_VALIDATIONS: EnvValidation[] = [
   { key: 'AZURE_DEVOPS_ORG', required: true, description: 'Azure DevOps organization URL' },
   { key: 'AZURE_DEVOPS_PROJECT', required: true, description: 'Azure DevOps project name' },
   { key: 'AZURE_DEVOPS_PAT', required: true, description: 'Azure DevOps personal access token' },
+  { key: 'AZURE_DEVOPS_WIKI_ID', required: false, description: 'Azure DevOps Wiki identifier (default: {PROJECT}.wiki)' },
   { key: 'PORT', required: false, description: 'Server port (default: 3001)' },
   { key: 'FRONTEND_URL', required: false, description: 'Frontend URL (default: http://localhost:5173)' },
   { key: 'NODE_ENV', required: false, description: 'Node environment (default: development)' },

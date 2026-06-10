@@ -26,9 +26,10 @@ import {
 } from './artifact-helpers';
 import { deleteWorkflow as deleteWorkflowImpl, recoverStaleWorkflows as recoverStaleWorkflowsImpl, startStaleRecoveryTimer } from './workflow-lifecycle';
 import { isDemoMode, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
+import { notifyWorkflowComplete } from '../utils/slack-notifier';
 import { WorkflowRow, CheckpointRow, WorkflowStatus, WorkflowEvent, StageTokenData } from './workflow-types';
 export type { WorkflowRow, CheckpointRow, WorkflowStatus, WorkflowEvent, StageTokenData } from './workflow-types';
-export { propagateFeedback, reiterateFromStage, extendWorkflow, retryCurrentStage } from './workflow-mutations';
+export { propagateFeedback, reiterateFromStage, extendWorkflow, retryCurrentStage, restartWorkflow } from './workflow-mutations';
 export { deleteWorkflow } from './workflow-lifecycle';
 import Logger from '../utils/logger';
 import { CoordinatorAgent } from './coordinator-agent';
@@ -298,6 +299,8 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
     );
     insertEvent(workflowId, 'workflow_complete', null, 'All stages complete. Your outputs are ready for review.');
     logger.info(`Workflow ${workflowId} complete — all ${sequence.length} stages done`);
+    const titleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(workflow.item_id);
+    if (titleRow) notifyWorkflowComplete(titleRow.title);
     throw new Error(`WORKFLOW_COMPLETE:${workflowId}`);
   }
 
@@ -473,6 +476,8 @@ No changes needed to tech-stack.md or process.md — those remain accurate as wr
       'All stages complete. Your outputs are ready for review.');
 
     logger.info(`Curator completed for workflow ${workflowId} — ${diffCount} diff(s) proposed, workflow complete`);
+    const curatorTitleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(workflow.item_id);
+    if (curatorTitleRow) notifyWorkflowComplete(curatorTitleRow.title);
     throw new Error(`WORKFLOW_COMPLETE:${workflowId}`);
   }
 
@@ -605,6 +610,11 @@ export function completeStage(workflowId: string): void {
 export function markWorkflowComplete(workflowId: string): void {
   stmts.updateWorkflowStatus.run('complete', Date.now(), workflowId);
   insertEvent(workflowId, 'workflow_complete', null, 'Workflow ended.');
+  const wf = db.prepare<[string], { item_id: string }>('SELECT item_id FROM workflows WHERE id = ?').get(workflowId);
+  if (wf) {
+    const titleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(wf.item_id);
+    if (titleRow) notifyWorkflowComplete(titleRow.title);
+  }
   logger.info(`Workflow ${workflowId} marked complete`);
 }
 

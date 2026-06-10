@@ -254,7 +254,13 @@ You do NOT have access to web search in this session. Do not pretend to search o
 - Instead of citations, use qualitative attribution where relevant: "Industry analysts generally estimate…", "According to widely reported figures…"
 - When a claim is based on your general knowledge and may need verification, mark it: *"[Unverified — recommend manual confirmation]"*
 - Be direct and confident about well-established facts; flag speculative or rapidly-changing data points
-- Focus on the quality and depth of analysis rather than the appearance of sourcing`;
+- Focus on the quality and depth of analysis rather than the appearance of sourcing
+- **CRITICAL — OUTPUT ONLY THE DOCUMENT:** Your response must contain ONLY the research brief document itself. Never include any of the following before, within, or after the document:
+  - Disclaimers or notes about web search, citations, or sourcing limitations
+  - Internal reasoning, self-correction, or revision commentary (e.g. "Let me revise...", "The validation flagged...", "I can reduce some by...")
+  - Meta-commentary about the document production process or your own capabilities
+  - Any preamble, postamble, or explanation of what you are about to do or just did
+  Start your response with the first heading of the research brief and end it with the last line of content.**`;
     }
 
     if (this.agentType === 'analyst') {
@@ -298,7 +304,8 @@ Your responses have a token ceiling. A document that is cut off is always worse 
     modelOverride?: string,
     onTokens?: (usage: TokenUsage) => void,
     maxOutputTokens?: number,
-    tools?: ToolDefinition[]
+    tools?: ToolDefinition[],
+    signal?: AbortSignal
   ): AsyncGenerator<string, void, unknown> {
     const model = modelOverride || this.model;
     const webSearch = this.agentType === 'analyst' && getActiveProvider() === 'anthropic';
@@ -308,9 +315,11 @@ Your responses have a token ceiling. A document that is cut off is always worse 
     logger.info(`Streaming response (${messages.length} messages in history, model: ${model}, webSearch: ${webSearch}, tools: ${hasTools ? tools!.map(t => t.name).join(',') : 'none'}, maxTokens: ${maxTokens})`);
 
     try {
-      yield* streamAI(model, system, messages, maxTokens, { webSearch, onTokens, tools });
+      yield* streamAI(model, system, messages, maxTokens, { webSearch, onTokens, tools, signal });
       logger.info('Completed streaming response');
     } catch (error: any) {
+      // Re-throw abort errors so the caller can detect cancellation
+      if (error?.name === 'AbortError' || signal?.aborted) throw error;
       logger.error('Failed to stream response', error);
       throw new Error(`Failed to stream response: ${error.message}`);
     }

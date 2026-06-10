@@ -21,6 +21,7 @@ CREATE TABLE items (
   source      TEXT    NOT NULL DEFAULT 'airtable'
               CHECK(source IN ('airtable','quick_add','local')),
   airtable_id TEXT,  -- null for quick_add/local items
+  metadata    TEXT,  -- JSON blob for source-specific fields (e.g. Airtable priority, estimate)
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER NOT NULL
 );

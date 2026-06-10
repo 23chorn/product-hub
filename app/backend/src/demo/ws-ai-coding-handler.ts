@@ -279,7 +279,7 @@ async function spawnClaude(ws: WebSocket, prompt: string): Promise<boolean> {
       {
         stdio: ['pipe', 'pipe', 'pipe'],
         cwd,
-        env: { ...process.env, TERM: 'dumb', NO_COLOR: '1' },
+        env: (() => { const e = { ...process.env, TERM: 'dumb', NO_COLOR: '1' }; delete (e as any).FORCE_COLOR; return e; })(),
       }
     );
 

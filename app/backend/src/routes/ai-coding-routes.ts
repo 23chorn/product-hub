@@ -495,6 +495,34 @@ aiCodingRoutes.post('/workflow/:id/pipeline-media', (req: Request, res: Response
 });
 
 /**
+ * GET /api/pipeline-media/:workflowId
+ *
+ * Lists all media files saved for a workflow.
+ * Returns [{ type, url, name }]
+ */
+aiCodingRoutes.get('/pipeline-media/:workflowId', (req: Request, res: Response) => {
+  const { workflowId } = req.params;
+  const mediaDir = path.join(PROJECT_ROOT, 'data', 'pipeline-media', workflowId);
+  if (!fs.existsSync(mediaDir)) return res.json([]);
+  const VIDEO_EXTS = new Set(['.webm', '.mp4', '.mov']);
+  try {
+    const files = fs.readdirSync(mediaDir)
+      .filter(f => !f.startsWith('.'))
+      .map(f => {
+        const ext = path.extname(f).toLowerCase();
+        return {
+          type: VIDEO_EXTS.has(ext) ? 'video' : 'screenshot',
+          url: `/api/pipeline-media/${workflowId}/${f}`,
+          name: f,
+        };
+      });
+    return res.json(files);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * GET /api/pipeline-media/:workflowId/:filename
  *
  * Serves screenshot and video files saved by the demo pipeline.

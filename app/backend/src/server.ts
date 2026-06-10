@@ -30,6 +30,7 @@ import { attachAiCodingWebSocket } from './demo/ws-ai-coding-handler';
 import { aiCodingRoutes } from './routes/ai-coding-routes';
 import { demoWebhookRoutes } from './routes/demo-webhook-routes';
 import { demoProjectRoutes } from './routes/demo-project-routes';
+import settingsRoutes from './routes/settings-routes';
 
 const logger = new Logger('SERVER');
 
@@ -67,8 +68,8 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// Request size limits
-app.use(express.json({ limit: '10mb' }));
+// Request size limits — generous for pipeline media uploads (base64 videos can be large)
+app.use(express.json({ limit: '50mb' }));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -104,6 +105,7 @@ app.use('/api/agents/personas', personaRoutes);
 app.use('/api', aiCodingRoutes);
 app.use('/api', demoWebhookRoutes);
 app.use('/api', demoProjectRoutes);
+app.use('/api/settings', settingsRoutes);
 
 app.get('/api', (req, res) => {
   res.json({

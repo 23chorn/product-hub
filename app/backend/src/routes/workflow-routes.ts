@@ -11,11 +11,13 @@ import {
   getWorkflowEvents,
   reiterateFromStage,
   retryCurrentStage,
+  restartWorkflow,
   extendWorkflow,
   deleteWorkflow,
   costTracker,
 } from '../agents/workflow-router';
 import { CoordinatorAgent } from '../agents/coordinator-agent';
+import { requestCancel } from '../agents/workflow-stage-runner';
 import {
   linkCRArtifactVersion,
   completeChangeRequest,
@@ -381,7 +383,9 @@ workflowRoutes.post('/start', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'goal is required' });
   }
 
-  // Auto-create a local item if none provided
+  // Ensure the item exists in the local DB before creating the workflow (FK constraint).
+  // • No itemId supplied → generate a new local record.
+  // • itemId supplied but not in DB → Airtable initiative; insert a shadow record so the FK is satisfied.
   if (!itemId) {
     const { randomUUID: uuid } = require('crypto');
     const id = uuid();
@@ -393,6 +397,17 @@ workflowRoutes.post('/start', async (req: Request, res: Response) => {
     `).run(id, title, goal.slice(0, 500), now, now);
     itemId = id;
     logger.info(`Auto-created local item ${id} for workflow`);
+  } else {
+    const existing = db.prepare('SELECT id FROM items WHERE id = ?').get(itemId);
+    if (!existing) {
+      const now = Date.now();
+      const title = goal.slice(0, 100) + (goal.length > 100 ? '...' : '');
+      db.prepare(`
+        INSERT INTO items (id, type, title, description, status, source, airtable_id, created_at, updated_at)
+        VALUES (?, 'initiative', ?, ?, 'active', 'airtable', ?, ?, ?)
+      `).run(itemId, title, goal.slice(0, 500), itemId, now, now);
+      logger.info(`Created shadow item ${itemId} for Airtable initiative`);
+    }
   }
 
   try {
@@ -553,6 +568,16 @@ workflowRoutes.post('/checkpoint/resolve', async (req: Request, res: Response) =
         }
       }
 
+      // Auto publish wiki pages after research and PRD approvals
+      if (cpDetail?.stage === 'analyst' || cpDetail?.stage === 'pm_prd') {
+        const wfRow = db.prepare<[string], { item_id: string }>('SELECT item_id FROM workflows WHERE id = ?').get(workflowId);
+        if (wfRow) {
+          autoPublishWikiPages(workflowId, wfRow.item_id, cpDetail.stage as 'analyst' | 'pm_prd').catch(err =>
+            logger.warn(`autoPublishWikiPages failed: ${err.message}`)
+          );
+        }
+      }
+
       // Auto push-to-board after tech refinement approval
       if (cpDetail?.stage === 'tech_refinement') {
         const wfRow = db.prepare<[string], { item_id: string }>('SELECT item_id FROM workflows WHERE id = ?').get(workflowId);
@@ -698,6 +723,37 @@ workflowRoutes.post('/:id/retry', async (req: Request, res: Response) => {
     if (err.message.includes('not found')) return res.status(404).json({ error: err.message });
     logger.error('Failed to retry stage', err);
     res.status(400).json({ error: err.message });
+  }
+});
+
+// ── POST /api/workflow/:id/restart ───────────────────────────────────────────
+
+/**
+ * POST /api/workflow/:id/restart
+ * Restarts a stopped/cancelled workflow from the very first stage.
+ * Clears the cancel flag and fires a fresh run with no prior artifacts.
+ */
+workflowRoutes.post('/:id/restart', async (req: Request, res: Response) => {
+  try {
+    await restartWorkflow(req.params.id);
+    const status = getWorkflowStatus(req.params.id);
+    res.json(status);
+  } catch (err: any) {
+    if (err.message.includes('not found')) return res.status(404).json({ error: err.message });
+    logger.error('Failed to restart workflow', err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ── POST /api/workflow/:id/cancel ─────────────────────────────────────────────
+workflowRoutes.post('/:id/cancel', (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    requestCancel(id);
+    res.json({ ok: true, cancelled: true });
+  } catch (err: any) {
+    logger.error('Failed to cancel workflow', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -849,6 +905,14 @@ async function autoPushToBoard(workflowId: string, itemId: string): Promise<void
       { top_url: result.topUrl, top_id: result.topId, level: result.level,
         feature_count: result.featureCount, story_count: result.storyCount });
 
+    // Push Epic URL back to Airtable if item originated from there
+    const itemAirtableRow = db.prepare<[string], { airtable_id: string | null }>(
+      'SELECT airtable_id FROM items WHERE id = ?'
+    ).get(itemId);
+    if (itemAirtableRow?.airtable_id) {
+      pushLinksToAirtable(itemAirtableRow.airtable_id, { epicLink: result.topUrl }).catch(() => {});
+    }
+
     logger.info(`Auto push-to-board complete for workflow ${workflowId} — Epic #${result.topId} at ${result.topUrl}`);
   } catch (err: any) {
     logger.error(`Auto push-to-board failed for workflow ${workflowId}: ${err.message}`);
@@ -899,6 +963,86 @@ async function autoCommentQATestsOnEpic(workflowId: string, itemId: string): Pro
     logger.info(`QA comment added to Epic #${epicMapping.ado_id}`);
   } catch (err: any) {
     logger.warn(`autoCommentQATestsOnEpic failed: ${err.message}`);
+  }
+}
+
+// ── Push document links back to Airtable ──────────────────────────────────────
+
+/**
+ * Pushes document URLs back to the originating Airtable record.
+ * Skips silently if the roadmap integration is not airtable.
+ */
+async function pushLinksToAirtable(airtableId: string, updates: Record<string, string>): Promise<void> {
+  try {
+    const { appConfig } = require('../config/app-config');
+    if (appConfig.integrations.roadmap !== 'airtable') return;
+    const { AirtableClient } = require('../integrations/airtable');
+    await new AirtableClient().updateItem(airtableId, updates as any);
+    logger.info(`Airtable record ${airtableId} updated: ${Object.keys(updates).join(', ')}`);
+  } catch (err: any) {
+    logger.warn(`Failed to push links to Airtable (${airtableId}): ${err.message}`);
+  }
+}
+
+// ── Auto publish wiki pages after analyst / pm_prd approvals ──────────────────
+
+/**
+ * Publishes a research brief or PRD to the Azure DevOps Wiki under
+ * "Product Documentation/Features/{FeatureName}/{PageName}".
+ * After publishing, pushes the wiki URL back to the Airtable record.
+ */
+async function autoPublishWikiPages(workflowId: string, itemId: string, stage: 'analyst' | 'pm_prd'): Promise<void> {
+  const fs = require('fs');
+  try {
+    const { appConfig } = require('../config/app-config');
+    if (appConfig.integrations.workItems !== 'ado') return;
+
+    const { AzureDevOpsClient } = require('../integrations/azure-devops');
+    const client = new AzureDevOpsClient();
+    const wikiId = client.wikiIdentifier;
+
+    const itemRow = db.prepare<[string], { title: string; airtable_id: string | null }>(
+      'SELECT title, airtable_id FROM items WHERE id = ?'
+    ).get(itemId);
+    if (!itemRow) { logger.warn(`autoPublishWikiPages: item ${itemId} not found`); return; }
+
+    // Sanitise the feature name for a wiki path segment
+    const featureName = itemRow.title.replace(/[/\\:*?"<>|#]/g, '').trim();
+    const basePath = `/Product Documentation/Features/${featureName}`;
+    const isResearch = stage === 'analyst';
+    const artifactType = isResearch ? 'analyst' : 'prd';
+    const pageName = isResearch ? 'Research Brief' : 'PRD';
+    const pagePath = `${basePath}/${pageName}`;
+    const airtableFieldKey = isResearch ? 'researchBriefLink' : 'prdLink';
+
+    // Load latest artifact for this stage
+    const artifact = db.prepare<[string, string], { file_path: string }>(
+      `SELECT a.file_path FROM artifacts a
+       JOIN sessions s ON a.session_id = s.id
+       WHERE s.item_id = ? AND a.type = ?
+       ORDER BY a.created_at DESC LIMIT 1`
+    ).get(itemId, artifactType);
+    if (!artifact?.file_path) {
+      logger.warn(`autoPublishWikiPages: no ${artifactType} artifact for item ${itemId}`);
+      return;
+    }
+
+    const content = fs.readFileSync(artifact.file_path, 'utf-8');
+
+    // Ensure parent pages exist, then upsert the leaf page
+    await client.ensureWikiPath(wikiId, pagePath);
+    const { url } = await client.upsertWikiPage(wikiId, pagePath, content);
+
+    insertEvent(workflowId, 'board_synced', stage,
+      `Wiki page published: ${pageName}\n→ ${url}`, { wiki_url: url });
+    logger.info(`Wiki published (${stage}): ${url}`);
+
+    // Push URL back to Airtable
+    if (itemRow.airtable_id) {
+      await pushLinksToAirtable(itemRow.airtable_id, { [airtableFieldKey]: url });
+    }
+  } catch (err: any) {
+    logger.warn(`autoPublishWikiPages(${stage}) failed: ${err.message}`);
   }
 }
 

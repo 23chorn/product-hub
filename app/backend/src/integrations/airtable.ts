@@ -185,7 +185,7 @@ export class AirtableClient {
       targetQuarter: record.fields['Target Quarter'],
       targetWindow: record.fields['Target Window'],
       productArea: record.fields['Product Area'],
-      strategicTheme: record.fields['Strategic Theme'],
+      strategicTheme: record.fields['Theme'] ?? record.fields['Strategic Theme'],
       affectedStakeholders: record.fields['Affected Stakeholders'],
       requiresDevWork: record.fields['Requires Dev Work'],
       plannedStartDate: record.fields['Planned Start Date'],
@@ -193,6 +193,7 @@ export class AirtableClient {
       notes: record.fields['Notes'],
       releaseLogs: record.fields['Release Logs'],
       owner: record.fields['Owner'] || '',
+      researchBriefLink: record.fields['Research Brief'] || '',
       prdLink: record.fields['PRD Link'] || '',
       epicLink: record.fields['Epic Link'] || '',
       azureEpicId: record.fields['Azure Epic ID'] || '',
@@ -222,6 +223,7 @@ export class AirtableClient {
     if (item.requiresDevWork !== undefined) fields['Requires Dev Work'] = item.requiresDevWork;
     if (item.notes !== undefined) fields['Notes'] = item.notes;
     if (item.owner !== undefined) fields['Owner'] = item.owner;
+    if (item.researchBriefLink !== undefined) fields['Research Brief'] = item.researchBriefLink;
     if (item.prdLink !== undefined) fields['PRD Link'] = item.prdLink;
     if (item.epicLink !== undefined) fields['Epic Link'] = item.epicLink;
     if (item.azureEpicId !== undefined) fields['Azure Epic ID'] = item.azureEpicId;

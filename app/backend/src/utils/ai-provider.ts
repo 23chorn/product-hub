@@ -123,7 +123,7 @@ export async function* streamAI(
   system: SystemPrompt,
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
   maxTokens = 8192,
-  options: { webSearch?: boolean; onTokens?: (usage: TokenUsage) => void; tools?: ToolDefinition[] } = {}
+  options: { webSearch?: boolean; onTokens?: (usage: TokenUsage) => void; tools?: ToolDefinition[]; signal?: AbortSignal } = {}
 ): AsyncGenerator<string, void, unknown> {
   const provider = getActiveProvider();
   logger.info(`Streaming via provider: ${provider}, model: ${model}`);
@@ -131,9 +131,9 @@ export async function* streamAI(
   if (provider === 'anthropic') {
     yield* streamWithAnthropic(model, system, messages, maxTokens, options as any);
   } else if (provider === 'bedrock') {
-    yield* streamWithBedrock(model, system, messages, maxTokens, options.onTokens, options.tools);
+    yield* streamWithBedrock(model, system, messages, maxTokens, options.onTokens, options.tools, options.signal);
   } else {
-    yield* streamWithOllama(model, toSystemString(system), messages, options.onTokens);
+    yield* streamWithOllama(model, toSystemString(system), messages, options.onTokens, options.signal);
   }
 }
 
@@ -151,7 +151,7 @@ async function* streamWithAnthropic(
   system: SystemPrompt,
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
   maxTokens: number,
-  options: { webSearch?: boolean; onTokens?: (usage: TokenUsage) => void; tools?: ToolDefinition[] } = {}
+  options: { webSearch?: boolean; onTokens?: (usage: TokenUsage) => void; tools?: ToolDefinition[]; signal?: AbortSignal } = {}
 ): AsyncGenerator<string, void, unknown> {
   const effectiveMaxTokens = Math.min(maxTokens, modelMaxOutputTokens(model));
 
@@ -219,7 +219,7 @@ async function* streamWithAnthropic(
     // Retry loop (rate limiting) wraps each streaming iteration
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
-        const stream = await getAnthropicClient().messages.create(params);
+        const stream = await getAnthropicClient().messages.create(params, options.signal ? { signal: options.signal } : undefined);
 
         for await (const event of stream) {
           if (event.type === 'message_start') {
@@ -348,7 +348,8 @@ async function* streamWithBedrock(
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
   maxTokens: number,
   onTokens?: (usage: TokenUsage) => void,
-  tools?: ToolDefinition[]
+  tools?: ToolDefinition[],
+  signal?: AbortSignal
 ): AsyncGenerator<string, void, unknown> {
   // Build initial Bedrock messages (grows as tool turns are added)
   let bedrockMessages: Message[] = messages.map(msg => ({
@@ -408,7 +409,7 @@ async function* streamWithBedrock(
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
-        const response = await bedrockClient.send(command);
+        const response = await bedrockClient.send(command, signal ? { abortSignal: signal } : undefined);
 
         if (response.stream) {
           for await (const event of response.stream) {
@@ -526,12 +527,14 @@ async function* streamWithOllama(
   systemPrompt: string,
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
   onTokens?: (usage: TokenUsage) => void,
+  signal?: AbortSignal
 ): AsyncGenerator<string, void, unknown> {
   const baseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
 
   const response = await fetch(`${baseUrl}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    signal,
     body: JSON.stringify({
       model,
       stream: true,

@@ -5,18 +5,20 @@
  * feedback propagation, reiteration, extension, and stuck-stage retry.
  */
 
+import fs from 'fs';
+import path from 'path';
 import db from '../data/database';
 import { sessionManager } from '../session/session-manager';
 import type { AppMode, AgentType } from '@pap/shared';
 import {
   STAGE_SESSION_MAP, STAGE_LABELS_INTERNAL,
 } from './stage-metadata';
-import { loadFullArtifact, loadLatestArtifactForStage } from './artifact-helpers';
+import { loadFullArtifact, loadLatestArtifactForStage, resolveArtifactPath } from './artifact-helpers';
 import {
   logger, stmts, insertEvent, workflowOps,
 } from './workflow-db';
 import {
-  runAutonomousStage, getCoordinator, SILENT_STAGES,
+  runAutonomousStage, getCoordinator, SILENT_STAGES, clearCancelFlag,
 } from './workflow-stage-runner';
 
 /**
@@ -248,4 +250,70 @@ export async function retryCurrentStage(workflowId: string): Promise<{ stage: st
     .catch(err => logger.error(`Retry re-run for stage "${stage}" failed: ${err.message}`));
 
   return { stage };
+}
+
+/**
+ * Restart a stopped/cancelled workflow from the very first stage.
+ * Clears the cancel flag, marks all existing checkpoints as revised,
+ * and fires a fresh run from stage 0 with no prior draft.
+ */
+export async function restartWorkflow(workflowId: string): Promise<void> {
+  const workflow = stmts.getWorkflow.get(workflowId);
+  if (!workflow) throw new Error(`Workflow not found: ${workflowId}`);
+
+  const sequence: string[] = JSON.parse(workflow.stage_sequence);
+  if (sequence.length === 0) throw new Error('Workflow has no stages');
+
+  const firstStage = sequence[0];
+
+  // Clear in-memory cancel flag so stages can run again
+  clearCancelFlag(workflowId);
+
+  // Collect artifact file paths before deletion (sessions created during this workflow)
+  const artifactFiles = db.prepare<[string, number], { file_path: string }>(
+    `SELECT a.file_path FROM artifacts a
+     JOIN sessions s ON a.session_id = s.id
+     WHERE s.item_id = ? AND s.created_at >= ?`
+  ).all(workflow.item_id, workflow.created_at) as { file_path: string }[];
+
+  const now = Date.now();
+
+  // Wipe previous stage data in a transaction (keep general/lifecycle events)
+  db.transaction(() => {
+    // Delete context_diffs linked to this workflow (may reference artifacts)
+    db.prepare(`DELETE FROM context_diffs WHERE workflow_id = ?`).run(workflowId);
+    // Delete checkpoints (artifact_ids will be stale after we delete sessions)
+    db.prepare(`DELETE FROM checkpoints WHERE workflow_id = ?`).run(workflowId);
+    // Wipe all events — the new workflow_started event inserted below becomes the first entry
+    db.prepare(`DELETE FROM workflow_events WHERE workflow_id = ?`).run(workflowId);
+    // Delete sessions (and their messages/artifacts via cascade) created during this workflow run
+    db.prepare(`DELETE FROM sessions WHERE item_id = ? AND created_at >= ?`).run(workflow.item_id, workflow.created_at);
+  })();
+
+  // Delete artifact files from disk
+  for (const { file_path } of artifactFiles) {
+    try {
+      const resolved = resolveArtifactPath(file_path);
+      if (fs.existsSync(resolved)) fs.unlinkSync(resolved);
+    } catch { /* non-fatal */ }
+  }
+
+  insertEvent(workflowId, 'workflow_started', null, 'Workflow restarted from the beginning.');
+
+  // Reset workflow state to first stage
+  stmts.updateWorkflowStageAndStatus.run(firstStage, 'active', now, workflowId);
+
+  // Generate a fresh brief for the first stage (no prior draft)
+  const brief = await getCoordinator().generateStageBrief(workflowId, firstStage);
+
+  const stageMap = STAGE_SESSION_MAP[firstStage] ?? { mode: 'analyst' as AppMode, agentType: 'analyst' as AgentType };
+  const session = sessionManager.createSpecialistSession(workflow.item_id, stageMap.mode, stageMap.agentType);
+  sessionManager.updateWorkflow(session.id, workflowId, brief);
+
+  const shouldAutoApprove = SILENT_STAGES.has(firstStage);
+
+  runAutonomousStage(session.id, workflowId, firstStage, workflow.item_id, brief, shouldAutoApprove)
+    .catch(err => logger.error(`Restart run for stage "${firstStage}" failed: ${err.message}`));
+
+  logger.info(`Workflow ${workflowId} restarted from stage "${firstStage}" — wiped ${artifactFiles.length} artifact(s)`);
 }

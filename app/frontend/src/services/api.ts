@@ -46,6 +46,15 @@ class APIClient {
     return response.data;
   }
 
+  async getSettings(): Promise<any> {
+    const response = await axios.get(`${this.baseURL}/api/settings`);
+    return response.data;
+  }
+
+  async updateSettings(settings: any): Promise<void> {
+    await axios.put(`${this.baseURL}/api/settings`, settings);
+  }
+
   // ============================================
   // Local Initiatives (roadmap=none mode)
   // ============================================
@@ -815,6 +824,22 @@ class APIClient {
   async getPipelineDemoData(workflowId: string): Promise<{ summary: string; testCases: any[] }> {
     const response = await axios.get(`${this.baseURL}/api/workflow/${workflowId}/pipeline-demo`);
     return response.data;
+  }
+
+  async cancelWorkflow(workflowId: string): Promise<void> {
+    await axios.post(`${this.baseURL}/api/workflow/${workflowId}/cancel`);
+  }
+
+  async restartWorkflow(workflowId: string): Promise<any> {
+    const response = await axios.post(`${this.baseURL}/api/workflow/${workflowId}/restart`);
+    return response.data;
+  }
+
+  async getPipelineMedia(workflowId: string): Promise<Array<{ type: 'video' | 'screenshot'; url: string; name: string }>> {
+    try {
+      const response = await axios.get(`${this.baseURL}/api/pipeline-media/${workflowId}`);
+      return response.data ?? [];
+    } catch { return []; }
   }
 
   async triggerDemoWebhook(forceIndex?: number): Promise<{ workflowId: string; itemId: string; initiative: string; stages: string[] }> {

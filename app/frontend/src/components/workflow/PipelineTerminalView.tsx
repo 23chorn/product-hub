@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState } from 'react';
 import { useWorkflowStore } from '../../stores/workflowStore';
 import { useModelStore } from '../../stores/modelStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { api } from '../../services/api';
 import { deriveStageStatus } from '../../utils/stage-tracker-helpers';
 import { StageRow } from './StageRow';
@@ -9,11 +10,6 @@ import type { StageStatus, CoordinatorMessage } from '../../stores/workflowStore
 import { InlineCheckpointActions } from '../coordinator/InlineCheckpointActions';
 import { PipelineStatusSection } from './PipelineStatusSection';
 import { DemoProjectSection } from './DemoProjectSection';
-
-interface PipelineRun {
-  id: number; stage: string; status: 'running' | 'complete' | 'failed';
-  pr_url: string | null; branch: string | null; test_results: string | null;
-}
 
 // ── Dancing creature ─────────────────────────────────────────────────────────
 
@@ -42,86 +38,6 @@ function DancingCreature() {
   );
 }
 
-// ── Demo pipeline stage summary for the left pane ────────────────────────────
-
-const PIPELINE_STAGE_LABELS: Record<string, string> = {
-  triggered:  'pipeline triggered',
-  cloning:    'cloning repo',
-  analyzing:  'reading ticket',
-  generating: 'writing code',
-  pr_created: 'running tests',
-};
-
-function DemoPipelineLeftPane({ workflowId }: { workflowId: string }) {
-  const [run, setRun] = useState<PipelineRun | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const check = async () => {
-      try {
-        const r = await api.getPipelineRun(workflowId);
-        if (!cancelled) setRun(r as PipelineRun | null);
-      } catch { /* ignore */ }
-    };
-    check();
-    const t = setInterval(check, 3000);
-    return () => { cancelled = true; clearInterval(t); };
-  }, [workflowId]);
-
-  if (!run) return null;
-
-  const isDone    = run.status === 'complete' || run.status === 'failed';
-  const isRunning = run.status === 'running';
-  const isFailed  = run.status === 'failed';
-
-  let testSummary: { passed: number; failed: number; total: number } | null = null;
-  if (run.test_results) {
-    try { testSummary = JSON.parse(run.test_results); } catch { /* ignore */ }
-  }
-
-  const activeLabel = PIPELINE_STAGE_LABELS[run.stage] ?? run.stage.replace(/_/g, ' ');
-
-  const summaryColor = isFailed
-    ? 'text-red-500 dark:text-red-400'
-    : testSummary && testSummary.failed > 0
-    ? 'text-amber-600 dark:text-amber-400'
-    : isDone
-    ? 'text-green-600 dark:text-green-400'
-    : 'text-teal-600 dark:text-teal-400';
-
-  const summaryIcon = isFailed ? '✗'
-    : testSummary && testSummary.failed > 0 ? '⚠'
-    : isDone ? '✓'
-    : null;
-
-  return (
-    <div className="border-t border-slate-200 dark:border-slate-800/40 mx-2 mt-1 pt-1.5 pb-1">
-      <div className="text-[9px] font-mono uppercase tracking-widest text-slate-400 dark:text-slate-600 px-1 mb-1">
-        code + tests
-      </div>
-      <div className="flex items-center gap-2 px-1 py-0.5">
-        {isRunning && <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse flex-shrink-0" />}
-        {isDone && summaryIcon && <span className={`text-[10px] flex-shrink-0 ${summaryColor}`}>{summaryIcon}</span>}
-        {isDone && !summaryIcon && <span className="w-1.5 h-1.5 rounded-full border-2 border-slate-300 dark:border-slate-700 flex-shrink-0" />}
-        <span className={`text-[10px] font-mono truncate ${summaryColor}`}>
-          {isDone
-            ? testSummary
-              ? `${testSummary.passed}/${testSummary.total} tests passed`
-              : isFailed ? 'pipeline failed' : 'complete'
-            : activeLabel}
-        </span>
-      </div>
-      {isRunning && run.branch && (
-        <div className="px-1 mt-0.5">
-          <span className="text-[9px] font-mono text-slate-400 dark:text-slate-600 truncate block">
-            {run.branch}
-          </span>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── Event type → display config ──────────────────────────────────────────────
 
 const EVENT_CFG: Record<string, { icon: string; color: string; bgColor: string }> = {
@@ -136,6 +52,7 @@ const EVENT_CFG: Record<string, { icon: string; color: string; bgColor: string }
   board_synced:        { icon: '⬆', color: 'text-blue-600 dark:text-blue-400',    bgColor: 'bg-blue-100 dark:bg-blue-900/30' },
   workflow_started:    { icon: '🚀', color: 'text-teal-600 dark:text-teal-400',   bgColor: 'bg-teal-100 dark:bg-teal-900/30' },
   workflow_complete:   { icon: '✓', color: 'text-green-600 dark:text-green-400',  bgColor: 'bg-green-100 dark:bg-green-900/30' },
+  workflow_cancelled:  { icon: '■', color: 'text-red-600 dark:text-red-400',     bgColor: 'bg-red-100 dark:bg-red-900/30' },
 };
 
 function getEventCfg(eventType: string) {
@@ -377,7 +294,23 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
     setViewingArtifactId,
   } = useWorkflowStore();
   const { agentModels } = useModelStore();
+  const { isDemoMode: demoModeEnabled } = useSettingsStore();
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [stopping, setStopping] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [demoConfigured, setDemoConfigured] = useState<boolean>(false);
+  const [generalExpanded, setGeneralExpanded] = useState(false);
+
+  // Demo sections only show when demo mode is enabled in settings AND DEMO_PROJECT_PATH is configured
+  const isDemoMode = demoModeEnabled && demoConfigured;
+
+  // Check once whether the demo pipeline is configured
+  useEffect(() => {
+    if (!activeWorkflow) return;
+    api.getDemoRunStatus(activeWorkflow.id)
+      .then(s => setDemoConfigured(s.configured))
+      .catch(() => {});
+  }, [activeWorkflow?.id]);
 
   // Auto-scroll event log
   useEffect(() => {
@@ -400,10 +333,33 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
 
   if (!activeWorkflow) return null;
 
+  const isComplete = activeWorkflow.status === 'complete';
+  const isCancelled = isComplete && coordinatorMessages.some(m => m.eventType === 'workflow_cancelled');
+
+  const handleStop = async () => {
+    if (stopping || isComplete) return;
+    setStopping(true);
+    try {
+      await api.cancelWorkflow(activeWorkflow.id);
+    } catch {
+      setStopping(false);
+    }
+  };
+
+  const handleRestart = async () => {
+    if (restarting) return;
+    setRestarting(true);
+    try {
+      const status = await api.restartWorkflow(activeWorkflow.id);
+      applyWorkflowStatus(status);
+    } catch {
+      setRestarting(false);
+    }
+  };
+
   const total = stageSequence.length;
   const doneCount = completedStages.length;
   const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
-  const isComplete = activeWorkflow.status === 'complete';
 
   const statuses: StageStatus[] = stageSequence.map(s =>
     deriveStageStatus(s, currentStage, completedStages, pendingStage, activeWorkflow.status)
@@ -417,6 +373,12 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
     arr.push(msg);
     eventsByStage.set(key, arr);
   }
+
+  // Lifecycle events shown as a pinned banner at the top of the event log
+  const LIFECYCLE_EVENT_TYPES = new Set(['workflow_started', 'workflow_cancelled', 'reiteration']);
+  const generalEvents = eventsByStage.get('general') ?? [];
+  const topLifecycleEvents = generalEvents.filter(m => LIFECYCLE_EVENT_TYPES.has(m.eventType ?? ''));
+  const bottomGeneralEvents = generalEvents.filter(m => !LIFECYCLE_EVENT_TYPES.has(m.eventType ?? '') && !!m.eventType);
 
   // Stages to show in the event log (exclude stages with no events yet if pending)
   const activeStages = stageSequence.filter(s => {
@@ -434,7 +396,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   return (
     <div className="flex h-full overflow-hidden bg-white dark:bg-[#0d1117] font-mono">
       {/* ── Left: stage list ───────────────────────────────────── */}
-      <div className="w-52 flex-shrink-0 flex flex-col border-r border-slate-200 dark:border-slate-800/80">
+      <div className="w-64 flex-shrink-0 flex flex-col border-r border-slate-200 dark:border-slate-800/80">
         {/* Title bar — fixed h-10 matches right-pane header exactly */}
         <div className="flex items-center h-10 px-3 bg-slate-50 dark:bg-[#161b22] border-b border-slate-200 dark:border-slate-700/60 flex-shrink-0">
           <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">pipeline</span>
@@ -458,44 +420,44 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
           </div>
         </div>
 
-        {/* Stage rows — fill available height; each row is flex-1 so connectors stretch */}
-        <div className="flex-1 flex flex-col px-2 py-2 overflow-hidden">
-          {stageSequence.map((stageName, idx) => {
-            const status = statuses[idx];
-            const checkpoint = checkpoints.find(c => c.stage === stageName && c.status === 'pending');
-            const latestApproved = checkpoints.filter(c => c.stage === stageName && c.status === 'approved').at(-1);
-            const completedAt = latestApproved?.resolved_at ?? latestApproved?.created_at ?? null;
-            return (
-              <StageRow
-                key={stageName}
-                stageName={stageName}
-                index={idx}
-                status={status}
-                prevStatus={idx > 0 ? statuses[idx - 1] : undefined}
-                checkpoint={checkpoint}
-                latestApproved={latestApproved}
-                completedAt={completedAt}
-                agentModel={agentModels[stageName]}
-                onViewArtifact={setViewingArtifactId}
-                isLast={idx === stageSequence.length - 1}
-                compact
-              />
-            );
-          })}
+        {/* Scrollable content: agent stage rows + post-completion pipeline section */}
+        <div className="flex-1 overflow-y-auto">
+          {/* Agent stage rows */}
+          <div className="flex flex-col px-2 py-2">
+            {stageSequence.map((stageName, idx) => {
+              const status = statuses[idx];
+              const checkpoint = checkpoints.find(c => c.stage === stageName && c.status === 'pending');
+              const latestApproved = checkpoints.filter(c => c.stage === stageName && c.status === 'approved').at(-1);
+              const completedAt = latestApproved?.resolved_at ?? latestApproved?.created_at ?? null;
+              return (
+                <StageRow
+                  key={stageName}
+                  stageName={stageName}
+                  index={idx}
+                  status={status}
+                  prevStatus={idx > 0 ? statuses[idx - 1] : undefined}
+                  checkpoint={checkpoint}
+                  latestApproved={latestApproved}
+                  completedAt={completedAt}
+                  agentModel={agentModels[stageName]}
+                  onViewArtifact={setViewingArtifactId}
+                  isLast={idx === stageSequence.length - 1}
+                  compact
+                />
+              );
+            })}
+          </div>
+
+          {/* Post-completion: code + test pipeline (demo-only) */}
+          {isComplete && isDemoMode && (
+            <div className="px-2 pb-3">
+              <PipelineStatusSection workflowId={activeWorkflow.id} />
+            </div>
+          )}
         </div>
 
-        {/* Creature lives outside the overflow-hidden stage rows */}
+        {/* Creature lives outside the scrollable area */}
         {!isComplete && <DancingCreature />}
-
-        {isComplete && (
-          <div className="flex-shrink-0 px-3 py-1.5 border-t border-slate-200 dark:border-slate-800/40">
-            <div className="flex items-center gap-1 text-[10px] text-green-600 dark:text-green-400">
-              <span className="w-1 h-1 rounded-full bg-green-500" />
-              agents complete
-            </div>
-          </div>
-        )}
-        {isComplete && <DemoPipelineLeftPane workflowId={activeWorkflow.id} />}
       </div>
 
       {/* ── Right: event log ──────────────────────────────────── */}
@@ -519,10 +481,16 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                 live
               </span>
             )}
-            {isComplete && (
+            {isComplete && !isCancelled && (
               <span className="flex-shrink-0 flex items-center gap-1 text-[10px] text-green-600 dark:text-green-400">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
                 complete
+              </span>
+            )}
+            {isCancelled && (
+              <span className="flex-shrink-0 flex items-center gap-1 text-[10px] text-red-600 dark:text-red-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                stopped
               </span>
             )}
           </div>
@@ -530,11 +498,57 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
             {showCost && (
               <span className="text-[11px] font-mono text-slate-500">{costStr}</span>
             )}
+            {isRunning && !isComplete && (
+              <button
+                onClick={handleStop}
+                disabled={stopping}
+                title="Stop workflow"
+                className="flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-1 rounded border border-red-300 dark:border-red-700/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {stopping ? (
+                  <>
+                    <svg className="w-2.5 h-2.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    stopping…
+                  </>
+                ) : (
+                  <>■ stop</>
+                )}
+              </button>
+            )}
           </div>
         </div>
 
         {/* Events */}
         <div className="flex-1 overflow-y-auto px-0 py-2">
+          {/* Lifecycle events pinned at the top (collapsible) */}
+          {topLifecycleEvents.length > 0 && (
+            <div className="mb-1">
+              <button
+                onClick={() => setGeneralExpanded(e => !e)}
+                className="w-full flex items-center gap-1.5 px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-500 transition-colors text-left"
+              >
+                <svg
+                  className={`w-2.5 h-2.5 flex-shrink-0 transition-transform duration-150 ${generalExpanded ? 'rotate-90' : ''}`}
+                  fill="currentColor" viewBox="0 0 6 10"
+                >
+                  <path d="M1 1l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                </svg>
+                general
+                {!generalExpanded && (
+                  <span className="ml-1 normal-case tracking-normal font-normal text-slate-300 dark:text-slate-700">
+                    ({topLifecycleEvents.length})
+                  </span>
+                )}
+              </button>
+              {generalExpanded && topLifecycleEvents.map((msg, i) => (
+                <EventRow key={i} msg={msg} />
+              ))}
+            </div>
+          )}
+
           {/* Per-stage sections */}
           {activeStages.map(stageName => {
             const stageIdx = stageSequence.indexOf(stageName);
@@ -579,8 +593,8 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
             );
           })}
 
-          {/* Post-workflow events (workflow_complete etc.) — rendered after stages */}
-          {(eventsByStage.get('general') ?? []).filter(msg => !!msg.eventType).map((msg, i) => (
+          {/* Post-workflow events (board_synced, workflow_complete, etc.) */}
+          {bottomGeneralEvents.map((msg, i) => (
             <EventRow key={i} msg={msg} />
           ))}
 
@@ -596,13 +610,29 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
             <div className="px-4 py-3 space-y-2 border-t border-slate-200 dark:border-slate-800/60 mt-2">
               {/* Completion header row */}
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400 font-mono">
-                  <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                  workflow complete
+                <div className={`flex items-center gap-2 text-xs font-mono ${isCancelled ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${isCancelled ? 'bg-red-500' : 'bg-green-500'}`} />
+                  {isCancelled ? 'workflow stopped' : 'workflow complete'}
                 </div>
                 <div className="flex items-center gap-2">
-                  {/* ADO link */}
-                  {(() => {
+                  {isCancelled && (
+                    <button
+                      onClick={handleRestart}
+                      disabled={restarting}
+                      className="flex items-center gap-1.5 text-[11px] font-mono font-semibold px-2.5 py-1 rounded border border-teal-400 dark:border-teal-600 text-teal-700 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {restarting ? (
+                        <>
+                          <svg className="w-2.5 h-2.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                          restarting…
+                        </>
+                      ) : '↺ restart from beginning'}
+                    </button>
+                  )}
+                  {!isCancelled && (() => {
                     const boardMsg = coordinatorMessages.find(m => m.eventType === 'board_synced');
                     const adoUrl = boardMsg?.content.split('\n').find(l => l.startsWith('→ '))?.replace(/^→\s*/, '');
                     if (!adoUrl) return null;
@@ -613,7 +643,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                       </a>
                     );
                   })()}
-                  {coordinatorMessages.some(m => m.eventType === 'board_synced') && onOpenCodeStudio && (
+                  {!isCancelled && coordinatorMessages.some(m => m.eventType === 'board_synced') && onOpenCodeStudio && (
                     <button onClick={onOpenCodeStudio}
                       className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold font-mono text-white bg-violet-700 hover:bg-violet-600 transition-colors">
                       ⚡ Code Studio
@@ -622,11 +652,8 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                 </div>
               </div>
 
-              {/* Coding + test pipeline section */}
-              <PipelineStatusSection workflowId={activeWorkflow.id} />
-
-              {/* Demo terminal output */}
-              <DemoProjectSection workflowId={activeWorkflow.id} />
+              {/* Terminal output (demo-only) */}
+              {isDemoMode && <DemoProjectSection workflowId={activeWorkflow.id} />}
             </div>
           )}
 

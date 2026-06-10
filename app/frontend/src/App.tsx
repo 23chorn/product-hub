@@ -5,12 +5,14 @@ import { ToastContainer } from './components/ToastContainer';
 import { CoordinatorChat } from './components/coordinator';
 import { ArtifactViewer } from './components/artifact';
 import { SkillManagerPanel } from './components/SkillManagerPanel';
+import { SettingsPanel } from './components/SettingsPanel';
 import { QuickTicketPanel } from './components/QuickTicketPanel';
 import { ClaudeCodeStudio } from './components/ClaudeCodeStudio';
 import { useThemeStore } from './stores/themeStore';
 import { useModelStore } from './stores/modelStore';
 import { useDecisionLogStore } from './stores/decisionLogStore';
 import { useSkillManagerStore } from './stores/skillManagerStore';
+import { useSettingsStore } from './stores/settingsStore';
 import { useConfigStore } from './stores/configStore';
 import { useWorkflowStore } from './stores/workflowStore';
 import { useSessionStore } from './stores/sessionStore';
@@ -41,6 +43,7 @@ function App() {
   const { setAvailableModels, setAgentModels } = useModelStore();
   const { isOpen: isDLOpen, openDecisionLog } = useDecisionLogStore();
   const { isOpen: isSMOpen, openSkillManager } = useSkillManagerStore();
+  const { isOpen: isSettingsOpen, isDemoMode, openSettings, closeSettings, setDemoMode } = useSettingsStore();
   const { setConfig } = useConfigStore();
   const { activeWorkflow, viewingArtifactId, resetWorkflow, applyWorkflowStatus, addCoordinatorMessage } = useWorkflowStore();
   const { setSelectedItem, clearSession } = useSessionStore();
@@ -53,6 +56,7 @@ function App() {
   // Fetch app config, available models, and context status on mount
   useEffect(() => {
     api.getConfig().then(setConfig).catch(() => {});
+    api.getSettings().then((s: any) => setDemoMode(s.demo?.enabled ?? false)).catch(() => {});
     api.getModels().then(({ models, agentModels }) => {
       setAvailableModels(models);
       if (agentModels) setAgentModels(agentModels);
@@ -156,20 +160,34 @@ function App() {
             </p>
           </div>
           <div className="flex items-center space-x-3">
-            {/* Full Demo Button */}
+            {/* Full Demo Button — only shown when demo mode is enabled */}
+            {isDemoMode && (
+              <button
+                onClick={handleFullDemo}
+                disabled={isDemoFiring}
+                title="Full demo: runs the complete AI pipeline (research → PRD → architecture → backlog → prototype → QA → tech refinement), then writes code to the demo project via headless Claude CLI"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300 bg-white dark:bg-slate-800/50 hover:bg-violet-50 dark:hover:bg-violet-900/20 hover:border-violet-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+              >
+                {isDemoFiring ? (
+                  <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                ) : <span>⚡</span>}
+                Demo
+              </button>
+            )}
+
+            {/* Settings Button */}
             <button
-              onClick={handleFullDemo}
-              disabled={isDemoFiring}
-              title="Full demo: runs the complete AI pipeline (research → PRD → architecture → backlog → prototype → QA → tech refinement), then writes code to the demo project via headless Claude CLI"
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300 bg-white dark:bg-slate-800/50 hover:bg-violet-50 dark:hover:bg-violet-900/20 hover:border-violet-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+              onClick={openSettings}
+              className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
+              title="Settings"
             >
-              {isDemoFiring ? (
-                <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                </svg>
-              ) : <span>⚡</span>}
-              Demo
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
             </button>
 
             {/* Agent Studio Button */}
@@ -238,6 +256,15 @@ function App() {
         {isSMOpen && (
           <div className="absolute inset-0 z-50 p-3">
             <SkillManagerPanel />
+          </div>
+        )}
+
+        {/* Settings Modal Overlay */}
+        {isSettingsOpen && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center px-4 py-6 bg-black/20 dark:bg-black/40" onClick={closeSettings}>
+            <div className="w-full max-w-lg h-full max-h-[680px] flex flex-col" onClick={e => e.stopPropagation()}>
+              <SettingsPanel />
+            </div>
           </div>
         )}
 

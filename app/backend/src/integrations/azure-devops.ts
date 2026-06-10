@@ -118,6 +118,7 @@ export class AzureDevOpsClient {
   private organization: string;
   private project: string;
   private pat: string;
+  readonly wikiIdentifier: string;
   private workItemTypes: {
     epic: string;
     feature: string;
@@ -147,6 +148,7 @@ export class AzureDevOpsClient {
 
     this.project = process.env.AZURE_DEVOPS_PROJECT || '';
     this.pat = process.env.AZURE_DEVOPS_PAT || '';
+    this.wikiIdentifier = process.env.AZURE_DEVOPS_WIKI_ID || `${this.project}.wiki`;
 
     // Configure work item types based on process template
     // Defaults are for Agile, but can be customized via env variables
@@ -638,5 +640,85 @@ export class AzureDevOpsClient {
    */
   getEpicUrl(epicId: number): string {
     return `https://dev.azure.com/${this.organization}/${this.project}/_workitems/edit/${epicId}`;
+  }
+
+  /**
+   * Get the URL for a wiki page in the browser.
+   * wikiIdentifier is the wiki name slug (e.g. "xCube-Backend.wiki").
+   * path is the page path (e.g. "/Product Documentation/Features/My Feature").
+   */
+  getWikiPageUrl(wikiIdentifier: string, path: string): string {
+    const encoded = encodeURIComponent(path.replace(/^\//, ''));
+    return `https://dev.azure.com/${this.organization}/${this.project}/_wiki/wikis/${wikiIdentifier}?pagePath=${encoded}`;
+  }
+
+  /**
+   * Create or update a wiki page.
+   * Returns the ETag of the page (needed for updates).
+   */
+  // Encode a wiki page path for use in the ADO API query string.
+  // Each segment is individually encoded (spaces → %20, parens → %28/%29 etc.)
+  // but segment separators (/) are kept literal, as ADO expects.
+  private wikiPathParam(path: string): string {
+    return path.split('/').map(s => encodeURIComponent(s)).join('/');
+  }
+
+  private wikiUrl(wikiIdentifier: string, path: string): string {
+    // encodeURIComponent the identifier so any colon/space in the wiki name
+    // doesn't land raw in the URL path (ASP.NET blocks unencoded colons there).
+    // api-version is omitted here — the axios instance already adds it via params.
+    return `/wiki/wikis/${encodeURIComponent(wikiIdentifier)}/pages?path=${this.wikiPathParam(path)}`;
+  }
+
+  async upsertWikiPage(wikiIdentifier: string, path: string, content: string): Promise<{ eTag: string; url: string }> {
+    const apiUrl = this.wikiUrl(wikiIdentifier, path);
+
+    // GET existing page to retrieve ETag (needed for updates — ADO requires it)
+    let currentETag: string | undefined;
+    try {
+      const existing = await this.client.get(apiUrl, {
+        headers: { 'Content-Type': 'application/json' },
+      });
+      currentETag = existing.headers['etag'];
+    } catch { /* page doesn't exist yet — will create */ }
+
+    try {
+      const response = await this.client.put(
+        apiUrl,
+        { content },
+        { headers: { 'Content-Type': 'application/json', 'If-Match': currentETag ?? '*' } }
+      );
+      const eTag: string = response.headers['etag'] ?? '';
+      const pageUrl = this.getWikiPageUrl(wikiIdentifier, path);
+      logger.info(`Wiki page upserted: ${path}`);
+      return { eTag, url: pageUrl };
+    } catch (error: any) {
+      logger.error(`Failed to upsert wiki page ${path}`, error?.response?.data ?? error.message);
+      throw new Error(`Wiki API error: ${error.response?.data?.message || error.message}`);
+    }
+  }
+
+  /**
+   * Ensure all parent pages in a path exist (creates empty placeholder pages).
+   * For path "/Product Documentation/Features/My Feature", this ensures
+   * "/Product Documentation" and "/Product Documentation/Features" exist.
+   */
+  async ensureWikiPath(wikiIdentifier: string, path: string): Promise<void> {
+    const segments = path.split('/').filter(Boolean);
+    for (let i = 1; i < segments.length; i++) {
+      const ancestorPath = '/' + segments.slice(0, i).join('/');
+      const apiUrl = this.wikiUrl(wikiIdentifier, ancestorPath);
+      try {
+        await this.client.get(apiUrl, { headers: { 'Content-Type': 'application/json' } });
+      } catch {
+        try {
+          await this.client.put(
+            apiUrl,
+            { content: `# ${segments[i - 1]}` },
+            { headers: { 'Content-Type': 'application/json', 'If-Match': '*' } }
+          );
+        } catch { /* may already exist from concurrent call — ignore */ }
+      }
+    }
   }
 }

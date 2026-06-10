@@ -35,6 +35,7 @@ import {
   type StageTokenData,
 } from './workflow-db';
 import { isDemoMode, getDemoFixture, getDemoFixtureForTheme, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
+import { notifyCheckpointPending } from '../utils/slack-notifier';
 
 /**
  * Stages that run silently with no human review gate.
@@ -42,6 +43,39 @@ import { isDemoMode, getDemoFixture, getDemoFixtureForTheme, demoSleep, DEMO_STA
  * To skip human review on a stage, add it here (e.g. new Set(['pm_prd'])).
  */
 export const SILENT_STAGES = new Set<string>([]);
+
+// ── User-initiated cancel registry ───────────────────────────────────────────
+
+const _cancelControllers = new Map<string, AbortController>();
+const _cancelledWorkflows = new Set<string>();
+
+/**
+ * Request cancellation of an active workflow.
+ * Aborts any in-flight LLM stream, emits a `workflow_cancelled` event,
+ * and marks the workflow complete so no further stages start.
+ */
+export function requestCancel(workflowId: string): void {
+  _cancelledWorkflows.add(workflowId);
+  const controller = _cancelControllers.get(workflowId);
+  if (controller && !controller.signal.aborted) {
+    controller.abort();
+  }
+  const now = Date.now();
+  try { stmts.updateWorkflowStatus.run('complete', now, workflowId); } catch { /* ignore */ }
+  insertEvent(workflowId, 'workflow_cancelled', null, 'Workflow stopped by user.');
+  logger.info(`Workflow ${workflowId} cancelled by user`);
+}
+
+/** Returns true if the user has requested cancellation for this workflow. */
+export function isCancelRequested(workflowId: string): boolean {
+  return _cancelledWorkflows.has(workflowId);
+}
+
+/** Clears the cancel flag so a restarted workflow can run again. */
+export function clearCancelFlag(workflowId: string): void {
+  _cancelledWorkflows.delete(workflowId);
+  _cancelControllers.delete(workflowId);
+}
 
 // ── Lazy singletons — avoids reading persona files at import time ─────────────
 
@@ -159,6 +193,16 @@ export async function runAutonomousStage(
   };
 
   logger.info(`Autonomous stage "${stage}" starting (session=${sessionId})`);
+
+  // Bail immediately if a cancel was already requested before this stage started
+  if (isCancelRequested(workflowId)) {
+    logger.info(`Stage "${stage}" skipped — workflow ${workflowId} was cancelled`);
+    return;
+  }
+
+  // AbortController lets the user kill the in-flight LLM stream
+  const abortController = new AbortController();
+  _cancelControllers.set(workflowId, abortController);
 
   try {
     // ── Demo mode fast-path ──────────────────────────────────────────────────
@@ -474,7 +518,7 @@ export async function runAutonomousStage(
     const startTime = Date.now();
     let lastProgressTime = startTime;
 
-    for await (const chunk of agent.streamResponse(systemPrompt, messages, stageModel, specialistTokenCallback, STAGE_MAX_OUTPUT_TOKENS[stage], skillTools)) {
+    for await (const chunk of agent.streamResponse(systemPrompt, messages, stageModel, specialistTokenCallback, STAGE_MAX_OUTPUT_TOKENS[stage], skillTools, abortController.signal)) {
       fullResponse += chunk;
 
       // Detect progress and emit events
@@ -763,6 +807,8 @@ export async function runAutonomousStage(
         } else {
           stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
           logger.info(`Inline critic approved "${stage}" for workflow ${workflowId} — paused for human review`);
+          const titleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(itemId);
+          if (titleRow) notifyCheckpointPending(titleRow.title, stage);
         }
         return;
       }
@@ -880,18 +926,25 @@ export async function runAutonomousStage(
       logger.info(`Autonomous stage "${stage}" complete — checkpoint created, workflow paused`);
     }
   } catch (err: any) {
-    logger.error(`Autonomous stage "${stage}" failed: ${err.message}`);
-    insertEvent(workflowId, 'error', stage,
-      `Stage "${stage}" encountered an error: ${err.message}`,
-      { error: err.message });
-    // Create a pending checkpoint with the error so the UI doesn't hang forever
-    const now = Date.now();
-    stmts.insertCheckpoint.run(
-      workflowId, stage, null, 'pending',
-      JSON.stringify({ error: err.message, autonomous: true }),
-      now
-    );
-    stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
+    // Graceful exit when user cancelled — no error checkpoint needed
+    if (err?.name === 'AbortError' || isCancelRequested(workflowId)) {
+      logger.info(`Autonomous stage "${stage}" aborted by user cancel`);
+    } else {
+      logger.error(`Autonomous stage "${stage}" failed: ${err.message}`);
+      insertEvent(workflowId, 'error', stage,
+        `Stage "${stage}" encountered an error: ${err.message}`,
+        { error: err.message });
+      // Create a pending checkpoint so the UI doesn't hang forever
+      const now = Date.now();
+      stmts.insertCheckpoint.run(
+        workflowId, stage, null, 'pending',
+        JSON.stringify({ error: err.message, autonomous: true }),
+        now
+      );
+      stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
+    }
+  } finally {
+    _cancelControllers.delete(workflowId);
   }
 }
 

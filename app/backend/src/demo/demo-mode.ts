@@ -11,6 +11,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import db from '../data/database';
 
 function getFixturesDir(): string {
   const theme = process.env.DEMO_FIXTURE_THEME ?? 'price-alerts';
@@ -35,6 +36,12 @@ const DEMO_FIXTURE_FILES: Record<string, string> = {
 };
 
 export function isDemoMode(): boolean {
+  try {
+    const row = db.prepare(
+      `SELECT rule_value FROM policies WHERE scope = 'global' AND rule_key = 'demo_mode_enabled'`
+    ).get() as { rule_value: string } | undefined;
+    if (row) return row.rule_value === 'true';
+  } catch { /* DB not ready yet — fall through */ }
   return process.env.DEMO_MODE === 'true';
 }
 

@@ -33,11 +33,25 @@ function PayloadBadge({ payload }: { payload: Record<string, unknown> }) {
   return (
     <div className="mt-1.5 flex flex-wrap gap-1">
       {entries.map(([k, v]) => {
-        const display = Array.isArray(v) ? `[${(v as unknown[]).length}]` : String(v).slice(0, 40);
+        const raw = String(v);
+        const isUrl = typeof v === 'string' && v.startsWith('http');
+        const display = Array.isArray(v) ? `[${(v as unknown[]).length}]` : isUrl ? raw : raw.slice(0, 40);
         return (
           <span key={k} className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-slate-700/60 text-slate-400 font-mono">
             <span className="text-slate-500">{k}:</span>
-            <span className="text-slate-300">{display}</span>
+            {isUrl ? (
+              <a
+                href={raw}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-400 hover:text-blue-300 hover:underline truncate max-w-[200px]"
+                title={raw}
+              >
+                {raw.replace(/^https?:\/\//, '').slice(0, 40)}
+              </a>
+            ) : (
+              <span className="text-slate-300">{display}</span>
+            )}
           </span>
         );
       })}

@@ -61,7 +61,7 @@ export function DemoProjectSection({ workflowId }: Props) {
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#161b22]">
         <div className="flex items-center gap-3">
           <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400 font-mono">
-            Demo Pipeline
+            Terminal
           </span>
         </div>
 

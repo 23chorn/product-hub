@@ -11,12 +11,14 @@ interface InitiativeRow {
   id: string;
   title: string;
   description: string | null;
+  source: string;
+  metadata: string | null;
   created_at: number;
   updated_at: number;
 }
 
 function toAirtableItem(row: InitiativeRow): AirtableItem {
-  return {
+  const base: AirtableItem = {
     id: row.id,
     initiative: row.title,
     description: row.description ?? '',
@@ -27,6 +29,13 @@ function toAirtableItem(row: InitiativeRow): AirtableItem {
     confidence: 0.8,
     createdAt: new Date(row.created_at).toISOString(),
   };
+  if (row.source === 'airtable' && row.metadata) {
+    try {
+      const meta = JSON.parse(row.metadata);
+      return { ...base, ...meta };
+    } catch { /* ignore malformed metadata */ }
+  }
+  return base;
 }
 
 function toLocalInitiative(row: InitiativeRow): LocalInitiative {
@@ -41,11 +50,11 @@ function toLocalInitiative(row: InitiativeRow): LocalInitiative {
 
 const stmts = {
   list: db.prepare(
-    `SELECT id, title, description, created_at, updated_at FROM items
-     WHERE source = 'local' ORDER BY created_at DESC`
+    `SELECT id, title, description, source, metadata, created_at, updated_at FROM items
+     WHERE source IN ('local', 'airtable') ORDER BY created_at DESC`
   ),
   get: db.prepare(
-    `SELECT id, title, description, created_at, updated_at FROM items
+    `SELECT id, title, description, source, metadata, created_at, updated_at FROM items
      WHERE id = ? AND source = 'local'`
   ),
   insert: db.prepare(
@@ -74,20 +83,23 @@ router.get('/', (_req: Request, res: Response) => {
 
     // Batch-fetch latest workflow per item
     const workflowMap = new Map<string, { id: string; status: string; current_stage: string | null; summary: string | null }>();
-    const wfRows = db.prepare(`
-      SELECT w.item_id, w.id, w.status, w.current_stage, w.summary
-      FROM workflows w
-      INNER JOIN (
-        SELECT item_id, MAX(created_at) as max_created
-        FROM workflows GROUP BY item_id
-      ) latest ON w.item_id = latest.item_id AND w.created_at = latest.max_created
-      WHERE w.item_id IN (${rows.map(() => '?').join(',')})
-    `).all(...rows.map(r => r.id)) as { item_id: string; id: string; status: string; current_stage: string | null; summary: string | null }[];
+    const wfRows: { item_id: string; id: string; status: string; current_stage: string | null; summary: string | null }[] = rows.length > 0
+      ? db.prepare(`
+          SELECT w.item_id, w.id, w.status, w.current_stage, w.summary
+          FROM workflows w
+          INNER JOIN (
+            SELECT item_id, MAX(created_at) as max_created
+            FROM workflows GROUP BY item_id
+          ) latest ON w.item_id = latest.item_id AND w.created_at = latest.max_created
+          WHERE w.item_id IN (${rows.map(() => '?').join(',')})
+        `).all(...rows.map(r => r.id)) as typeof wfRows
+      : [];
     for (const wf of wfRows) workflowMap.set(wf.item_id, wf);
 
     // Batch-fetch latest pipeline run status per workflow
     const workflowIds = wfRows.map(w => w.id);
     const pipelineMap = new Map<string, string>();
+    const cancelledSet = new Set<string>();
     if (workflowIds.length > 0) {
       const prRows = db.prepare(`
         SELECT pr.workflow_id, pr.status
@@ -99,14 +111,24 @@ router.get('/', (_req: Request, res: Response) => {
         WHERE pr.workflow_id IN (${workflowIds.map(() => '?').join(',')})
       `).all(...workflowIds) as { workflow_id: string; status: string }[];
       for (const pr of prRows) pipelineMap.set(pr.workflow_id, pr.status);
+
+      // Detect cancelled workflows: complete status + a workflow_cancelled event
+      const cancelledRows = db.prepare(`
+        SELECT DISTINCT workflow_id FROM workflow_events
+        WHERE workflow_id IN (${workflowIds.map(() => '?').join(',')})
+          AND event_type = 'workflow_cancelled'
+      `).all(...workflowIds) as { workflow_id: string }[];
+      for (const r of cancelledRows) cancelledSet.add(r.workflow_id);
     }
 
     const items = rows.map(r => {
       const wf = workflowMap.get(r.id);
       const pipelineStatus = wf ? pipelineMap.get(wf.id) : undefined;
+      const isCancelled = wf ? cancelledSet.has(wf.id) : false;
       return {
         ...toAirtableItem(r),
-        workflow: wf ? { id: wf.id, status: wf.status, currentStage: wf.current_stage, summary: wf.summary, pipelineStatus } : undefined,
+        source: r.source,
+        workflow: wf ? { id: wf.id, status: wf.status, currentStage: wf.current_stage, summary: wf.summary, pipelineStatus, isCancelled } : undefined,
       };
     });
 
