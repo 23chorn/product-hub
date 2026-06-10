@@ -318,7 +318,9 @@ export class AzureDevOpsClient {
 
     this.project = process.env.AZURE_DEVOPS_PROJECT || '';
     this.pat = process.env.AZURE_DEVOPS_PAT || '';
-    this.wikiIdentifier = process.env.AZURE_DEVOPS_WIKI_ID || `${this.project}.wiki`;
+    // Default wiki identifier: sanitize project name to avoid colons/special chars that ASP.NET blocks in URL paths
+    const sanitizedProject = this.project.replace(/[^a-zA-Z0-9-_]/g, '-');
+    this.wikiIdentifier = process.env.AZURE_DEVOPS_WIKI_ID || `${sanitizedProject}.wiki`;
 
     // Configure work item types based on process template
     // Defaults are for Agile, but can be customized via env variables
@@ -848,16 +850,18 @@ export class AzureDevOpsClient {
   }
 
   private wikiUrl(wikiIdentifier: string, path: string): string {
-    // encodeURIComponent the identifier so any colon/space in the wiki name
-    // doesn't land raw in the URL path (ASP.NET blocks unencoded colons there).
+    // Double-encode the identifier to prevent axios from decoding %3A back to :
+    // ASP.NET blocks colons in URL paths, so %3A must survive the round trip
+    const doubleEncoded = encodeURIComponent(encodeURIComponent(wikiIdentifier));
     // api-version is omitted here — the axios instance already adds it via params.
-    return `/wiki/wikis/${encodeURIComponent(wikiIdentifier)}/pages?path=${this.wikiPathParam(path)}`;
+    return `/wiki/wikis/${doubleEncoded}/pages?path=${this.wikiPathParam(path)}`;
   }
 
   async upsertWikiPage(wikiIdentifier: string, path: string, content: string): Promise<{ eTag: string; url: string }> {
     const apiUrl = this.wikiUrl(wikiIdentifier, path);
     // The wiki pages endpoint is preview-only — override the instance default api-version.
     const wikiParams = { 'api-version': '7.1-preview.1' };
+    logger.info(`Wiki API URL: ${apiUrl} (wikiId: ${wikiIdentifier})`);
 
     // GET existing page to retrieve ETag (needed for updates — ADO requires it)
     let currentETag: string | undefined;
