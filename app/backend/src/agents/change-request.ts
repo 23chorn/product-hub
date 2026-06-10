@@ -368,18 +368,19 @@ export async function executeChangeRequest(
     parentArtifactIds[stage] = row?.id ?? null;
   }
 
-  // Save the original stage sequence in the CR's impact_assessment so it can be
-  // restored after completion. Merge with existing assessment data.
+  // Save the CR-specific stage sequence in the impact_assessment.
+  // DO NOT overwrite the workflow's stage_sequence — the frontend displays it.
+  // Instead, store the CR sequence in the impact_assessment and use it during stage advancement.
   const now = Date.now();
-  const originalSequence = workflow.stage_sequence;
   const existingAssessment = cr.impact_assessment ? JSON.parse(cr.impact_assessment) : {};
-  existingAssessment.original_sequence = originalSequence;
+  existingAssessment.cr_stage_sequence = crSequence;
+  existingAssessment.cr_stages = orderedStages;
   stmts.updateCRAssessment.run(JSON.stringify(existingAssessment), 'in_progress', now, crId);
 
-  // Temporarily rewrite stage_sequence to only include CR stages.
-  // Keep status as 'complete' — reiterateFromStage expects it and handles the transition to 'active'.
-  db.prepare('UPDATE workflows SET stage_sequence = ?, current_stage = NULL, updated_at = ? WHERE id = ?')
-    .run(JSON.stringify(crSequence), now, cr.workflow_id);
+  // Set current_stage to null to signal workflow restart, but keep original stage_sequence intact.
+  // The status stays 'complete' — reiterateFromStage will transition it to 'active'.
+  db.prepare('UPDATE workflows SET current_stage = NULL, updated_at = ? WHERE id = ?')
+    .run(now, cr.workflow_id);
 
   // Build a CR-specific brief that scopes changes to affected sections only.
   // This uses generateCRBrief instead of the generic generateRevisionBrief.
@@ -393,10 +394,10 @@ export async function executeChangeRequest(
   try {
     await reiterateFromStage(cr.workflow_id, orderedStages[0], crDescription, crBrief);
   } catch (err: any) {
-    // Restore original sequence on failure
-    db.prepare('UPDATE workflows SET stage_sequence = ?, status = ?, updated_at = ? WHERE id = ?')
-      .run(originalSequence, 'complete', Date.now(), cr.workflow_id);
-    stmts.updateCRStatus.run('assessed', Date.now(), crId); // revert to assessed
+    // Revert CR status on failure (stage_sequence was never modified)
+    db.prepare('UPDATE workflows SET status = ?, updated_at = ? WHERE id = ?')
+      .run('complete', Date.now(), cr.workflow_id);
+    stmts.updateCRStatus.run('assessed', Date.now(), crId);
     throw err;
   }
 
@@ -426,13 +427,15 @@ export function linkCRArtifactVersion(
 
 /**
  * Complete a change request after all stages are done.
+ * The workflow's stage_sequence is never modified during CR execution,
+ * so no restoration is needed.
  */
-export function completeChangeRequest(crId: number, workflowId: string, originalSequence: string): void {
+export function completeChangeRequest(crId: number, workflowId: string): void {
   stmts.updateCRStatus.run('complete', Date.now(), crId);
 
-  // Restore the original full stage sequence
-  db.prepare('UPDATE workflows SET stage_sequence = ?, status = ?, updated_at = ? WHERE id = ?')
-    .run(originalSequence, 'complete', Date.now(), workflowId);
+  // Mark workflow as complete (stage_sequence was never modified)
+  db.prepare('UPDATE workflows SET status = ?, updated_at = ? WHERE id = ?')
+    .run('complete', Date.now(), workflowId);
 
   insertEvent(workflowId, 'cr_complete', null,
     `Change request #${crId} completed`,

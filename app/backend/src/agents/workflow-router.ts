@@ -284,7 +284,19 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
     throw new Error(`Workflow ${workflowId} is paused at a checkpoint — resolve it before advancing`);
   }
 
-  const sequence: string[] = JSON.parse(workflow.stage_sequence);
+  // Check if there's an active change request — if so, use its stage sequence
+  const activeCR = db.prepare<[string], { impact_assessment: string | null }>(
+    `SELECT impact_assessment FROM change_requests WHERE workflow_id = ? AND status = 'in_progress' ORDER BY created_at DESC LIMIT 1`
+  ).get(workflowId);
+
+  let sequence: string[];
+  if (activeCR?.impact_assessment) {
+    const assessment = JSON.parse(activeCR.impact_assessment);
+    sequence = assessment.cr_stage_sequence ?? JSON.parse(workflow.stage_sequence);
+  } else {
+    sequence = JSON.parse(workflow.stage_sequence);
+  }
+
   if (sequence.length === 0) throw new Error(`Workflow ${workflowId} has no stages defined`);
 
   const currentIndex = workflow.current_stage !== null

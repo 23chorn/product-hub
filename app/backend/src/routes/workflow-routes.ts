@@ -608,12 +608,10 @@ workflowRoutes.post('/checkpoint/resolve', async (req: Request, res: Response) =
           if (err.message?.startsWith('WORKFLOW_COMPLETE:')) {
             logger.info(`Workflow ${workflowId} complete after checkpoint approval`);
 
-            // If there's an active CR, finalize it and restore the original stage sequence
+            // If there's an active CR, finalize it
             if (activeCR) {
               try {
-                const assessment = activeCR.impact_assessment ? JSON.parse(activeCR.impact_assessment) : null;
-                const originalSequence = assessment?.original_sequence ?? '[]';
-                completeChangeRequest(activeCR.id, workflowId, originalSequence);
+                completeChangeRequest(activeCR.id, workflowId);
               } catch (crErr: any) {
                 logger.warn(`Failed to complete CR #${activeCR.id}: ${crErr.message}`);
               }
