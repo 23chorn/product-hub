@@ -1523,7 +1523,7 @@ workflowRoutes.get('/:id/artifacts', (req: Request, res: Response) => {
     if (!workflow) return res.status(404).json({ error: 'Workflow not found' });
 
     const artifacts = db.prepare<[string], { id: number; type: string; stage: string | null; created_at: number }>(`
-      SELECT a.id, a.type, s.stage, a.created_at
+      SELECT a.id, a.type, s.mode as stage, a.created_at
       FROM artifacts a
       JOIN sessions s ON a.session_id = s.id
       WHERE s.item_id = ?

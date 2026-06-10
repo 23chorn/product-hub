@@ -203,6 +203,10 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
     }),
 
   applyWorkflowStatus: ({ workflow, checkpoints, currentStage, completedStages, pendingStage, currentSessionId }: WorkflowStatus & { currentSessionId?: string | null }) => {
+    if (!workflow) {
+      console.error('[workflowStore] applyWorkflowStatus called with undefined workflow');
+      return;
+    }
     const stageSequence: string[] = JSON.parse(workflow.stage_sequence ?? '[]');
     localStorage.setItem('activeWorkflowId', workflow.id);
     set({
