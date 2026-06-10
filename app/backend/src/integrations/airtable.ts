@@ -170,6 +170,15 @@ export class AirtableClient {
   }
 
   /**
+   * Update item with Test Plan link
+   */
+  async linkTestPlan(recordId: string, testPlanUrl: string): Promise<void> {
+    await this.updateItem(recordId, {
+      testPlanLink: testPlanUrl,
+    });
+  }
+
+  /**
    * Transform Airtable record to our internal format
    */
   private transformRecord(record: any): AirtableItem {
@@ -196,6 +205,7 @@ export class AirtableClient {
       researchBriefLink: record.fields['Research Brief'] || '',
       prdLink: record.fields['PRD Link'] || '',
       epicLink: record.fields['Epic Link'] || '',
+      testPlanLink: record.fields['Test Plan'] || '',
       azureEpicId: record.fields['Azure Epic ID'] || '',
       azureFeatureIds: record.fields['Azure Feature IDs'] || '',
       azureStoryIds: record.fields['Azure Story IDs'] || '',
@@ -226,6 +236,7 @@ export class AirtableClient {
     if (item.researchBriefLink !== undefined) fields['Research Brief'] = item.researchBriefLink;
     if (item.prdLink !== undefined) fields['PRD Link'] = item.prdLink;
     if (item.epicLink !== undefined) fields['Epic Link'] = item.epicLink;
+    if (item.testPlanLink !== undefined) fields['Test Plan'] = item.testPlanLink;
     if (item.azureEpicId !== undefined) fields['Azure Epic ID'] = item.azureEpicId;
     if (item.azureFeatureIds !== undefined) fields['Azure Feature IDs'] = item.azureFeatureIds;
     if (item.azureStoryIds !== undefined) fields['Azure Story IDs'] = item.azureStoryIds;

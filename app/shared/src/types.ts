@@ -32,6 +32,7 @@ export interface AirtableItem {
   researchBriefLink?: string;
   prdLink?: string;
   epicLink?: string;
+  testPlanLink?: string;
   azureEpicId?: string;
   azureFeatureIds?: string;
   azureStoryIds?: string;

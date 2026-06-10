@@ -588,6 +588,16 @@ workflowRoutes.post('/checkpoint/resolve', async (req: Request, res: Response) =
         }
       }
 
+      // Auto push test plan after QA approval
+      if (cpDetail?.stage === 'qa_engineer') {
+        const wfRow = db.prepare<[string], { item_id: string }>('SELECT item_id FROM workflows WHERE id = ?').get(workflowId);
+        if (wfRow) {
+          autoPushTestPlan(workflowId, wfRow.item_id).catch(err =>
+            logger.error(`autoPushTestPlan failed: ${err.message}`)
+          );
+        }
+      }
+
       // Advance to the next stage asynchronously — don't block the response.
       // The checkpoint is already approved; the frontend polls for status updates.
       advanceStage(workflowId)
@@ -908,6 +918,123 @@ async function autoPushToBoard(workflowId: string, itemId: string): Promise<void
     logger.error(`Auto push-to-board failed for workflow ${workflowId}: ${err.message}`);
     insertEvent(workflowId, 'error', 'tech_refinement',
       `Board sync failed: ${err.message}`, { error: err.message });
+  }
+}
+
+/**
+ * Called automatically when the qa_engineer checkpoint is approved.
+ * Creates or syncs the ADO Test Plan and pushes the URL to Airtable.
+ */
+async function autoPushTestPlan(workflowId: string, itemId: string): Promise<void> {
+  const fs = require('fs');
+
+  try {
+    // ── Check ADO config ─────────────────────────────────────────────────────
+    const { appConfig } = require('../config/app-config');
+    const adoConfigured = appConfig.integrations.workItems === 'ado';
+
+    if (!adoConfigured) {
+      logger.info(`Auto push test plan skipped — work items integration is "${appConfig.integrations.workItems}"`);
+      return;
+    }
+
+    // ── Load QA artifact ─────────────────────────────────────────────────────
+    const qaArtifact = db.prepare<[string], { id: number; file_path: string }>(`
+      SELECT a.id, a.file_path FROM artifacts a
+      JOIN sessions s ON a.session_id = s.id
+      WHERE s.item_id = ? AND a.type = 'qa_tests'
+      ORDER BY a.created_at DESC LIMIT 1
+    `).get(itemId);
+
+    if (!qaArtifact) {
+      logger.warn(`Auto push test plan: no QA artifact for item ${itemId}`);
+      return;
+    }
+
+    const raw = fs.readFileSync(resolveArtifactPath(qaArtifact.file_path), 'utf-8')
+      .replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+    let qa: any;
+    try { qa = JSON.parse(raw); } catch {
+      logger.warn('Auto push test plan: QA artifact is not valid JSON');
+      return;
+    }
+
+    const testCases = (qa.test_cases ?? []) as any[];
+    if (testCases.length === 0) {
+      logger.warn('Auto push test plan: no test cases found in QA artifact');
+      return;
+    }
+
+    // ── Build story map ──────────────────────────────────────────────────────
+    const storyMappings = db.prepare<[string], { local_key: string; ado_id: number }>(
+      `SELECT local_key, ado_id FROM ado_work_item_map WHERE workflow_id = ? AND ado_type = 'story'`
+    ).all(workflowId);
+    const storyMap = new Map(storyMappings.map(m => [m.local_key, m.ado_id]));
+
+    if (storyMap.size === 0) {
+      logger.warn('Auto push test plan: no story mappings found — backlog must be pushed to ADO first');
+      return;
+    }
+
+    // ── Check for existing test plan mapping ─────────────────────────────────
+    const existingMap = db.prepare<[string], { plan_id: number; plan_url: string; suite_ids: string; test_case_ids: string; root_suite_id?: number }>(
+      'SELECT plan_id, plan_url, suite_ids, test_case_ids, root_suite_id FROM qa_test_plan_map WHERE workflow_id = ?'
+    ).get(workflowId);
+
+    const existing = existingMap ? {
+      planId: existingMap.plan_id,
+      rootSuiteId: existingMap.root_suite_id,
+      suiteIds: JSON.parse(existingMap.suite_ids ?? '{}'),
+      testCaseIds: JSON.parse(existingMap.test_case_ids ?? '{}'),
+    } : undefined;
+
+    const workflow = db.prepare<[string], { summary: string | null; goal: string }>(
+      'SELECT summary, goal FROM workflows WHERE id = ?'
+    ).get(workflowId);
+    const planName = (workflow?.summary ?? workflow?.goal.split('\n')[0] ?? 'Test Plan').slice(0, 60);
+
+    // ── Push to ADO Test Plans ───────────────────────────────────────────────
+    const { AzureDevOpsClient } = require('../integrations/azure-devops');
+    const client = new AzureDevOpsClient();
+
+    const result = await client.pushQATestPlan({ planName, testCases, storyMap, existing });
+
+    // ── Persist the mapping ──────────────────────────────────────────────────
+    const now = Date.now();
+    db.prepare(`
+      INSERT OR REPLACE INTO qa_test_plan_map
+        (workflow_id, artifact_id, plan_id, root_suite_id, plan_url, suite_ids, test_case_ids, test_case_count, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      workflowId,
+      qaArtifact.id,
+      result.planId,
+      result.rootSuiteId,
+      result.planUrl,
+      JSON.stringify(result.suiteIds),
+      JSON.stringify(result.testCaseIds),
+      testCases.length,
+      now
+    );
+
+    insertEvent(workflowId, 'stage_progress', 'qa_engineer',
+      `QA Test Plan ${existing ? 'synced' : 'created'} in ADO — ${result.created} created, ${result.updated} updated\n→ ${result.planUrl}`,
+      { plan_id: result.planId, plan_url: result.planUrl, created: result.created, updated: result.updated }
+    );
+
+    // ── Push Test Plan URL back to Airtable ──────────────────────────────────
+    const itemAirtableRow = db.prepare<[string], { airtable_id: string | null }>(
+      'SELECT airtable_id FROM items WHERE id = ?'
+    ).get(itemId);
+    if (itemAirtableRow?.airtable_id) {
+      pushLinksToAirtable(itemAirtableRow.airtable_id, { testPlanLink: result.planUrl }).catch(() => {});
+    }
+
+    logger.info(`Auto push test plan complete for workflow ${workflowId} — Plan #${result.planId} at ${result.planUrl}`);
+  } catch (err: any) {
+    logger.error(`Auto push test plan failed for workflow ${workflowId}: ${err.message}`);
+    insertEvent(workflowId, 'error', 'qa_engineer',
+      `Test plan push failed: ${err.message}`, { error: err.message });
   }
 }
 

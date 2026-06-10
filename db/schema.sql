@@ -348,6 +348,7 @@ CREATE TABLE qa_test_plan_map (
   workflow_id     TEXT    NOT NULL REFERENCES workflows(id),
   artifact_id     INTEGER REFERENCES artifacts(id),
   plan_id         INTEGER NOT NULL,
+  root_suite_id   INTEGER,
   plan_url        TEXT    NOT NULL,
   suite_ids       TEXT    NOT NULL DEFAULT '{}',  -- JSON: { "happy_path": 1234, … }
   test_case_ids   TEXT    NOT NULL DEFAULT '{}',  -- JSON: { "TC-001": 5678, … }

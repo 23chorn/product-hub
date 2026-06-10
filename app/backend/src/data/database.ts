@@ -86,6 +86,7 @@ try {
     workflow_id     TEXT    NOT NULL REFERENCES workflows(id),
     artifact_id     INTEGER REFERENCES artifacts(id),
     plan_id         INTEGER NOT NULL,
+    root_suite_id   INTEGER,
     plan_url        TEXT    NOT NULL,
     suite_ids       TEXT    NOT NULL DEFAULT '{}',
     test_case_ids   TEXT    NOT NULL DEFAULT '{}',
@@ -94,6 +95,7 @@ try {
   )`);
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_qa_plan_workflow ON qa_test_plan_map(workflow_id)');
 } catch { /* already exists */ }
+try { db.exec('ALTER TABLE qa_test_plan_map ADD COLUMN root_suite_id INTEGER'); } catch { /* already exists */ }
 
 // ---------------------------------------------------------------------------
 // Helper: getPolicies
