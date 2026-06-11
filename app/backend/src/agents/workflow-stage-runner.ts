@@ -158,6 +158,8 @@ export async function runAutonomousStage(
           const { pushFeatureToADO } = await import('./feature-decomposition');
           const result = await pushFeatureToADO(workflowId, featureIndex);
           logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} — added ${result.storyIds.length} stories to existing feature #${result.featureId}`);
+          logger.info(`[MULTI-AGENT] pushFeatureToADO result: testPlanId=${result.testPlanId}, testPlanUrl=${result.testPlanUrl}, testCaseCount=${result.testCaseCount}`);
+
           const { AzureDevOpsClient } = await import('../integrations/azure-devops');
           const client = new AzureDevOpsClient();
           featureUrl = `https://dev.azure.com/${client['organization']}/${client['project']}/_workitems/edit/${result.featureId}`;
@@ -165,6 +167,8 @@ export async function runAutonomousStage(
 
           if (testPlanUrl) {
             logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} — test plan ${result.testPlanId} updated with ${result.testCaseCount} test cases`);
+          } else {
+            logger.warn(`[MULTI-AGENT] Feature ${featureIndex + 1} — NO TEST PLAN URL in result!`);
           }
         }
       } catch (err: any) {
@@ -182,11 +186,10 @@ export async function runAutonomousStage(
       if (featureUrl) eventMeta.feature_url = featureUrl;
       if (testPlanUrl) eventMeta.test_plan_url = testPlanUrl;
 
-      // Build summary message with test plan link
-      let summary = `7-agent collaborative refinement complete for Feature ${featureIndex + 1} — ready for human review`;
-      if (testPlanUrl) {
-        summary += `\n→ View Test Plan: ${testPlanUrl}`;
-      }
+      logger.info(`[MULTI-AGENT] Event metadata for F${featureIndex + 1}: featureUrl=${featureUrl ? 'present' : 'null'}, testPlanUrl=${testPlanUrl ? 'present' : 'null'}`);
+
+      // Summary message (URLs will be appended by frontend from metadata)
+      const summary = `7-agent collaborative refinement complete for Feature ${featureIndex + 1} — ready for human review`;
 
       insertEvent(workflowId, 'stage_completed', stage, summary, eventMeta);
 

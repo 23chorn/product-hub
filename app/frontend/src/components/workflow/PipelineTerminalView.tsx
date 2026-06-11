@@ -29,11 +29,11 @@ function DancingCreature() {
   const [top, bottom] = CREATURE_FRAMES[frame];
   return (
     <div
-      className="flex-shrink-0 pb-2 pt-1 flex flex-col items-center select-none transition-opacity duration-500"
+      className="flex-shrink-0 pb-3 pt-2 flex flex-col items-center select-none transition-opacity duration-500"
       title="keep going"
     >
-      <pre className="text-[9px] leading-tight text-slate-400 dark:text-slate-400 text-center font-mono">{top}</pre>
-      <pre className="text-[8px] leading-tight text-slate-500 dark:text-slate-500 text-center font-mono">{bottom}</pre>
+      <pre className="text-[11px] leading-relaxed text-slate-400 dark:text-slate-400 text-center font-mono">{top}</pre>
+      <pre className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-500 text-center font-mono">{bottom}</pre>
     </div>
   );
 }
@@ -469,7 +469,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   return (
     <div className="flex h-full overflow-hidden bg-white dark:bg-[#0d1117] font-mono">
       {/* ── Left: stage list ───────────────────────────────────── */}
-      <div className="w-64 flex-shrink-0 flex flex-col border-r border-slate-200 dark:border-slate-800/80">
+      <div className="w-96 flex-shrink-0 flex flex-col border-r border-slate-200 dark:border-slate-800/80">
         {/* Title bar — fixed h-10 matches right-pane header exactly */}
         <div className="flex items-center h-10 px-3 bg-slate-50 dark:bg-[#161b22] border-b border-slate-200 dark:border-slate-700/60 flex-shrink-0">
           <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">pipeline</span>

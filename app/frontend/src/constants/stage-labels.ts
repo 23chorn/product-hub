@@ -18,8 +18,12 @@ const STAGE_LABELS_BASE: Record<string, string> = {
 // Each story_decomposition_F* stage runs a 7-agent collaborative refinement (Product + QA + 4 Engineers)
 export const STAGE_LABELS: Record<string, string> = new Proxy(STAGE_LABELS_BASE, {
   get(target, prop: string) {
-    // Map story_decomposition_F1, F2, F3, etc. → "Collaborative Refinement — 7 Agents"
+    // Map story_decomposition_F1, F2, F3, etc. → "Refinement - F1", "Refinement - F2", etc.
     if (prop.startsWith('story_decomposition_F')) {
+      const match = prop.match(/story_decomposition_F(\d+)$/);
+      if (match) {
+        return `Refinement — F${match[1]}`;
+      }
       return target.story_decomposition;
     }
     return target[prop];
@@ -58,6 +62,10 @@ const STAGE_SHORT_LABELS_BASE: Record<string, string> = {
 export const STAGE_SHORT_LABELS: Record<string, string> = new Proxy(STAGE_SHORT_LABELS_BASE, {
   get(target, prop: string) {
     if (prop.startsWith('story_decomposition_F')) {
+      const match = prop.match(/story_decomposition_F(\d+)$/);
+      if (match) {
+        return `F${match[1]}`;
+      }
       return target.story_decomposition;
     }
     if (prop.startsWith('qa_engineer_F')) {

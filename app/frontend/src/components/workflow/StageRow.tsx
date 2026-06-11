@@ -73,15 +73,15 @@ export function StageRow({
   // Active rows are taller to accommodate the animation; connector below stretches to match.
   if (compact) {
     const isActive = status === 'in-progress';
-    const sizing = isActive ? 'flex-1 min-h-[36px] max-h-[56px]' : 'flex-1 min-h-[28px] max-h-[44px]';
+    const sizing = isActive ? 'flex-1 min-h-[44px] max-h-[64px]' : 'flex-1 min-h-[36px] max-h-[52px]';
 
     return (
       <div className={`flex gap-0 ${sizing}`}>
         {/* Gutter */}
         <div className="flex flex-col items-center flex-shrink-0 w-6">
           {showConnector
-            ? <div className={`w-px flex-shrink-0 h-2 ${connectorDone ? 'bg-slate-600' : 'bg-slate-800'}`} />
-            : <div className="h-2 flex-shrink-0" />
+            ? <div className={`w-px flex-shrink-0 h-3 ${connectorDone ? 'bg-slate-600' : 'bg-slate-800'}`} />
+            : <div className="h-3 flex-shrink-0" />
           }
           <div className="flex items-center justify-center w-4 h-4 flex-shrink-0">
             <StatusIcon status={status} />
@@ -91,9 +91,9 @@ export function StageRow({
           )}
         </div>
 
-        {/* Content — mt-[10px] aligns text centre with icon centre (h-2 top + h-4/2 = 16px) */}
-        <div className="flex-1 min-w-0 overflow-hidden pl-2 mt-[10px]">
-          <span className={`block text-[12px] font-mono leading-none truncate ${labelColor(status)}`}>
+        {/* Content — mt-[11px] aligns text centre with icon centre (h-3 top + h-4/2 = 14px) */}
+        <div className="flex-1 min-w-0 overflow-hidden pl-2 mt-[11px]">
+          <span className={`block text-[13px] font-mono leading-none truncate ${labelColor(status)}`}>
             {customLabel ?? STAGE_LABELS[stageName] ?? stageName}
           </span>
           {isActive && (

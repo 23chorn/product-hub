@@ -21,6 +21,12 @@ export function eventToMessage(event: WorkflowEvent): { role: 'coordinator'; con
   if (event.event_type === 'stage_completed' && event.details) {
     try {
       const details = JSON.parse(event.details);
+
+      // Debug log for story_decomposition stages
+      if (event.stage?.startsWith('story_decomposition')) {
+        console.log(`[EVENT DEBUG] ${event.stage} details:`, details);
+      }
+
       if (details.wiki_url) {
         content = `${content}\n→ ${details.wiki_url}`;
       } else if (details.feature_url && details.test_plan_url) {
