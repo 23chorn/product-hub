@@ -233,11 +233,11 @@ function EventRow({ msg }: { msg: CoordinatorMessage }) {
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline justify-between gap-2">
-          <span className="text-xs text-slate-700 dark:text-slate-300 leading-tight font-mono truncate">{title}</span>
-          <span className="flex-shrink-0 text-[10px] text-slate-400 dark:text-slate-700 font-mono">{formatTs(msg.timestamp)}</span>
+          <span className="text-sm text-slate-700 dark:text-slate-300 leading-tight font-mono truncate">{title}</span>
+          <span className="flex-shrink-0 text-[11px] text-slate-400 dark:text-slate-700 font-mono">{formatTs(msg.timestamp)}</span>
         </div>
         {detail && !externalUrl && (
-          <p className="text-[11px] text-slate-500 dark:text-slate-600 font-mono mt-0.5 leading-relaxed truncate">{detail}</p>
+          <p className="text-[12px] text-slate-500 dark:text-slate-600 font-mono mt-0.5 leading-relaxed truncate">{detail}</p>
         )}
         {isWikiLink && (
           <a

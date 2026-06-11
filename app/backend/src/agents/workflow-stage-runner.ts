@@ -128,19 +128,67 @@ export async function runAutonomousStage(
 
     try {
       const artifactContent = await runMultiAgentRefinement(workflowId, itemId, stage, featureIndex);
+      const newFeature = JSON.parse(artifactContent);
 
-      // Save the combined artifact (backlog + test cases)
+      // Load accumulated backlog (if any previous features completed)
+      let accumulatedBacklog: any;
+      const { loadLatestArtifactContent } = await import('./artifact-helpers');
+      const priorBacklogContent = await loadLatestArtifactContent(itemId, 'backlog');
+
+      if (priorBacklogContent) {
+        // Append new feature to existing backlog
+        const cleaned = priorBacklogContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+        accumulatedBacklog = JSON.parse(cleaned);
+        accumulatedBacklog.features.push(...newFeature.features);
+      } else {
+        // First feature — initialize backlog structure
+        accumulatedBacklog = newFeature;
+      }
+
+      // Save the accumulated backlog artifact (epic + all features so far)
       const { saveLocalArtifact } = await import('./artifact-helpers');
-      const artifactId = await saveLocalArtifact(sessionId, stage, artifactContent, itemId, null);
+      const artifactId = await saveLocalArtifact(sessionId, stage, JSON.stringify(accumulatedBacklog, null, 2), itemId, null);
+
+      // Push stories + test cases to ADO (adds to existing feature created by epic_feature_planner)
+      let featureUrl: string | null = null;
+      let testPlanUrl: string | null = null;
+      try {
+        const { appConfig } = require('../config/app-config');
+        if (appConfig.integrations.workItems === 'ado') {
+          const { pushFeatureToADO } = await import('./feature-decomposition');
+          const result = await pushFeatureToADO(workflowId, featureIndex);
+          logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} — added ${result.storyIds.length} stories to existing feature #${result.featureId}`);
+          const { AzureDevOpsClient } = await import('../integrations/azure-devops');
+          const client = new AzureDevOpsClient();
+          featureUrl = `https://dev.azure.com/${client['organization']}/${client['project']}/_workitems/edit/${result.featureId}`;
+          testPlanUrl = result.testPlanUrl ?? null;
+
+          if (testPlanUrl) {
+            logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} — test plan ${result.testPlanId} updated with ${result.testCaseCount} test cases`);
+          }
+        }
+      } catch (err: any) {
+        logger.error(`[MULTI-AGENT] Failed to push Feature ${featureIndex + 1} to ADO: ${err.message}`);
+      }
 
       // Create checkpoint for human review
       const { pauseAtCheckpoint } = await import('./workflow-router');
       await pauseAtCheckpoint(workflowId, stage, artifactId, null);
 
       logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} refinement complete — checkpoint created`);
-      insertEvent(workflowId, 'stage_completed', stage,
-        `7-agent collaborative refinement complete for Feature ${featureIndex + 1} — ready for human review`,
-        { artifact_id: artifactId });
+
+      // Build event metadata with both URLs
+      const eventMeta: any = { artifact_id: artifactId };
+      if (featureUrl) eventMeta.feature_url = featureUrl;
+      if (testPlanUrl) eventMeta.test_plan_url = testPlanUrl;
+
+      // Build summary message with test plan link
+      let summary = `7-agent collaborative refinement complete for Feature ${featureIndex + 1} — ready for human review`;
+      if (testPlanUrl) {
+        summary += `\n→ View Test Plan: ${testPlanUrl}`;
+      }
+
+      insertEvent(workflowId, 'stage_completed', stage, summary, eventMeta);
 
       return;
     } catch (err: any) {

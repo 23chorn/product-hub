@@ -343,26 +343,91 @@ export async function pushFeatureToADO(
 
   const featureId = featureMapping.ado_id;
 
+  // Check if stories already exist for this feature (avoid duplicates)
+  const existingStories = db.prepare<[string, string], { local_key: string; ado_id: number }>(
+    `SELECT local_key, ado_id FROM ado_work_item_map
+     WHERE workflow_id = ? AND ado_type = 'story' AND local_key LIKE ?
+     ORDER BY local_key`
+  ).all(workflowId, `F${featureIndex + 1}.S%`);
+
+  if (existingStories.length > 0) {
+    logger.info(`[STORY PUSH] Feature F${featureIndex + 1} already has ${existingStories.length} stories in ADO — skipping duplicate creation`);
+    const featureUrl = `https://dev.azure.com/${process.env.AZURE_DEVOPS_ORG}/${process.env.AZURE_DEVOPS_PROJECT}/_workitems/edit/${featureId}`;
+    return { epicId, featureId, storyIds: existingStories.map(s => s.ado_id) };
+  }
+
   // Create stories under the existing feature
   const { AzureDevOpsClient } = await import('../integrations/azure-devops');
   const client = new AzureDevOpsClient();
   const storyIds: number[] = [];
+  const allTestCases: any[] = [];
 
   for (const storyData of targetFeature.stories) {
+    // Support both old format (persona/goal/benefit) and new format (as_a/i_want/so_that)
+    const persona = storyData.persona ?? storyData.as_a ?? '';
+    const goal = storyData.goal ?? storyData.i_want ?? '';
+    const benefit = storyData.benefit ?? storyData.so_that ?? '';
+    const acceptanceCriteria = storyData.acceptanceCriteria ?? storyData.acceptance_criteria ?? [];
+    const technicalAcceptanceCriteria = storyData.technical_acceptance_criteria ?? [];
+    const effort = storyData.storyPoints ?? storyData.estimated_points ?? undefined;
+    const platform = storyData.platform ?? [];
+    const technicalNotes = storyData.technical_notes ?? storyData.agentContext ?? '';
+    const testCases = storyData.test_cases ?? [];
+
+    // Build description with user story + technical notes (NO platform - that goes in tags)
+    let description = `<strong>As a</strong> ${persona}<br><strong>I want</strong> ${goal}<br><strong>So that</strong> ${benefit}`;
+
+    // Add technical notes if present
+    if (technicalNotes) {
+      description += `<br><br><strong>Technical Notes:</strong><br>${typeof technicalNotes === 'string' ? technicalNotes : JSON.stringify(technicalNotes)}`;
+    }
+
+    // Build acceptance criteria (product + technical combined)
+    const allAcceptanceCriteria = [
+      ...acceptanceCriteria.map((ac: string) => {
+        const parts = ac.split(/\b(Given|When|Then|And)\b/);
+        return parts.map((p, i) => (i % 2 === 1 ? `<strong>${p}</strong>` : p)).join('');
+      }),
+      ...(technicalAcceptanceCriteria.length > 0 ? ['<hr><strong>Technical Acceptance Criteria:</strong>'] : []),
+      ...technicalAcceptanceCriteria.map((tac: string) => `⚙ ${tac}`)
+    ].join('<br>');
+
+    // Convert platform array to semicolon-separated tags for ADO
+    const tags = platform.length > 0 ? platform.join('; ') : undefined;
+
     const story = await client.createWorkItem({
       type: client['workItemTypes'].story as any,
       title: storyData.title,
-      description: `<strong>As a</strong> ${storyData.persona}<br><strong>I want</strong> ${storyData.goal}<br><strong>So that</strong> ${storyData.benefit}`,
-      acceptanceCriteria: storyData.acceptanceCriteria
-        ?.map((ac: string) => {
-          const parts = ac.split(/\b(Given|When|Then|And)\b/);
-          return parts.map((p, i) => (i % 2 === 1 ? `<strong>${p}</strong>` : p)).join('');
-        })
-        .join('<br>'),
-      effort: storyData.storyPoints ?? undefined,
+      description,
+      acceptanceCriteria: allAcceptanceCriteria,
+      effort,
+      tags,
       parentId: featureId,
     });
     storyIds.push(story.id!);
+
+    // Collect test cases for this story (will push to Test Plans after all stories created)
+    if (testCases.length > 0) {
+      for (const tc of testCases) {
+        // Generate title from scenario if missing (fixture format may not include title)
+        let title = tc.title;
+        if (!title && tc.scenario) {
+          // Use the first "Then" statement as the title
+          const firstThen = tc.scenario.then?.[0] ?? tc.scenario.given?.[0] ?? tc.id;
+          title = firstThen.length > 80 ? `${firstThen.slice(0, 77)}...` : firstThen;
+        }
+        if (!title) {
+          title = tc.id ?? 'Test Case';
+        }
+
+        allTestCases.push({
+          ...tc,
+          title,
+          story_ref: storyData.story_id ?? storyData.title,
+          story_ado_id: story.id,
+        });
+      }
+    }
   }
 
   // Save story mappings
@@ -374,12 +439,77 @@ export async function pushFeatureToADO(
     db.prepare(`
       INSERT INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, title, created_at)
       VALUES (?, NULL, ?, 'story', ?, ?, ?, ?)
-    `).run(workflowId, storyId, 'story', storyUrl, `F${featureIndex + 1}.S${i + 1}`, story.title, now);
+    `).run(workflowId, storyId, storyUrl, `F${featureIndex + 1}.S${i + 1}`, story.title, now);
   }
 
   logger.info(`[STORY PUSH] Added ${storyIds.length} stories to feature #${featureId}`);
+
+  // Push test cases to ADO Test Plans if any were collected
+  // Use a single epic-level test plan across all features (cumulative)
+  let testPlanId: number | null = null;
+  let testPlanUrl: string | null = null;
+  if (allTestCases.length > 0) {
+    try {
+      // Build story map for linking test cases to stories
+      const storyMap = new Map<string, number>();
+      for (let i = 0; i < targetFeature.stories.length; i++) {
+        const story = targetFeature.stories[i];
+        const storyId = storyIds[i];
+        if (story.story_id) {
+          storyMap.set(story.story_id, storyId);
+        }
+        if (story.title) {
+          storyMap.set(story.title, storyId);
+        }
+      }
+
+      // Check if test plan already exists for this workflow (epic-level plan shared across features)
+      const existingPlan = db.prepare<[string], { plan_id: number; root_suite_id: number; plan_url: string; suite_ids: string; test_case_ids: string }>(
+        'SELECT plan_id, root_suite_id, plan_url, suite_ids, test_case_ids FROM qa_test_plan_map WHERE workflow_id = ? LIMIT 1'
+      ).get(workflowId);
+
+      const existing = existingPlan ? {
+        planId: existingPlan.plan_id,
+        rootSuiteId: existingPlan.root_suite_id,
+        suiteIds: JSON.parse(existingPlan.suite_ids ?? '{}'),
+        testCaseIds: JSON.parse(existingPlan.test_case_ids ?? '{}'),
+      } : undefined;
+
+      // Use epic title for plan name (shared across all features)
+      const workflow = db.prepare<[string], { summary: string | null; goal: string }>(
+        'SELECT summary, goal FROM workflows WHERE id = ?'
+      ).get(workflowId);
+      const planName = (workflow?.summary ?? backlog.epic?.title ?? 'Test Plan').slice(0, 60);
+
+      const result = await client.pushQATestPlan({ planName, testCases: allTestCases, storyMap, existing });
+      testPlanId = result.planId;
+      testPlanUrl = result.planUrl;
+
+      // Save test plan mapping (INSERT OR REPLACE so we update the same row for all features)
+      db.prepare(`
+        INSERT OR REPLACE INTO qa_test_plan_map
+          (workflow_id, artifact_id, plan_id, root_suite_id, plan_url, suite_ids, test_case_ids, test_case_count, created_at)
+        VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        workflowId,
+        result.planId,
+        result.rootSuiteId,
+        result.planUrl,
+        JSON.stringify(result.suiteIds),
+        JSON.stringify(result.testCaseIds),
+        allTestCases.length,  // This is just the count for this feature; actual total is in ADO
+        now
+      );
+
+      logger.info(`[TEST PLAN PUSH] ${existing ? 'Updated' : 'Created'} test plan #${testPlanId} — added ${allTestCases.length} test cases for feature "${targetFeature.title}"`);
+    } catch (err: any) {
+      logger.error(`[TEST PLAN PUSH] Failed to push test cases for feature F${featureIndex + 1}: ${err.message}`);
+      logger.error(`[TEST PLAN PUSH ERROR] ${err.stack}`);
+    }
+  }
+
   insertEvent(workflowId, 'ado_push', `story_decomposition_F${featureIndex + 1}`,
     `Added ${storyIds.length} stories to feature "${targetFeature.title}" in Azure DevOps`);
 
-  return { epicId, featureId, storyIds };
+  return { epicId, featureId, storyIds, testPlanId, testPlanUrl, testCaseCount: allTestCases.length };
 }

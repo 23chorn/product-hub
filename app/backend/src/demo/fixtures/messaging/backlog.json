@@ -1,201 +1,365 @@
 {
   "epic": {
     "title": "In-App Messaging & Trade Chat",
-    "description": "Add real-time channel-based chat so users can discuss trades and market ideas without leaving the TradeEasy app. Includes live ticker card sharing, content moderation, and MiFID II-compliant message retention.",
-    "businessValue": "Closes the context-switching gap between external trading communities (Discord, WhatsApp) and trade execution. Users who engage with social features have 3.1× higher 90-day retention; message-to-trade conversion target is 8% within 10 minutes of reading a message.",
-    "prdLink": "PRD: In-App Messaging & Trade Chat — TradeEasy"
+    "description": "Add real-time channel-based chat so users can discuss trades and market ideas without leaving the TradeEasy app. Includes live ticker card sharing, content moderation, and MiFID II-compliant message retention."
   },
   "features": [
     {
+      "key": "F1",
       "title": "Channel Management",
       "description": "Users can create, join, and leave topic-based trading channels with persistent membership.",
       "phase": "MVP",
       "stories": [
         {
+          "story_id": "F1.S1",
           "title": "Browse and join a public channel",
-          "persona": "Alex — Active Self-Directed Trader",
-          "goal": "find and join a channel dedicated to a stock I'm watching",
-          "benefit": "so that I can follow live discussions about that ticker without leaving TradeEasy",
-          "acceptanceCriteria": [
+          "as_a": "Alex — Active Self-Directed Trader",
+          "i_want": "find and join a channel dedicated to a stock I'm watching",
+          "so_that": "I can follow live discussions about that ticker without leaving TradeEasy",
+          "acceptance_criteria": [
             "Given I open the Chat tab, When the channel list loads, Then I see public channels sorted by recent activity, each showing: name, topic, and member count",
             "Given I tap a channel I haven't joined, When I tap 'Join', Then I am added as a member and the channel thread is displayed immediately",
             "Given I am already a member of a channel, When I open the Chat tab, Then my joined channels appear at the top of the list with an unread badge if there are new messages"
           ],
-          "prdRef": { "functionalRequirements": ["FR-01", "FR-02"], "userJourney": "Journey 1 · Steps 1–3" },
-          "technical": {
-            "constraints": ["POST /api/channels/:id/join is idempotent"],
-            "affectedComponents": ["ChannelListScreen", "ChannelService", "channel_members table"],
-            "dataChanges": "INSERT channel_members; INCREMENT channels.member_count",
-            "apiChanges": "GET /api/channels; POST /api/channels/:id/join"
-          },
-          "effort": 2,
-          "storyPoints": 2
+          "technical_acceptance_criteria": [
+            "Backend: POST /api/channels/:id/join is idempotent and returns 200 if already a member",
+            "Backend: GET /api/channels returns channels sorted by last_message_at DESC with member_count",
+            "Web: ChannelListScreen renders unread badges using last_read_at comparison",
+            "iOS: Join action updates local cache and shows channel immediately without refresh",
+            "Android: Channel list uses RecyclerView with DiffUtil for efficient updates"
+          ],
+          "platform": ["backend", "web", "ios", "android"],
+          "estimated_points": 3,
+          "depends_on": [],
+          "technical_notes": "Requires real-time subscription to channel_updates for live member count",
+          "test_cases": [
+            {
+              "id": "TC-F1.S1-001",
+              "scenario": {
+                "given": ["User is not a member of any channels", "Public channels exist in the system"],
+                "when": ["User opens the Chat tab"],
+                "then": ["Channel list displays all public channels", "Each channel shows name, topic, and member count", "Channels are sorted by recent activity"]
+              },
+              "type": "happy_path",
+              "priority": "critical",
+              "story_ref": "F1.S1",
+              "prd_ref": "FR-01"
+            },
+            {
+              "id": "TC-F1.S1-002",
+              "scenario": {
+                "given": ["User sees a channel they are not a member of"],
+                "when": ["User taps 'Join' button"],
+                "then": ["User is added as a member", "Channel thread displays immediately", "Join button changes to 'Leave'"]
+              },
+              "type": "happy_path",
+              "priority": "critical",
+              "story_ref": "F1.S1",
+              "prd_ref": "FR-02"
+            },
+            {
+              "id": "TC-F1.S1-003",
+              "scenario": {
+                "given": ["User is already a member of multiple channels", "Some channels have unread messages"],
+                "when": ["User opens the Chat tab"],
+                "then": ["Joined channels appear at the top", "Unread badge shows for channels with new messages", "Badge count reflects unread message count"]
+              },
+              "type": "happy_path",
+              "priority": "high",
+              "story_ref": "F1.S1",
+              "prd_ref": "FR-02"
+            },
+            {
+              "id": "TC-F1.S1-004",
+              "scenario": {
+                "given": ["User taps Join on a channel", "Network request fails"],
+                "when": ["API returns 500 error"],
+                "then": ["Inline error message displays", "Join button remains enabled", "User can retry"]
+              },
+              "type": "bad_path",
+              "priority": "high",
+              "story_ref": "F1.S1"
+            }
+          ]
         },
         {
+          "story_id": "F1.S2",
           "title": "Create a new public channel",
-          "persona": "Alex — Active Self-Directed Trader",
-          "goal": "create a topic channel for a ticker or theme that doesn't exist yet",
-          "benefit": "so that I can seed a community around a stock or strategy I follow",
-          "acceptanceCriteria": [
+          "as_a": "Alex — Active Self-Directed Trader",
+          "i_want": "create a topic channel for a ticker or theme that doesn't exist yet",
+          "so_that": "I can seed a community around a stock or strategy I follow",
+          "acceptance_criteria": [
             "Given I tap 'New Channel', When I enter a name and topic and tap 'Create', Then the channel is created, I am auto-joined as the founder, and the channel appears in the list immediately",
             "Given I enter a channel name that already exists, When I tap 'Create', Then an inline error 'A channel with this name already exists' is shown and no duplicate is created",
             "Given I enter a channel name containing a blocked keyword, When I tap 'Create', Then an inline error is shown and the channel is not created"
           ],
-          "prdRef": { "functionalRequirements": ["FR-11"], "userJourney": "Journey 1 · Step 2" },
-          "technical": {
-            "constraints": ["Channel name must be lowercase alphanumeric + hyphens, max 32 chars"],
-            "affectedComponents": ["CreateChannelSheet", "ChannelService"],
-            "dataChanges": "INSERT channels; INSERT channel_members (creator)",
-            "apiChanges": "POST /api/channels → {name, topic}"
-          },
-          "effort": 2,
-          "storyPoints": 2
+          "technical_acceptance_criteria": [
+            "Backend: POST /api/channels validates name is lowercase alphanumeric + hyphens, max 32 chars",
+            "Backend: Duplicate name check returns 409 Conflict with error message",
+            "Backend: Content moderation service checks name against blocklist before creation",
+            "Web: CreateChannelSheet shows real-time validation errors as user types",
+            "Mobile: Channel creation optimistically updates UI before API confirms"
+          ],
+          "platform": ["backend", "web", "ios", "android"],
+          "estimated_points": 2,
+          "depends_on": [],
+          "technical_notes": "Name validation must match on both client and server to prevent UX lag",
+          "test_cases": [
+            {
+              "id": "TC-F1.S2-001",
+              "scenario": {
+                "given": ["User taps 'New Channel' button"],
+                "when": ["User enters valid name 'tesla-bulls' and topic 'TSLA discussion'", "User taps 'Create'"],
+                "then": ["Channel is created successfully", "User is auto-joined as founder", "Channel appears at top of list"]
+              },
+              "type": "happy_path",
+              "priority": "critical",
+              "story_ref": "F1.S2",
+              "prd_ref": "FR-11"
+            },
+            {
+              "id": "TC-F1.S2-002",
+              "scenario": {
+                "given": ["Channel 'tesla-bulls' already exists"],
+                "when": ["User tries to create another channel named 'tesla-bulls'"],
+                "then": ["API returns 409 Conflict", "Inline error displays: 'A channel with this name already exists'", "No duplicate channel is created"]
+              },
+              "type": "bad_path",
+              "priority": "critical",
+              "story_ref": "F1.S2"
+            },
+            {
+              "id": "TC-F1.S2-003",
+              "scenario": {
+                "given": ["User enters channel name with special characters: 'tesla$$$'"],
+                "when": ["User tries to create the channel"],
+                "then": ["Validation error shows: 'Name must be lowercase letters, numbers, and hyphens only'", "Create button is disabled"]
+              },
+              "type": "bad_path",
+              "priority": "high",
+              "story_ref": "F1.S2"
+            },
+            {
+              "id": "TC-F1.S2-004",
+              "scenario": {
+                "given": ["User enters channel name 'pump-and-dump' (blocked keyword)"],
+                "when": ["User taps 'Create'"],
+                "then": ["API rejects with 400 Bad Request", "Error message: 'This name contains restricted keywords'"]
+              },
+              "type": "edge_case",
+              "priority": "medium",
+              "story_ref": "F1.S2"
+            }
+          ]
         },
         {
+          "story_id": "F1.S3",
           "title": "Leave a channel",
-          "persona": "Jamie — Casual Community Investor",
-          "goal": "leave channels I no longer follow to reduce noise",
-          "benefit": "so that my channel list stays relevant to my current interests",
-          "acceptanceCriteria": [
-            "Given I am a member of a channel, When I tap 'Leave Channel' in the channel settings, Then I am removed from the channel and it no longer appears in my joined list",
-            "Given I leave a channel and return to the channel list, When I search for the channel, Then it appears in the public list with an option to rejoin"
+          "as_a": "Alex — Active Self-Directed Trader",
+          "i_want": "leave a channel that is no longer relevant to me",
+          "so_that": "my channel list stays focused on active interests",
+          "acceptance_criteria": [
+            "Given I am viewing a channel I am a member of, When I tap 'Leave Channel', Then I am removed from the channel and the channel disappears from my joined list",
+            "Given I am the last member of a channel, When I leave, Then the channel is marked as inactive (not deleted) and no longer appears in public listings",
+            "Given I leave a channel, When I later browse public channels, Then that channel reappears in the public list and I can rejoin if I want"
           ],
-          "prdRef": { "functionalRequirements": ["FR-02"], "userJourney": "Journey 1 · Step 3" },
-          "technical": {
-            "constraints": ["Leaving a channel does not delete message history"],
-            "affectedComponents": ["ChannelSettingsSheet", "ChannelService"],
-            "dataChanges": "DELETE channel_members; DECREMENT channels.member_count",
-            "apiChanges": "POST /api/channels/:id/leave"
-          },
-          "effort": 1,
-          "storyPoints": 1
+          "technical_acceptance_criteria": [
+            "Backend: DELETE /api/channels/:id/leave removes membership and decrements member_count",
+            "Backend: When member_count reaches 0, set channel.status = 'inactive' (soft delete)",
+            "Backend: Inactive channels excluded from GET /api/channels unless explicitly filtered",
+            "Web: Leave action shows confirmation modal to prevent accidental exits",
+            "Mobile: Optimistically remove channel from UI and rollback if API fails"
+          ],
+          "platform": ["backend", "web", "ios", "android"],
+          "estimated_points": 2,
+          "depends_on": ["F1.S1"],
+          "technical_notes": "Soft delete prevents data loss if channel was historically active",
+          "test_cases": [
+            {
+              "id": "TC-F1.S3-001",
+              "scenario": {
+                "given": ["User is a member of channel 'crypto-news'", "Channel has 50 members"],
+                "when": ["User taps 'Leave Channel' and confirms"],
+                "then": ["User is removed from membership", "Channel disappears from user's joined list", "Member count decrements to 49"]
+              },
+              "type": "happy_path",
+              "priority": "critical",
+              "story_ref": "F1.S3"
+            },
+            {
+              "id": "TC-F1.S3-002",
+              "scenario": {
+                "given": ["User is the only member of channel 'niche-strategy'"],
+                "when": ["User leaves the channel"],
+                "then": ["Channel status changes to 'inactive'", "Channel no longer appears in public channel list", "Channel data is preserved in database"]
+              },
+              "type": "edge_case",
+              "priority": "high",
+              "story_ref": "F1.S3"
+            },
+            {
+              "id": "TC-F1.S3-003",
+              "scenario": {
+                "given": ["User leaves channel 'day-trading'"],
+                "when": ["User later browses public channels"],
+                "then": ["'day-trading' appears in public list", "Join button is available", "User can rejoin successfully"]
+              },
+              "type": "happy_path",
+              "priority": "medium",
+              "story_ref": "F1.S3"
+            }
+          ]
         }
       ]
     },
     {
+      "key": "F2",
       "title": "Real-time Text Messaging",
       "description": "Users can send and receive text messages in channels with sub-second latency during market hours.",
       "phase": "MVP",
       "stories": [
         {
-          "title": "Send and receive text messages in a channel",
-          "persona": "Alex — Active Self-Directed Trader",
-          "goal": "type a message and have it appear in the channel thread for all members instantly",
-          "benefit": "so that I can share trade ideas and react to market moves in real time",
-          "acceptanceCriteria": [
-            "Given I am in a channel thread, When I type a message and press Enter or tap Send, Then my message appears in the thread within 500ms",
-            "Given another member sends a message to a channel I am viewing, When the message arrives, Then it appears at the bottom of my thread without requiring a page refresh",
-            "Given I send a message exceeding 2,000 characters, When I tap Send, Then an inline counter shows 'Over limit — 2,000 character maximum' and the message is not sent",
-            "Given I send messages faster than 30 per minute, When the rate limit is reached, Then I see a toast 'Slow down — you're sending messages too quickly' and further sends are blocked for 10 seconds"
+          "story_id": "F2.S1",
+          "title": "Send a text message in a channel",
+          "as_a": "Alex — Active Self-Directed Trader",
+          "i_want": "post a message to a channel I'm a member of",
+          "so_that": "I can share my thoughts and respond to others in real-time",
+          "acceptance_criteria": [
+            "Given I am viewing a channel thread, When I type a message and press Send, Then my message appears in the thread immediately and is delivered to all channel members",
+            "Given I send a message while offline, When I reconnect, Then the message is sent automatically and a delivery confirmation is shown",
+            "Given I send a message containing a ticker symbol (e.g., $TSLA), When the message is posted, Then the ticker is highlighted and clickable"
           ],
-          "prdRef": { "functionalRequirements": ["FR-03", "FR-04"], "userJourney": "Journey 3 · Steps 1–3" },
-          "technical": {
-            "constraints": ["WebSocket write-through to Cassandra before fan-out; no message loss on pod restart"],
-            "affectedComponents": ["ChannelThreadScreen", "MessageService", "WebSocketGateway", "Cassandra messages table"],
-            "dataChanges": "INSERT messages (Cassandra)",
-            "apiChanges": "WS: { type: 'send', channelId, content }"
-          },
-          "effort": 5,
-          "storyPoints": 5
-        },
-        {
-          "title": "Share a live ticker card in a message",
-          "persona": "Alex — Active Self-Directed Trader",
-          "goal": "attach a live price card for a stock I'm discussing so other members can see the exact price and act on it immediately",
-          "benefit": "so that I don't have to copy-paste prices and members can tap through to trade",
-          "acceptanceCriteria": [
-            "Given I am composing a message, When I tap the ticker-card icon and search for a symbol, Then I can select a symbol and a ticker card is attached to my message draft showing current price and change",
-            "Given a message with a ticker card is displayed in the thread, When I view it, Then the card shows the symbol, current price, and intraday % change updated within 15 seconds",
-            "Given I tap a ticker card in a message, When the tap registers, Then I am taken to the TradeEasy instrument detail screen for that symbol",
-            "Given the market is closed, When I view a ticker card, Then it displays the previous close price with a 'Market Closed' label"
+          "technical_acceptance_criteria": [
+            "Backend: POST /api/channels/:id/messages stores message with user_id, timestamp, content",
+            "Backend: WebSocket broadcasts message_created event to all channel members",
+            "Web: Messages use optimistic UI updates with rollback on failure",
+            "iOS: Offline messages queued locally and synced when network available",
+            "Android: FCM push notification sent to offline members with message preview"
           ],
-          "prdRef": { "functionalRequirements": ["FR-05", "FR-06", "FR-07"], "userJourney": "Journey 2 · Steps 2–4" },
-          "technical": {
-            "constraints": ["Ticker card price updates subscribe to existing Market Data Service WS feed; 15s update interval"],
-            "affectedComponents": ["MessageComposer", "TickerCardComponent", "MessageService", "MarketDataService (existing)"],
-            "dataChanges": "tickerRef field in Cassandra messages",
-            "apiChanges": "WS: send with tickerRef: { symbol }; server resolves live price"
-          },
-          "effort": 3,
-          "storyPoints": 3
-        },
-        {
-          "title": "Load message history on channel open",
-          "persona": "Jamie — Casual Community Investor",
-          "goal": "see recent messages when I open a channel even if I wasn't connected when they were sent",
-          "benefit": "so that I can catch up on discussion and context before contributing",
-          "acceptanceCriteria": [
-            "Given I open a channel, When the thread renders, Then the last 50 messages are displayed within 1 second",
-            "Given I scroll to the top of the loaded history, When I reach the oldest loaded message, Then older messages are loaded in batches of 50 without losing scroll position",
-            "Given a channel has no messages, When I open it, Then an empty state is shown: 'No messages yet — start the conversation'"
-          ],
-          "prdRef": { "functionalRequirements": ["FR-03", "FR-04"], "userJourney": "Journey 1 · Step 3" },
-          "technical": {
-            "constraints": ["Cursor-based pagination using (channel_id, created_at) composite key in Cassandra"],
-            "affectedComponents": ["ChannelThreadScreen", "MessageService"],
-            "dataChanges": null,
-            "apiChanges": "GET /api/channels/:id/messages?before=<cursor>&limit=50"
-          },
-          "effort": 2,
-          "storyPoints": 2
+          "platform": ["backend", "web", "ios", "android"],
+          "estimated_points": 5,
+          "depends_on": ["F1.S1"],
+          "technical_notes": "Ticker regex: \\$[A-Z]{1,5}\\b — must match backend and all clients",
+          "test_cases": [
+            {
+              "id": "TC-F2.S1-001",
+              "scenario": {
+                "given": ["User is viewing channel 'options-trading'", "User has network connectivity"],
+                "when": ["User types 'Bullish on $AAPL' and taps Send"],
+                "then": ["Message appears immediately in thread", "Other members receive message in real-time", "$AAPL is highlighted as clickable ticker"]
+              },
+              "type": "happy_path",
+              "priority": "critical",
+              "story_ref": "F2.S1",
+              "prd_ref": "FR-03"
+            },
+            {
+              "id": "TC-F2.S1-002",
+              "scenario": {
+                "given": ["User types a message", "User goes offline before sending"],
+                "when": ["User taps Send while offline", "User reconnects 30 seconds later"],
+                "then": ["Message shows 'Sending...' state while offline", "Message auto-sends upon reconnection", "Delivery checkmark appears when confirmed"]
+              },
+              "type": "edge_case",
+              "priority": "high",
+              "story_ref": "F2.S1"
+            },
+            {
+              "id": "TC-F2.S1-003",
+              "scenario": {
+                "given": ["User types message with multiple tickers: '$TSLA $NVDA $AAPL'"],
+                "when": ["Message is sent and displayed"],
+                "then": ["All three tickers are highlighted", "Each ticker is individually clickable", "Clicking ticker opens stock detail"]
+              },
+              "type": "happy_path",
+              "priority": "medium",
+              "story_ref": "F2.S1",
+              "prd_ref": "FR-04"
+            }
+          ]
         }
       ]
     },
     {
+      "key": "F3",
       "title": "Live Ticker Card Sharing",
       "description": "Users can embed live-updating ticker price cards directly into any message.",
       "phase": "MVP",
       "stories": [
         {
-          "title": "Attach ticker card from instrument screen",
-          "persona": "Alex — Active Self-Directed Trader",
-          "goal": "share a ticker card while discussing a stock so others see live price",
-          "benefit": "so that I can reference specific price points and enable quick trades",
-          "acceptanceCriteria": [
-            "Given I am viewing an instrument detail screen, When I tap 'Share to Chat', Then I see a sheet to select a channel",
-            "Given I select a channel, When the sheet closes, Then I return to the channel thread with a ticker card attached to my message draft",
-            "Given a ticker card is attached, When I send the message, Then the card renders inline with the symbol, current price, and % change"
+          "story_id": "F3.S1",
+          "title": "Share a live ticker card in a message",
+          "as_a": "Alex — Active Self-Directed Trader",
+          "i_want": "attach a live ticker card to my message",
+          "so_that": "other channel members can see the current price and quickly trade on the idea I'm sharing",
+          "acceptance_criteria": [
+            "Given I am viewing an instrument detail screen, When I tap 'Share to Chat' and select a channel, Then a message with an embedded ticker card is posted to that channel",
+            "Given a ticker card is posted in a channel, When members view the message, Then the card displays: ticker symbol, current price, % change, and timestamp, all updating in real-time",
+            "Given I receive a message with a ticker card, When I tap the card, Then I navigate to the instrument detail screen with a pre-filled buy order",
+            "Given market hours have ended, When a ticker card displays, Then it shows the last traded price with a 'Market Closed' indicator"
           ],
-          "prdRef": { "functionalRequirements": ["FR-05"], "userJourney": "Journey 2 · Steps 1–2" },
-          "technical": {
-            "constraints": ["Card subscribes to market data feed; updates every 15s during market hours"],
-            "affectedComponents": ["InstrumentDetailScreen", "MessageComposer", "TickerCardComponent"],
-            "dataChanges": "tickerRef field in messages",
-            "apiChanges": "WS: send with tickerRef: { symbol }"
-          },
-          "effort": 3,
-          "storyPoints": 3
-        },
-        {
-          "title": "Ticker card updates in real time",
-          "persona": "Jamie — Casual Community Investor",
-          "goal": "see live price updates on ticker cards in messages",
-          "benefit": "so that I know the current price when deciding whether to trade",
-          "acceptanceCriteria": [
-            "Given a ticker card is displayed in a message, When the price changes, Then the card updates within 15 seconds during market hours",
-            "Given the market is closed, When I view a ticker card, Then it shows the previous close with a 'Market Closed' label",
-            "Given I tap a ticker card, When it opens, Then I navigate to the instrument detail screen pre-filled with a buy order"
+          "technical_acceptance_criteria": [
+            "Backend: POST /api/channels/:id/messages supports ticker_card payload with instrument_id",
+            "Backend: WebSocket broadcasts ticker price updates to all clients viewing the card",
+            "Backend: Ticker cards render in under 200ms by batching price updates (max 1 update/second)",
+            "Web: TickerCard component subscribes to price stream and updates without full message re-render",
+            "iOS: Tapping card triggers deep link to InstrumentDetailScreen with pre-filled buy order",
+            "Android: TickerCard uses ViewHolder pattern to efficiently render large message lists with cards"
           ],
-          "prdRef": { "functionalRequirements": ["FR-05"], "userJourney": "Journey 2 · Steps 3–4" },
-          "technical": {
-            "constraints": ["WebSocket subscription to quotes:{symbol} Redis channel"],
-            "affectedComponents": ["TickerCardComponent", "MarketDataService"],
-            "dataChanges": null,
-            "apiChanges": "WS: subscribe to quotes:{symbol}"
-          },
-          "effort": 2,
-          "storyPoints": 2
+          "platform": ["backend", "web", "ios", "android"],
+          "estimated_points": 5,
+          "depends_on": ["F2.S1"],
+          "technical_notes": "Real-time price updates use same WebSocket stream as trade execution to minimize latency",
+          "test_cases": [
+            {
+              "id": "TC-F3.S1-001",
+              "scenario": {
+                "given": ["User is viewing AAPL instrument detail screen", "User is a member of 'tech-stocks' channel"],
+                "when": ["User taps 'Share to Chat'", "Selects 'tech-stocks' channel", "Message is posted"],
+                "then": ["Ticker card appears in channel message", "Card shows AAPL, current price, % change, timestamp", "Other members see the card in real-time"]
+              },
+              "type": "happy_path",
+              "priority": "critical",
+              "story_ref": "F3.S1",
+              "prd_ref": "FR-05"
+            },
+            {
+              "id": "TC-F3.S1-002",
+              "scenario": {
+                "given": ["Ticker card for TSLA is displayed in a message", "Market is open", "TSLA price changes from $250 to $252"],
+                "when": ["Price update is broadcast via WebSocket"],
+                "then": ["Card updates to show $252", "% change recalculates automatically", "No full message re-render occurs"]
+              },
+              "type": "happy_path",
+              "priority": "critical",
+              "story_ref": "F3.S1"
+            },
+            {
+              "id": "TC-F3.S1-003",
+              "scenario": {
+                "given": ["User sees a ticker card for NVDA in a message"],
+                "when": ["User taps the ticker card"],
+                "then": ["App navigates to NVDA instrument detail screen", "Buy order form is pre-filled with NVDA", "User can adjust quantity and submit order"]
+              },
+              "type": "happy_path",
+              "priority": "high",
+              "story_ref": "F3.S1",
+              "prd_ref": "FR-05"
+            },
+            {
+              "id": "TC-F3.S1-004",
+              "scenario": {
+                "given": ["Ticker card for AAPL is displayed", "Market hours have ended"],
+                "when": ["User views the card after 4:00 PM ET"],
+                "then": ["Card shows last traded price", "'Market Closed' badge displays", "Price does not update until market reopens"]
+              },
+              "type": "edge_case",
+              "priority": "high",
+              "story_ref": "F3.S1"
+            }
+          ]
         }
       ]
     }
-  ],
-  "sprintMetadata": {
-    "sprintVelocity": 20,
-    "capacityFactor": 0.8,
-    "effectiveVelocity": 16,
-    "totalEffort": 23,
-    "sprintsRequired": 1.4,
-    "totalHours": 92,
-    "aiAssisted": false
-  }
+  ]
 }

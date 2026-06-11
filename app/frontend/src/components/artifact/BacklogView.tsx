@@ -154,20 +154,21 @@ export function BacklogView({ data }: { data: BacklogData }) {
               )}
             </div>
             <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">{story.title}</h3>
-            {story.persona && (
-              <div><span className="text-xs font-medium text-slate-500 dark:text-slate-400">Persona: </span><span className="text-xs text-slate-700 dark:text-slate-300">{story.persona}</span></div>
+            {/* Support both old format (persona/goal/benefit) and new format (as_a/i_want/so_that) */}
+            {(story.persona || story.as_a) && (
+              <div><span className="text-xs font-medium text-slate-500 dark:text-slate-400">As a: </span><span className="text-xs text-slate-700 dark:text-slate-300">{story.as_a || story.persona}</span></div>
             )}
-            {story.goal && (
-              <div><span className="text-xs font-medium text-slate-500 dark:text-slate-400">Goal: </span><span className="text-xs text-slate-700 dark:text-slate-300">{story.goal}</span></div>
+            {(story.goal || story.i_want) && (
+              <div><span className="text-xs font-medium text-slate-500 dark:text-slate-400">I want: </span><span className="text-xs text-slate-700 dark:text-slate-300">{story.i_want || story.goal}</span></div>
             )}
-            {story.benefit && (
-              <div><span className="text-xs font-medium text-slate-500 dark:text-slate-400">Benefit: </span><span className="text-xs text-slate-700 dark:text-slate-300">{story.benefit}</span></div>
+            {(story.benefit || story.so_that) && (
+              <div><span className="text-xs font-medium text-slate-500 dark:text-slate-400">So that: </span><span className="text-xs text-slate-700 dark:text-slate-300">{story.so_that || story.benefit}</span></div>
             )}
-            {story.acceptanceCriteria && story.acceptanceCriteria.length > 0 && (
+            {((story.acceptanceCriteria || story.acceptance_criteria) && (story.acceptanceCriteria || story.acceptance_criteria).length > 0) && (
               <div>
                 <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Acceptance Criteria:</p>
                 <ul className="space-y-1">
-                  {story.acceptanceCriteria.map((ac, ai) => (
+                  {(story.acceptanceCriteria || story.acceptance_criteria).map((ac, ai) => (
                     <li key={ai} className="text-xs text-slate-700 dark:text-slate-300 flex items-start gap-1.5">
                       <span className="text-green-500 mt-px flex-shrink-0">✓</span>
                       <span>{ac.split(/\b(Given|When|Then|And|But)\b/gi).map((part, pi) =>
@@ -180,6 +181,87 @@ export function BacklogView({ data }: { data: BacklogData }) {
                 </ul>
               </div>
             )}
+
+            {/* Technical Acceptance Criteria (new multi-agent format) */}
+            {story.technical_acceptance_criteria && story.technical_acceptance_criteria.length > 0 && (
+              <div className="mt-2">
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Technical Acceptance Criteria:</p>
+                <ul className="space-y-1">
+                  {story.technical_acceptance_criteria.map((tac, ti) => (
+                    <li key={ti} className="text-xs text-slate-700 dark:text-slate-300 flex items-start gap-1.5">
+                      <span className="text-blue-500 mt-px flex-shrink-0">⚙</span>
+                      <span>{tac}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Platform tags (new multi-agent format) */}
+            {story.platform && story.platform.length > 0 && (
+              <div className="flex gap-1.5 flex-wrap mt-2">
+                {story.platform.map(p => (
+                  <span key={p} className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                    p === 'backend' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
+                    : p === 'web' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                    : p === 'ios' ? 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400'
+                    : p === 'android' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
+                  }`}>
+                    {p.toUpperCase()}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Test Cases (new multi-agent format) */}
+            {story.test_cases && story.test_cases.length > 0 && (
+              <div className="mt-3 border-t border-slate-200 dark:border-slate-700 pt-3">
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Test Cases ({story.test_cases.length}):</p>
+                <div className="space-y-2">
+                  {story.test_cases.map(tc => (
+                    <div key={tc.id} className="bg-slate-50 dark:bg-slate-800/50 rounded p-2">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">{tc.id}</span>
+                        <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
+                          tc.type === 'happy_path' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                          : tc.type === 'bad_path' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                          : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                        }`}>
+                          {tc.type.replace('_', ' ')}
+                        </span>
+                        <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
+                          tc.priority === 'critical' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                          : tc.priority === 'high' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400'
+                          : tc.priority === 'medium' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
+                        }`}>
+                          {tc.priority}
+                        </span>
+                      </div>
+                      <div className="space-y-0.5 text-xs">
+                        {tc.scenario.given.map((g, gi) => (
+                          <div key={`g${gi}`} className="text-slate-600 dark:text-slate-400">
+                            <strong className="text-slate-700 dark:text-slate-300">Given</strong> {g}
+                          </div>
+                        ))}
+                        {tc.scenario.when.map((w, wi) => (
+                          <div key={`w${wi}`} className="text-slate-600 dark:text-slate-400">
+                            <strong className="text-slate-700 dark:text-slate-300">When</strong> {w}
+                          </div>
+                        ))}
+                        {tc.scenario.then.map((t, ti) => (
+                          <div key={`t${ti}`} className="text-slate-600 dark:text-slate-400">
+                            <strong className="text-slate-700 dark:text-slate-300">Then</strong> {t}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {story.agentContext && (
               <div className="bg-slate-50 dark:bg-slate-800 rounded p-2 mt-1">
                 <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-0.5">Agent Context:</p>
@@ -223,37 +305,38 @@ export function BacklogView({ data }: { data: BacklogData }) {
                       </span>
                     )}
                   </div>
-                  {story.persona && !isExpanded && (
-                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 truncate">{story.persona}</p>
+                  {(story.persona || story.as_a) && !isExpanded && (
+                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 truncate">{story.as_a || story.persona}</p>
                   )}
                 </div>
               </button>
 
               {isExpanded && (
                 <div className="ml-5.5 mt-2 space-y-2 pl-4 border-l-2 border-slate-100 dark:border-slate-700">
-                  {story.persona && (
+                  {/* Support both old format (persona/goal/benefit) and new format (as_a/i_want/so_that) */}
+                  {(story.persona || story.as_a) && (
                     <div>
-                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Persona: </span>
-                      <span className="text-xs text-slate-700 dark:text-slate-300">{story.persona}</span>
+                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">As a: </span>
+                      <span className="text-xs text-slate-700 dark:text-slate-300">{story.as_a || story.persona}</span>
                     </div>
                   )}
-                  {story.goal && (
+                  {(story.goal || story.i_want) && (
                     <div>
-                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Goal: </span>
-                      <span className="text-xs text-slate-700 dark:text-slate-300">{story.goal}</span>
+                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">I want: </span>
+                      <span className="text-xs text-slate-700 dark:text-slate-300">{story.i_want || story.goal}</span>
                     </div>
                   )}
-                  {story.benefit && (
+                  {(story.benefit || story.so_that) && (
                     <div>
-                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Benefit: </span>
-                      <span className="text-xs text-slate-700 dark:text-slate-300">{story.benefit}</span>
+                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">So that: </span>
+                      <span className="text-xs text-slate-700 dark:text-slate-300">{story.so_that || story.benefit}</span>
                     </div>
                   )}
-                  {story.acceptanceCriteria && story.acceptanceCriteria.length > 0 && (
+                  {((story.acceptanceCriteria || story.acceptance_criteria) && (story.acceptanceCriteria || story.acceptance_criteria).length > 0) && (
                     <div>
                       <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Acceptance Criteria:</p>
                       <ul className="space-y-1">
-                        {story.acceptanceCriteria.map((ac, ai) => (
+                        {(story.acceptanceCriteria || story.acceptance_criteria).map((ac, ai) => (
                           <li key={ai} className="text-xs text-slate-700 dark:text-slate-300 flex items-start gap-1.5">
                             <span className="text-green-500 mt-px flex-shrink-0">✓</span>
                             <span>{ac.split(/\b(Given|When|Then|And|But)\b/gi).map((part, pi) =>
@@ -266,6 +349,87 @@ export function BacklogView({ data }: { data: BacklogData }) {
                       </ul>
                     </div>
                   )}
+
+                  {/* Technical Acceptance Criteria (new multi-agent format) */}
+                  {story.technical_acceptance_criteria && story.technical_acceptance_criteria.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Technical Acceptance Criteria:</p>
+                      <ul className="space-y-1">
+                        {story.technical_acceptance_criteria.map((tac, ti) => (
+                          <li key={ti} className="text-xs text-slate-700 dark:text-slate-300 flex items-start gap-1.5">
+                            <span className="text-blue-500 mt-px flex-shrink-0">⚙</span>
+                            <span>{tac}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Platform tags (new multi-agent format) */}
+                  {story.platform && story.platform.length > 0 && (
+                    <div className="flex gap-1.5 flex-wrap">
+                      {story.platform.map(p => (
+                        <span key={p} className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                          p === 'backend' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
+                          : p === 'web' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                          : p === 'ios' ? 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400'
+                          : p === 'android' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
+                        }`}>
+                          {p.toUpperCase()}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Test Cases (new multi-agent format) */}
+                  {story.test_cases && story.test_cases.length > 0 && (
+                    <div className="border-t border-slate-200 dark:border-slate-700 pt-3 mt-3">
+                      <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Test Cases ({story.test_cases.length}):</p>
+                      <div className="space-y-2">
+                        {story.test_cases.map(tc => (
+                          <div key={tc.id} className="bg-slate-50 dark:bg-slate-800/50 rounded p-2">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">{tc.id}</span>
+                              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
+                                tc.type === 'happy_path' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                                : tc.type === 'bad_path' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                                : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                              }`}>
+                                {tc.type.replace('_', ' ')}
+                              </span>
+                              <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
+                                tc.priority === 'critical' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                                : tc.priority === 'high' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400'
+                                : tc.priority === 'medium' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
+                              }`}>
+                                {tc.priority}
+                              </span>
+                            </div>
+                            <div className="space-y-0.5 text-xs">
+                              {tc.scenario.given.map((g, gi) => (
+                                <div key={`g${gi}`} className="text-slate-600 dark:text-slate-400">
+                                  <strong className="text-slate-700 dark:text-slate-300">Given</strong> {g}
+                                </div>
+                              ))}
+                              {tc.scenario.when.map((w, wi) => (
+                                <div key={`w${wi}`} className="text-slate-600 dark:text-slate-400">
+                                  <strong className="text-slate-700 dark:text-slate-300">When</strong> {w}
+                                </div>
+                              ))}
+                              {tc.scenario.then.map((t, ti) => (
+                                <div key={`t${ti}`} className="text-slate-600 dark:text-slate-400">
+                                  <strong className="text-slate-700 dark:text-slate-300">Then</strong> {t}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {story.agentContext && (
                     <div className="bg-slate-50 dark:bg-slate-800 rounded p-2 mt-1">
                       <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-0.5">Agent Context:</p>

@@ -117,15 +117,29 @@ There is one flow: the Coordinator-driven workflow. There is no direct-access mo
 2. When ready, Coordinator emits `COORDINATOR_READY` with enriched context JSON.
 3. User can toggle which stages to include (at least one required) before workflow launches.
 4. `POST /api/workflow/start` creates a `workflows` row. `advanceStage()` begins the first stage.
-5. Default stage sequence: `['analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'curator']`.
-6. For each specialist stage (analyst, pm_prd, solution_architect, pm_backlog):
+5. **New default pipeline** (feature-by-feature mode): `['analyst', 'pm_prd', 'epic_feature_planner', 'story_decomposition_F1', 'story_decomposition_F2', 'story_decomposition_F3', 'curator']`
+   - **Epic Feature Planner** creates high-level epic + features (no stories) and pushes epic + feature shells to Azure DevOps
+   - **Story Decomposition (per-feature)** runs 7-agent collaborative refinement for each feature:
+     - Product (Shard) breaks feature into user stories with acceptance criteria
+     - QA (Vera) generates test cases for each story (embedded in story JSON)
+     - Platform engineers (Finn=Backend, Remi=iOS, Cole=Android) add technical acceptance criteria and platform tags
+     - Stories are accumulated across features and pushed incrementally to existing ADO features
+     - Test cases extracted and pushed to ADO Test Plans with links to parent stories
+6. For each specialist stage (analyst, pm_prd, epic_feature_planner):
    - `runAutonomousStage()` creates a session, builds a stage brief via the Coordinator, runs the specialist with its output template injected, collects the full response, saves an artifact.
    - Inline critic reviews the output. If issues found, auto-revises **up to 2×** using conversation threading: the prior draft is injected as the assistant turn in a 3-message array `[user: brief, assistant: prior draft, user: revision directive]`, causing targeted edits rather than a full regeneration. If still unresolved after 2 revisions, pauses for human.
    - If critic passes (or after max revisions), creates a `pending` checkpoint. Workflow status → `paused_at_checkpoint`.
    - Human reviews: **Approve** → next stage; **Revise** → rerun with feedback; **Reject** → workflow ends.
    - Human feedback is classified before routing: **output correction** → routed to specialist for revision (using the same conversation threading: `[user: brief, assistant: prior draft, user: revision directive]`); **scope change** → workflow stops and confirms with human before proceeding; **upstream gap** → flags the earlier stage and offers to redo from there.
-7. Curator stage runs automatically, writes `context_diffs` rows, workflow completes.
-8. After completion, user can **redo from any stage** with feedback — that stage and all downstream stages rerun (critic skipped).
+7. For each multi-agent refinement stage (story_decomposition_F1/F2/F3):
+   - `runMultiAgentRefinement()` loads the feature from demo fixture (or runs real agents)
+   - Stories are accumulated: F1 initializes backlog, F2/F3 append to existing backlog
+   - `pushFeatureToADO()` adds stories to the existing feature (created by epic_feature_planner), with platform tags as ADO tags and technical details in description/acceptance criteria
+   - Test cases extracted from each story and pushed to ADO Test Plans with `TestedBy` links
+   - Checkpoint created with two URLs: Feature URL and Test Plan URL
+   - Duplicate prevention: if stories already exist for this feature, skip creation
+8. Curator stage runs automatically, writes `context_diffs` rows, workflow completes.
+9. After completion, user can **redo from any stage** with feedback — that stage and all downstream stages rerun (critic skipped).
 
 #### Key files
 
@@ -137,7 +151,10 @@ There is one flow: the Coordinator-driven workflow. There is no direct-access mo
 | `agents/specialist-agent.ts` | `SpecialistAgent` class. Persona loading, project context injection, per-stage template injection, streaming. |
 | `agents/workflow-router.ts` | Core state machine entry point. `createWorkflow()`, `advanceStage()`, checkpoint management (`completeStage`, `resolveCheckpoint`, `pauseAtCheckpoint`, `markWorkflowComplete`), `getWorkflowStatus()`. Re-exports from sub-modules for backward compatibility. |
 | `agents/workflow-db.ts` | Shared workflow infrastructure: types (`WorkflowRow`, `CheckpointRow`, `WorkflowStatus`, `WorkflowEvent`, `StageTokenData`), prepared statements, helpers (`insertEvent`, `costTracker`, `addWorkflowCost`), and `workflowOps` late-binding registry for circular dep resolution. |
-| `agents/workflow-stage-runner.ts` | `runAutonomousStage()` — fire-and-forget background task: builds per-stage context, streams specialist LLM output, saves artifacts, runs inline critic review, creates checkpoints. Also exports lazy singletons (`getCoordinator`, `getCritic`, `getCurator`) and `SILENT_STAGES`. |
+| `agents/workflow-stage-runner.ts` | `runAutonomousStage()` — fire-and-forget background task: builds per-stage context, streams specialist LLM output, saves artifacts, runs inline critic review, creates checkpoints. Handles multi-agent refinement stages (`story_decomposition_F*`) by calling `runMultiAgentRefinement()`, accumulating features, and pushing to ADO. Also exports lazy singletons (`getCoordinator`, `getCritic`, `getCurator`) and `SILENT_STAGES`. |
+| `agents/multi-agent-refinement.ts` | 7-agent collaborative refinement orchestrator for feature decomposition. In demo mode, loads fixture; in real mode, coordinates Product (Shard), QA (Vera), and platform engineers (Finn, Remi, Cole) to produce enriched stories with test cases. |
+| `agents/feature-decomposition.ts` | Feature-by-feature ADO push logic: `pushEpicAndFeaturesToADO()` creates epic + feature shells after epic_feature_planner; `pushFeatureToADO()` adds stories to existing features with platform tags, technical ACs, and test plan creation. Prevents duplicate story creation. |
+| `agents/ado-stage-push.ts` | ADO auto-push helpers for stage completion: `pushBacklogToAdo()` for full backlog (legacy pm_backlog stage), `pushTestPlanToAdo()` for QA test suites. |
 | `agents/workflow-mutations.ts` | Post-completion workflow modifications: `propagateFeedback()`, `reiterateFromStage()`, `extendWorkflow()`, `retryCurrentStage()`. |
 | `agents/stage-metadata.ts` | Stage constants: `STAGE_SESSION_MAP`, `STAGE_MAX_OUTPUT_TOKENS`, `STAGE_ARTIFACT_TYPE`, `STAGE_ARTIFACT_LABEL`, `STAGE_LABELS_INTERNAL`, `STAGE_LABELS_BRIEF`, `STAGE_OUTPUT_FORMATS`, `stageGoal()`, `stageNotDecide()`. Shared by workflow modules and coordinator-agent. |
 | `agents/artifact-helpers.ts` | DB/filesystem helpers for loading and saving artifacts: `saveCriticArtifact()`, `loadLatestArtifactForItem()`, `loadLatestArtifactForStage()`, `loadFullArtifact()`, `getLatestArchitectureArtifactPath()`, `getLatestArtifactPathByType()`. |
@@ -191,6 +208,53 @@ The `policies` DB table stores key-value rules. Loaded at runtime — no restart
 #### Context cache invalidation
 `specialist-agent.ts` holds a module-level `_projectContextCache`. `invalidateContextCache()` (exported) clears it. Called by `context-diff-routes.ts` and `context-file-routes.ts` after changes so the next agent request reloads from disk.
 
+### Multi-agent story format
+
+The new feature-by-feature workflow produces stories in a richer format than the legacy single-stage backlog:
+
+```json
+{
+  "story_id": "F1.S1",
+  "title": "Browse and join a public channel",
+  "as_a": "Alex — Active Self-Directed Trader",
+  "i_want": "find and join a channel dedicated to a stock I'm watching",
+  "so_that": "I can follow live discussions about that ticker without leaving TradeEasy",
+  "acceptance_criteria": [
+    "Given I open the Chat tab, When the channel list loads, Then I see public channels sorted by recent activity"
+  ],
+  "technical_acceptance_criteria": [
+    "Backend: POST /api/channels/:id/join is idempotent and returns 200 if already a member",
+    "iOS: Join action updates local cache and shows channel immediately without refresh"
+  ],
+  "platform": ["backend", "web", "ios", "android"],
+  "estimated_points": 3,
+  "depends_on": [],
+  "test_cases": [
+    {
+      "id": "TC-F1.S1-001",
+      "scenario": {
+        "given": ["User is not a member of any channels"],
+        "when": ["User opens the Chat tab"],
+        "then": ["Channel list displays all public channels"]
+      },
+      "type": "happy_path",
+      "priority": "critical",
+      "prd_ref": "FR-01",
+      "story_ref": "F1.S1"
+    }
+  ]
+}
+```
+
+**Field mapping (old → new):**
+- `persona` → `as_a`
+- `goal` → `i_want`
+- `benefit` → `so_that`
+- `acceptanceCriteria` → `acceptance_criteria`
+- `effort` / `storyPoints` → `estimated_points`
+
+Both formats are supported throughout the codebase for backward compatibility. The frontend (`BacklogView.tsx`) checks both field names; ADO push (`pushFeatureToADO`) checks both; the type definitions (`backlog-helpers.ts`) include both.
+
 ### Inline artifact editing
 
 During human review, users can directly edit specialist outputs (research, PRD, architecture, backlog JSON) without triggering a full agent re-run.
@@ -236,13 +300,49 @@ After a workflow completes, targeted changes can be made without full-stage reru
 #### CR events
 `cr_created`, `cr_assessed`, `cr_stage_started`, `cr_stage_completed`, `cr_complete` — emitted via existing `insertEvent()`.
 
-### ADO sync
+### ADO sync (feature-by-feature mode)
 
-`POST /api/workflow/:id/push-to-board` is now sync-aware:
-- First push: creates items and persists `ado_work_item_map` rows
-- Subsequent pushes: diff-based update via `AzureDevOpsClient.updateBacklog()` — updates changed items, creates new ones
-- Response includes `{ synced: true, created: N, updated: N }` when updating
-- Frontend shows "Sync to Board" button when mappings exist
+The new feature-by-feature workflow pushes incrementally to Azure DevOps:
+
+1. **Epic Feature Planner stage** → `pushEpicAndFeaturesToADO()`
+   - Creates epic work item
+   - Creates feature work items under epic (no stories yet)
+   - Saves mappings to `ado_work_item_map` table with keys: `epic`, `F1`, `F2`, `F3`
+
+2. **Story Decomposition stages (F1/F2/F3)** → `pushFeatureToADO(featureIndex)`
+   - Loads accumulated backlog (epic + all features completed so far)
+   - Checks for existing stories to prevent duplicates
+   - Creates story work items under existing feature with:
+     - User story format in description (As a / I want / So that)
+     - Product acceptance criteria (Given/When/Then formatted)
+     - Technical acceptance criteria appended with separator
+     - Technical notes in description
+     - Platform tags as ADO work item tags (not description text)
+     - Story points as `Microsoft.VSTS.Scheduling.Effort`
+   - Extracts test cases from each story's `test_cases` field
+   - Creates ADO Test Plan with test cases linked to stories via `TestedBy` relationship
+   - Saves story mappings (F1.S1, F1.S2, etc.) and test plan mapping
+   - Returns both feature URL and test plan URL for display
+
+3. **Legacy pm_backlog stage** → `pushBacklogToAdo()`
+   - First push: creates epic + features + stories in one go via `AzureDevOpsClient.createBacklog()`
+   - Subsequent pushes: diff-based update via `AzureDevOpsClient.updateBacklog()`
+   - Response includes `{ synced: true, created: N, updated: N }` when updating
+   - Frontend shows "Sync to Board" button when mappings exist
+
+#### Story format in ADO
+Stories created by `pushFeatureToADO` include:
+- **Title**: Story title from backlog
+- **Description**: `<strong>As a</strong> {persona}<br><strong>I want</strong> {goal}<br><strong>So that</strong> {benefit}`
+- **Acceptance Criteria**: Product ACs with Given/When/Then bolded, then `<hr>` separator, then Technical ACs with ⚙ prefix
+- **Tags**: Semicolon-separated platform list (e.g., `backend; web; ios; android`)
+- **Parent**: Feature work item (already exists from epic_feature_planner stage)
+
+#### Test Plan structure
+- **Plan name**: `{Feature Title} — Feature {N} Test Plan`
+- **Test suites**: Grouped by story_ref (F1.S1, F1.S2, etc.)
+- **Test cases**: Each with Given/When/Then steps, priority, type (happy_path/bad_path/edge_case)
+- **Links**: `TestedBy` relationship from test case to story work item
 
 ### Prototype builder
 
@@ -290,6 +390,8 @@ Both WS servers use `noServer: true`. A manual `upgrade` event handler on the HT
 `POST /api/demo/webhook/trigger` creates a new initiative and immediately launches a full pipeline workflow without coordinator planning. Cycles through 4 sample initiatives (In-App Messaging, Onboarding Redesign, Portfolio Analytics, Social Trading). Default stages: `['analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'qa_engineer', 'tech_refinement', 'curator']`. Useful for demos of parallel workflows on the Home Screen.
 
 **Demo fixtures**: Set `DEMO_FIXTURE_THEME=price-alerts` (default) or `messaging` in `.env`. Fixtures live in `app/backend/src/demo/fixtures/` (base) and `app/backend/src/demo/fixtures/messaging/` (theme-specific). When adding a new stage, create a fixture file in the base directory — the system automatically falls back to base if a theme-specific fixture isn't found. Theme-specific fixtures are only needed if the content should differ from the base theme.
+
+**Feature-specific fixtures**: For `story_decomposition_F1/F2/F3` stages, `getDemoFixture()` extracts the target feature from the full `backlog.json` fixture and returns only that feature. This allows a single fixture to serve all three stages without duplication. The multi-agent refinement code accumulates features: F1 initializes the backlog, F2/F3 append to the existing artifact.
 
 ### Agent patterns
 

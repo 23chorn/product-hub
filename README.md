@@ -1,6 +1,6 @@
 # Product Hub
 
-AI-powered product operations platform. Describe what you want to build and a coordinated team of AI agents researches it, writes the PRD, designs the architecture, produces a developer-ready backlog with QA test suite and technical refinements — with human review at every stage.
+AI-powered product operations platform. Describe what you want to build and a coordinated team of AI agents researches it, writes the PRD, designs the architecture, produces a developer-ready backlog with QA test suite and technical refinements — then pushes it all to Azure DevOps with full story/test linkage. Human review at every stage.
 
 ## Overview
 
@@ -9,10 +9,15 @@ You talk to one agent: the **Coordinator** (Chief of Staff). It gathers requirem
 **Specialist agents:**
 - **Analyst (Sage)** — market research, domain analysis, risk identification
 - **PM Strategy (Rex)** — PRD with user personas, journeys, and requirements
-- **Architect (Atlas)** — solution architecture aligned to your tech stack
-- **Backlog Agent (Pip)** — epics, features, and stories with acceptance criteria
-- **QA Engineer (Vera)** — automation-ready JSON test suite covering all happy paths, bad paths, and edge cases
-- **Tech Refinement (Finn, Remi & Cole)** — technical backlog refining stories into engineering-ready tickets with platform-specific tasks (iOS, Android, Backend)
+- **Epic Feature Planner (Apex)** — breaks epic into high-level features, creates shells in Azure DevOps
+- **Story Decomposition Team (per-feature)** — 7-agent collaborative refinement:
+  - **Product (Shard)** — breaks feature into user stories with acceptance criteria
+  - **QA Engineer (Vera)** — generates test cases for each story (embedded in story JSON)
+  - **Backend Engineer (Finn)** — adds technical acceptance criteria for API/database work
+  - **iOS Engineer (Remi)** — adds iOS-specific technical criteria and notes
+  - **Android Engineer (Cole)** — adds Android-specific technical criteria and notes
+- **Architect (Atlas)** — solution architecture aligned to your tech stack (optional, legacy)
+- **Backlog Agent (Pip)** — epics, features, and stories with acceptance criteria (legacy single-stage)
 - **Critic (Flint)** — adversarial quality review after each specialist stage
 - **Context Curator (Ivy)** — proposes updates to project knowledge files based on workflow outputs
 
@@ -88,22 +93,39 @@ See [docs/setup/llm-providers.md](docs/setup/llm-providers.md) for detailed prov
 2. **The Coordinator gathers context** — asks 1–3 rounds of clarifying questions, then launches the workflow
 3. **Choose which stages to run** — toggle agents on/off before the workflow starts (at least one required)
 4. **Specialist agents run autonomously** — each produces a document, reviewed by the Critic for quality
-5. **You review at every checkpoint** — approve, revise with feedback, or reject
-6. **Context Curator proposes updates** — facts from the workflow are offered as updates to your project knowledge files
-7. **Running cost is tracked** — estimated USD cost shown in the header throughout the workflow
+5. **Feature-by-feature refinement** — after high-level planning, each feature gets 7-agent collaborative refinement:
+   - Product breaks feature into stories
+   - QA generates test cases for each story
+   - Platform engineers add technical acceptance criteria
+   - Stories pushed to Azure DevOps with platform tags
+   - Test cases pushed to ADO Test Plans with story linkage
+6. **You review at every checkpoint** — approve, revise with feedback, or reject (two URLs shown: Feature board, Test plan)
+7. **Context Curator proposes updates** — facts from the workflow are offered as updates to your project knowledge files
+8. **Running cost is tracked** — estimated USD cost shown in the header throughout the workflow
 
-### Workflow stages
+### Workflow stages (new feature-by-feature pipeline)
 
-| Stage | Agent | Output |
-|-------|-------|--------|
-| Research | Analyst (Sage) | Market research brief with cited sources |
-| PRD | PM Strategy (Rex) | Product Requirements Document |
-| Architecture | Architect (Atlas) | Solution architecture document |
-| Backlog | Backlog Agent (Pip) | Right-sized backlog: single stories, small features, or full epic/feature/story hierarchy (JSON) |
-| QA Test Suite | QA Engineer (Vera) | Automation-ready JSON test suite covering happy paths, bad paths, and edge cases |
-| Tech Refinement | Finn, Remi & Cole | Engineering-ready tickets with iOS, Android, and Backend tasks and effort estimates |
-| Quality Review | Critic (Flint) | Inline after each specialist — auto-revises once, then asks the human |
-| Context Update | Curator (Ivy) | Proposed updates to `context/*.md` files |
+| Stage | Agent | Output | ADO Integration |
+|-------|-------|--------|----------------|
+| Research | Analyst (Sage) | Market research brief with cited sources | — |
+| PRD | PM Strategy (Rex) | Product Requirements Document | — |
+| Epic Feature Planner | Epic Planner (Apex) | Epic + Features (high-level) | Creates epic + feature shells |
+| Story Decomposition F1/F2/F3 | 7-agent team | User stories with product ACs, technical ACs, platform tags, test cases (per-feature) | Adds stories to feature + creates test plan |
+| Context Update | Curator (Ivy) | Proposed updates to `context/*.md` files | — |
+
+**Each Story Decomposition stage produces:**
+- User stories in "As a / I want / So that" format
+- Product acceptance criteria (Given/When/Then)
+- Technical acceptance criteria from platform engineers
+- Platform tags (backend, web, ios, android)
+- Embedded test cases (happy path, bad path, edge case)
+- Sprint estimates based on team velocity
+
+**Legacy stages (still available):**
+- Architecture (Architect — Atlas) — optional solution architecture document
+- Backlog (Pip) — single-stage backlog generation without feature-by-feature refinement
+- QA Test Suite (Vera) — standalone test suite generation
+- Tech Refinement (Finn, Remi, Cole) — post-backlog technical enrichment
 
 ### Checkpoints
 
@@ -143,9 +165,14 @@ After a workflow's backlog has been pushed to Azure DevOps, a **Claude Code Stud
 ### Artifact Viewer
 Review specialist outputs in a slide-out panel with fullscreen mode. The backlog preview shows structured epics, features, and stories with:
 - Sprint estimates at epic and feature level
-- Expandable stories with formatted acceptance criteria (Given/When/Then)
+- Expandable stories with:
+  - User story format: "As a / I want / So that"
+  - Product acceptance criteria (Given/When/Then formatted, keywords bolded)
+  - Technical acceptance criteria (marked with ⚙ icon)
+  - Platform tags (backend, web, ios, android)
+  - Embedded test cases (scenario, type, priority)
 - Persona summary panel (fullscreen) showing which personas are covered and their story references
-- **Push to Board** button (after workflow completes) to export the backlog to Azure DevOps or Jira
+- **View Feature** and **View Test Plan** links after each feature completion
 - **QA Test Suite** view with structured test cases and coverage breakdown
 - **Prototype Preview** — renders AI-generated React prototypes in an inline device frame
 

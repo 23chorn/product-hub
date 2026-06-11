@@ -127,13 +127,16 @@ export function getDemoFixture(stage: string): string | null {
         return null;
       }
 
-      // Create a copy with all features but only populate stories for the target feature
+      // Return ONLY the target feature (not all features with empty stories)
+      const targetFeature = fullBacklog.features[featureIndex];
+      if (!targetFeature) {
+        console.error(`[DEMO FIXTURE ERROR] Feature ${featureIndex + 1} not found in backlog`);
+        return null;
+      }
+
       const featureSpecificBacklog = {
-        ...fullBacklog,
-        features: fullBacklog.features.map((feature: any, index: number) => ({
-          ...feature,
-          stories: index === featureIndex ? feature.stories : []
-        }))
+        epic: fullBacklog.epic,
+        features: [targetFeature]  // Only include the target feature
       };
 
       return JSON.stringify(featureSpecificBacklog, null, 2);

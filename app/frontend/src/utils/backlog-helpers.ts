@@ -1,6 +1,7 @@
 // ── Backlog JSON types ──────────────────────────────────────────────────────
 
 export interface BacklogStory {
+  // Old format (story decomposition)
   title: string;
   persona?: string;
   goal?: string;
@@ -12,6 +13,25 @@ export interface BacklogStory {
   traditionalHours?: number;
   aiEstimatedHours?: number;
   technical_notes?: { ios?: string | null; android?: string | null; backend?: string | null };
+
+  // New format (multi-agent refinement)
+  story_id?: string;
+  as_a?: string;
+  i_want?: string;
+  so_that?: string;
+  acceptance_criteria?: string[];
+  technical_acceptance_criteria?: string[];
+  platform?: string[];
+  estimated_points?: number;
+  depends_on?: string[];
+  test_cases?: Array<{
+    id: string;
+    scenario: { given: string[]; when: string[]; then: string[] };
+    type: 'happy_path' | 'bad_path' | 'edge_case';
+    priority: 'critical' | 'high' | 'medium' | 'low';
+    prd_ref?: string;
+    story_ref?: string;
+  }>;
 }
 
 export interface BacklogFeature {
