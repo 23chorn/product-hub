@@ -77,13 +77,16 @@ CREATE INDEX idx_messages_session_seq ON messages(session_id, sequence);
 -- status tracks draft → approved → superseded.
 -- ------------------------------------------------------------
 CREATE TABLE artifacts (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  session_id TEXT    NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  type       TEXT    NOT NULL, -- 'prd'|'backlog_item'|'rollout_plan'|...
-  file_path  TEXT    NOT NULL,
-  status     TEXT    NOT NULL DEFAULT 'draft'
-             CHECK(status IN ('draft','approved','superseded')),
-  created_at INTEGER NOT NULL
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id       TEXT    NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  type             TEXT    NOT NULL, -- 'prd'|'backlog_item'|'rollout_plan'|...
+  file_path        TEXT    NOT NULL DEFAULT '', -- empty for externally stored artifacts
+  external_system  TEXT,            -- 'azure_wiki' | null
+  external_path    TEXT,            -- wiki page path | null
+  external_url     TEXT,            -- browser URL | null
+  status           TEXT    NOT NULL DEFAULT 'draft'
+                   CHECK(status IN ('draft','approved','superseded')),
+  created_at       INTEGER NOT NULL
 );
 
 CREATE INDEX idx_artifacts_session ON artifacts(session_id);
@@ -161,18 +164,19 @@ CREATE INDEX idx_proposals_session ON context_change_proposals(session_id);
 -- stage_sequence and policy_overrides are JSON-encoded TEXT.
 -- ------------------------------------------------------------
 CREATE TABLE workflows (
-  id               TEXT    PRIMARY KEY,
-  item_id          TEXT    NOT NULL REFERENCES items(id),
-  goal             TEXT    NOT NULL,
-  summary          TEXT,                             -- AI-generated brief name
-  status           TEXT    NOT NULL DEFAULT 'active'
-                   CHECK(status IN ('active','paused_at_checkpoint','awaiting_user_input','complete')),
-  current_stage    TEXT,
-  stage_sequence   TEXT    NOT NULL DEFAULT '[]',   -- JSON array of stage names
-  policy_overrides TEXT    NOT NULL DEFAULT '{}',   -- JSON key-value overrides
-  estimated_cost   REAL    NOT NULL DEFAULT 0,      -- cumulative estimated USD cost
-  created_at       INTEGER NOT NULL,
-  updated_at       INTEGER NOT NULL
+  id                      TEXT    PRIMARY KEY,
+  item_id                 TEXT    NOT NULL REFERENCES items(id),
+  goal                    TEXT    NOT NULL,
+  summary                 TEXT,                             -- AI-generated brief name
+  status                  TEXT    NOT NULL DEFAULT 'active'
+                          CHECK(status IN ('active','paused_at_checkpoint','awaiting_user_input','complete')),
+  current_stage           TEXT,
+  stage_sequence          TEXT    NOT NULL DEFAULT '[]',   -- JSON array of stage names
+  policy_overrides        TEXT    NOT NULL DEFAULT '{}',   -- JSON key-value overrides
+  decomposition_metadata  TEXT,                             -- JSON metadata for feature-by-feature story decomposition
+  estimated_cost          REAL    NOT NULL DEFAULT 0,      -- cumulative estimated USD cost
+  created_at              INTEGER NOT NULL,
+  updated_at              INTEGER NOT NULL
 );
 
 CREATE INDEX idx_workflows_item   ON workflows(item_id);
@@ -326,7 +330,7 @@ CREATE INDEX idx_cr_artifact_versions_cr ON cr_artifact_versions(change_request_
 CREATE TABLE ado_work_item_map (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   workflow_id TEXT    NOT NULL REFERENCES workflows(id),
-  artifact_id INTEGER NOT NULL REFERENCES artifacts(id),
+  artifact_id INTEGER REFERENCES artifacts(id),  -- nullable: epic/feature rows don't have specific artifacts
   ado_id      INTEGER NOT NULL,
   ado_type    TEXT    NOT NULL CHECK(ado_type IN ('epic','feature','story')),
   ado_url     TEXT,

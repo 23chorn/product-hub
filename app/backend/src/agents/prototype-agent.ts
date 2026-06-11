@@ -16,7 +16,7 @@ import * as fs from 'fs';
 import * as fsAsync from 'fs/promises';
 import * as path from 'path';
 import { streamAI, resolveModelId, type SystemPrompt, type TokenUsage } from '../utils/ai-provider';
-import { loadLatestArtifactForStage, resolveArtifactPath } from './artifact-helpers';
+import { loadLatestArtifactContent, saveMainArtifact, resolveArtifactPath } from './artifact-helpers';
 import db from '../data/database';
 import Logger from '../utils/logger';
 
@@ -41,17 +41,18 @@ export interface PrototypeResult {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-export function loadWorkflowArtifacts(itemId: string): string {
-  const stages = ['analyst', 'pm_prd', 'solution_architect'] as const;
-  const labels: Record<string, string> = {
-    analyst: 'Research Brief',
-    pm_prd: 'PRD',
-    solution_architect: 'Architecture Document',
-  };
+export async function loadWorkflowArtifacts(itemId: string): Promise<string> {
+  // Prototype stage now runs early (after PRD, before architecture)
+  // Load whatever artifacts exist at that point: analyst + PRD are always present, architecture may not exist yet
+  const stages: Array<{ type: string; label: string }> = [
+    { type: 'analyst', label: 'Research Brief' },
+    { type: 'prd', label: 'PRD' },
+    { type: 'architecture', label: 'Architecture Document' },
+  ];
+  const results = await Promise.all(stages.map(s => loadLatestArtifactContent(itemId, s.type)));
   const sections: string[] = [];
-  for (const stage of stages) {
-    const content = loadLatestArtifactForStage(itemId, stage);
-    if (content) sections.push(`## ${labels[stage]}\n\n${content}`);
+  for (let i = 0; i < stages.length; i++) {
+    if (results[i]) sections.push(`## ${stages[i].label}\n\n${results[i]}`);
   }
   return sections.join('\n\n---\n\n');
 }
@@ -214,22 +215,12 @@ async function savePrototypeArtifact(
   _workflowId: string,
   prototype: PrototypeResult,
 ): Promise<void> {
-  const artifactDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, 'prototype', 'artifacts');
-  await fsAsync.mkdir(artifactDir, { recursive: true });
-
-  const artifactPath = path.join(artifactDir, `${Date.now()}-prototype.json`);
-  await fsAsync.writeFile(artifactPath, JSON.stringify(prototype, null, 2), 'utf-8');
-
   const session = db.prepare<[string], { id: string }>(`
     SELECT id FROM sessions WHERE item_id = ? ORDER BY created_at DESC LIMIT 1
   `).get(itemId);
 
-  db.prepare(`
-    INSERT INTO artifacts (session_id, type, file_path, created_at)
-    VALUES (?, ?, ?, ?)
-  `).run(session?.id ?? null, 'prototype', artifactPath, Date.now());
-
-  logger.info(`Saved prototype artifact → ${artifactPath}`);
+  await saveMainArtifact(session?.id ?? '', 'prototype', JSON.stringify(prototype, null, 2), itemId);
+  logger.info(`Saved prototype artifact to wiki for item ${itemId}`);
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────────
@@ -252,7 +243,7 @@ export async function* generatePrototype(
   `).get(workflowId);
   if (!workflow) throw new Error(`Workflow ${workflowId} not found`);
 
-  const artifacts = loadWorkflowArtifacts(workflow.item_id);
+  const artifacts = await loadWorkflowArtifacts(workflow.item_id);
   if (!artifacts.trim()) throw new Error('No workflow artifacts found — run earlier stages first');
 
   const statusLines: string[] = [];

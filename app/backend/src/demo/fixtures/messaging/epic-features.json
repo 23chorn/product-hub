@@ -1,0 +1,72 @@
+{
+  "epic": {
+    "title": "In-App Messaging & Trade Chat",
+    "description": "Enable retail investors to discuss trade ideas, share live ticker cards, and build community within TradeEasy without context-switching to external platforms.",
+    "businessValue": "Reduces 6–8 minute execution gap from external chat tools, increasing trade conversion by an estimated 18%. Users who engage in chat are 3.4× more likely to remain active 30 days later.",
+    "prdLink": "PRD: In-App Messaging & Trade Chat — TradeEasy",
+    "definitionOfDone": "Users can create or join topic-based channels, send text messages with live ticker cards, and receive messages in under 500ms during market hours"
+  },
+  "features": [
+    {
+      "title": "Channel Management",
+      "description": "Users can create, join, and leave topic-based trading channels with persistent membership.",
+      "phase": "MVP",
+      "acceptanceCriteria": [
+        "Users can browse a directory of public channels by topic (ticker symbols, trading strategies, market sectors)",
+        "Users can create new channels by specifying a name, topic, and privacy setting (public or private)",
+        "Channel creators can invite members to private channels via a shareable link",
+        "Users can leave channels at any time, with the option to rejoin later"
+      ],
+      "prdRef": {
+        "functionalRequirements": ["FR-01", "FR-02"],
+        "userJourneys": ["Journey 1: Join a topic channel and discuss a ticker"]
+      },
+      "deferredTo": null,
+      "stories": []
+    },
+    {
+      "title": "Real-time Text Messaging",
+      "description": "Users can send and receive text messages in channels with sub-second latency during market hours.",
+      "phase": "MVP",
+      "acceptanceCriteria": [
+        "Messages delivered to all channel members within 500ms at peak load",
+        "Messages persist for 7 years to meet compliance requirements",
+        "Offline messages sync when user reconnects to the internet",
+        "Messages display sender name, timestamp, and read/delivered status"
+      ],
+      "prdRef": {
+        "functionalRequirements": ["FR-03", "FR-04"],
+        "userJourneys": ["Journey 3: Send a message in a channel"]
+      },
+      "deferredTo": null,
+      "stories": []
+    },
+    {
+      "title": "Live Ticker Card Sharing",
+      "description": "Users can embed live-updating ticker price cards directly into any message.",
+      "phase": "MVP",
+      "acceptanceCriteria": [
+        "Users can attach a ticker card from any instrument detail screen via a 'Share to Chat' button",
+        "Ticker cards render in under 200ms and display current price, % change, and timestamp",
+        "Tapping a ticker card navigates the recipient to the instrument detail screen with a pre-filled buy order",
+        "Ticker cards update in real time during market hours without requiring a message refresh"
+      ],
+      "prdRef": {
+        "functionalRequirements": ["FR-05"],
+        "userJourneys": ["Journey 2: Share a live ticker card in a message"]
+      },
+      "deferredTo": null,
+      "stories": []
+    }
+  ],
+  "outOfScope": [
+    "Message threading — deferred to Phase 2",
+    "Push notifications — deferred to Phase 2",
+    "Content moderation & compliance — deferred to Phase 2",
+    "Voice messaging — deferred to Phase 3",
+    "Video chat or screen sharing — not planned for MVP",
+    "Direct messages (1:1 DMs) — MVP focuses on group channels only",
+    "Message reactions (emoji) — Phase 2",
+    "Desktop or web app — mobile-only for MVP"
+  ]
+}

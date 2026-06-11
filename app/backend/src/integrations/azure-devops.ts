@@ -613,6 +613,91 @@ export class AzureDevOpsClient {
   }
 
   /**
+   * Add a single feature (with its stories) to an existing epic.
+   * Used for incremental feature-by-feature story decomposition.
+   *
+   * @param epicId - The parent epic ID
+   * @param feature - The feature data to add
+   * @returns Created feature and story IDs
+   */
+  async addFeatureToEpic(
+    epicId: number,
+    feature: {
+      title: string;
+      description: string;
+      phase?: string;
+      stories: Array<{
+        title: string;
+        persona: string;
+        goal: string;
+        benefit: string;
+        acceptanceCriteria?: string[];
+        effort?: number;
+        technical?: any;
+        technical_notes?: any;
+        aiEstimatedHours?: number;
+        aiEstimatedQaHours?: number;
+      }>;
+    }
+  ): Promise<{ featureId: number; storyIds: number[] }> {
+    logger.info(`Adding feature "${feature.title}" to epic #${epicId}`);
+
+    const storyIds: number[] = [];
+
+    try {
+      // Create the feature under the epic
+      const createdFeature = await this.createWorkItem({
+        type: this.workItemTypes.feature as any,
+        title: feature.title,
+        description: feature.description,
+        parentId: epicId,
+      });
+      logger.info(`Created feature #${createdFeature.id!}: ${feature.title}`);
+
+      // Create each story under the feature
+      for (const storyData of feature.stories) {
+        const storyDescription = [
+          `<b>As a</b> ${escapeHtml(stripStoryPrefix(storyData.persona, /^as an?\s+/i))}`,
+          `<b>I want</b> ${escapeHtml(stripStoryPrefix(storyData.goal, /^i want\s+(to\s+)?/i))}`,
+          `<b>So that</b> ${escapeHtml(stripStoryPrefix(storyData.benefit, /^so that\s+/i))}`,
+        ].join('<br>') + buildTechnicalSuggestions(storyData.technical) + buildPlatformNotes(storyData.technical_notes);
+
+        let acceptanceCriteriaHtml: string | undefined;
+        if (storyData.acceptanceCriteria && storyData.acceptanceCriteria.length > 0) {
+          acceptanceCriteriaHtml = storyData.acceptanceCriteria
+            .map((ac, i) => {
+              const formatted = formatGivenWhenThen(escapeHtml(ac));
+              return `<b>AC ${i + 1}</b><br>${formatted}`;
+            })
+            .join('<br><br>');
+        }
+
+        const story = await this.createWorkItem({
+          type: this.workItemTypes.story as any,
+          title: storyData.title,
+          description: storyDescription,
+          acceptanceCriteria: acceptanceCriteriaHtml,
+          effort: storyData.effort,
+          aiEstimateDevHours: storyData.aiEstimatedHours !== undefined ? toNearestFibonacci(storyData.aiEstimatedHours) : undefined,
+          aiEstimateQaHours: storyData.aiEstimatedQaHours,
+          tags: deriveTeamTags(storyData.technical_notes),
+          parentId: createdFeature.id,
+        });
+        storyIds.push(story.id!);
+        logger.info(`Created story #${story.id!}: ${storyData.title}`);
+      }
+
+      logger.info(`Added feature #${createdFeature.id!} with ${storyIds.length} stories to epic #${epicId}`);
+      return { featureId: createdFeature.id!, storyIds };
+    } catch (error: any) {
+      logger.error(`Failed to add feature to epic #${epicId}`, error);
+      throw new Error(
+        `Azure DevOps API error: ${error.response?.data?.message || error.message}`
+      );
+    }
+  }
+
+  /**
    * Update an existing work item.
    * Only patches the fields that are provided (non-undefined).
    */
@@ -864,6 +949,20 @@ export class AzureDevOpsClient {
     const doubleEncoded = encodeURIComponent(encodeURIComponent(wikiIdentifier));
     // api-version is omitted here — the axios instance already adds it via params.
     return `/wiki/wikis/${doubleEncoded}/pages?path=${this.wikiPathParam(path)}`;
+  }
+
+  async getWikiPageContent(wikiIdentifier: string, path: string): Promise<string> {
+    const apiUrl = this.wikiUrl(wikiIdentifier, path);
+    const wikiParams = { 'api-version': '7.1-preview.1', includeContent: true };
+    try {
+      const response = await this.client.get(apiUrl, {
+        headers: { 'Content-Type': 'application/json' },
+        params: wikiParams,
+      });
+      return (response.data as any).content ?? '';
+    } catch (error: any) {
+      throw new Error(`Wiki page not found: ${path} — ${error.response?.data?.message || error.message}`);
+    }
   }
 
   async upsertWikiPage(wikiIdentifier: string, path: string, content: string): Promise<{ eTag: string; url: string }> {
@@ -1210,5 +1309,63 @@ export class AzureDevOpsClient {
 
     logger.info(`Test plan push: planId=${planId}, ${created} created, ${updated} updated`);
     return { planId, rootSuiteId, planUrl, suiteIds, testCaseIds, created, updated };
+  }
+
+  // ── Demo cleanup helpers ──────────────────────────────────────────────────────
+
+  /**
+   * Permanently delete a work item (bypasses recycle bin).
+   * Silently swallows 404 (already deleted).
+   */
+  async deleteWorkItem(id: number): Promise<void> {
+    try {
+      await this.client.delete(`/wit/workitems/${id}`, { params: { destroy: true, 'api-version': '7.1' } });
+      logger.info(`Deleted work item #${id}`);
+    } catch (err: any) {
+      if (err.response?.status !== 404) {
+        logger.warn(`Failed to delete work item #${id}: ${err.response?.status} ${err.message}`);
+      }
+    }
+  }
+
+  /**
+   * Delete multiple work items in series (ADO has no batch delete endpoint).
+   */
+  async deleteWorkItems(ids: number[]): Promise<void> {
+    for (const id of ids) {
+      await this.deleteWorkItem(id);
+    }
+  }
+
+  /**
+   * Delete an ADO Test Plan (and all its suites + test cases).
+   * Silently swallows 404.
+   */
+  async deleteTestPlan(planId: number): Promise<void> {
+    try {
+      await this.client.delete(`/testplan/plans/${planId}`, {
+        headers: { 'Content-Type': 'application/json' },
+      });
+      logger.info(`Deleted test plan #${planId}`);
+    } catch (err: any) {
+      if (err.response?.status !== 404) {
+        logger.warn(`Failed to delete test plan #${planId}: ${err.response?.status} ${err.message}`);
+      }
+    }
+  }
+
+  /**
+   * Delete a wiki page. Silently swallows 404 (already deleted or never created).
+   */
+  async deleteWikiPage(wikiIdentifier: string, path: string): Promise<void> {
+    const apiUrl = this.wikiUrl(wikiIdentifier, path);
+    try {
+      await this.client.delete(apiUrl, { params: { 'api-version': '7.1-preview.1' } });
+      logger.info(`Deleted wiki page: ${path}`);
+    } catch (err: any) {
+      if (err.response?.status !== 404) {
+        logger.warn(`Failed to delete wiki page ${path}: ${err.response?.status} ${err.message}`);
+      }
+    }
   }
 }

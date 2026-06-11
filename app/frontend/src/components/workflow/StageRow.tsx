@@ -16,11 +16,12 @@ interface StageRowProps {
   onViewArtifact: (id: number) => void;
   isLast?: boolean;
   compact?: boolean;
+  customLabel?: string; // Override default stage label (e.g., "Feature 1")
 }
 
 // ── Status icon ───────────────────────────────────────────────────────────────
 
-function StatusIcon({ status }: { status: StageStatus }) {
+export function StatusIcon({ status }: { status: StageStatus }) {
   switch (status) {
     case 'complete':
       return <span className="text-green-500 text-xs leading-none select-none">✓</span>;
@@ -39,7 +40,7 @@ function StatusIcon({ status }: { status: StageStatus }) {
 
 // ── Label color ───────────────────────────────────────────────────────────────
 
-function labelColor(status: StageStatus): string {
+export function labelColor(status: StageStatus): string {
   switch (status) {
     case 'complete':    return 'text-slate-400';
     case 'in-progress': return 'text-teal-300';
@@ -63,6 +64,7 @@ export function StageRow({
   prevStatus,
   isLast,
   compact = false,
+  customLabel,
 }: StageRowProps & { prevStatus?: StageStatus }) {
   const showConnector = index > 0;
   const connectorDone = prevStatus === 'complete';
@@ -92,7 +94,7 @@ export function StageRow({
         {/* Content — mt-[10px] aligns text centre with icon centre (h-2 top + h-4/2 = 16px) */}
         <div className="flex-1 min-w-0 overflow-hidden pl-2 mt-[10px]">
           <span className={`block text-[12px] font-mono leading-none truncate ${labelColor(status)}`}>
-            {STAGE_LABELS[stageName] ?? stageName}
+            {customLabel ?? STAGE_LABELS[stageName] ?? stageName}
           </span>
           {isActive && (
             <div className="mt-1 overflow-hidden">

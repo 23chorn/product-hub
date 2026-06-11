@@ -23,9 +23,9 @@ import {
   STAGE_ARTIFACT_LABEL,
 } from './stage-metadata';
 import {
-  saveCriticArtifact, getLatestArchitectureArtifactPath,
-  getLatestArtifactPathByType,
+  saveCriticArtifact, saveMainArtifact, saveLocalArtifact, loadLatestArtifactContent,
 } from './artifact-helpers';
+import { pushBacklogToAdo, pushTestPlanToAdo } from './ado-stage-push';
 import { getActiveSkill } from './skill-registry';
 import { type ToolDefinition, getRegisteredTools } from './tool-registry';
 import { loadWorkflowArtifacts, loadLocalDesignSystem, loadFigmaDesignSystem, repairTruncatedJson } from './prototype-agent';
@@ -119,7 +119,48 @@ export async function runAutonomousStage(
   priorRunsCost?: number,
   skipCritic?: boolean
 ): Promise<void> {
-  const stageMap = STAGE_SESSION_MAP[stage];
+  // ── Multi-Agent Refinement for story_decomposition_F* stages ────────────────
+  // Each feature runs a 7-agent collaborative session (Product + QA + 4 Engineers)
+  const featureMatch = stage.match(/^story_decomposition_F(\d+)$/);
+  if (featureMatch) {
+    const featureIndex = parseInt(featureMatch[1], 10) - 1; // Convert to 0-based
+    const { runMultiAgentRefinement } = await import('./multi-agent-refinement');
+
+    try {
+      const artifactContent = await runMultiAgentRefinement(workflowId, itemId, stage, featureIndex);
+
+      // Save the combined artifact (backlog + test cases)
+      const { saveLocalArtifact } = await import('./artifact-helpers');
+      const artifactId = await saveLocalArtifact(sessionId, stage, artifactContent, itemId, null);
+
+      // Create checkpoint for human review
+      const { pauseAtCheckpoint } = await import('./workflow-router');
+      await pauseAtCheckpoint(workflowId, stage, artifactId, null);
+
+      logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} refinement complete — checkpoint created`);
+      insertEvent(workflowId, 'stage_completed', stage,
+        `7-agent collaborative refinement complete for Feature ${featureIndex + 1} — ready for human review`,
+        { artifact_id: artifactId });
+
+      return;
+    } catch (err: any) {
+      logger.error(`[MULTI-AGENT] Feature ${featureIndex + 1} refinement failed: ${err.message}`);
+      insertEvent(workflowId, 'error', stage, `Multi-agent refinement failed: ${err.message}`);
+      throw err;
+    }
+  }
+
+  // Handle dynamic feature stages (qa_engineer_F1, F2, etc., tech_refinement_F1, F2, etc.)
+  let stageMap = STAGE_SESSION_MAP[stage];
+  if (!stageMap && stage.match(/^story_decomposition_F\d+$/)) {
+    stageMap = STAGE_SESSION_MAP['story_decomposition'];
+  }
+  if (!stageMap && stage.match(/^qa_engineer_F\d+$/)) {
+    stageMap = STAGE_SESSION_MAP['qa_engineer'];
+  }
+  if (!stageMap && stage.match(/^tech_refinement_F\d+$/)) {
+    stageMap = STAGE_SESSION_MAP['tech_refinement'];
+  }
   if (!stageMap) {
     logger.error(`runAutonomousStage: no stage map for "${stage}"`);
     return;
@@ -152,6 +193,12 @@ export async function runAutonomousStage(
     } catch {
       logger.warn(`Stage "${stage}": could not parse tool_definitions from skill`);
     }
+  }
+
+  // ── Deprecation warning ───────────────────────────────────────────────────────
+  if (stage === 'pm_backlog') {
+    logger.warn(`[DEPRECATION] Stage "pm_backlog" is deprecated. Use "epic_feature_planner" + "story_decomposition" instead. Workflow ${workflowId} will continue with legacy stage.`);
+    insertEvent(workflowId, 'stage_progress', stage, '⚠️  pm_backlog is deprecated — use epic_feature_planner + story_decomposition in new workflows');
   }
 
   // Resolve model: workflow policy_overrides take priority, then per-agent defaults
@@ -205,140 +252,22 @@ export async function runAutonomousStage(
   _cancelControllers.set(workflowId, abortController);
 
   try {
-    // ── Demo mode fast-path ──────────────────────────────────────────────────
-    if (isDemoMode()) {
-      const fixture = getDemoFixture(stage);
-      if (fixture) {
-        // ── Analyst demo: extended flow to showcase the activity timer ──────
-        if (stage === 'analyst') {
-          insertEvent(workflowId, 'stage_progress', stage, 'Writing section 1: Executive Summary...');
-          await demoSleep(4_500);  // timer counts up to ~4s
-          insertEvent(workflowId, 'stage_progress', stage, 'Generating... 5s elapsed, 0.9k chars written');  // heartbeat resets timer
-          await demoSleep(3_500);  // timer counts up again
-          insertEvent(workflowId, 'stage_progress', stage, 'Writing section 2: Market Analysis...');  // resets timer
-          await demoSleep(2_000);
-        } else {
-          const delay = DEMO_STAGE_DELAY_MS[stage] ?? 2_000;
-          insertEvent(workflowId, 'stage_progress', stage, `Running ${stage}...`);
-          await demoSleep(delay);
-        }
+    // ── Demo fixture lookup ────────────────────────────────────────────────────
+    // Check workflow policy to see if this is a demo workflow (either demo_mode or demo_auto_approve).
+    // When demo flag is present, replace the LLM call with a pre-built fixture.
+    // isDemoMode() controls UI visibility only — it must not affect real workflow behavior.
+    const workflow = stmts.getWorkflow.get(workflowId);
+    const policyOverrides: Record<string, string> = workflow?.policy_overrides
+      ? JSON.parse(workflow.policy_overrides)
+      : {};
+    const isDemoWorkflow = policyOverrides.demo_mode === 'true' || policyOverrides.demo_auto_approve === 'true';
 
-        const artifactDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, stageMap.mode, 'artifacts');
-        await fsAsync.mkdir(artifactDir, { recursive: true });
-        const isJson = stage === 'pm_backlog' || stage === 'prototype' || stage === 'qa_engineer' || stage === 'tech_refinement';
-        const ext = isJson ? 'json' : 'md';
-        const artifactPath = path.join(artifactDir, `${Date.now()}-${stage}.${ext}`);
+    logger.info(`[DEMO CHECK] Stage "${stage}" - isDemoWorkflow: ${isDemoWorkflow}, policyOverrides: ${JSON.stringify(policyOverrides)}`);
 
-        let artifactContent = fixture;
-        if (stage === 'pm_backlog') {
-          const stripped = fixture.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-          try { artifactContent = await injectSprintEstimates(JSON.parse(stripped)); } catch { artifactContent = stripped; }
-        } else if (isJson) {
-          const stripped = fixture.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-          try { artifactContent = JSON.stringify(JSON.parse(stripped), null, 2); } catch { artifactContent = stripped; }
-        }
-
-        await fsAsync.writeFile(artifactPath, artifactContent, 'utf-8');
-        const artifactType = STAGE_ARTIFACT_TYPE[stage] ?? stage;
-        const artifactId = (db.prepare(
-          `INSERT INTO artifacts (session_id, type, file_path, created_at) VALUES (?, ?, ?, ?)`
-        ).run(sessionId, artifactType, artifactPath, Date.now())).lastInsertRowid as number;
-
-        // ── Demo critic simulation — PRD only ──────────────────────────────
-        if (stage === 'pm_prd') {
-          insertEvent(workflowId, 'stage_completed', stage, 'PRD draft complete.', { artifact_id: artifactId });
-          await demoSleep(600);
-          insertEvent(workflowId, 'stage_progress', stage, 'Running quality review...');
-          await demoSleep(1_800);
-
-          const reviseDetails = {
-            critic_verdict: 'revise',
-            issue_count: 1,
-            critical_issues: 0,
-            major_issues: 1,
-            issues_summary: '[MAJOR] Counter-metrics table missing — document should include measurable failure thresholds alongside success metrics to enable informed rollback decisions',
-            inline_review: true,
-            reviewed_stage: 'pm_prd',
-          };
-          insertEvent(workflowId, 'critic_verdict', stage,
-            'Quality review flagged issues. Auto-revising (attempt 1/1).', reviseDetails);
-          await demoSleep(500);
-
-          insertEvent(workflowId, 'stage_progress', stage, 'Auto-revising: addressing quality review feedback...');
-          await demoSleep(1_600);
-          insertEvent(workflowId, 'stage_progress', stage, 'Running quality review...');
-          await demoSleep(1_800);
-
-          const approveDetails = {
-            critic_verdict: 'approve',
-            issue_count: 0,
-            critical_issues: 0,
-            major_issues: 0,
-            issues_summary: '',
-            inline_review: true,
-            reviewed_stage: 'pm_prd',
-          };
-          const now = Date.now();
-          stmts.insertCheckpoint.run(
-            workflowId, stage, artifactId, 'pending',
-            JSON.stringify({ session_id: sessionId, autonomous: true, demo_mode: true, critic: approveDetails }),
-            now
-          );
-          stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
-          insertEvent(workflowId, 'critic_verdict', stage,
-            'Quality review passed — no issues found. Approve to proceed.', approveDetails);
-          logger.info(`[DEMO] Stage "${stage}" complete — demo critic flow done, checkpoint created`);
-          return;
-        }
-
-        const now = Date.now();
-        stmts.insertCheckpoint.run(
-          workflowId, stage, artifactId, 'pending',
-          JSON.stringify({ session_id: sessionId, autonomous: true, demo_mode: true }),
-          now
-        );
-        stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
-        insertEvent(workflowId, 'stage_completed', stage, `Demo output ready — approve to continue.`, { artifact_id: artifactId });
-        logger.info(`[DEMO] Stage "${stage}" complete — fixture loaded, checkpoint created`);
-        return;
-      }
-    }
-
-    // ── Demo auto-approve prototype fast-path ─────────────────────────────────
-    // When the demo webhook creates a workflow (demo_auto_approve=true), use the
-    // pre-built messaging prototype fixture instead of calling the LLM, which is
-    // slow and produces inconsistent output in a demo setting.
-    if (!isDemoMode() && autoApprove && stage === 'prototype') {
-      const fixture = getDemoFixtureForTheme('messaging', stage);
-      if (fixture) {
-        insertEvent(workflowId, 'stage_progress', stage, 'Generating prototype...');
-        await demoSleep(DEMO_STAGE_DELAY_MS[stage] ?? 3_000);
-        const artifactDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, stageMap.mode, 'artifacts');
-        await fsAsync.mkdir(artifactDir, { recursive: true });
-        const artifactPath = path.join(artifactDir, `${Date.now()}-${stage}.json`);
-        const stripped = fixture.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-        let artifactContent = stripped;
-        try { artifactContent = JSON.stringify(JSON.parse(stripped), null, 2); } catch { /* use stripped */ }
-        await fsAsync.writeFile(artifactPath, artifactContent, 'utf-8');
-        const protoArtifactType = STAGE_ARTIFACT_TYPE[stage] ?? stage;
-        const protoArtifactId = (db.prepare(
-          `INSERT INTO artifacts (session_id, type, file_path, created_at) VALUES (?, ?, ?, ?)`
-        ).run(sessionId, protoArtifactType, artifactPath, Date.now())).lastInsertRowid as number;
-        const now = Date.now();
-        stmts.insertCheckpoint.run(
-          workflowId, stage, protoArtifactId, 'approved',
-          JSON.stringify({ session_id: sessionId, autonomous: true, demo_fixture: true, auto_approved: true }),
-          now
-        );
-        stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
-        insertEvent(workflowId, 'stage_completed', stage, 'Prototype ready.', { artifact_id: protoArtifactId });
-        logger.info(`[DEMO-FIXTURE] Stage "${stage}" complete — messaging prototype fixture loaded`);
-        workflowOps.advanceStage(workflowId).catch(err => {
-          if (err.message?.startsWith('WORKFLOW_COMPLETE')) logger.info(`Workflow ${workflowId} complete after prototype fixture`);
-          else logger.error(`advanceStage after prototype fixture failed: ${err.message}`);
-        });
-        return;
-      }
+    let demoFixture: string | null = null;
+    if (isDemoWorkflow) {
+      demoFixture = getDemoFixture(stage) ?? null;
+      logger.info(`[DEMO FIXTURE] Stage "${stage}" - fixture ${demoFixture ? 'LOADED' : 'NOT FOUND'} (${demoFixture?.length ?? 0} chars)`);
     }
 
     const agent = new SpecialistAgent(stageMap.agentType);
@@ -357,20 +286,24 @@ export async function runAutonomousStage(
         itemContext = `## THIS IS YOUR RESEARCH TOPIC\nThe task below defines exactly what to research. The company context above is background only — your output must be about this specific goal, NOT about the company's existing products.\n\n**Goal:** ${goalText}`;
       }
     } else if (stage === 'pm_prd') {
-      const analystPath = sessionManager.getLatestAnalystArtifactPath(itemId);
-      if (analystPath) {
-        try {
-          const content = fs.readFileSync(analystPath, 'utf-8');
-          itemContext = `**Research Brief (use as background for the PRD):**\n\n${content}`;
-        } catch { /* ignore */ }
+      const analystContent = await loadLatestArtifactContent(itemId, 'analyst');
+      if (analystContent) {
+        itemContext = `**Research Brief (use as background for the PRD):**\n\n${analystContent}`;
+      }
+    } else if (stage === 'epic_feature_planner') {
+      const prdContent = await loadLatestArtifactContent(itemId, 'prd');
+      if (prdContent) {
+        itemContext = `**PRD Document (use as source of functional requirements to decompose into epic and features):**\n\n${prdContent}`;
       }
     } else if (stage === 'solution_architect') {
-      const prdPath = sessionManager.getLatestPrdArtifactPath(itemId);
-      let prdContent = '';
-      if (prdPath) {
-        try { prdContent = fs.readFileSync(prdPath, 'utf-8'); } catch { /* ignore */ }
-      }
-      // Load tech-stack context if available
+      const parts: string[] = [];
+      const [prdContent, epicFeaturesContent] = await Promise.all([
+        loadLatestArtifactContent(itemId, 'prd'),
+        loadLatestArtifactContent(itemId, 'epic_features'),
+      ]);
+      if (prdContent) parts.push(`**PRD Document (use as source of requirements for the architecture):**\n\n${prdContent}`);
+      if (epicFeaturesContent) parts.push(`**Epic & Features Structure (enrich each feature with technical metadata at the end of your architecture document):**\n\n${epicFeaturesContent}`);
+
       const techStackPath = path.join(PROJECT_ROOT, 'context', 'tech-stack.md');
       let techStackNote = '';
       try {
@@ -379,94 +312,177 @@ export async function runAutonomousStage(
       } catch {
         techStackNote = `**Note:** No existing tech stack document found at context/tech-stack.md. You should recommend technology choices with tradeoffs for each decision.`;
       }
-      const parts: string[] = [];
-      if (prdContent) parts.push(`**PRD Document (use as source of requirements for the architecture):**\n\n${prdContent}`);
       parts.push(techStackNote);
       itemContext = parts.join('\n\n---\n\n');
+    } else if (stage === 'story_decomposition') {
+      const parts: string[] = [];
+      const [prdContent, archContent] = await Promise.all([
+        loadLatestArtifactContent(itemId, 'prd'),
+        loadLatestArtifactContent(itemId, 'architecture'),
+      ]);
+      if (prdContent) parts.push(`**PRD Document (use as source of functional requirements for story traceability):**\n\n${prdContent}`);
+      if (archContent) parts.push(`**Architecture Document (reference specific services, APIs, and data models in stories):**\n\n${archContent}`);
+
+      // CRITICAL: Load the tech-enriched epic/features JSON from the architect
+      // This should be extracted from the architect's output (the ## Technical Feature Metadata section)
+      // For now, try loading as a separate artifact type if it exists
+      let techEpicFeaturesContent = await loadLatestArtifactContent(itemId, 'epic_features_enriched');
+      if (!techEpicFeaturesContent) {
+        techEpicFeaturesContent = await loadLatestArtifactContent(itemId, 'epic_features');
+      }
+
+      if (techEpicFeaturesContent) {
+        parts.push(`**Tech-Enriched Epic & Features (decompose each feature into 6-8 stories, preserving all epic/feature metadata):**\n\n${techEpicFeaturesContent}`);
+      }
+
+      if (parts.length > 0) itemContext = parts.join('\n\n---\n\n');
+    }
+
+    // ── Feature-specific story decomposition ─────────────────────────────────────
+    const { parseFeatureStage, loadPartialBacklog } = await import('./feature-decomposition');
+    const featureIndex = parseFeatureStage(stage);
+    if (featureIndex !== null) {
+      const parts: string[] = [];
+      const [prdContent, archContent] = await Promise.all([
+        loadLatestArtifactContent(itemId, 'prd'),
+        loadLatestArtifactContent(itemId, 'architecture'),
+      ]);
+
+      // Load epic/features structure (try enriched first, then fallback to base)
+      let epicFeaturesContent = await loadLatestArtifactContent(itemId, 'epic_features_enriched');
+      if (!epicFeaturesContent) {
+        epicFeaturesContent = await loadLatestArtifactContent(itemId, 'epic_features');
+      }
+
+      if (!epicFeaturesContent) {
+        throw new Error(`No epic_features artifact found for feature-specific stage ${stage}`);
+      }
+
+      // Parse to get the target feature
+      const cleaned = epicFeaturesContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+      const jsonStart = cleaned.indexOf('{');
+      const jsonContent = jsonStart > 0 ? cleaned.slice(jsonStart) : cleaned;
+      const epicFeatures = JSON.parse(jsonContent);
+
+      if (!epicFeatures.features || featureIndex >= epicFeatures.features.length) {
+        throw new Error(`Feature index ${featureIndex} out of range for ${stage}`);
+      }
+
+      const targetFeature = epicFeatures.features[featureIndex];
+
+      // Load prior partial backlog (if exists)
+      const priorBacklog = await loadPartialBacklog(itemId);
+
+      // Build feature-specific context
+      if (prdContent) parts.push(`**PRD Document (use for FR traceability):**\n\n${prdContent}`);
+      if (archContent) parts.push(`**Architecture Document (reference specific components and APIs):**\n\n${archContent}`);
+      parts.push(`**Epic & Features Structure:**\n\n${epicFeaturesContent}`);
+
+      parts.push(`\n---\n\n**YOUR TASK:**\n\nDecompose ONLY the following feature into 6-8 stories or technical tasks. Do NOT decompose other features.\n\n**Feature to decompose:** ${targetFeature.title}\n**Phase:** ${targetFeature.phase}\n**Description:** ${targetFeature.description}\n**Acceptance Criteria:**\n${targetFeature.acceptanceCriteria?.map((ac: string, i: number) => `${i + 1}. ${ac}`).join('\n')}\n\n**Technical Context (from architect):**\n${targetFeature.technical ? JSON.stringify(targetFeature.technical, null, 2) : 'N/A'}`);
+
+      parts.push(`\n**Output format:**\n\nReturn the FULL backlog JSON structure (epic + all features), but ONLY populate stories for Feature ${featureIndex + 1} (${targetFeature.title}).\n\nFor other features, include them with their metadata but leave \`stories: []\` empty.`);
+
+      if (priorBacklog) {
+        parts.push(`\n**Prior work (preserve these):**\n\nThe following features have already been decomposed. Copy their stories exactly as-is:\n\n\`\`\`json\n${priorBacklog}\n\`\`\``);
+      }
+
+      itemContext = parts.join('\n\n');
     } else if (stage === 'pm_backlog') {
       const parts: string[] = [];
-      const prdPath = sessionManager.getLatestPrdArtifactPath(itemId);
-      if (prdPath) {
-        try {
-          const content = fs.readFileSync(prdPath, 'utf-8');
-          parts.push(`**PRD Document (use as source of requirements for the backlog):**\n\n${content}`);
-        } catch { /* ignore */ }
-      }
-      const archPath = getLatestArchitectureArtifactPath(itemId);
-      if (archPath) {
-        try {
-          const content = fs.readFileSync(archPath, 'utf-8');
-          parts.push(`**Architecture Document (reference specific services, APIs, and data models in stories):**\n\n${content}`);
-        } catch { /* ignore */ }
-      }
+      const [prdContent, archContent] = await Promise.all([
+        loadLatestArtifactContent(itemId, 'prd'),
+        loadLatestArtifactContent(itemId, 'architecture'),
+      ]);
+      if (prdContent) parts.push(`**PRD Document (use as source of requirements for the backlog):**\n\n${prdContent}`);
+      if (archContent) parts.push(`**Architecture Document (reference specific services, APIs, and data models in stories):**\n\n${archContent}`);
       if (parts.length > 0) itemContext = parts.join('\n\n---\n\n');
     } else if (stage === 'gtm_strategy') {
-      const parts: string[] = [];
-      const prdPath = sessionManager.getLatestPrdArtifactPath(itemId);
-      if (prdPath) {
-        try {
-          const content = fs.readFileSync(prdPath, 'utf-8');
-          parts.push(`**PRD Document (use as the source of truth for personas, scope, and success metrics — do not redefine these):**\n\n${content}`);
-        } catch { /* ignore */ }
+      const prdContent = await loadLatestArtifactContent(itemId, 'prd');
+      if (prdContent) {
+        itemContext = `**PRD Document (use as the source of truth for personas, scope, and success metrics — do not redefine these):**\n\n${prdContent}`;
       }
-      if (parts.length > 0) itemContext = parts.join('\n\n---\n\n');
     } else if (stage === 'feature_marketing') {
       const parts: string[] = [];
-      const prdPath = sessionManager.getLatestPrdArtifactPath(itemId);
-      if (prdPath) {
-        try {
-          const content = fs.readFileSync(prdPath, 'utf-8');
-          parts.push(`**PRD Document (use to verify that all copy references only approved capabilities):**\n\n${content}`);
-        } catch { /* ignore */ }
-      }
-      const gtmPath = getLatestArtifactPathByType(itemId, 'gtm');
-      if (gtmPath) {
-        try {
-          const content = fs.readFileSync(gtmPath, 'utf-8');
-          parts.push(`**GTM Strategy (use as the source of positioning, messaging hierarchy, and channel direction):**\n\n${content}`);
-        } catch { /* ignore */ }
-      }
+      const [prdContent, gtmContent] = await Promise.all([
+        loadLatestArtifactContent(itemId, 'prd'),
+        loadLatestArtifactContent(itemId, 'gtm'),
+      ]);
+      if (prdContent) parts.push(`**PRD Document (use to verify that all copy references only approved capabilities):**\n\n${prdContent}`);
+      if (gtmContent) parts.push(`**GTM Strategy (use as the source of positioning, messaging hierarchy, and channel direction):**\n\n${gtmContent}`);
       if (parts.length > 0) itemContext = parts.join('\n\n---\n\n');
-    } else if (stage === 'tech_refinement') {
+    } else if (stage === 'tech_refinement' || stage.match(/^tech_refinement_F\d+$/)) {
       const parts: string[] = [];
-      const backlogPath = getLatestArtifactPathByType(itemId, 'backlog');
-      if (backlogPath) {
-        try {
-          const content = fs.readFileSync(backlogPath, 'utf-8');
-          parts.push(`**PM Backlog (THIS IS YOUR PRIMARY INPUT — enrich every story with technical details, add platform fields, split oversized stories, enforce dependency ordering, add missing infra stories):**\n\n${content}`);
-        } catch { /* ignore */ }
+      const [backlogContent, archContent, prdContent] = await Promise.all([
+        loadLatestArtifactContent(itemId, 'backlog'),
+        loadLatestArtifactContent(itemId, 'architecture'),
+        loadLatestArtifactContent(itemId, 'prd'),
+      ]);
+
+      // Feature-specific tech refinement stage: provide only stories for this feature
+      if (stage.match(/^tech_refinement_F\d+$/)) {
+        const { parseFeatureStage } = await import('./feature-decomposition');
+        const featureIndex = parseFeatureStage(stage);
+        if (featureIndex !== null && backlogContent) {
+          try {
+            const backlog = JSON.parse(backlogContent);
+            if (backlog.features && backlog.features[featureIndex]) {
+              const targetFeature = backlog.features[featureIndex];
+              const featureOnlyBacklog = {
+                epic: backlog.epic,
+                features: [targetFeature]
+              };
+              parts.push(`**Feature ${featureIndex + 1} Stories (THIS IS YOUR PRIMARY INPUT — enrich these ${targetFeature.stories.length} stories only with technical details, add platform fields, split oversized stories, enforce dependency ordering, add missing infra stories):**\n\n${JSON.stringify(featureOnlyBacklog, null, 2)}`);
+            }
+          } catch (err: any) {
+            logger.warn(`Failed to parse backlog for feature-specific tech refinement: ${err.message}`);
+            // Fallback to full backlog
+            if (backlogContent) parts.push(`**PM Backlog (THIS IS YOUR PRIMARY INPUT — enrich every story with technical details, add platform fields, split oversized stories, enforce dependency ordering, add missing infra stories):**\n\n${backlogContent}`);
+          }
+        }
+      } else {
+        // Full tech_refinement stage (legacy single-stage flow)
+        if (backlogContent) parts.push(`**PM Backlog (THIS IS YOUR PRIMARY INPUT — enrich every story with technical details, add platform fields, split oversized stories, enforce dependency ordering, add missing infra stories):**\n\n${backlogContent}`);
       }
-      const archPath = getLatestArchitectureArtifactPath(itemId);
-      if (archPath) {
-        try {
-          const content = fs.readFileSync(archPath, 'utf-8');
-          parts.push(`**Architecture Document (use to populate specific component names, API endpoints, data model changes):**\n\n${content}`);
-        } catch { /* ignore */ }
-      }
-      const prdPath = sessionManager.getLatestPrdArtifactPath(itemId);
-      if (prdPath) {
-        try {
-          const content = fs.readFileSync(prdPath, 'utf-8');
-          parts.push(`**PRD Document (reference for FR traceability and NFR constraints):**\n\n${content}`);
-        } catch { /* ignore */ }
-      }
+
+      if (archContent) parts.push(`**Architecture Document (use to populate specific component names, API endpoints, data model changes):**\n\n${archContent}`);
+      if (prdContent) parts.push(`**PRD Document (reference for FR traceability and NFR constraints):**\n\n${prdContent}`);
       if (parts.length > 0) itemContext = parts.join('\n\n---\n\n');
-    } else if (stage === 'qa_engineer') {
+    } else if (stage === 'qa_engineer' || stage.match(/^qa_engineer_F\d+$/)) {
       const parts: string[] = [];
-      const prdPath = sessionManager.getLatestPrdArtifactPath(itemId);
-      if (prdPath) {
-        try {
-          const content = fs.readFileSync(prdPath, 'utf-8');
-          parts.push(`**PRD Document (use to trace every FR and acceptance criterion to test cases):**\n\n${content}`);
-        } catch { /* ignore */ }
+      const [prdContent, backlogContent] = await Promise.all([
+        loadLatestArtifactContent(itemId, 'prd'),
+        loadLatestArtifactContent(itemId, 'backlog'),
+      ]);
+
+      // Feature-specific QA stage: provide only stories for this feature
+      if (stage.match(/^qa_engineer_F\d+$/)) {
+        const { parseFeatureStage } = await import('./feature-decomposition');
+        const featureIndex = parseFeatureStage(stage);
+        if (featureIndex !== null && backlogContent) {
+          try {
+            const backlog = JSON.parse(backlogContent);
+            if (backlog.features && backlog.features[featureIndex]) {
+              const targetFeature = backlog.features[featureIndex];
+              const featureOnlyBacklog = {
+                epic: backlog.epic,
+                features: [targetFeature]
+              };
+              if (prdContent) parts.push(`**PRD Document (use to trace every FR and acceptance criterion to test cases):**\n\n${prdContent}`);
+              parts.push(`**Feature ${featureIndex + 1} Stories (create test cases for these ${targetFeature.stories.length} stories only — use story IDs like F${featureIndex + 1}.S1, F${featureIndex + 1}.S2, etc.):**\n\n${JSON.stringify(featureOnlyBacklog, null, 2)}`);
+            }
+          } catch (err: any) {
+            logger.warn(`Failed to parse backlog for feature-specific QA: ${err.message}`);
+            // Fallback to full backlog
+            if (prdContent) parts.push(`**PRD Document (use to trace every FR and acceptance criterion to test cases):**\n\n${prdContent}`);
+            if (backlogContent) parts.push(`**Backlog (use story IDs in format F1.S1, F2.S3, etc. to populate story_ref field — stories are indexed by their position in each feature's stories array):**\n\n${backlogContent}`);
+          }
+        }
+      } else {
+        // Full QA stage (legacy single-stage flow)
+        if (prdContent) parts.push(`**PRD Document (use to trace every FR and acceptance criterion to test cases):**\n\n${prdContent}`);
+        if (backlogContent) parts.push(`**Backlog (use story IDs in format F1.S1, F2.S3, etc. to populate story_ref field — stories are indexed by their position in each feature's stories array):**\n\n${backlogContent}`);
       }
-      const backlogPath = getLatestArtifactPathByType(itemId, 'backlog');
-      if (backlogPath) {
-        try {
-          const content = fs.readFileSync(backlogPath, 'utf-8');
-          parts.push(`**Backlog (use story IDs in format F1.S1, F2.S3, etc. to populate story_ref field — stories are indexed by their position in each feature's stories array):**\n\n${content}`);
-        } catch { /* ignore */ }
-      }
+
       if (parts.length > 0) itemContext = parts.join('\n\n---\n\n');
     } else if (stage === 'prototype') {
       // Load design system context: try Figma MCP first, fall back to local CSS tokens
@@ -475,7 +491,7 @@ export async function runAutonomousStage(
       });
       const designSystem = figma || await loadLocalDesignSystem();
       // Load prior workflow artifacts (research, PRD, architecture) as reference
-      const artifacts = loadWorkflowArtifacts(itemId);
+      const artifacts = await loadWorkflowArtifacts(itemId);
       const parts: string[] = [];
       if (designSystem) parts.push(`## Design System\n\n${designSystem}`);
       if (artifacts) parts.push(`## Workflow Artifacts\n\nUse these documents to understand what to prototype:\n\n${artifacts}`);
@@ -514,48 +530,67 @@ export async function runAutonomousStage(
         ];
 
     let fullResponse = '';
-    let lastReportedSection = '';
     const startTime = Date.now();
-    let lastProgressTime = startTime;
 
-    for await (const chunk of agent.streamResponse(systemPrompt, messages, stageModel, specialistTokenCallback, STAGE_MAX_OUTPUT_TOKENS[stage], skillTools, abortController.signal)) {
-      fullResponse += chunk;
+    if (demoFixture !== null) {
+      // ── Demo fixture injection — simulate realistic progress events ───────
+      if (stage === 'analyst') {
+        insertEvent(workflowId, 'stage_progress', stage, 'Writing section 1: Executive Summary...');
+        await demoSleep(4_500);
+        insertEvent(workflowId, 'stage_progress', stage, 'Generating... 5s elapsed, 0.9k chars written');
+        await demoSleep(3_500);
+        insertEvent(workflowId, 'stage_progress', stage, 'Writing section 2: Market Analysis...');
+        await demoSleep(2_000);
+      } else {
+        const delay = DEMO_STAGE_DELAY_MS[stage] ?? 2_000;
+        insertEvent(workflowId, 'stage_progress', stage, `Running ${stage}...`);
+        await demoSleep(delay);
+      }
+      fullResponse = demoFixture;
+    } else {
+      // ── Real LLM streaming ────────────────────────────────────────────────
+      let lastReportedSection = '';
+      let lastProgressTime = startTime;
 
-      // Detect progress and emit events
-      const now = Date.now();
-      if (now - lastProgressTime > 3000) {  // Throttle to max once every 3s
-        if (stage === 'prototype') {
-          // For JSON output, track progress by counting file entries
-          const fileMatches = fullResponse.match(/"[^"]+\.tsx?"\s*:/g);
-          const fileCount = fileMatches ? fileMatches.length : 0;
-          if (fileCount > 0) {
-            const countStr = `${fileCount} file(s)`;
-            if (countStr !== lastReportedSection) {
-              lastReportedSection = countStr;
+      for await (const chunk of agent.streamResponse(systemPrompt, messages, stageModel, specialistTokenCallback, STAGE_MAX_OUTPUT_TOKENS[stage], skillTools, abortController.signal)) {
+        fullResponse += chunk;
+
+        // Detect progress and emit events
+        const now = Date.now();
+        if (now - lastProgressTime > 3000) {  // Throttle to max once every 3s
+          if (stage === 'prototype') {
+            // For JSON output, track progress by counting file entries
+            const fileMatches = fullResponse.match(/"[^"]+\.tsx?"\s*:/g);
+            const fileCount = fileMatches ? fileMatches.length : 0;
+            if (fileCount > 0) {
+              const countStr = `${fileCount} file(s)`;
+              if (countStr !== lastReportedSection) {
+                lastReportedSection = countStr;
+                insertEvent(workflowId, 'stage_progress', stage,
+                  `Generating prototype... ${countStr} so far`);
+                lastProgressTime = now;
+              }
+            }
+          } else {
+            const sectionMatch = fullResponse.match(/^## ([^\n]+)/gm);
+            if (sectionMatch && sectionMatch.length > 0) {
+              const latestSection = sectionMatch[sectionMatch.length - 1].replace(/^## /, '').trim();
+              if (latestSection !== lastReportedSection) {
+                lastReportedSection = latestSection;
+                const sectionCount = sectionMatch.length;
+                insertEvent(workflowId, 'stage_progress', stage,
+                  `Writing section ${sectionCount}: ${latestSection}...`);
+                lastProgressTime = now;
+              }
+            }
+            // Heartbeat: still on same section and been silent for 45s — prove the stage is alive
+            if (now - lastProgressTime > 45_000) {
+              const elapsedSec = Math.round((now - startTime) / 1000);
+              const kChars = (fullResponse.length / 1000).toFixed(1);
               insertEvent(workflowId, 'stage_progress', stage,
-                `Generating prototype... ${countStr} so far`);
+                `Generating... ${elapsedSec}s elapsed, ${kChars}k chars written`);
               lastProgressTime = now;
             }
-          }
-        } else {
-          const sectionMatch = fullResponse.match(/^## ([^\n]+)/gm);
-          if (sectionMatch && sectionMatch.length > 0) {
-            const latestSection = sectionMatch[sectionMatch.length - 1].replace(/^## /, '').trim();
-            if (latestSection !== lastReportedSection) {
-              lastReportedSection = latestSection;
-              const sectionCount = sectionMatch.length;
-              insertEvent(workflowId, 'stage_progress', stage,
-                `Writing section ${sectionCount}: ${latestSection}...`);
-              lastProgressTime = now;
-            }
-          }
-          // Heartbeat: still on same section and been silent for 45s — prove the stage is alive
-          if (now - lastProgressTime > 45_000) {
-            const elapsedSec = Math.round((now - startTime) / 1000);
-            const kChars = (fullResponse.length / 1000).toFixed(1);
-            insertEvent(workflowId, 'stage_progress', stage,
-              `Generating... ${elapsedSec}s elapsed, ${kChars}k chars written`);
-            lastProgressTime = now;
           }
         }
       }
@@ -564,11 +599,6 @@ export async function runAutonomousStage(
     const elapsed = Math.round((Date.now() - startTime) / 1000);
     logger.info(`Autonomous stage "${stage}" LLM streaming complete (${elapsed}s, ${fullResponse.length} chars)`);
 
-    // Write artifact to disk
-    const artifactDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, stageMap.mode, 'artifacts');
-    await fsAsync.mkdir(artifactDir, { recursive: true });
-    const ext = (stage === 'pm_backlog' || stage === 'prototype' || stage === 'tech_refinement' || stage === 'qa_engineer') ? 'json' : 'md';
-    const artifactPath = path.join(artifactDir, `${Date.now()}-${stage}.${ext}`);
     // Clean up LLM output before saving
     let artifactContent: string;
     if (stage === 'prototype') {
@@ -608,23 +638,207 @@ export async function runAutonomousStage(
         ? fullResponse.slice(match.index)
         : fullResponse;
     }
-    await fsAsync.writeFile(artifactPath, artifactContent, 'utf-8');
 
-    // Insert artifact record (type must match what getLatestPrdArtifact / getLatestAnalystArtifact query for)
-    const artifactType = STAGE_ARTIFACT_TYPE[stage] ?? stage;
-    const artifactResult = db.prepare(`
-      INSERT INTO artifacts (session_id, type, file_path, skill_version_id, created_at)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(sessionId, artifactType, artifactPath, skillVersionId, Date.now());
-    const artifactId = artifactResult.lastInsertRowid as number;
+    // ── Feature-specific stage: merge with prior backlog ────────────────────────
+    const { isFeatureStage, loadPartialBacklog: loadPartialBacklogForMerge } = await import('./feature-decomposition');
+    if (isFeatureStage(stage)) {
+      // Parse the new backlog output
+      const stripped = artifactContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+      const jsonStart = stripped.indexOf('{');
+      const jsonContent = jsonStart > 0 ? stripped.slice(jsonStart) : stripped;
 
-    // If this is a revision run, compute and save a diff of what changed
+      try {
+        const newBacklog = JSON.parse(jsonContent);
+        const priorBacklog = await loadPartialBacklogForMerge(itemId);
+
+        if (priorBacklog) {
+          // Merge: copy stories from new into the cumulative structure
+          const prior = JSON.parse(priorBacklog);
+          for (let i = 0; i < prior.features.length; i++) {
+            if (newBacklog.features[i] && newBacklog.features[i].stories && newBacklog.features[i].stories.length > 0) {
+              prior.features[i].stories = newBacklog.features[i].stories;
+            }
+          }
+          artifactContent = await injectSprintEstimates(prior);
+        } else {
+          // First feature — just apply sprint estimates
+          artifactContent = await injectSprintEstimates(newBacklog);
+        }
+      } catch (err: any) {
+        logger.error(`Failed to merge feature backlog for ${stage}: ${err.message}`);
+      }
+    }
+
+    // Save artifact — ONLY story_decomposition stages save locally (they accumulate across features).
+    // All other stages push to their destination immediately:
+    //   - Document stages (analyst, pm_prd, solution_architect, gtm_strategy, feature_marketing, prototype) → Azure Wiki
+    //   - ADO-backed stages (pm_backlog, epic_feature_planner, qa_engineer, tech_refinement) → local + push to ADO
+
+    // Feature-specific stages (story_decomposition_F1, F2, etc.) use 'backlog' as artifact type
+    // QA feature-specific stages (qa_engineer_F1, F2, etc.) use 'qa_tests' as artifact type
+    // Tech refinement feature-specific stages (tech_refinement_F1, F2, etc.) use 'backlog' as artifact type
+    const isQaFeatureStage = stage.match(/^qa_engineer_F\d+$/);
+    const isTechRefinementFeatureStage = stage.match(/^tech_refinement_F\d+$/);
+    const artifactType = isFeatureStage(stage) ? 'backlog'
+      : isQaFeatureStage ? 'qa_tests'
+      : isTechRefinementFeatureStage ? 'backlog'
+      : (STAGE_ARTIFACT_TYPE[stage] ?? stage);
+    const localOnlyStages = new Set(['story_decomposition']);
+    const adoBackedStages = new Set(['pm_backlog', 'epic_feature_planner', 'qa_engineer', 'tech_refinement']);
+
+    let artifactId: number;
+    if (localOnlyStages.has(stage) || isFeatureStage(stage) || isQaFeatureStage || isTechRefinementFeatureStage) {
+      // Story decomposition, QA, and tech refinement feature stages: local only (accumulate/append)
+      artifactId = await saveLocalArtifact(sessionId, stage, artifactContent, itemId, skillVersionId);
+    } else if (adoBackedStages.has(stage)) {
+      // ADO-backed stages: save locally first, then push to ADO (ADO push happens below)
+      artifactId = await saveLocalArtifact(sessionId, stage, artifactContent, itemId, skillVersionId);
+    } else {
+      // Document stages: push to Azure Wiki immediately
+      artifactId = await saveMainArtifact(sessionId, stage, artifactContent, itemId, skillVersionId);
+    }
+
+    // ── Special handling for solution_architect: extract tech-enriched JSON ──────
+    if (stage === 'solution_architect') {
+      // Look for the ## Technical Feature Metadata section with a JSON code block
+      const jsonMatch = fullResponse.match(/## Technical Feature Metadata\s*\n\s*```json\s*\n([\s\S]*?)\n```/);
+      if (jsonMatch) {
+        const enrichedJson = jsonMatch[1].trim();
+        try {
+          // Validate it's parseable
+          JSON.parse(enrichedJson);
+          // Save as a separate artifact (local storage, type: epic_features_enriched)
+          await saveLocalArtifact(sessionId, 'epic_features_enriched', enrichedJson, itemId, skillVersionId);
+          logger.info(`Extracted and saved tech-enriched epic/features JSON from architect output`);
+        } catch (err: any) {
+          logger.warn(`Failed to parse tech-enriched JSON from architect: ${err.message}`);
+        }
+      } else {
+        logger.warn(`No ## Technical Feature Metadata section found in architect output — story decomposition will use non-enriched features`);
+      }
+    }
+
+    // ── Special handling for epic_feature_planner & story_decomposition: strip code fences and pretty-print ──
+    if (stage === 'epic_feature_planner' || stage === 'story_decomposition') {
+      const stripped = artifactContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+      const jsonStart = stripped.indexOf('{');
+      const jsonContent = jsonStart > 0 ? stripped.slice(jsonStart) : stripped;
+      try {
+        if (stage === 'story_decomposition') {
+          // Apply sprint estimation to story_decomposition output (same as pm_backlog)
+          const parsed = JSON.parse(jsonContent);
+          artifactContent = await injectSprintEstimates(parsed);
+        } else {
+          // epic_feature_planner: ensure all features have empty stories arrays for frontend compatibility
+          const parsed = JSON.parse(jsonContent);
+          if (parsed.features && Array.isArray(parsed.features)) {
+            parsed.features = parsed.features.map((f: any) => ({
+              ...f,
+              stories: f.stories ?? [],
+            }));
+          }
+          artifactContent = JSON.stringify(parsed, null, 2);
+        }
+        // Update the artifact file in-place (don't create a new artifact row)
+        const artifactRow = db.prepare<[number], { file_path: string }>(
+          'SELECT file_path FROM artifacts WHERE id = ?'
+        ).get(artifactId);
+        if (artifactRow) {
+          await fsAsync.writeFile(artifactRow.file_path, artifactContent, 'utf-8');
+          logger.info(`Updated artifact file in-place: ${artifactRow.file_path}`);
+        }
+      } catch (err: any) {
+        logger.warn(`Failed to parse JSON for ${stage}: ${err.message}`);
+      }
+    }
+
+    // After saving backlog/QA/epic_features artifacts, auto-push to ADO immediately.
+    // Capture the resulting URL for use in stage_completed events.
+    let adoUrl: string | null = null;
+    if (stage === 'pm_backlog') {
+      // pm_backlog pushes the full backlog (legacy single-stage flow without feature decomposition)
+      adoUrl = await pushBacklogToAdo(workflowId, itemId).catch(err => {
+        logger.error(`pushBacklogToAdo failed for ${stage}: ${err.message}`);
+        return null;
+      });
+    } else if (stage === 'tech_refinement' || stage.match(/^tech_refinement_F\d+$/)) {
+      // tech_refinement only enriches stories with technical details — stories already pushed during feature decomposition
+      // Just fetch the epic URL from existing mappings for the stage_completed event
+      try {
+        const epicMapping = db.prepare<[string], { ado_url: string }>(
+          `SELECT ado_url FROM ado_work_item_map
+           WHERE workflow_id = ? AND ado_type = 'epic' AND local_key = 'epic'
+           LIMIT 1`
+        ).get(workflowId);
+        if (epicMapping) {
+          adoUrl = epicMapping.ado_url;
+        }
+      } catch (err: any) {
+        logger.error(`Failed to fetch epic URL for tech_refinement event: ${err.message}`);
+      }
+    } else if (stage === 'qa_engineer' || stage.match(/^qa_engineer_F\d+$/)) {
+      // Both full QA and feature-specific QA push to ADO Test Plans
+      // Feature-specific stages push test cases incrementally (linked to that feature's stories only)
+      adoUrl = await pushTestPlanToAdo(workflowId, itemId).catch(err => {
+        logger.error(`pushTestPlanToAdo failed for ${stage}: ${err.message}`);
+        return null;
+      });
+    } else if (stage === 'epic_feature_planner') {
+      // Push epic + features to ADO immediately after stage completes
+      try {
+        const { appConfig } = require('../config/app-config');
+        if (appConfig.integrations.workItems === 'ado') {
+          logger.info(`[EPIC PUSH] Starting ADO push for workflow ${workflowId}, item ${itemId}, artifact ${artifactId}`);
+          const { pushEpicAndFeaturesToADO } = await import('./feature-decomposition');
+          const result = await pushEpicAndFeaturesToADO(workflowId);
+          logger.info(`[EPIC PUSH] Created epic #${result.epicId} + ${result.featureIds.length} features in ADO`);
+          // Set adoUrl to the epic URL for the stage_completed event
+          const { AzureDevOpsClient } = await import('../integrations/azure-devops');
+          const client = new AzureDevOpsClient();
+          adoUrl = client.getEpicUrl(result.epicId);
+          logger.info(`[EPIC PUSH] Captured ADO URL for event: ${adoUrl}`);
+        }
+      } catch (err: any) {
+        logger.error(`pushEpicAndFeaturesToADO failed: ${err.message}`);
+        logger.error(`[EPIC PUSH ERROR] Full error: ${err.stack}`);
+        // Don't block workflow progression on ADO push failure
+      }
+    } else if (stage.match(/^story_decomposition_F\d+$/)) {
+      // Feature-specific stage - get the feature URL from ADO mappings
+      try {
+        const { appConfig } = require('../config/app-config');
+        if (appConfig.integrations.workItems === 'ado') {
+          const { parseFeatureStage } = await import('./feature-decomposition');
+          const featureIndex = parseFeatureStage(stage);
+          if (featureIndex !== null) {
+            // Fetch the feature URL from ado_work_item_map
+            const featureMapping = db.prepare<[string, string], { ado_url: string }>(
+              `SELECT ado_url FROM ado_work_item_map
+               WHERE workflow_id = ? AND ado_type = 'feature' AND local_key = ?
+               LIMIT 1`
+            ).get(workflowId, `F${featureIndex + 1}`);
+
+            if (featureMapping) {
+              adoUrl = featureMapping.ado_url;
+              logger.info(`[FEATURE STAGE] Captured feature URL for event: ${adoUrl}`);
+            }
+          }
+        }
+      } catch (err: any) {
+        logger.error(`Failed to get feature URL for ${stage}: ${err.message}`);
+        // Don't block workflow progression
+      }
+    }
+
+    // If this is a revision run, compute and save a diff locally (internal artifact)
     let diffArtifactId: number | null = null;
     if (priorDraftContent) {
       try {
         const stageLabel = STAGE_ARTIFACT_TYPE[stage] ?? stage;
         const diffText = computeRevisionDiff(priorDraftContent, artifactContent, stageLabel);
-        const diffPath = path.join(artifactDir, `${Date.now()}-${stage}-diff.md`);
+        const diffDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, stageMap.mode, 'artifacts');
+        await fsAsync.mkdir(diffDir, { recursive: true });
+        const diffPath = path.join(diffDir, `${Date.now()}-${stage}-diff.md`);
         await fsAsync.writeFile(diffPath, diffText, 'utf-8');
         const diffResult = db.prepare(`
           INSERT INTO artifacts (session_id, type, file_path, created_at)
@@ -639,19 +853,40 @@ export async function runAutonomousStage(
 
     // Log stage completion event with excerpt
     const excerpt = fullResponse.slice(0, 200).replace(/\n+/g, ' ').trim();
-    const stageLabel = stage === 'analyst' ? 'Research' : stage === 'pm_prd' ? 'PRD' : stage === 'solution_architect' ? 'Architecture' : stage === 'prototype' ? 'Prototype' : stage === 'pm_backlog' ? 'Backlog' : stage === 'gtm_strategy' ? 'GTM Strategy' : stage === 'feature_marketing' ? 'Feature Marketing' : stage === 'tech_refinement' ? 'Technical Refinement' : stage === 'qa_engineer' ? 'QA Test Suite' : stage;
+    // Map stage names to display labels (including dynamic feature stages)
+    let stageLabel = stage;
+    if (stage === 'analyst') stageLabel = 'Research';
+    else if (stage === 'pm_prd') stageLabel = 'PRD';
+    else if (stage === 'epic_feature_planner') stageLabel = 'Epic & Features';
+    else if (stage === 'solution_architect') stageLabel = 'Architecture';
+    else if (stage === 'prototype') stageLabel = 'Prototype';
+    else if (stage === 'pm_backlog') stageLabel = 'Backlog';
+    else if (stage === 'gtm_strategy') stageLabel = 'GTM Strategy';
+    else if (stage === 'feature_marketing') stageLabel = 'Feature Marketing';
+    else if (stage === 'tech_refinement' || stage.match(/^tech_refinement_F\d+$/)) stageLabel = 'Technical Refinement';
+    else if (stage === 'qa_engineer' || stage.match(/^qa_engineer_F\d+$/)) stageLabel = 'QA Test Suite';
+    else if (stage.match(/^story_decomposition_F\d+$/)) stageLabel = 'Story Decomposition';
+
+    // Fetch the wiki URL for wiki-backed artifacts (null for ADO-backed stages like epic_feature_planner, pm_backlog, qa_engineer, qa_engineer_F*, story_decomposition_F*, tech_refinement_F*)
+    const noWikiStages = new Set(['epic_feature_planner', 'pm_backlog', 'qa_engineer', 'tech_refinement']);
+    const isStoryFeatureStage = stage.match(/^story_decomposition_F\d+$/);
+    const wikiUrl = (noWikiStages.has(stage) || isQaFeatureStage || isStoryFeatureStage || isTechRefinementFeatureStage) ? null : (db.prepare<[number], { external_url: string | null }>(
+      'SELECT external_url FROM artifacts WHERE id = ?'
+    ).get(artifactId))?.external_url ?? null;
 
     // ── Inline critic review for specialist stages ────────────────────────────
     // After each specialist produces an artifact, the critic reviews it.
     // If issues are found, auto-revise once. If still unresolved,
     // pause and ask the human for input.
-    const specialistStages = new Set(['analyst', 'pm_prd', 'solution_architect', 'prototype', 'pm_backlog', 'gtm_strategy', 'feature_marketing', 'qa_engineer', 'tech_refinement']);
+    const specialistStages = new Set(['analyst', 'pm_prd', 'epic_feature_planner', 'solution_architect', 'prototype', 'pm_backlog', 'gtm_strategy', 'feature_marketing', 'qa_engineer', 'tech_refinement']);
+    const isSpecialistStage = specialistStages.has(stage) || stage.match(/^(story_decomposition|qa_engineer|tech_refinement)_F\d+$/);
     const policies = loadGlobalPolicies();
     const criticEnabled = policies.get('require_critic_review') !== 'false' && policies.get('require_critic_review') !== (false as any);
 
-    if (specialistStages.has(stage) && criticEnabled && !skipCritic) {
+    // Skip critic when a demo fixture was used — fixture content is pre-approved
+    if (isSpecialistStage && criticEnabled && !skipCritic && demoFixture === null) {
       insertEvent(workflowId, 'stage_completed', stage, `${stageLabel} draft complete.`,
-        { excerpt, artifact_id: artifactId });
+        { excerpt, artifact_id: artifactId, ...(wikiUrl ? { wiki_url: wikiUrl } : {}), ...(adoUrl ? { ado_url: adoUrl } : {}) });
 
       // Brief pause before critic to reduce back-to-back API rate limit pressure
       await demoSleep(8_000);
@@ -665,74 +900,41 @@ export async function runAutonomousStage(
       // feature_marketing: needs PRD + GTM strategy (copy scope verification)
       let criticReferenceDocuments: string | undefined;
       if (stage === 'tech_refinement') {
+        const [backlogContent, prdContent] = await Promise.all([
+          loadLatestArtifactContent(itemId, 'backlog'),
+          loadLatestArtifactContent(itemId, 'prd'),
+        ]);
         const refParts: string[] = [];
-        const backlogPath = getLatestArtifactPathByType(itemId, 'backlog');
-        if (backlogPath) {
-          try {
-            const content = fs.readFileSync(backlogPath, 'utf-8');
-            refParts.push(`### Original PM Backlog\n\n${content}`);
-          } catch { /* ignore */ }
-        }
-        const prdPath = sessionManager.getLatestPrdArtifactPath(itemId);
-        if (prdPath) {
-          try {
-            const content = fs.readFileSync(prdPath, 'utf-8');
-            refParts.push(`### PRD Document\n\n${content}`);
-          } catch { /* ignore */ }
-        }
+        if (backlogContent) refParts.push(`### Original PM Backlog\n\n${backlogContent}`);
+        if (prdContent) refParts.push(`### PRD Document\n\n${prdContent}`);
         if (refParts.length > 0) criticReferenceDocuments = refParts.join('\n\n---\n\n');
       } else if (stage === 'pm_backlog' || stage === 'solution_architect' || stage === 'prototype' || stage === 'gtm_strategy') {
+        const needsArch = stage === 'pm_backlog' || stage === 'prototype';
+        const [prdContent, archContent] = await Promise.all([
+          loadLatestArtifactContent(itemId, 'prd'),
+          needsArch ? loadLatestArtifactContent(itemId, 'architecture') : Promise.resolve(null),
+        ]);
         const refParts: string[] = [];
-        const prdPath = sessionManager.getLatestPrdArtifactPath(itemId);
-        if (prdPath) {
-          try {
-            const content = fs.readFileSync(prdPath, 'utf-8');
-            refParts.push(`### PRD Document\n\n${content}`);
-          } catch { /* ignore */ }
-        }
-        if (stage === 'pm_backlog' || stage === 'prototype') {
-          const archPath = getLatestArchitectureArtifactPath(itemId);
-          if (archPath) {
-            try {
-              const content = fs.readFileSync(archPath, 'utf-8');
-              refParts.push(`### Architecture Document\n\n${content}`);
-            } catch { /* ignore */ }
-          }
-        }
+        if (prdContent) refParts.push(`### PRD Document\n\n${prdContent}`);
+        if (archContent) refParts.push(`### Architecture Document\n\n${archContent}`);
         if (refParts.length > 0) criticReferenceDocuments = refParts.join('\n\n---\n\n');
       } else if (stage === 'feature_marketing') {
+        const [prdContent, gtmContent] = await Promise.all([
+          loadLatestArtifactContent(itemId, 'prd'),
+          loadLatestArtifactContent(itemId, 'gtm'),
+        ]);
         const refParts: string[] = [];
-        const prdPath = sessionManager.getLatestPrdArtifactPath(itemId);
-        if (prdPath) {
-          try {
-            const content = fs.readFileSync(prdPath, 'utf-8');
-            refParts.push(`### PRD Document\n\n${content}`);
-          } catch { /* ignore */ }
-        }
-        const gtmPath = getLatestArtifactPathByType(itemId, 'gtm');
-        if (gtmPath) {
-          try {
-            const content = fs.readFileSync(gtmPath, 'utf-8');
-            refParts.push(`### GTM Strategy\n\n${content}`);
-          } catch { /* ignore */ }
-        }
+        if (prdContent) refParts.push(`### PRD Document\n\n${prdContent}`);
+        if (gtmContent) refParts.push(`### GTM Strategy\n\n${gtmContent}`);
         if (refParts.length > 0) criticReferenceDocuments = refParts.join('\n\n---\n\n');
       } else if (stage === 'qa_engineer') {
+        const [prdContent, backlogContent] = await Promise.all([
+          loadLatestArtifactContent(itemId, 'prd'),
+          loadLatestArtifactContent(itemId, 'backlog'),
+        ]);
         const refParts: string[] = [];
-        const prdPath = sessionManager.getLatestPrdArtifactPath(itemId);
-        if (prdPath) {
-          try {
-            const content = fs.readFileSync(prdPath, 'utf-8');
-            refParts.push(`### PRD Document\n\n${content}`);
-          } catch { /* ignore */ }
-        }
-        const backlogPath = getLatestArtifactPathByType(itemId, 'backlog');
-        if (backlogPath) {
-          try {
-            const content = fs.readFileSync(backlogPath, 'utf-8');
-            refParts.push(`### Backlog\n\n${content}`);
-          } catch { /* ignore */ }
-        }
+        if (prdContent) refParts.push(`### PRD Document\n\n${prdContent}`);
+        if (backlogContent) refParts.push(`### Backlog\n\n${backlogContent}`);
         if (refParts.length > 0) criticReferenceDocuments = refParts.join('\n\n---\n\n');
       }
 
@@ -893,6 +1095,70 @@ export async function runAutonomousStage(
       return;
     }
 
+    // ── Mock critic for PRD in demo mode ──────────────────────────────────────
+    // Demonstrates the revise → auto-revise → approve flow without any LLM calls.
+    if (demoFixture !== null && stage === 'pm_prd') {
+      insertEvent(workflowId, 'stage_completed', stage, `${stageLabel} draft complete.`,
+        { excerpt, artifact_id: artifactId, ...(wikiUrl ? { wiki_url: wikiUrl } : {}), ...(adoUrl ? { ado_url: adoUrl } : {}) });
+      await demoSleep(600);
+      insertEvent(workflowId, 'stage_progress', stage, 'Running quality review...');
+      await demoSleep(1_800);
+
+      const reviseDetails = {
+        critic_verdict: 'revise',
+        issue_count: 1,
+        critical_issues: 0,
+        major_issues: 1,
+        issues_summary: '[MAJOR] Counter-metrics table missing — document should include measurable failure thresholds alongside success metrics to enable informed rollback decisions',
+        inline_review: true,
+        reviewed_stage: stage,
+      };
+      insertEvent(workflowId, 'critic_verdict', stage,
+        'Quality review flagged issues. Auto-revising (attempt 1/1).', reviseDetails);
+      await demoSleep(500);
+      insertEvent(workflowId, 'stage_progress', stage, 'Auto-revising: addressing quality review feedback...');
+      await demoSleep(1_600);
+      insertEvent(workflowId, 'stage_progress', stage, 'Running quality review...');
+      await demoSleep(1_800);
+
+      const approveDetails = {
+        critic_verdict: 'approve',
+        issue_count: 0,
+        critical_issues: 0,
+        major_issues: 0,
+        issues_summary: '',
+        inline_review: true,
+        reviewed_stage: stage,
+      };
+      const now = Date.now();
+      const checkpointStatusMock = autoApprove ? 'approved' : 'pending';
+      stmts.insertCheckpoint.run(
+        workflowId, stage, artifactId, checkpointStatusMock,
+        JSON.stringify({ session_id: sessionId, autonomous: true, critic: approveDetails, auto_approved: autoApprove }),
+        now
+      );
+      insertEvent(workflowId, 'critic_verdict', stage,
+        'Quality review passed — no issues found. Approve to proceed.', approveDetails);
+
+      if (autoApprove) {
+        logger.info(`[DEMO] Mock PRD critic approved — auto-advancing`);
+        workflowOps.advanceStage(workflowId).catch(err => {
+          if (err.message?.startsWith('WORKFLOW_COMPLETE')) {
+            logger.info(`Workflow ${workflowId} completed after demo PRD critic`);
+          } else {
+            logger.error(`Auto-advance after demo PRD critic failed: ${err.message}`);
+            stmts.updateWorkflowStatus.run('paused_at_checkpoint', Date.now(), workflowId);
+          }
+        });
+      } else {
+        stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
+        const titleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(itemId);
+        if (titleRow) notifyCheckpointPending(titleRow.title, stage);
+        logger.info(`[DEMO] Mock PRD critic approved — checkpoint pending human review`);
+      }
+      return;
+    }
+
     // ── Non-critic path (critic disabled or non-specialist stage) ─────────────
     const checkpointStatus = autoApprove ? 'approved' : 'pending';
     const now = Date.now();
@@ -906,7 +1172,7 @@ export async function runAutonomousStage(
         { specialist: specialistTokenData, ...(criticTokenData ? { critic: criticTokenData } : {}) });
     }
     insertEvent(workflowId, 'stage_completed', stage, `${stageLabel} complete.`,
-      { excerpt, artifact_id: artifactId });
+      { excerpt, artifact_id: artifactId, ...(wikiUrl ? { wiki_url: wikiUrl } : {}), ...(adoUrl ? { ado_url: adoUrl } : {}) });
 
     if (autoApprove) {
       logger.info(`Autonomous stage "${stage}" complete (silent) — advancing to next stage`);

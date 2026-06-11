@@ -208,9 +208,20 @@ function EventRow({ msg }: { msg: CoordinatorMessage }) {
   const title = lines[0] ?? '';
   const detailLines = lines.slice(1).filter(l => !l.startsWith('→ '));
   const detail = detailLines.join(' ').slice(0, 120);
-  const boardUrl = msg.eventType === 'board_synced'
-    ? (lines.find(l => l.startsWith('→ '))?.replace(/^→\s*/, '') ?? null)
-    : null;
+
+  // Extract URL from line starting with →
+  // Handle both formats: "→ url" and "→ Label: url"
+  const urlLine = lines.find(l => l.startsWith('→ '))?.replace(/^→\s*/, '') ?? null;
+  const externalUrl = urlLine?.includes('https://')
+    ? urlLine.substring(urlLine.indexOf('https://'))
+    : urlLine;
+  const adoStages = new Set(['pm_backlog', 'tech_refinement', 'qa_engineer', 'epic_feature_planner']);
+  const isFeatureStage = msg.stage?.startsWith('story_decomposition_F') ?? false;
+  const isQaFeatureStage = msg.stage?.startsWith('qa_engineer_F') ?? false;
+  const isTechFeatureStage = msg.stage?.startsWith('tech_refinement_F') ?? false;
+  const isWikiLink = msg.eventType === 'stage_completed' && !!externalUrl && !adoStages.has(msg.stage ?? '') && !isFeatureStage && !isQaFeatureStage && !isTechFeatureStage;
+  const isAdoStageLink = msg.eventType === 'stage_completed' && !!externalUrl && (adoStages.has(msg.stage ?? '') || isFeatureStage || isQaFeatureStage || isTechFeatureStage);
+  const isAdoLink = msg.eventType === 'board_synced' && !!externalUrl;
 
   return (
     <div className={`flex items-center gap-2 px-2 py-1.5 rounded transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/20 ${isProgress ? 'opacity-60' : ''}`}>
@@ -225,12 +236,38 @@ function EventRow({ msg }: { msg: CoordinatorMessage }) {
           <span className="text-xs text-slate-700 dark:text-slate-300 leading-tight font-mono truncate">{title}</span>
           <span className="flex-shrink-0 text-[10px] text-slate-400 dark:text-slate-700 font-mono">{formatTs(msg.timestamp)}</span>
         </div>
-        {detail && !boardUrl && (
+        {detail && !externalUrl && (
           <p className="text-[11px] text-slate-500 dark:text-slate-600 font-mono mt-0.5 leading-relaxed truncate">{detail}</p>
         )}
-        {boardUrl && (
+        {isWikiLink && (
           <a
-            href={boardUrl}
+            href={externalUrl!}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 mt-0.5 text-[11px] text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 font-mono underline underline-offset-2 transition-colors"
+          >
+            open in Azure Wiki ↗
+          </a>
+        )}
+        {isAdoStageLink && (
+          <a
+            href={externalUrl!}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 mt-0.5 text-[11px] text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 font-mono underline underline-offset-2 transition-colors"
+          >
+            {msg.stage === 'epic_feature_planner'
+              ? 'Open in Azure Boards ↗'
+              : isFeatureStage
+              ? 'View Feature in Azure Boards ↗'
+              : (msg.stage === 'qa_engineer' || isQaFeatureStage)
+              ? 'View Test Plan in Azure Test Plans ↗'
+              : 'Open in Azure DevOps ↗'}
+          </a>
+        )}
+        {isAdoLink && (
+          <a
+            href={externalUrl!}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 mt-0.5 text-[11px] text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 font-mono underline underline-offset-2 transition-colors"
@@ -675,17 +712,6 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                       ) : '↺ restart from beginning'}
                     </button>
                   )}
-                  {!isCancelled && (() => {
-                    const boardMsg = coordinatorMessages.find(m => m.eventType === 'board_synced');
-                    const adoUrl = boardMsg?.content.split('\n').find(l => l.startsWith('→ '))?.replace(/^→\s*/, '');
-                    if (!adoUrl) return null;
-                    return (
-                      <a href={adoUrl} target="_blank" rel="noopener noreferrer"
-                        className="text-[11px] font-mono text-blue-600 dark:text-blue-400 hover:underline">
-                        View in ADO ↗
-                      </a>
-                    );
-                  })()}
                 </div>
               </div>
 

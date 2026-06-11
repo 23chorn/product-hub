@@ -25,7 +25,7 @@ import {
 } from '../agents/change-request';
 import db from '../data/database';
 import { insertEvent } from '../agents/workflow-db';
-import { resolveArtifactPath } from '../agents/artifact-helpers';
+import { resolveArtifactPath, loadArtifactContentById, updateArtifactContent } from '../agents/artifact-helpers';
 import Logger from '../utils/logger';
 import { loadPrdForItem, buildEpicEnrichment, buildFeatureEnrichment } from '../utils/prd-enrichment';
 import { isDemoMode } from '../demo/demo-mode';
@@ -175,7 +175,7 @@ export const workflowRoutes = Router();
 
 // Critic no longer appears as a standalone stage — it runs inline after each specialist stage.
 // The curator runs at the end to update project context files.
-const DEFAULT_STAGES = ['analyst', 'pm_prd', 'solution_architect', 'prototype', 'pm_backlog', 'curator'];
+const DEFAULT_STAGES = ['analyst', 'pm_prd', 'epic_feature_planner', 'solution_architect', 'story_decomposition', 'curator'];
 
 // ── Coordinator planning phase ─────────────────────────────────────────────────
 
@@ -416,10 +416,15 @@ workflowRoutes.post('/start', async (req: Request, res: Response) => {
       ? stageSequence
       : DEFAULT_STAGES;
 
-    // tech_refinement is always injected after pm_backlog (required stage)
-    if (stages.includes('pm_backlog') && !stages.includes('tech_refinement')) {
-      const idx = stages.indexOf('pm_backlog');
-      stages = [...stages.slice(0, idx + 1), 'tech_refinement', ...stages.slice(idx + 1)];
+    // tech_refinement is always injected after story_decomposition or pm_backlog (required stage)
+    if (!stages.includes('tech_refinement')) {
+      if (stages.includes('story_decomposition')) {
+        const idx = stages.indexOf('story_decomposition');
+        stages = [...stages.slice(0, idx + 1), 'tech_refinement', ...stages.slice(idx + 1)];
+      } else if (stages.includes('pm_backlog')) {
+        const idx = stages.indexOf('pm_backlog');
+        stages = [...stages.slice(0, idx + 1), 'tech_refinement', ...stages.slice(idx + 1)];
+      }
     }
 
     // Fold coordinator-gathered context into the goal so all stage briefs benefit from it
@@ -531,6 +536,37 @@ workflowRoutes.post('/checkpoint/resolve', async (req: Request, res: Response) =
 
       resolveCheckpoint(cpId, 'approved', feedback);
 
+      // ── Feature decomposition: inject dynamic sub-stages after epic_feature_planner ──
+      if (cpDetail && cpDetail.stage === 'epic_feature_planner') {
+        const { injectFeatureDecompositionStages } = await import('../agents/feature-decomposition');
+        try {
+          const featureCount = await injectFeatureDecompositionStages(workflowId);
+          logger.info(`[CHECKPOINT] epic_feature_planner approved → injected ${featureCount} feature stages`);
+          // Note: Epic + features were already pushed to ADO when the stage completed
+        } catch (err: any) {
+          logger.error(`[CHECKPOINT] Failed to inject feature stages: ${err.message}`);
+        }
+      }
+
+      // ── Incremental ADO push after each feature approval ──────────────────────
+      if (cpDetail && cpDetail.stage.startsWith('story_decomposition_F')) {
+        const { parseFeatureStage, pushFeatureToADO } = await import('../agents/feature-decomposition');
+        const featureIndex = parseFeatureStage(cpDetail.stage);
+
+        if (featureIndex !== null) {
+          try {
+            const { appConfig } = require('../config/app-config');
+            if (appConfig.integrations.workItems === 'ado') {
+              const result = await pushFeatureToADO(workflowId, featureIndex);
+              logger.info(`[CHECKPOINT] Feature ${featureIndex + 1} approved → pushed to ADO: epic #${result.epicId}, feature #${result.featureId}, ${result.storyIds.length} stories`);
+            }
+          } catch (err: any) {
+            logger.error(`[CHECKPOINT] Failed to push feature to ADO: ${err.message}`);
+            // Don't block workflow progression on ADO push failure
+          }
+        }
+      }
+
       // Fold stage-specific coordinator context into the workflow goal so the
       // next specialist's brief includes it. Appended as a labelled block so
       // generateStageBrief picks it up naturally from workflow.goal.
@@ -565,36 +601,6 @@ workflowRoutes.post('/checkpoint/resolve', async (req: Request, res: Response) =
           linkCRArtifactVersion(activeCR.id, cpDetail.stage, cpDetail.artifact_id, parentRow?.id ?? null);
         } catch (err: any) {
           logger.warn(`Failed to link CR artifact version: ${err.message}`);
-        }
-      }
-
-      // Auto publish wiki pages after research, PRD, and architecture approvals
-      if (cpDetail?.stage === 'analyst' || cpDetail?.stage === 'pm_prd' || cpDetail?.stage === 'solution_architect') {
-        const wfRow = db.prepare<[string], { item_id: string }>('SELECT item_id FROM workflows WHERE id = ?').get(workflowId);
-        if (wfRow) {
-          autoPublishWikiPages(workflowId, wfRow.item_id, cpDetail.stage as 'analyst' | 'pm_prd' | 'solution_architect').catch(err =>
-            logger.warn(`autoPublishWikiPages failed: ${err.message}`)
-          );
-        }
-      }
-
-      // Auto push-to-board after tech refinement approval
-      if (cpDetail?.stage === 'tech_refinement') {
-        const wfRow = db.prepare<[string], { item_id: string }>('SELECT item_id FROM workflows WHERE id = ?').get(workflowId);
-        if (wfRow) {
-          autoPushToBoard(workflowId, wfRow.item_id).catch(err =>
-            logger.error(`autoPushToBoard failed: ${err.message}`)
-          );
-        }
-      }
-
-      // Auto push test plan after QA approval
-      if (cpDetail?.stage === 'qa_engineer') {
-        const wfRow = db.prepare<[string], { item_id: string }>('SELECT item_id FROM workflows WHERE id = ?').get(workflowId);
-        if (wfRow) {
-          autoPushTestPlan(workflowId, wfRow.item_id).catch(err =>
-            logger.error(`autoPushTestPlan failed: ${err.message}`)
-          );
         }
       }
 
@@ -757,364 +763,6 @@ workflowRoutes.post('/:id/cancel', (req: Request, res: Response) => {
 
 // ── Auto push-to-board after tech refinement ────────────────────────────────────
 
-interface PushResult {
-  topUrl: string;
-  topId: number;
-  level: 'epic' | 'feature' | 'story';
-  featureCount?: number;
-  storyCount?: number;
-}
-
-/**
- * Called automatically when a tech_refinement checkpoint is approved.
- * Pushes the refined backlog to the configured board and emits a board_synced event.
- */
-async function autoPushToBoard(workflowId: string, itemId: string): Promise<void> {
-  const fs = require('fs');
-
-  try {
-    // ── Check ADO config — skip mock path if real ADO is configured ─────────
-    const { appConfig } = require('../config/app-config');
-    const adoConfigured = appConfig.integrations.workItems === 'ado';
-
-    if (!adoConfigured) {
-      // No ADO configured — log and skip (nothing to push to)
-      logger.info(`Auto push skipped — work items integration is "${appConfig.integrations.workItems}"`);
-      return;
-    }
-
-    // Load latest backlog artifact
-    const artifact = db.prepare<[string], { file_path: string }>(`
-      SELECT a.file_path FROM artifacts a
-      JOIN sessions s ON a.session_id = s.id
-      WHERE s.item_id = ? AND a.type = 'backlog'
-      ORDER BY a.created_at DESC LIMIT 1
-    `).get(itemId);
-
-    if (!artifact) {
-      logger.warn(`Auto push-to-board: no backlog artifact for item ${itemId}`);
-      return;
-    }
-
-    const content = fs.readFileSync(resolveArtifactPath(artifact.file_path), 'utf-8');
-    const cleaned = content.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-    let backlog: any;
-    try { backlog = JSON.parse(cleaned); } catch {
-      logger.warn('Auto push-to-board: backlog artifact is not valid JSON');
-      return;
-    }
-
-    // Normalise tiers
-    if (backlog?.story) {
-      backlog.epic = { title: backlog.story.title, description: backlog.story.goal || '' };
-      backlog.features = [{ title: backlog.story.title, description: backlog.story.goal || '', phase: 'MVP', stories: [backlog.story] }];
-      delete backlog.story;
-    } else if (backlog?.feature) {
-      backlog.epic = { title: backlog.feature.title, description: backlog.feature.description || '' };
-      backlog.features = [backlog.feature];
-      delete backlog.feature;
-    } else if (backlog?.epic && !backlog?.features && Array.isArray(backlog?.epic?.stories)) {
-      backlog.features = [{ title: backlog.epic.title, description: backlog.epic.description, phase: 'MVP', stories: backlog.epic.stories }];
-    }
-
-    if (!backlog?.epic || !Array.isArray(backlog?.features)) {
-      logger.warn('Auto push-to-board: unrecognised backlog structure');
-      return;
-    }
-
-    // PRD enrichment
-    const prdContent = loadPrdForItem(itemId);
-    if (prdContent) {
-      const epicHtml = buildEpicEnrichment(prdContent);
-      if (epicHtml) backlog.epic.description = `${backlog.epic.description || ''}<hr>${epicHtml}`;
-      for (const feature of backlog.features as any[]) {
-        const frIds = new Set<string>();
-        const journeyRefs = new Set<string>();
-        for (const story of (feature.stories ?? []) as any[]) {
-          for (const fr of (story.prdRef?.functionalRequirements ?? []) as string[]) frIds.add(fr);
-          if (story.prdRef?.userJourney) journeyRefs.add(story.prdRef.userJourney as string);
-        }
-        const featureHtml = buildFeatureEnrichment(prdContent, frIds, journeyRefs);
-        if (featureHtml) feature.description = `${feature.description || ''}<hr>${featureHtml}`;
-      }
-    }
-
-    const { AzureDevOpsClient } = require('../integrations/azure-devops');
-    const client = new AzureDevOpsClient();
-
-    // Check for existing mappings (sync vs create)
-    const existingMappings = db.prepare<[string], { local_key: string; ado_id: number; title: string }>(
-      'SELECT local_key, ado_id, title FROM ado_work_item_map WHERE workflow_id = ?'
-    ).all(workflowId);
-
-    const artifactRow = db.prepare<[string], { id: number }>(`
-      SELECT a.id FROM artifacts a
-      JOIN sessions s ON a.session_id = s.id
-      WHERE s.item_id = ? AND a.type = 'backlog'
-      ORDER BY a.created_at DESC LIMIT 1
-    `).get(itemId);
-    const artifactId = artifactRow?.id ?? 0;
-
-    let result: PushResult;
-
-    if (existingMappings.length > 0) {
-      const mapByKey = new Map(existingMappings.map((m: any) => [m.local_key, m]));
-      const updateResult = await client.updateBacklog(backlog, mapByKey);
-      const insertMapping = db.prepare(`
-        INSERT OR REPLACE INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, title, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      const now = Date.now();
-      for (const m of updateResult.newMappings) {
-        insertMapping.run(workflowId, artifactId, m.ado_id, m.ado_type, m.ado_url, m.local_key, m.title, now);
-      }
-      result = { topId: updateResult.epicId, topUrl: client.getEpicUrl(updateResult.epicId), level: 'epic' };
-    } else {
-      const createResult = await client.createBacklog(backlog);
-      const epicUrl = client.getEpicUrl(createResult.epicId);
-      const insertMapping = db.prepare(`
-        INSERT OR REPLACE INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, title, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      const now = Date.now();
-      insertMapping.run(workflowId, artifactId, createResult.epicId, 'epic', epicUrl, 'epic', backlog.epic.title, now);
-      let featureIdx = 0, storyIdx = 0;
-      for (let fi = 0; fi < backlog.features.length; fi++) {
-        const featureKey = `F${fi + 1}`;
-        const featureAdoId = createResult.featureIds[featureIdx++];
-        insertMapping.run(workflowId, artifactId, featureAdoId, 'feature', client.getEpicUrl(featureAdoId), featureKey, backlog.features[fi].title, now);
-        for (let si = 0; si < backlog.features[fi].stories.length; si++) {
-          const storyKey = `${featureKey}.S${si + 1}`;
-          const storyAdoId = createResult.storyIds[storyIdx++];
-          insertMapping.run(workflowId, artifactId, storyAdoId, 'story', client.getEpicUrl(storyAdoId), storyKey, backlog.features[fi].stories[si].title, now);
-        }
-      }
-      result = {
-        topId: createResult.epicId,
-        topUrl: epicUrl,
-        level: 'epic',
-        featureCount: createResult.featureIds.length,
-        storyCount: createResult.storyIds.length,
-      };
-    }
-
-    insertEvent(workflowId, 'board_synced', 'tech_refinement',
-      `Backlog synced to Azure DevOps — Epic #${result.topId} created\n→ ${result.topUrl}`,
-      { top_url: result.topUrl, top_id: result.topId, level: result.level,
-        feature_count: result.featureCount, story_count: result.storyCount });
-
-    // Push Epic URL back to Airtable if item originated from there
-    const itemAirtableRow = db.prepare<[string], { airtable_id: string | null }>(
-      'SELECT airtable_id FROM items WHERE id = ?'
-    ).get(itemId);
-    if (itemAirtableRow?.airtable_id) {
-      pushLinksToAirtable(itemAirtableRow.airtable_id, { epicLink: result.topUrl }).catch(() => {});
-    }
-
-    logger.info(`Auto push-to-board complete for workflow ${workflowId} — Epic #${result.topId} at ${result.topUrl}`);
-  } catch (err: any) {
-    logger.error(`Auto push-to-board failed for workflow ${workflowId}: ${err.message}`);
-    insertEvent(workflowId, 'error', 'tech_refinement',
-      `Board sync failed: ${err.message}`, { error: err.message });
-  }
-}
-
-/**
- * Called automatically when the qa_engineer checkpoint is approved.
- * Creates or syncs the ADO Test Plan and pushes the URL to Airtable.
- */
-async function autoPushTestPlan(workflowId: string, itemId: string): Promise<void> {
-  const fs = require('fs');
-
-  try {
-    // ── Check ADO config ─────────────────────────────────────────────────────
-    const { appConfig } = require('../config/app-config');
-    const adoConfigured = appConfig.integrations.workItems === 'ado';
-
-    if (!adoConfigured) {
-      logger.info(`Auto push test plan skipped — work items integration is "${appConfig.integrations.workItems}"`);
-      return;
-    }
-
-    // ── Load QA artifact ─────────────────────────────────────────────────────
-    const qaArtifact = db.prepare<[string], { id: number; file_path: string }>(`
-      SELECT a.id, a.file_path FROM artifacts a
-      JOIN sessions s ON a.session_id = s.id
-      WHERE s.item_id = ? AND a.type = 'qa_tests'
-      ORDER BY a.created_at DESC LIMIT 1
-    `).get(itemId);
-
-    if (!qaArtifact) {
-      logger.warn(`Auto push test plan: no QA artifact for item ${itemId}`);
-      return;
-    }
-
-    const raw = fs.readFileSync(resolveArtifactPath(qaArtifact.file_path), 'utf-8')
-      .replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-    let qa: any;
-    try { qa = JSON.parse(raw); } catch {
-      logger.warn('Auto push test plan: QA artifact is not valid JSON');
-      return;
-    }
-
-    const testCases = (qa.test_cases ?? []) as any[];
-    if (testCases.length === 0) {
-      logger.warn('Auto push test plan: no test cases found in QA artifact');
-      return;
-    }
-
-    // ── Build story map ──────────────────────────────────────────────────────
-    const storyMappings = db.prepare<[string], { local_key: string; ado_id: number }>(
-      `SELECT local_key, ado_id FROM ado_work_item_map WHERE workflow_id = ? AND ado_type = 'story'`
-    ).all(workflowId);
-    const storyMap = new Map(storyMappings.map(m => [m.local_key, m.ado_id]));
-
-    if (storyMap.size === 0) {
-      logger.warn('Auto push test plan: no story mappings found — backlog must be pushed to ADO first');
-      return;
-    }
-
-    // ── Check for existing test plan mapping ─────────────────────────────────
-    const existingMap = db.prepare<[string], { plan_id: number; plan_url: string; suite_ids: string; test_case_ids: string; root_suite_id?: number }>(
-      'SELECT plan_id, plan_url, suite_ids, test_case_ids, root_suite_id FROM qa_test_plan_map WHERE workflow_id = ?'
-    ).get(workflowId);
-
-    const existing = existingMap ? {
-      planId: existingMap.plan_id,
-      rootSuiteId: existingMap.root_suite_id,
-      suiteIds: JSON.parse(existingMap.suite_ids ?? '{}'),
-      testCaseIds: JSON.parse(existingMap.test_case_ids ?? '{}'),
-    } : undefined;
-
-    const workflow = db.prepare<[string], { summary: string | null; goal: string }>(
-      'SELECT summary, goal FROM workflows WHERE id = ?'
-    ).get(workflowId);
-    const planName = (workflow?.summary ?? workflow?.goal.split('\n')[0] ?? 'Test Plan').slice(0, 60);
-
-    // ── Push to ADO Test Plans ───────────────────────────────────────────────
-    const { AzureDevOpsClient } = require('../integrations/azure-devops');
-    const client = new AzureDevOpsClient();
-
-    const result = await client.pushQATestPlan({ planName, testCases, storyMap, existing });
-
-    // ── Persist the mapping ──────────────────────────────────────────────────
-    const now = Date.now();
-    db.prepare(`
-      INSERT OR REPLACE INTO qa_test_plan_map
-        (workflow_id, artifact_id, plan_id, root_suite_id, plan_url, suite_ids, test_case_ids, test_case_count, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      workflowId,
-      qaArtifact.id,
-      result.planId,
-      result.rootSuiteId,
-      result.planUrl,
-      JSON.stringify(result.suiteIds),
-      JSON.stringify(result.testCaseIds),
-      testCases.length,
-      now
-    );
-
-    insertEvent(workflowId, 'stage_progress', 'qa_engineer',
-      `QA Test Plan ${existing ? 'synced' : 'created'} in ADO — ${result.created} created, ${result.updated} updated\n→ ${result.planUrl}`,
-      { plan_id: result.planId, plan_url: result.planUrl, created: result.created, updated: result.updated }
-    );
-
-    // ── Push Test Plan URL back to Airtable ──────────────────────────────────
-    const itemAirtableRow = db.prepare<[string], { airtable_id: string | null }>(
-      'SELECT airtable_id FROM items WHERE id = ?'
-    ).get(itemId);
-    if (itemAirtableRow?.airtable_id) {
-      pushLinksToAirtable(itemAirtableRow.airtable_id, { testPlanLink: result.planUrl }).catch(() => {});
-    }
-
-    logger.info(`Auto push test plan complete for workflow ${workflowId} — Plan #${result.planId} at ${result.planUrl}`);
-  } catch (err: any) {
-    logger.error(`Auto push test plan failed for workflow ${workflowId}: ${err.message}`);
-    insertEvent(workflowId, 'error', 'qa_engineer',
-      `Test plan push failed: ${err.message}`, { error: err.message });
-  }
-}
-
-// ── Push document links back to Airtable ──────────────────────────────────────
-
-/**
- * Pushes document URLs back to the originating Airtable record.
- * Skips silently if the roadmap integration is not airtable.
- */
-async function pushLinksToAirtable(airtableId: string, updates: Record<string, string>): Promise<void> {
-  try {
-    const { appConfig } = require('../config/app-config');
-    if (appConfig.integrations.roadmap !== 'airtable') return;
-    const { AirtableClient } = require('../integrations/airtable');
-    await new AirtableClient().updateItem(airtableId, updates as any);
-    logger.info(`Airtable record ${airtableId} updated: ${Object.keys(updates).join(', ')}`);
-  } catch (err: any) {
-    logger.warn(`Failed to push links to Airtable (${airtableId}): ${err.message}`);
-  }
-}
-
-// ── Auto publish wiki pages after analyst / pm_prd approvals ──────────────────
-
-/**
- * Publishes a research brief, PRD, or architecture document to the Azure DevOps Wiki under
- * "Product Documentation/Features/{FeatureName}/{PageName}".
- * After publishing, pushes the wiki URL back to the Airtable record.
- */
-async function autoPublishWikiPages(workflowId: string, itemId: string, stage: 'analyst' | 'pm_prd' | 'solution_architect'): Promise<void> {
-  const fs = require('fs');
-  try {
-    const { appConfig } = require('../config/app-config');
-    if (appConfig.integrations.workItems !== 'ado') return;
-
-    const { AzureDevOpsClient } = require('../integrations/azure-devops');
-    const client = new AzureDevOpsClient();
-    const wikiId = client.wikiIdentifier;
-
-    const itemRow = db.prepare<[string], { title: string; airtable_id: string | null }>(
-      'SELECT title, airtable_id FROM items WHERE id = ?'
-    ).get(itemId);
-    if (!itemRow) { logger.warn(`autoPublishWikiPages: item ${itemId} not found`); return; }
-
-    // Sanitise the feature name for a wiki path segment
-    const featureName = itemRow.title.replace(/[/\\:*?"<>|#]/g, '').trim();
-    const basePath = `/Product Documentation/Features/${featureName}`;
-    const artifactType = stage === 'analyst' ? 'analyst' : stage === 'pm_prd' ? 'prd' : 'architecture';
-    const pageName = stage === 'analyst' ? 'Research Brief' : stage === 'pm_prd' ? 'PRD' : 'Architecture';
-    const pagePath = `${basePath}/${pageName}`;
-    const airtableFieldKey = stage === 'analyst' ? 'researchBriefLink' : stage === 'pm_prd' ? 'prdLink' : 'architectureLink';
-
-    // Load latest artifact for this stage
-    const artifact = db.prepare<[string, string], { file_path: string }>(
-      `SELECT a.file_path FROM artifacts a
-       JOIN sessions s ON a.session_id = s.id
-       WHERE s.item_id = ? AND a.type = ?
-       ORDER BY a.created_at DESC LIMIT 1`
-    ).get(itemId, artifactType);
-    if (!artifact?.file_path) {
-      logger.warn(`autoPublishWikiPages: no ${artifactType} artifact for item ${itemId}`);
-      return;
-    }
-
-    const content = fs.readFileSync(resolveArtifactPath(artifact.file_path), 'utf-8');
-
-    // Ensure parent pages exist, then upsert the leaf page
-    await client.ensureWikiPath(wikiId, pagePath);
-    const { url } = await client.upsertWikiPage(wikiId, pagePath, content);
-
-    insertEvent(workflowId, 'board_synced', stage,
-      `Wiki page published: ${pageName}\n→ ${url}`, { wiki_url: url });
-    logger.info(`Wiki published (${stage}): ${url}`);
-
-    // Push URL back to Airtable
-    if (itemRow.airtable_id) {
-      await pushLinksToAirtable(itemRow.airtable_id, { [airtableFieldKey]: url });
-    }
-  } catch (err: any) {
-    logger.warn(`autoPublishWikiPages(${stage}) failed: ${err.message}`);
-  }
-}
-
 // ── POST /api/workflow/:id/push-to-board ────────────────────────────────────────
 
 /**
@@ -1137,8 +785,8 @@ workflowRoutes.post('/:id/push-to-board', async (req: Request, res: Response) =>
     if (!workflow) return res.status(404).json({ error: 'Workflow not found' });
 
     // Get the latest backlog artifact for this item
-    const artifact = db.prepare<[string], { file_path: string }>(`
-      SELECT a.file_path
+    const artifact = db.prepare<[string], { id: number }>(`
+      SELECT a.id
       FROM artifacts a
       JOIN sessions s ON a.session_id = s.id
       WHERE s.item_id = ? AND a.type = 'backlog'
@@ -1147,10 +795,10 @@ workflowRoutes.post('/:id/push-to-board', async (req: Request, res: Response) =>
 
     if (!artifact) return res.status(404).json({ error: 'No backlog artifact found for this workflow' });
 
-    // Read and parse the backlog JSON
-    const fs = require('fs');
-    const content = fs.readFileSync(resolveArtifactPath(artifact.file_path), 'utf-8');
-    const cleaned = content.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+    // Load and parse the backlog JSON
+    const rawBacklog = await loadArtifactContentById(artifact.id);
+    if (!rawBacklog) return res.status(404).json({ error: 'Backlog artifact content not found' });
+    const cleaned = rawBacklog.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
     let backlog;
     try {
       backlog = JSON.parse(cleaned);
@@ -1308,7 +956,6 @@ workflowRoutes.post('/:id/push-to-board', async (req: Request, res: Response) =>
  */
 workflowRoutes.post('/:id/push-to-test-plans', async (req: Request, res: Response) => {
   const workflowId = req.params.id;
-  const fs = require('fs');
 
   try {
     const { appConfig } = require('../config/app-config');
@@ -1322,16 +969,17 @@ workflowRoutes.post('/:id/push-to-test-plans', async (req: Request, res: Respons
     if (!workflow) return res.status(404).json({ error: 'Workflow not found' });
 
     // Load latest QA artifact
-    const qaArtifact = db.prepare<[string], { file_path: string; id: number }>(`
-      SELECT a.file_path, a.id FROM artifacts a
+    const qaArtifact = db.prepare<[string], { id: number }>(`
+      SELECT a.id FROM artifacts a
       JOIN sessions s ON a.session_id = s.id
       WHERE s.item_id = ? AND a.type = 'qa_tests'
       ORDER BY a.created_at DESC LIMIT 1
     `).get(workflow.item_id);
     if (!qaArtifact) return res.status(404).json({ error: 'No QA test artifact found for this workflow' });
 
-    const raw = fs.readFileSync(resolveArtifactPath(qaArtifact.file_path), 'utf-8')
-      .replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+    const qaRaw = await loadArtifactContentById(qaArtifact.id);
+    if (!qaRaw) return res.status(404).json({ error: 'QA artifact content not found' });
+    const raw = qaRaw.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
     let qa: any;
     try { qa = JSON.parse(raw); } catch {
       return res.status(400).json({ error: 'QA artifact is not valid JSON — retry the qa_engineer stage' });
@@ -1448,48 +1096,46 @@ workflowRoutes.post('/:id/sync-to-wiki', async (req: Request, res: Response) => 
     const { AzureDevOpsClient } = require('../integrations/azure-devops');
     const client = new AzureDevOpsClient();
     const wikiId = client.wikiIdentifier;
-    const fs = require('fs');
 
     const results: Array<{ stage: string; pageName: string; url: string }> = [];
 
-    // Sanitize feature name for wiki path
-    const featureName = itemRow.title.replace(/[^a-zA-Z0-9 -]/g, '').trim().slice(0, 50);
+    const stageArtifactMap: Record<string, { type: string; pageName: string }> = {
+      analyst:            { type: 'analyst',      pageName: 'Research Brief' },
+      pm_prd:             { type: 'prd',           pageName: 'PRD' },
+      solution_architect: { type: 'architecture',  pageName: 'Architecture' },
+      pm_backlog:         { type: 'backlog',        pageName: 'Backlog' },
+      qa_engineer:        { type: 'qa_tests',       pageName: 'QA Test Plan' },
+    };
+
+    const featureName = itemRow.title.replace(/[/\\:*?"<>|#]/g, '').trim();
 
     for (const stage of stagesToSync) {
-      const stageArtifactMap: Record<string, { type: string; pageName: string }> = {
-        'analyst': { type: 'analyst', pageName: 'Research Brief' },
-        'pm_prd': { type: 'prd', pageName: 'PRD' },
-        'solution_architect': { type: 'architecture', pageName: 'Architecture' },
-      };
-
       const config = stageArtifactMap[stage];
       if (!config) continue;
 
-      // Load artifact
-      const artifact = db.prepare<[string, string], { file_path: string }>(`
-        SELECT a.file_path FROM artifacts a
+      // Load artifact — fetches from wiki if already stored there, falls back to disk
+      const artifactRow = db.prepare<[string, string], { id: number }>(`
+        SELECT a.id FROM artifacts a
         JOIN sessions s ON a.session_id = s.id
         WHERE s.item_id = ? AND a.type = ?
         ORDER BY a.created_at DESC LIMIT 1
       `).get(workflow.item_id, config.type);
 
-      if (!artifact) {
+      if (!artifactRow) {
         logger.warn(`Sync to wiki: no ${config.type} artifact for item ${workflow.item_id}`);
         continue;
       }
 
-      const content = fs.readFileSync(resolveArtifactPath(artifact.file_path), 'utf-8')
-        .replace(/^```(?:markdown|md)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+      const rawContent = await loadArtifactContentById(artifactRow.id);
+      if (!rawContent) {
+        logger.warn(`Sync to wiki: could not load ${config.type} artifact ${artifactRow.id}`);
+        continue;
+      }
+      const content = rawContent.replace(/^```(?:markdown|md)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
 
-      // Wiki path: /Product Documentation/Features/{FeatureName}/{PageName}
       const wikiPath = `/Product Documentation/Features/${featureName}/${config.pageName}`;
-
-      // Ensure parent folders exist
       await client.ensureWikiPath(wikiId, wikiPath);
-
-      // Upsert wiki page
       const { url } = await client.upsertWikiPage(wikiId, wikiPath, content);
-
       results.push({ stage, pageName: config.pageName, url });
     }
 
@@ -1628,23 +1274,26 @@ workflowRoutes.post('/:id/message', async (req: Request, res: Response) => {
 
 /**
  * GET /api/workflow/artifact/:id/content
- * Returns the text content of an artifact file by artifact DB id.
+ * Returns the text content of an artifact. For externally stored artifacts, fetches
+ * from the Azure Wiki using the stored external_path reference.
  */
-workflowRoutes.get('/artifact/:id/content', (req: Request, res: Response) => {
+workflowRoutes.get('/artifact/:id/content', async (req: Request, res: Response) => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid artifact id' });
 
-  const row = db.prepare<[number], { file_path: string; type: string }>(
-    'SELECT file_path, type FROM artifacts WHERE id = ?'
+  const row = db.prepare<[number], { type: string }>(
+    'SELECT type FROM artifacts WHERE id = ?'
   ).get(id);
 
   if (!row) return res.status(404).json({ error: 'Artifact not found' });
 
   try {
-    const content = require('fs').readFileSync(resolveArtifactPath(row.file_path), 'utf-8');
+    const content = await loadArtifactContentById(id);
+    if (content === null) return res.status(404).json({ error: 'Artifact content not found' });
     res.json({ content, type: row.type });
-  } catch {
-    res.status(404).json({ error: 'Artifact file not found on disk' });
+  } catch (err: any) {
+    logger.error(`Failed to load artifact ${id}: ${err.message}`);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -1666,8 +1315,8 @@ workflowRoutes.put('/artifact/:id/content', async (req: Request, res: Response) 
   }
 
   // Validate JSON for backlog/prototype artifacts
-  const row = db.prepare<[number], { file_path: string; type: string }>(
-    'SELECT file_path, type FROM artifacts WHERE id = ?'
+  const row = db.prepare<[number], { type: string }>(
+    'SELECT type FROM artifacts WHERE id = ?'
   ).get(id);
   if (!row) return res.status(404).json({ error: 'Artifact not found' });
 
@@ -1679,13 +1328,11 @@ workflowRoutes.put('/artifact/:id/content', async (req: Request, res: Response) 
     }
   }
 
-  // Write content to disk
-  const fs = require('fs');
-  const resolvedPath = resolveArtifactPath(row.file_path);
+  // Save content — pushes to wiki for externally stored artifacts, writes to disk otherwise
   try {
-    fs.writeFileSync(resolvedPath, content, 'utf-8');
+    await updateArtifactContent(id, content);
   } catch (err: any) {
-    logger.error(`Failed to write artifact ${id}: ${err.message}`);
+    logger.error(`Failed to save artifact ${id}: ${err.message}`);
     return res.status(500).json({ error: `Failed to save: ${err.message}` });
   }
 

@@ -20,7 +20,9 @@ const TEMPLATES_DIR = path.join(AGENTS_ROOT, 'templates');
 const STAGE_TEMPLATE_MAP: Record<string, string> = {
   analyst:              'research.template.md',
   pm_prd:               'prd.template.md',
+  epic_feature_planner: 'epic-features.template.md',
   solution_architect:   'architecture.template.md',
+  story_decomposition:  'backlog.template.md',
   pm_backlog:           'backlog.template.md',
   tech_refinement:      'tech-refinement.template.md',
   gtm_strategy:         'gtm.template.md',

@@ -1,29 +1,35 @@
 /**
  * Tech Refinement Agent — parallel engineering stream review.
  *
- * Runs iOS, Android, and Backend engineer agents in parallel. Each annotates
- * every backlog story with platform-specific implementation notes. A final
- * reconciliation pass merges all three into the output artifact.
+ * Dynamically loads engineer personas based on the tech stack:
+ * - Mobile projects: iOS, Android, Backend engineers in parallel
+ * - Web projects: Web engineer (covers both frontend and backend)
+ * - Full-stack: All engineers (iOS, Android, Backend, Web)
+ *
+ * Each engineer annotates every backlog story with platform-specific implementation
+ * notes. A final reconciliation pass merges all streams into the output artifact.
+ *
+ * TODO: Add tech stack detection logic to determine which streams to run.
+ * Currently runs iOS + Android + Backend by default.
  */
 
 import * as fs from 'fs';
-import * as fsAsync from 'fs/promises';
 import * as path from 'path';
-import db from '../data/database';
 import { sessionManager } from '../session/session-manager';
 import { streamAI, resolveAgentModel, type TokenUsage } from '../utils/ai-provider';
-import { getLatestArtifactPathByType } from './artifact-helpers';
+import { loadLatestArtifactContent, saveLocalArtifact } from './artifact-helpers';
+import { pushBacklogToAdo } from './ado-stage-push';
 import {
   PROJECT_ROOT, logger as baseLogger, stmts, insertEvent, addWorkflowCost, workflowOps,
 } from './workflow-db';
-import { isDemoMode, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
+import { demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
 import Logger from '../utils/logger';
 
 const logger = new Logger('TECH-REFINEMENT');
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type StreamId = 'ios' | 'android' | 'backend';
+type StreamId = 'ios' | 'android' | 'backend' | 'web';
 
 interface StoryNote {
   story_title: string;
@@ -41,12 +47,14 @@ const PERSONA_FILES: Record<StreamId, string> = {
   ios:     'ios-engineer.md',
   android: 'android-engineer.md',
   backend: 'backend-engineer.md',
+  web:     'web-engineer.md',
 };
 
 const STREAM_NAMES: Record<StreamId, string> = {
   ios:     'Finn (iOS)',
   android: 'Remi (Android)',
   backend: 'Cole (Backend)',
+  web:     'Morgan (Web)',
 };
 
 function loadStreamPersona(stream: StreamId): string {
@@ -204,78 +212,11 @@ export async function runTechRefinementStage(
   const onTokens = (usage: TokenUsage) => addWorkflowCost(workflowId, usage.estimatedCost);
 
   try {
-    // ── Demo mode fast-path ──────────────────────────────────────────────────
-    // Annotate the ACTUAL pm_backlog in-place rather than loading a static
-    // fixture — the fixture was a different set of infra tasks, not the backlog.
-    if (isDemoMode()) {
-      const backlogPath = getLatestArtifactPathByType(itemId, 'backlog');
-      if (backlogPath) {
-        const delay = DEMO_STAGE_DELAY_MS['tech_refinement'] ?? 2_500;
-
-        let backlogJson: object;
-        try {
-          backlogJson = JSON.parse(fs.readFileSync(backlogPath, 'utf-8'));
-        } catch {
-          backlogJson = {};
-        }
-        const storyCount = countStories(backlogJson);
-
-        insertEvent(workflowId, 'stage_progress', 'tech_refinement',
-          `Finn (iOS), Remi (Android), and Cole (Backend) reviewing ${storyCount} stories in parallel...`);
-        await demoSleep(Math.floor(delay * 0.4));
-        insertEvent(workflowId, 'stage_progress', 'tech_refinement',
-          `All streams complete (iOS: ${storyCount}, Android: ${storyCount}, Backend: ${storyCount} notes). Merging into final backlog...`);
-        await demoSleep(Math.floor(delay * 0.6));
-
-        // Inject hardcoded demo technical notes onto every story in-place
-        const annotated = injectDemoTechNotes(backlogJson);
-
-        const session = sessionManager.createSpecialistSession(itemId, 'backlog' as any, 'pm' as any);
-        const artifactDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, 'backlog', 'artifacts');
-        await fsAsync.mkdir(artifactDir, { recursive: true });
-        const artifactPath = path.join(artifactDir, `${Date.now()}-tech_refinement.json`);
-
-        await fsAsync.writeFile(artifactPath, JSON.stringify(annotated, null, 2), 'utf-8');
-
-        const artifactResult = db.prepare(`
-          INSERT INTO artifacts (session_id, type, file_path, created_at)
-          VALUES (?, ?, ?, ?)
-        `).run(session.id, 'backlog', artifactPath, Date.now());
-        const artifactId = artifactResult.lastInsertRowid as number;
-
-        insertEvent(workflowId, 'stage_completed', 'tech_refinement',
-          `Technical refinement complete — ${storyCount} stories annotated with iOS, Android, and Backend implementation notes.`,
-          { artifact_id: artifactId });
-
-        const now = Date.now();
-        stmts.insertCheckpoint.run(
-          workflowId, 'tech_refinement', artifactId, autoApprove ? 'approved' : 'pending',
-          JSON.stringify({ session_id: session.id, autonomous: true, demo_mode: true, auto_approved: autoApprove }),
-          now
-        );
-        if (autoApprove) {
-          logger.info(`[DEMO] Tech refinement complete — auto-advancing`);
-          workflowOps.advanceStage(workflowId).catch(err => {
-            if (!err.message?.startsWith('WORKFLOW_COMPLETE')) {
-              logger.error(`Auto-advance after tech_refinement failed: ${err.message}`);
-              stmts.updateWorkflowStatus.run('paused_at_checkpoint', Date.now(), workflowId);
-            }
-          });
-        } else {
-          stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
-          logger.info(`[DEMO] Tech refinement complete — backlog annotated, checkpoint created`);
-        }
-        return;
-      }
-    }
-
-    // Load the latest backlog artifact
-    const backlogPath = getLatestArtifactPathByType(itemId, 'backlog');
-    if (!backlogPath) {
+    // Load backlog from wiki (async) — covers both wiki-backed and legacy local artifacts
+    const backlogContent = await loadLatestArtifactContent(itemId, 'backlog');
+    if (!backlogContent) {
       throw new Error('No backlog artifact found — run pm_backlog stage first');
     }
-
-    const backlogContent = fs.readFileSync(backlogPath, 'utf-8');
     let backlogJson: object;
     try {
       backlogJson = JSON.parse(backlogContent);
@@ -283,12 +224,58 @@ export async function runTechRefinementStage(
       throw new Error('Backlog artifact is not valid JSON — cannot annotate');
     }
 
-    // Count stories for progress message
+    const session = sessionManager.createSpecialistSession(itemId, 'backlog' as any, 'pm' as any);
+
+    if (autoApprove) {
+      // ── Demo / auto-approve fast-path — annotate in-place, no LLM calls ──
+      const storyCount = countStories(backlogJson);
+      const delay = DEMO_STAGE_DELAY_MS['tech_refinement'] ?? 2_500;
+
+      insertEvent(workflowId, 'stage_progress', 'tech_refinement',
+        `Finn (iOS), Remi (Android), and Cole (Backend) reviewing ${storyCount} stories in parallel...`);
+      await demoSleep(Math.floor(delay * 0.4));
+      insertEvent(workflowId, 'stage_progress', 'tech_refinement',
+        `All streams complete (iOS: ${storyCount}, Android: ${storyCount}, Backend: ${storyCount} notes). Merging into final backlog...`);
+      await demoSleep(Math.floor(delay * 0.6));
+
+      const annotated = injectDemoTechNotes(backlogJson);
+      const artifactId = await saveLocalArtifact(session.id, 'tech_refinement', JSON.stringify(annotated, null, 2), itemId);
+
+      const adoUrl = await pushBacklogToAdo(workflowId, itemId).catch(err => {
+        logger.warn(`pushBacklogToAdo failed in tech_refinement: ${err.message}`);
+        return null;
+      });
+
+      insertEvent(workflowId, 'stage_completed', 'tech_refinement',
+        `Technical refinement complete — ${storyCount} stor${storyCount !== 1 ? 'ies' : 'y'} annotated with iOS, Android, and Backend implementation notes.`,
+        { artifact_id: artifactId, ...(adoUrl ? { ado_url: adoUrl } : {}) });
+
+      const now = Date.now();
+      stmts.insertCheckpoint.run(
+        workflowId, 'tech_refinement', artifactId, autoApprove ? 'approved' : 'pending',
+        JSON.stringify({ session_id: session.id, autonomous: true, auto_approved: autoApprove }),
+        now
+      );
+      if (autoApprove) {
+        logger.info(`[DEMO] Tech refinement complete — auto-advancing`);
+        workflowOps.advanceStage(workflowId).catch(err => {
+          if (!err.message?.startsWith('WORKFLOW_COMPLETE')) {
+            logger.error(`Auto-advance after tech_refinement failed: ${err.message}`);
+            stmts.updateWorkflowStatus.run('paused_at_checkpoint', Date.now(), workflowId);
+          }
+        });
+      } else {
+        stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
+        logger.info(`[DEMO] Tech refinement complete — backlog annotated, checkpoint created`);
+      }
+      return;
+    }
+
+    // ── Real LLM path ──────────────────────────────────────────────────────
     const totalStories = countStories(backlogJson);
     insertEvent(workflowId, 'stage_progress', 'tech_refinement',
       `${STREAM_NAMES.ios}, ${STREAM_NAMES.android}, and ${STREAM_NAMES.backend} reviewing ${totalStories} stor${totalStories !== 1 ? 'ies' : 'y'} in parallel...`);
 
-    // Run 3 stream agents in parallel
     const [iosReview, androidReview, backendReview] = await Promise.all([
       runStreamReview('ios', backlogJson, onTokens),
       runStreamReview('android', backlogJson, onTokens),
@@ -302,38 +289,22 @@ export async function runTechRefinementStage(
     insertEvent(workflowId, 'stage_progress', 'tech_refinement',
       `All streams complete (iOS: ${iosCount}, Android: ${androidCount}, Backend: ${backendCount} notes). Merging into final backlog...`);
 
-    // Merge all annotations into the final backlog
     const annotatedBacklog = await reconcile(backlogJson, [iosReview, androidReview, backendReview], onTokens);
+    const artifactId = await saveLocalArtifact(session.id, 'tech_refinement', JSON.stringify(annotatedBacklog, null, 2), itemId);
 
-    // Save artifact — type 'backlog' so downstream stages and push-to-board pick it up
-    const session = sessionManager.createSpecialistSession(itemId, 'backlog' as any, 'pm' as any);
-    const artifactDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, 'backlog', 'artifacts');
-    await fsAsync.mkdir(artifactDir, { recursive: true });
-    const artifactPath = path.join(artifactDir, `${Date.now()}-tech_refinement.json`);
-    const artifactContent = JSON.stringify(annotatedBacklog, null, 2);
-    await fsAsync.writeFile(artifactPath, artifactContent, 'utf-8');
-
-    const artifactResult = db.prepare(`
-      INSERT INTO artifacts (session_id, type, file_path, created_at)
-      VALUES (?, ?, ?, ?)
-    `).run(session.id, 'backlog', artifactPath, Date.now());
-    const artifactId = artifactResult.lastInsertRowid as number;
+    const adoUrl = await pushBacklogToAdo(workflowId, itemId).catch(err => {
+      logger.warn(`pushBacklogToAdo failed in tech_refinement: ${err.message}`);
+      return null;
+    });
 
     insertEvent(workflowId, 'stage_completed', 'tech_refinement',
       `Technical refinement complete — ${totalStories} stor${totalStories !== 1 ? 'ies' : 'y'} annotated with iOS, Android, and Backend implementation notes.`,
-      { artifact_id: artifactId });
+      { artifact_id: artifactId, ...(adoUrl ? { ado_url: adoUrl } : {}) });
 
     const now = Date.now();
     stmts.insertCheckpoint.run(
       workflowId, 'tech_refinement', artifactId, autoApprove ? 'approved' : 'pending',
-      JSON.stringify({
-        session_id: session.id,
-        autonomous: true,
-        auto_approved: autoApprove,
-        ios_notes: iosCount,
-        android_notes: androidCount,
-        backend_notes: backendCount,
-      }),
+      JSON.stringify({ session_id: session.id, autonomous: true, auto_approved: autoApprove, ios_notes: iosCount, android_notes: androidCount, backend_notes: backendCount }),
       now
     );
     if (autoApprove) {

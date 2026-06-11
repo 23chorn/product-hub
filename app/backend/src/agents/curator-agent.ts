@@ -8,7 +8,7 @@
  */
 
 import * as fs from 'fs';
-import { resolveArtifactPath } from './artifact-helpers';
+import { loadArtifactContentById } from './artifact-helpers';
 import * as path from 'path';
 import { streamAI, resolveModelId, type TokenUsage } from '../utils/ai-provider';
 import db from '../data/database';
@@ -31,7 +31,6 @@ interface WorkflowRow {
 interface ArtifactRow {
   id: number;
   type: string;
-  file_path: string;
 }
 
 // ── LLM output schema ─────────────────────────────────────────────────────────
@@ -69,7 +68,7 @@ export class ContextCuratorAgent {
     // ── Collect workflow artifacts ──────────────────────────────────────────
     const artifactRows = db
       .prepare<[string], ArtifactRow>(`
-        SELECT a.id, a.type, a.file_path
+        SELECT a.id, a.type
         FROM artifacts a
         JOIN sessions s ON a.session_id = s.id
         WHERE s.item_id = ?
@@ -79,12 +78,12 @@ export class ContextCuratorAgent {
 
     const artifactSections: string[] = [];
     for (const row of artifactRows) {
-      if (!row.file_path) continue;
       try {
-        const content = fs.readFileSync(resolveArtifactPath(row.file_path), 'utf-8');
+        const content = await loadArtifactContentById(row.id);
+        if (!content) continue;
         artifactSections.push(`### Artifact: ${row.type} (id=${row.id})\n\n${content.slice(0, 3000)}${content.length > 3000 ? '\n[…truncated]' : ''}`);
       } catch {
-        // File missing — skip silently
+        // Artifact unreadable — skip silently
       }
     }
 

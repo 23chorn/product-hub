@@ -171,7 +171,17 @@ There is one flow: the Coordinator-driven workflow. There is no direct-access mo
 Only the relevant template is injected into the system prompt for each stage. Templates are read from disk each time — no caching, so UI edits take effect on the next stage run.
 
 #### Stage output format specifications
-`STAGE_OUTPUT_FORMATS` in `stage-metadata.ts` defines inline format specs injected into `generateStageBrief()`. `generateStageBrief()` now produces a **structured 8-field brief schema** rather than flat sections. The fields are: Goal, Original request, Constraints, Prior stage outputs available, Key decisions already made, Human preferences expressed, Output required, What this specialist must NOT decide. The parameter previously named `previousOutputSummary` has been renamed to `additionalContext` (used for critic feedback on the auto-revise path). When adding a new stage, add entries in `STAGE_OUTPUT_FORMATS`, `STAGE_TEMPLATE_MAP`, and the stage metadata maps in `agents/stage-metadata.ts` (`STAGE_SESSION_MAP`, `STAGE_ARTIFACT_TYPE`, `STAGE_ARTIFACT_LABEL`, `STAGE_LABELS_BRIEF`, `stageGoal()`, `stageNotDecide()`).
+`STAGE_OUTPUT_FORMATS` in `stage-metadata.ts` defines inline format specs injected into `generateStageBrief()`. `generateStageBrief()` now produces a **structured 8-field brief schema** rather than flat sections. The fields are: Goal, Original request, Constraints, Prior stage outputs available, Key decisions already made, Human preferences expressed, Output required, What this specialist must NOT decide. The parameter previously named `previousOutputSummary` has been renamed to `additionalContext` (used for critic feedback on the auto-revise path).
+
+**When adding a new stage:**
+1. Create persona file in `agents/personas/<stage-name>.md`
+2. Create output template in `agents/templates/<stage-name>.template.md`
+3. Add demo fixture in `app/backend/src/demo/fixtures/<stage-name>.<ext>` (system auto-falls back to base if theme-specific missing)
+4. Update `stage-metadata.ts`: add entries in `STAGE_OUTPUT_FORMATS`, `STAGE_SESSION_MAP`, `STAGE_ARTIFACT_TYPE`, `STAGE_ARTIFACT_LABEL`, `STAGE_LABELS_BRIEF`, `stageGoal()`, `stageNotDecide()`
+5. Update `specialist-agent.ts`: add entry in `STAGE_TEMPLATE_MAP`
+6. Update `workflow-stage-runner.ts`: add stage to `specialistStages` set (line ~697), add stage label to ternary chain (line ~685), add to `adoBackedStages` if it creates ADO tickets (line ~688)
+7. Update frontend `constants/stage-labels.ts`: add entry in `STAGE_LABELS` and optionally `STAGE_SHORT_LABELS`
+8. Update `demo-mode.ts`: add entry in `DEMO_FIXTURE_FILES` and `DEMO_STAGE_DELAY_MS`
 
 #### Policies (governance)
 The `policies` DB table stores key-value rules. Loaded at runtime — no restart needed. Key policies:
@@ -279,6 +289,8 @@ Both WS servers use `noServer: true`. A manual `upgrade` event handler on the HT
 
 `POST /api/demo/webhook/trigger` creates a new initiative and immediately launches a full pipeline workflow without coordinator planning. Cycles through 4 sample initiatives (In-App Messaging, Onboarding Redesign, Portfolio Analytics, Social Trading). Default stages: `['analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'qa_engineer', 'tech_refinement', 'curator']`. Useful for demos of parallel workflows on the Home Screen.
 
+**Demo fixtures**: Set `DEMO_FIXTURE_THEME=price-alerts` (default) or `messaging` in `.env`. Fixtures live in `app/backend/src/demo/fixtures/` (base) and `app/backend/src/demo/fixtures/messaging/` (theme-specific). When adding a new stage, create a fixture file in the base directory — the system automatically falls back to base if a theme-specific fixture isn't found. Theme-specific fixtures are only needed if the content should differ from the base theme.
+
 ### Agent patterns
 
 Two agent patterns exist:
@@ -325,9 +337,12 @@ Two-column layout in `App.tsx`: left sidebar (stage tracker, workflow history, o
 ### Project context (`context/`)
 Markdown files injected into every agent's system prompt under `## Project & Company Context`. Any `.md` file in the folder is picked up automatically. Cached in memory; cache invalidated automatically when files are saved via the UI or when context diffs are approved.
 
-Six canonical files (see `context/README.md`):
+Seven canonical files (see `context/README.md`):
 - `company.md`, `strategy.md` — have `.example.md` templates
-- `tech-stack.md`, `db-schema.md`, `process.md`, `current-state.md` — create to enable
+- `tech-stack.md`, `db-schema.md`, `repos.md`, `process.md`, `current-state.md` — create to enable
+
+**Key context files**:
+- `repos.md` — Repository structure, purpose, boundaries, and cross-repo dependencies. Referenced by architect when enriching features with `targetRepos` metadata.
 
 ### Output templates (`agents/templates/`)
 Four template files define the structure specialists follow:

@@ -1,265 +1,394 @@
 {
-  "testSuite": {
-    "feature": "In-App Messaging & Trade Chat",
-    "version": "1.0",
-    "totalCases": 18,
-    "coverage": {
-      "functional": 14,
-      "performance": 2,
-      "compliance": 2
-    }
+  "suite": "In-App Messaging & Trade Chat",
+  "version": "1.0",
+  "metadata": {
+    "prd_version": "1.0",
+    "source_documents": ["PRD", "Backlog", "Architecture Document"],
+    "notes": "Test suite covers all three MVP features: Channel Management, Real-time Text Messaging, and Live Ticker Card Sharing"
   },
-  "testCases": [
+  "test_cases": [
     {
-      "id": "TC-MSG-001",
-      "title": "User can browse and join a public channel",
-      "type": "functional",
+      "id": "TC-F1-001",
+      "title": "User can browse available channels and see channel details",
+      "description": "Verify that users can view a list of channels with names, topics, and member counts before joining",
+      "type": "happy_path",
       "priority": "critical",
-      "preconditions": ["User is logged in", "At least 3 public channels exist"],
-      "steps": [
-        "Open Chat tab",
-        "Verify channel list displays with name, topic, and member count",
-        "Tap a channel the user has not joined",
-        "Tap Join"
-      ],
-      "expectedResult": "User is added as a member. Channel thread is displayed. Channel appears in joined list with joined indicator.",
-      "linkedStory": "Browse and join a public channel"
+      "category": "Channel Discovery",
+      "prd_ref": "FR-01",
+      "story_ref": "F1.S1",
+      "scenario": {
+        "given": [
+          "User is logged in to the app",
+          "At least 5 public channels exist in the system"
+        ],
+        "when": [
+          "User navigates to the Chat tab",
+          "User views the channel list"
+        ],
+        "then": [
+          "All available channels are displayed",
+          "Each channel shows name, topic description, and current member count",
+          "Join button is visible for channels the user hasn't joined"
+        ]
+      },
+      "preconditions": ["User account exists and is authenticated"],
+      "test_data": {
+        "user_email": "test.trader@example.com",
+        "channels": [
+          { "name": "AAPL Watchers", "topic": "Apple stock discussion", "members": 245 },
+          { "name": "Tech Sector", "topic": "Technology stocks", "members": 892 }
+        ]
+      },
+      "tags": ["@smoke", "@regression"],
+      "automation_notes": "Use mock channel data; verify UI renders list correctly"
     },
     {
-      "id": "TC-MSG-002",
-      "title": "User can send a text message and see it delivered",
-      "type": "functional",
+      "id": "TC-F1-002",
+      "title": "User can join a public channel successfully",
+      "description": "Verify that tapping Join on a channel adds the user as a member and opens the thread",
+      "type": "happy_path",
       "priority": "critical",
-      "preconditions": ["User is a member of a channel", "A second test user is connected to the same channel"],
-      "steps": [
-        "Open joined channel",
-        "Type 'AAPL holding above 225 support, looks constructive' in compose box",
-        "Press Enter",
-        "Observe message appears in thread",
-        "Verify second user's client receives the message"
-      ],
-      "expectedResult": "Message appears in sender's thread within 500ms. Message appears on second user's client within 500ms. Timestamp is displayed.",
-      "linkedStory": "Send and receive text messages in a channel"
+      "category": "Channel Membership",
+      "prd_ref": "FR-01",
+      "story_ref": "F1.S2",
+      "scenario": {
+        "given": [
+          "User is viewing the channel list",
+          "Channel 'AAPL Watchers' exists and user is not a member"
+        ],
+        "when": [
+          "User taps on 'AAPL Watchers' channel",
+          "User taps the Join button"
+        ],
+        "then": [
+          "User is added as a member of the channel",
+          "Channel thread view opens showing message history",
+          "Channel appears in the user's joined channels list",
+          "Member count increments by 1"
+        ]
+      },
+      "preconditions": ["User is authenticated", "Channel exists"],
+      "test_data": {
+        "channel_id": "ch_12345",
+        "channel_name": "AAPL Watchers",
+        "user_id": "usr_67890"
+      },
+      "tags": ["@smoke", "@regression"],
+      "automation_notes": "Verify API call to POST /channels/{id}/members succeeds"
     },
     {
-      "id": "TC-MSG-003",
+      "id": "TC-F1-003",
+      "title": "Cannot join a channel if already a member",
+      "description": "Verify that Join button is not shown for channels the user has already joined",
+      "type": "bad_path",
+      "priority": "high",
+      "category": "Channel Membership",
+      "prd_ref": "FR-01",
+      "story_ref": "F1.S2",
+      "scenario": {
+        "given": [
+          "User is already a member of 'AAPL Watchers' channel"
+        ],
+        "when": [
+          "User views the channel list"
+        ],
+        "then": [
+          "Join button is not visible for 'AAPL Watchers'",
+          "Channel shows 'Joined' indicator instead"
+        ]
+      },
+      "preconditions": ["User is a member of at least one channel"],
+      "test_data": {
+        "channel_id": "ch_12345",
+        "user_id": "usr_67890"
+      },
+      "tags": ["@regression", "@negative"],
+      "automation_notes": "Mock membership status; verify UI state"
+    },
+    {
+      "id": "TC-F2-001",
+      "title": "User can send a text message and see it in the thread",
+      "description": "Verify that typing and sending a message results in it appearing in the channel thread",
+      "type": "happy_path",
+      "priority": "critical",
+      "category": "Messaging",
+      "prd_ref": "FR-02",
+      "story_ref": "F2.S1",
+      "scenario": {
+        "given": [
+          "User is a member of 'AAPL Watchers' channel",
+          "Channel thread is open"
+        ],
+        "when": [
+          "User types 'AAPL holding above 225 support' in the compose box",
+          "User presses Enter or taps Send"
+        ],
+        "then": [
+          "Message appears in the thread within 500ms",
+          "Message shows sender's name and timestamp",
+          "Compose box is cleared"
+        ]
+      },
+      "preconditions": ["User is channel member", "WebSocket connection is active"],
+      "test_data": {
+        "channel_id": "ch_12345",
+        "user_id": "usr_67890",
+        "message_text": "AAPL holding above 225 support"
+      },
+      "tags": ["@smoke", "@regression"],
+      "automation_notes": "Verify POST /channels/{id}/messages API call and WebSocket message receipt"
+    },
+    {
+      "id": "TC-F2-002",
+      "title": "Message appears for other users in real-time",
+      "description": "Verify that when one user sends a message, other members see it within 500ms",
+      "type": "happy_path",
+      "priority": "critical",
+      "category": "Real-time Sync",
+      "prd_ref": "FR-02",
+      "story_ref": "F2.S2",
+      "scenario": {
+        "given": [
+          "User A and User B are both members of the same channel",
+          "Both have the channel thread open"
+        ],
+        "when": [
+          "User A sends message 'Market looking bullish today'"
+        ],
+        "then": [
+          "User B sees the message appear in their thread within 500ms",
+          "Message shows User A as the sender",
+          "Timestamp matches send time"
+        ]
+      },
+      "preconditions": ["Two active WebSocket connections"],
+      "test_data": {
+        "user_a_id": "usr_11111",
+        "user_b_id": "usr_22222",
+        "channel_id": "ch_12345",
+        "message_text": "Market looking bullish today"
+      },
+      "tags": ["@smoke", "@regression"],
+      "automation_notes": "Use two browser contexts; verify WebSocket push event delivery"
+    },
+    {
+      "id": "TC-F2-003",
+      "title": "Cannot send empty messages",
+      "description": "Verify that Send button is disabled when message is empty or whitespace-only",
+      "type": "bad_path",
+      "priority": "medium",
+      "category": "Input Validation",
+      "prd_ref": "FR-02",
+      "story_ref": "F2.S1",
+      "scenario": {
+        "given": [
+          "User has channel thread open"
+        ],
+        "when": [
+          "Compose box is empty",
+          "User attempts to click Send"
+        ],
+        "then": [
+          "Send button is disabled",
+          "No API call is made"
+        ]
+      },
+      "preconditions": ["User is channel member"],
+      "test_data": {
+        "channel_id": "ch_12345",
+        "message_text": ""
+      },
+      "tags": ["@regression", "@negative"],
+      "automation_notes": "Verify button disabled state via DOM query"
+    },
+    {
+      "id": "TC-F2-004",
       "title": "Message delivery latency is under 500ms at p95",
-      "type": "performance",
+      "description": "Performance test verifying message latency meets NFR threshold under load",
+      "type": "edge_case",
       "priority": "critical",
-      "preconditions": ["Load test environment with 5,000 simulated concurrent WebSocket connections"],
-      "steps": [
-        "Send 1,000 messages across 50 channels using load test tool",
-        "Measure end-to-end delivery time from send to receipt on subscriber",
-        "Calculate p50, p95, and p99 latencies"
-      ],
-      "expectedResult": "p50 < 100ms. p95 < 500ms. p99 < 1,000ms. No message loss.",
-      "linkedStory": "Send and receive text messages in a channel"
+      "category": "Performance",
+      "prd_ref": "NFR-01",
+      "story_ref": "F2.S2",
+      "scenario": {
+        "given": [
+          "Load test environment with 5,000 simulated concurrent WebSocket connections"
+        ],
+        "when": [
+          "1,000 messages are sent across 50 channels using load test tool",
+          "End-to-end delivery time is measured from send to receipt"
+        ],
+        "then": [
+          "p50 latency is less than 100ms",
+          "p95 latency is less than 500ms",
+          "p99 latency is less than 1,000ms",
+          "No message loss occurs"
+        ]
+      },
+      "preconditions": ["Load test environment configured"],
+      "test_data": {
+        "concurrent_users": 5000,
+        "test_duration_seconds": 300,
+        "messages_per_second": 50
+      },
+      "tags": ["@performance"],
+      "automation_notes": "Use k6 or Artillery for load testing; measure WebSocket RTT"
     },
     {
-      "id": "TC-MSG-004",
+      "id": "TC-F3-001",
       "title": "User can attach a ticker card to a message",
-      "type": "functional",
+      "description": "Verify that user can search for a ticker and attach it as a card to their message",
+      "type": "happy_path",
       "priority": "critical",
-      "preconditions": ["User is a member of a channel", "AAPL is a valid symbol"],
-      "steps": [
-        "Open a channel thread",
-        "Tap the ticker-card icon in the compose toolbar",
-        "Search for 'AAPL'",
-        "Select AAPL from results",
-        "Add text 'My entry target:' to the compose box",
-        "Tap Send"
-      ],
-      "expectedResult": "Message appears in thread with text and an embedded AAPL ticker card showing current price and intraday % change.",
-      "linkedStory": "Share a live ticker card in a message"
+      "category": "Ticker Cards",
+      "prd_ref": "FR-03",
+      "story_ref": "F3.S1",
+      "scenario": {
+        "given": [
+          "User has channel thread open",
+          "AAPL is a valid tradeable symbol"
+        ],
+        "when": [
+          "User taps the ticker-card icon in compose toolbar",
+          "User searches for 'AAPL' in the picker",
+          "User selects AAPL from search results",
+          "User types 'My entry target:' in the compose box",
+          "User taps Send"
+        ],
+        "then": [
+          "Message appears in thread with text and embedded AAPL ticker card",
+          "Ticker card shows symbol, current price, and intraday % change",
+          "Card is rendered inline with the message text"
+        ]
+      },
+      "preconditions": ["User is channel member", "Market data API is available"],
+      "test_data": {
+        "channel_id": "ch_12345",
+        "ticker_symbol": "AAPL",
+        "message_text": "My entry target:",
+        "expected_card_data": {
+          "symbol": "AAPL",
+          "price": 225.50,
+          "change_percent": 1.2
+        }
+      },
+      "tags": ["@smoke", "@regression"],
+      "automation_notes": "Mock market data API; verify card rendering in message payload"
     },
     {
-      "id": "TC-MSG-005",
-      "title": "Ticker card price updates every 15 seconds",
-      "type": "functional",
+      "id": "TC-F3-002",
+      "title": "Ticker card price updates every 15 seconds during market hours",
+      "description": "Verify that ticker cards display live-updating prices at 15-second intervals",
+      "type": "happy_path",
       "priority": "high",
-      "preconditions": ["A message with an AAPL ticker card is visible in a channel during market hours"],
-      "steps": [
-        "Observe ticker card showing initial price",
-        "Wait 15 seconds",
-        "Observe ticker card price"
-      ],
-      "expectedResult": "Ticker card price is refreshed to reflect the current market price within 15 seconds. Change % updates accordingly.",
-      "linkedStory": "Share a live ticker card in a message"
+      "category": "Live Data",
+      "prd_ref": "FR-03",
+      "story_ref": "F3.S2",
+      "scenario": {
+        "given": [
+          "A message with an AAPL ticker card is visible in the channel",
+          "Market is open (9:30 AM - 4:00 PM ET)"
+        ],
+        "when": [
+          "15 seconds elapse",
+          "Market data updates with new price"
+        ],
+        "then": [
+          "Ticker card displays the updated price",
+          "Price change is reflected in the % change indicator",
+          "Update happens without full page refresh"
+        ]
+      },
+      "preconditions": ["Market hours", "WebSocket subscription active"],
+      "test_data": {
+        "ticker_symbol": "AAPL",
+        "initial_price": 225.50,
+        "updated_price": 225.75,
+        "update_interval_seconds": 15
+      },
+      "tags": ["@regression"],
+      "automation_notes": "Use mock WebSocket feed; verify UI updates via DOM query after 15s"
     },
     {
-      "id": "TC-MSG-006",
-      "title": "Tapping a ticker card navigates to instrument detail screen",
-      "type": "functional",
-      "priority": "high",
-      "preconditions": ["A message with a ticker card is visible in a channel thread"],
-      "steps": [
-        "Tap the ticker card in the message",
-        "Observe navigation"
-      ],
-      "expectedResult": "User is navigated to the TradeEasy instrument detail screen for the tapped symbol.",
-      "linkedStory": "Share a live ticker card in a message"
-    },
-    {
-      "id": "TC-MSG-007",
-      "title": "Message over 2,000 characters is rejected",
-      "type": "functional",
+      "id": "TC-F3-003",
+      "title": "Cannot attach ticker card for invalid symbol",
+      "description": "Verify that searching for a non-existent ticker shows appropriate error state",
+      "type": "bad_path",
       "priority": "medium",
-      "preconditions": ["User is composing a message in a channel"],
-      "steps": [
-        "Paste or type 2,001 characters in the compose box",
-        "Observe character counter",
-        "Tap Send"
-      ],
-      "expectedResult": "Character counter turns red and shows 'Over limit — 2,000 character maximum'. Send button is disabled. Message is not sent.",
-      "linkedStory": "Send and receive text messages in a channel"
+      "category": "Input Validation",
+      "prd_ref": "FR-03",
+      "story_ref": "F3.S1",
+      "scenario": {
+        "given": [
+          "User has opened the ticker card picker"
+        ],
+        "when": [
+          "User searches for 'INVALID_SYMBOL_XYZ'",
+          "No matching results are returned from market data API"
+        ],
+        "then": [
+          "Picker shows 'No results found' message",
+          "User cannot select or attach a card",
+          "Picker remains open for retry"
+        ]
+      },
+      "preconditions": ["Market data API available"],
+      "test_data": {
+        "invalid_symbol": "INVALID_SYMBOL_XYZ"
+      },
+      "tags": ["@regression", "@negative"],
+      "automation_notes": "Mock empty search response; verify error state UI"
     },
     {
-      "id": "TC-MSG-008",
-      "title": "Rate limiting prevents message spam",
-      "type": "functional",
+      "id": "TC-F3-004",
+      "title": "Ticker card shows stale indicator when market is closed",
+      "description": "Verify that ticker cards display a 'Market Closed' indicator outside trading hours",
+      "type": "edge_case",
       "priority": "medium",
-      "preconditions": ["User is in a channel"],
-      "steps": [
-        "Send 30 short messages in quick succession",
-        "Attempt to send a 31st message within the same 60-second window"
-      ],
-      "expectedResult": "After the 30th message, a toast appears: 'Slow down — you're sending messages too quickly'. Send is blocked for 10 seconds.",
-      "linkedStory": "Send and receive text messages in a channel"
-    },
-    {
-      "id": "TC-MSG-009",
-      "title": "Message history loads when opening a channel",
-      "type": "functional",
-      "priority": "high",
-      "preconditions": ["A channel has at least 50 existing messages"],
-      "steps": [
-        "Open a channel with message history",
-        "Measure time for last 50 messages to render"
-      ],
-      "expectedResult": "Last 50 messages displayed within 1 second. Messages are in chronological order (oldest at top, newest at bottom).",
-      "linkedStory": "Load message history on channel open"
-    },
-    {
-      "id": "TC-MSG-010",
-      "title": "Infinite scroll loads older message history",
-      "type": "functional",
-      "priority": "medium",
-      "preconditions": ["A channel has more than 50 messages"],
-      "steps": [
-        "Open a channel and allow initial 50 messages to load",
-        "Scroll to the top of the loaded messages"
-      ],
-      "expectedResult": "When the top of the loaded list is reached, the previous 50 messages load automatically. Scroll position is preserved.",
-      "linkedStory": "Load message history on channel open"
-    },
-    {
-      "id": "TC-MSG-011",
-      "title": "Blocked keyword in message is held for moderation",
-      "type": "functional",
-      "priority": "critical",
-      "preconditions": ["User is in a channel", "Moderation blocklist contains test pattern"],
-      "steps": [
-        "Send a message containing a blocked keyword",
-        "Observe result in sender's thread",
-        "Check if other members can see the message"
-      ],
-      "expectedResult": "Sender sees 'Your message is under review'. Message does not appear in the thread for other members.",
-      "linkedStory": "Messages are screened before delivery"
-    },
-    {
-      "id": "TC-MSG-012",
-      "title": "Compliance reviewer can approve a held message",
-      "type": "functional",
-      "priority": "high",
-      "preconditions": ["A message is in the compliance review queue"],
-      "steps": [
-        "Compliance reviewer opens review queue",
-        "Reviewer taps Approve on the held message"
-      ],
-      "expectedResult": "Message is delivered to the channel thread retroactively. Sender receives notification 'Your message has been approved'.",
-      "linkedStory": "Messages are screened before delivery"
-    },
-    {
-      "id": "TC-MSG-013",
-      "title": "Pump-and-dump velocity detection triggers hold",
-      "type": "functional",
-      "priority": "critical",
-      "preconditions": ["A channel is active"],
-      "steps": [
-        "Send 11 messages referencing the same ticker within 5 minutes in a single channel (via test harness)",
-        "Attempt to send a 12th message referencing the same ticker"
-      ],
-      "expectedResult": "The 12th message is held for review. A notice appears: 'High message volume detected for this ticker — your message is under review'.",
-      "linkedStory": "Messages are screened before delivery"
-    },
-    {
-      "id": "TC-MSG-014",
-      "title": "User can create a new public channel",
-      "type": "functional",
-      "priority": "high",
-      "preconditions": ["User is on the channel list screen"],
-      "steps": [
-        "Tap 'New Channel'",
-        "Enter name 'nvda-bulls' and topic 'NVIDIA earnings and AI news'",
-        "Tap Create"
-      ],
-      "expectedResult": "Channel is created. User is auto-joined as founder. Channel appears in the channel list. Other users can discover and join it.",
-      "linkedStory": "Create a new public channel"
-    },
-    {
-      "id": "TC-MSG-015",
-      "title": "Duplicate channel name is rejected",
-      "type": "functional",
-      "priority": "medium",
-      "preconditions": ["Channel 'aapl-watchers' already exists"],
-      "steps": [
-        "Tap 'New Channel'",
-        "Enter name 'aapl-watchers'",
-        "Tap Create"
-      ],
-      "expectedResult": "Inline error: 'A channel with this name already exists'. Channel is not created.",
-      "linkedStory": "Create a new public channel"
-    },
-    {
-      "id": "TC-MSG-016",
-      "title": "User can leave a channel",
-      "type": "functional",
-      "priority": "medium",
-      "preconditions": ["User is a member of a channel"],
-      "steps": [
-        "Open channel settings",
-        "Tap 'Leave Channel'",
-        "Confirm"
-      ],
-      "expectedResult": "User is removed from the channel. Channel no longer appears in joined list. Member count decrements by 1. Message history is preserved.",
-      "linkedStory": "Leave a channel"
-    },
-    {
-      "id": "TC-MSG-017",
-      "title": "All messages are written to archive within 1 hour",
-      "type": "compliance",
-      "priority": "critical",
-      "preconditions": ["Archive pipeline is running", "Test messages are sent"],
-      "steps": [
-        "Send 10 test messages across 2 channels",
-        "Wait 1 hour",
-        "Query compliance archive API for those messages"
-      ],
-      "expectedResult": "All 10 messages appear in the archive with correct channel_id, user_id, content, and created_at. Moderation status is included.",
-      "linkedStory": "Messages are archived for 7-year MiFID II retention"
-    },
-    {
-      "id": "TC-MSG-018",
-      "title": "Compliance team can search archived messages by user and date range",
-      "type": "compliance",
-      "priority": "high",
-      "preconditions": ["Messages exist in the archive for user-123"],
-      "steps": [
-        "Call compliance API: GET /internal/compliance/messages?userId=user-123&from=2026-01-01&to=2026-06-01",
-        "Verify response"
-      ],
-      "expectedResult": "Response contains all messages sent by user-123 in the specified date range. Results are returned within 30 seconds. Each record includes: message_id, channel_id, user_id, content, ticker_ref, created_at, moderation_status.",
-      "linkedStory": "Messages are archived for 7-year MiFID II retention"
+      "category": "Live Data",
+      "prd_ref": "FR-03",
+      "story_ref": "F3.S2",
+      "scenario": {
+        "given": [
+          "A message with an AAPL ticker card is visible",
+          "Current time is outside market hours (before 9:30 AM or after 4:00 PM ET)"
+        ],
+        "when": [
+          "User views the ticker card"
+        ],
+        "then": [
+          "Card displays 'Market Closed' badge",
+          "Last known price is shown with timestamp",
+          "Price does not auto-update"
+        ]
+      },
+      "preconditions": ["After-hours time"],
+      "test_data": {
+        "ticker_symbol": "AAPL",
+        "last_price": 225.50,
+        "market_status": "closed",
+        "last_updated": "2024-06-10T16:00:00Z"
+      },
+      "tags": ["@regression", "@edge"],
+      "automation_notes": "Mock system clock or market status API response"
     }
-  ]
+  ],
+  "coverage": {
+    "total": 12,
+    "happy_paths": 6,
+    "bad_paths": 3,
+    "edge_cases": 3,
+    "by_priority": {
+      "critical": 6,
+      "high": 2,
+      "medium": 4,
+      "low": 0
+    },
+    "by_fr": {
+      "FR-01": 3,
+      "FR-02": 4,
+      "FR-03": 4,
+      "NFR-01": 1
+    }
+  }
 }

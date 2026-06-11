@@ -122,6 +122,9 @@ export const stmts = {
   updateWorkflowStageAndStatus: db.prepare(`
     UPDATE workflows SET current_stage = ?, status = ?, updated_at = ? WHERE id = ?
   `),
+  updateWorkflowStageSequence: db.prepare(`
+    UPDATE workflows SET stage_sequence = ?, updated_at = ? WHERE id = ?
+  `),
   insertCheckpoint: db.prepare(`
     INSERT INTO checkpoints (workflow_id, stage, artifact_id, status, human_feedback, coordinator_action, created_at)
     VALUES (?, ?, ?, ?, NULL, ?, ?)

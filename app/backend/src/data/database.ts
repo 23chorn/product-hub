@@ -53,6 +53,9 @@ db.exec(safeSchema);
 try { db.exec('ALTER TABLE items ADD COLUMN metadata TEXT'); } catch { /* already exists */ }
 try { db.exec('ALTER TABLE checkpoints ADD COLUMN token_usage TEXT'); } catch { /* already exists */ }
 try { db.exec('ALTER TABLE artifacts ADD COLUMN skill_version_id INTEGER REFERENCES skill_versions(id)'); } catch { /* already exists */ }
+try { db.exec('ALTER TABLE artifacts ADD COLUMN external_system TEXT'); } catch { /* already exists */ }
+try { db.exec('ALTER TABLE artifacts ADD COLUMN external_path TEXT'); } catch { /* already exists */ }
+try { db.exec('ALTER TABLE artifacts ADD COLUMN external_url TEXT'); } catch { /* already exists */ }
 try { db.exec("ALTER TABLE skill_versions ADD COLUMN discipline TEXT NOT NULL DEFAULT 'agent'"); } catch { /* already exists */ }
 try {
   db.exec(`CREATE TABLE IF NOT EXISTS context_file_versions (

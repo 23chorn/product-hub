@@ -1,6 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
+import * as fs from 'fs';
+import * as path from 'path';
 import db from '../data/database';
+import { DATA_DIR } from '../data/database';
 import { createWorkflow, advanceStage } from '../agents/workflow-router';
 import { runDemoScript, getDemoProjectPath } from '../demo/demo-runner';
 import Logger from '../utils/logger';
@@ -93,7 +96,138 @@ Constraints:
 
 let sampleIndex = 0;
 
-const DEFAULT_STAGES = ['analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'tech_refinement', 'prototype', 'qa_engineer', 'curator'];
+// ── Demo run cleanup ──────────────────────────────────────────────────────────
+
+/**
+ * Find all items created by previous demo runs (workflows with demo_auto_approve policy).
+ * Delete their external resources (wiki pages, ADO work items, ADO test plans),
+ * then remove all local DB rows and disk files.
+ *
+ * Called at the start of each new demo trigger so Azure stays clean.
+ * Errors are caught per-resource — one failure doesn't abort the rest.
+ */
+async function cleanupPreviousDemoRuns(): Promise<void> {
+  // Find all items that were created by a demo webhook run
+  const demoItems = db.prepare<[], { item_id: string }>(`
+    SELECT DISTINCT w.item_id
+    FROM workflows w
+    WHERE w.policy_overrides LIKE '%demo_mode%' OR w.policy_overrides LIKE '%demo_auto_approve%'
+  `).all();
+
+  if (demoItems.length === 0) {
+    logger.info('[DEMO CLEANUP] No previous demo runs found');
+    return;
+  }
+
+  logger.info(`[DEMO CLEANUP] Cleaning up ${demoItems.length} previous demo item(s)...`);
+
+  const { appConfig } = require('../config/app-config');
+  const adoEnabled = appConfig.integrations.workItems === 'ado';
+
+  for (const { item_id: itemId } of demoItems) {
+    try {
+      // ── Collect external resource IDs before deleting DB rows ──────────────
+
+      // Wiki artifact paths (analyst, pm_prd, solution_architect, prototype)
+      const wikiPaths = db.prepare<[string], { external_path: string }>(
+        `SELECT DISTINCT a.external_path
+         FROM artifacts a JOIN sessions s ON a.session_id = s.id
+         WHERE s.item_id = ? AND a.external_system = 'azure_wiki' AND a.external_path IS NOT NULL`
+      ).all(itemId).map(r => r.external_path);
+
+      // ADO work item IDs — delete children before parents (stories → features → epic)
+      // so ADO doesn't reject the parent delete due to existing children.
+      const adoWorkItemIds = db.prepare<[string], { ado_id: number }>(
+        `SELECT ado_id FROM ado_work_item_map
+         WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?)
+         ORDER BY CASE ado_type WHEN 'story' THEN 1 WHEN 'feature' THEN 2 ELSE 3 END`
+      ).all(itemId).map(r => r.ado_id);
+
+      // ADO test plan IDs (from qa_test_plan_map)
+      const adoTestPlanIds = db.prepare<[string], { plan_id: number }>(
+        `SELECT plan_id FROM qa_test_plan_map
+         WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?)`
+      ).all(itemId).map(r => r.plan_id);
+
+      // ── Delete external resources ──────────────────────────────────────────
+
+      if (adoEnabled && (wikiPaths.length > 0 || adoWorkItemIds.length > 0 || adoTestPlanIds.length > 0)) {
+        try {
+          const { AzureDevOpsClient } = require('../integrations/azure-devops');
+          const { deleteFromWiki } = require('../integrations/document-store/azure-wiki-store');
+          const client = new AzureDevOpsClient();
+
+          // Delete wiki pages (individual pages, then the feature folder placeholder)
+          for (const wikiPath of wikiPaths) {
+            await deleteFromWiki(wikiPath).catch((e: Error) =>
+              logger.warn(`[DEMO CLEANUP] Wiki page delete failed (${wikiPath}): ${e.message}`)
+            );
+          }
+          // Delete the parent feature folder (e.g. /Product Documentation/Features/{title})
+          // Best-effort — ADO will refuse if it still has children, which is fine
+          if (wikiPaths.length > 0) {
+            const parentPath = wikiPaths[0].split('/').slice(0, -1).join('/');
+            if (parentPath) {
+              await deleteFromWiki(parentPath).catch(() => { /* folder may have children — ignore */ });
+            }
+          }
+
+          // Delete ADO work items (epic, features, stories)
+          if (adoWorkItemIds.length > 0) {
+            await client.deleteWorkItems(adoWorkItemIds).catch((e: Error) =>
+              logger.warn(`[DEMO CLEANUP] Work item delete failed: ${e.message}`)
+            );
+          }
+
+          // Delete ADO test plans
+          for (const planId of adoTestPlanIds) {
+            await client.deleteTestPlan(planId).catch((e: Error) =>
+              logger.warn(`[DEMO CLEANUP] Test plan delete failed (#${planId}): ${e.message}`)
+            );
+          }
+        } catch (externalErr: any) {
+          logger.warn(`[DEMO CLEANUP] External cleanup error for item ${itemId}: ${externalErr.message}`);
+        }
+      }
+
+      // ── Delete local disk files ────────────────────────────────────────────
+      const sessionDir = path.join(DATA_DIR, 'sessions', itemId);
+      if (fs.existsSync(sessionDir)) {
+        try { fs.rmSync(sessionDir, { recursive: true, force: true }); } catch { /* ignore */ }
+      }
+
+      // ── Delete local DB rows in FK-safe order ─────────────────────────────
+      db.transaction(() => {
+        db.prepare(`DELETE FROM cr_artifact_versions WHERE change_request_id IN (SELECT id FROM change_requests WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?))`).run(itemId);
+        db.prepare(`DELETE FROM qa_test_plan_map WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?)`).run(itemId);
+        db.prepare(`DELETE FROM ado_work_item_map WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?)`).run(itemId);
+        db.prepare(`DELETE FROM change_requests WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?)`).run(itemId);
+        db.prepare(`DELETE FROM context_diffs WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?)`).run(itemId);
+        db.prepare(`DELETE FROM checkpoints WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?)`).run(itemId);
+        db.prepare(`DELETE FROM workflows WHERE item_id = ?`).run(itemId);
+        db.prepare(`DELETE FROM context_change_proposals WHERE session_id IN (SELECT id FROM sessions WHERE item_id = ?)`).run(itemId);
+        db.prepare(`DELETE FROM sessions WHERE item_id = ?`).run(itemId);
+        db.prepare(`DELETE FROM items WHERE id = ?`).run(itemId);
+      })();
+
+      logger.info(`[DEMO CLEANUP] Cleaned item ${itemId} (wiki: ${wikiPaths.length}, ado_items: ${adoWorkItemIds.length}, test_plans: ${adoTestPlanIds.length})`);
+    } catch (itemErr: any) {
+      logger.error(`[DEMO CLEANUP] Failed to clean item ${itemId}: ${itemErr.message}`);
+    }
+  }
+
+  logger.info('[DEMO CLEANUP] Complete');
+}
+
+// Demo webhook stage sequence (matches TOGGLEABLE_STAGES order in frontend)
+// NOTE: 'qa_engineer' and 'tech_refinement' are NOT included here — they are now embedded in story_decomposition_F* stages
+// as a 7-agent collaborative refinement session (Product + QA + 4 Engineers working together per feature).
+// epic_feature_planner injects story_decomposition_F1, F2, F3 (each runs the multi-agent workflow internally).
+const CORE_STAGES = ['analyst', 'pm_prd', 'prototype', 'solution_architect', 'epic_feature_planner', 'story_decomposition'];
+
+function buildDemoStages(): string[] {
+  return [...CORE_STAGES, 'curator'];
+}
 
 /**
  * POST /api/demo/webhook/trigger
@@ -105,6 +239,9 @@ const DEFAULT_STAGES = ['analyst', 'pm_prd', 'solution_architect', 'pm_backlog',
  */
 demoWebhookRoutes.post('/demo/webhook/trigger', async (req: Request, res: Response) => {
   try {
+    // Clean up all resources from previous demo runs before starting a new one
+    await cleanupPreviousDemoRuns();
+
     // If forceIndex is provided, use that sample; otherwise cycle through all four
     const forceIndex = req.body?.forceIndex;
     const sample = typeof forceIndex === 'number'
@@ -125,11 +262,15 @@ demoWebhookRoutes.post('/demo/webhook/trigger', async (req: Request, res: Respon
     const goal = `${sample.title}\n\n${sample.description}`;
 
     // Create workflow and kick off first stage
-    const workflow = createWorkflow(itemId, goal, DEFAULT_STAGES, { demo_auto_approve: 'true' });
+    // NOTE: demo_mode flag identifies demo workflows for cleanup, but does NOT auto-approve checkpoints
+    // Human review stages are enabled — user must manually approve each checkpoint
+    const stages = buildDemoStages();
+    const workflow = createWorkflow(itemId, goal, stages, { demo_mode: 'true' });
 
     // When the workflow completes, run Claude Code CLI on the tradeeasy-demo repo
     // to implement the feature on a fresh branch and run Playwright tests.
-    if (getDemoProjectPath()) {
+    // Gated by DEMO_CODE_PIPELINE_ENABLED=true so core-flow testing skips this.
+    if (process.env.DEMO_CODE_PIPELINE_ENABLED === 'true' && getDemoProjectPath()) {
       const pollAndRun = () => {
         const wf = db.prepare('SELECT status FROM workflows WHERE id = ?').get(workflow.id) as any;
         if (wf?.status === 'complete') {
@@ -147,13 +288,13 @@ demoWebhookRoutes.post('/demo/webhook/trigger', async (req: Request, res: Respon
       logger.error(`advanceStage failed for demo webhook workflow ${workflow.id}`, err)
     );
 
-    logger.info(`Demo webhook: created initiative "${sample.title}" → workflow ${workflow.id}`);
+    logger.info(`Demo webhook: created initiative "${sample.title}" → workflow ${workflow.id} [stages: ${stages.join(', ')}]`);
 
     return res.json({
       workflowId: workflow.id,
       itemId,
       initiative: sample.title,
-      stages: DEFAULT_STAGES,
+      stages,
     });
   } catch (err: any) {
     logger.error('Demo webhook trigger failed', err);

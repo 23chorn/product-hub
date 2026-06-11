@@ -14,7 +14,7 @@ import * as fsAsync from 'fs/promises';
 import * as path from 'path';
 import db from '../data/database';
 import { streamAI, resolveAgentModel } from '../utils/ai-provider';
-import { getLatestArtifactPathByType } from './artifact-helpers';
+import { loadArtifactContentById } from './artifact-helpers';
 import Logger from '../utils/logger';
 
 const logger = new Logger('DEMO-PROJECT');
@@ -40,8 +40,8 @@ function slugify(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
 }
 
-function loadArtifactText(filePath: string): string {
-  try { return fs.readFileSync(filePath, 'utf-8'); } catch { return ''; }
+async function loadArtifactText(id: number): Promise<string> {
+  try { return (await loadArtifactContentById(id)) ?? ''; } catch { return ''; }
 }
 
 function extractField(content: string, label: string): string {
@@ -458,13 +458,15 @@ export async function generateDemoProject(
   // ── Load artifacts ────────────────────────────────────────────────────────
   onStatus({ phase: 'generating', message: 'Reading workflow artifacts…' });
 
-  const prdPath     = db.prepare(`SELECT file_path FROM artifacts a JOIN sessions s ON a.session_id = s.id WHERE s.item_id = ? AND a.type = 'prd' ORDER BY a.created_at DESC LIMIT 1`).get(workflow.item_id) as any;
-  const backlogPath = getLatestArtifactPathByType(workflow.item_id, 'backlog');
-  const qaPath      = db.prepare(`SELECT file_path FROM artifacts a JOIN sessions s ON a.session_id = s.id WHERE s.item_id = ? AND a.type = 'qa_tests' ORDER BY a.created_at DESC LIMIT 1`).get(workflow.item_id) as any;
+  const prdRow     = db.prepare(`SELECT a.id FROM artifacts a JOIN sessions s ON a.session_id = s.id WHERE s.item_id = ? AND a.type = 'prd' ORDER BY a.created_at DESC LIMIT 1`).get(workflow.item_id) as any;
+  const backlogRow = db.prepare(`SELECT a.id FROM artifacts a JOIN sessions s ON a.session_id = s.id WHERE s.item_id = ? AND a.type = 'backlog' ORDER BY a.created_at DESC LIMIT 1`).get(workflow.item_id) as any;
+  const qaRow      = db.prepare(`SELECT a.id FROM artifacts a JOIN sessions s ON a.session_id = s.id WHERE s.item_id = ? AND a.type = 'qa_tests' ORDER BY a.created_at DESC LIMIT 1`).get(workflow.item_id) as any;
 
-  const prdText     = prdPath     ? loadArtifactText(prdPath.file_path)     : '';
-  const backlogText = backlogPath ? loadArtifactText(backlogPath)            : '';
-  const qaText      = qaPath      ? loadArtifactText(qaPath.file_path)       : '';
+  const [prdText, backlogText, qaText] = await Promise.all([
+    prdRow     ? loadArtifactText(prdRow.id)     : Promise.resolve(''),
+    backlogRow ? loadArtifactText(backlogRow.id) : Promise.resolve(''),
+    qaRow      ? loadArtifactText(qaRow.id)      : Promise.resolve(''),
+  ]);
 
   const prdSummary   = prdText     ? extractField(prdText, 'Problem|Overview|Goals') : `Feature: ${goal}`;
   const storyLines   = (() => {

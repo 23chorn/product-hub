@@ -17,7 +17,14 @@ interface WorkflowEvent {
 export function eventToMessage(event: WorkflowEvent): { role: 'coordinator'; content: string; timestamp: number; eventType: string; stage?: string } | null {
   let content = event.summary;
 
-  // stage_completed: no content preview — artifact viewer handles full output
+  // stage_completed — append external URL (wiki or ADO board) for direct linking
+  if (event.event_type === 'stage_completed' && event.details) {
+    try {
+      const details = JSON.parse(event.details);
+      if (details.wiki_url) content = `${content}\n→ ${details.wiki_url}`;
+      else if (details.ado_url) content = `${content}\n→ ${details.ado_url}`;
+    } catch { /* ignore */ }
+  }
 
   // Format critic verdict with structured issues
   if (event.event_type === 'critic_verdict' && event.details) {
@@ -69,19 +76,29 @@ export function eventToMessage(event: WorkflowEvent): { role: 'coordinator'; con
     } catch { /* fall through to raw summary */ }
   }
 
-  // Board sync — surface the top-level ticket URL prominently
+  // Board sync — surface the top-level ticket or test plan URL prominently
   if (event.event_type === 'board_synced' && event.details) {
     try {
       const details = JSON.parse(event.details);
-      const url = details.top_url;
-      const id = details.top_id;
-      const level: string = details.level ?? 'Epic';
-      const levelLabel = level.charAt(0).toUpperCase() + level.slice(1);
-      const parts = [`${levelLabel} #${id} created on Azure DevOps`];
-      if (details.feature_count) parts.push(`${details.feature_count} feature${details.feature_count !== 1 ? 's' : ''}`);
-      if (details.story_count) parts.push(`${details.story_count} stor${details.story_count !== 1 ? 'ies' : 'y'}`);
-      if (url) parts.push(`→ ${url}`);
-      content = parts.join('\n');
+      if (details.plan_id) {
+        // Test plan push
+        const url = details.plan_url;
+        const parts = [`Test Plan #${details.plan_id} ${details.created > 0 ? 'created' : 'synced'} on Azure DevOps`];
+        if (details.created > 0) parts.push(`${details.created} test case${details.created !== 1 ? 's' : ''} added`);
+        if (url) parts.push(`→ ${url}`);
+        content = parts.join('\n');
+      } else {
+        // Board (Epic/Feature/Story) push
+        const url = details.top_url;
+        const id = details.top_id;
+        const level: string = details.level ?? 'Epic';
+        const levelLabel = level.charAt(0).toUpperCase() + level.slice(1);
+        const parts = [`${levelLabel} #${id} created on Azure DevOps`];
+        if (details.feature_count) parts.push(`${details.feature_count} feature${details.feature_count !== 1 ? 's' : ''}`);
+        if (details.story_count) parts.push(`${details.story_count} stor${details.story_count !== 1 ? 'ies' : 'y'}`);
+        if (url) parts.push(`→ ${url}`);
+        content = parts.join('\n');
+      }
     } catch { /* use summary */ }
   }
 

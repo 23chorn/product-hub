@@ -116,14 +116,14 @@ export function ArtifactViewer() {
   }
 
   const workItemsEnabled = config?.integrations?.workItems && config.integrations.workItems !== 'none';
-  const isBacklog = artifactType === 'backlog';
+  const isBacklog = artifactType === 'backlog' || artifactType === 'epic_features';
   // Show push button only when workflow is complete and backlog was approved
   const backlogApproved = isBacklog && checkpoints.some(c => c.stage === 'pm_backlog' && c.status === 'approved');
   const workflowComplete = activeWorkflow?.status === 'complete';
   const showPushButton = isBacklog && workItemsEnabled && backlogApproved && workflowComplete;
 
   const isQATests = artifactType === 'qa_tests';
-  const qaApproved = isQATests && checkpoints.some(c => c.stage === 'qa_engineer' && c.status === 'approved');
+  const qaApproved = isQATests && checkpoints.some(c => (c.stage === 'qa_engineer' || c.stage?.startsWith('qa_engineer_F')) && c.status === 'approved');
   const showTestPlanButton = isQATests && workItemsEnabled && qaApproved && workflowComplete;
 
   // Wiki sync button for research, PRD, and architecture documents
@@ -486,7 +486,7 @@ export function ArtifactViewer() {
                     } else {
                       // Pretty-print JSON for backlog/prototype so it's readable
                       let formatted = content;
-                      if (artifactType === 'backlog' || artifactType === 'prototype') {
+                      if (artifactType === 'backlog' || artifactType === 'epic_features' || artifactType === 'prototype') {
                         try { formatted = JSON.stringify(JSON.parse(content), null, 2); } catch { /* use as-is */ }
                       }
                       setEditContent(formatted);
@@ -533,7 +533,7 @@ export function ArtifactViewer() {
 
           {/* Content */}
           {(() => {
-            const backlogData = content && artifactType === 'backlog' ? tryParseBacklog(content) : null;
+            const backlogData = content && (artifactType === 'backlog' || artifactType === 'epic_features') ? tryParseBacklog(content) : null;
             const techData = content && artifactType === 'backlog' && !backlogData ? tryParseTechRefinement(content) : null;
             const showPersonaPanel = isFullscreen && backlogData && extractPersonas(backlogData).length > 0;
 
@@ -557,7 +557,7 @@ export function ArtifactViewer() {
                       const qaData = artifactType === 'qa_tests' ? tryParseQATests(content) : null;
                       if (qaData) return <QATestsView data={qaData} />;
                       // JSON artifact types that failed to parse — render as code block with warning
-                      if (artifactType === 'qa_tests' || artifactType === 'backlog') {
+                      if (artifactType === 'qa_tests' || artifactType === 'backlog' || artifactType === 'epic_features') {
                         return (
                           <div className="space-y-3">
                             <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">

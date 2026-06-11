@@ -168,6 +168,6 @@ demoProjectRoutes.get('/workflow/:id/demo-project/run/status', (req: Request, re
   const state = getRunState(id);
   res.json({
     ...state,
-    configured: !!getDemoProjectPath(),
+    configured: !!getDemoProjectPath() && process.env.DEMO_CODE_PIPELINE_ENABLED === 'true',
   });
 });

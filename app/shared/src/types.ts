@@ -168,8 +168,8 @@ export interface QuickItem {
 // Specialist Agent Types
 // ============================================
 
-export type AppMode = 'prd' | 'backlog' | 'analyst' | 'architecture' | 'decision-log' | 'context' | 'gtm' | 'feature_marketing' | 'prototype' | 'qa' | 'tech_refinement';
-export type AgentType = 'pm' | 'analyst' | 'architect' | 'decision-log' | 'context-keeper' | 'gtm' | 'marketer' | 'prototype-builder' | 'qa-engineer' | 'tech-refinement';
+export type AppMode = 'prd' | 'backlog' | 'analyst' | 'epic_features' | 'architecture' | 'decision-log' | 'context' | 'gtm' | 'feature_marketing' | 'prototype' | 'qa' | 'tech_refinement';
+export type AgentType = 'pm' | 'analyst' | 'epic-feature-planner' | 'architect' | 'story-decomposition' | 'decision-log' | 'context-keeper' | 'gtm' | 'marketer' | 'prototype-builder' | 'qa-engineer' | 'tech-refinement' | 'backend-engineer' | 'web-engineer' | 'ios-engineer' | 'android-engineer';
 
 
 // ============================================

@@ -426,7 +426,10 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
     let diffCount: number;
     let reasoning: string | null;
 
-    if (isDemoMode()) {
+    const workflowPolicies = JSON.parse(workflow.policy_overrides ?? '{}');
+    const isDemoWorkflow = isDemoMode() || workflowPolicies.demo_auto_approve === 'true';
+
+    if (isDemoWorkflow) {
       await demoSleep(DEMO_STAGE_DELAY_MS['curator'] ?? 1500);
       diffCount = 3;
       const fixtureTheme = process.env.DEMO_FIXTURE_THEME ?? 'price-alerts';
@@ -638,13 +641,20 @@ export function pauseAtCheckpoint(
   workflowId: string,
   stage: string,
   artifactId?: number,
-  sessionId?: string
+  sessionId?: string,
+  metadata?: Record<string, any>
 ): import('./workflow-db').CheckpointRow {
   const now = Date.now();
-  const coordinatorAction = sessionId ? JSON.stringify({ session_id: sessionId }) : null;
+
+  // Build coordinator_action JSON with session_id and optional metadata
+  let coordinatorAction: Record<string, any> = {};
+  if (sessionId) coordinatorAction.session_id = sessionId;
+  if (metadata) coordinatorAction = { ...coordinatorAction, ...metadata };
 
   const result = stmts.insertCheckpoint.run(
-    workflowId, stage, artifactId ?? null, 'pending', coordinatorAction, now
+    workflowId, stage, artifactId ?? null, 'pending',
+    Object.keys(coordinatorAction).length > 0 ? JSON.stringify(coordinatorAction) : null,
+    now
   );
 
   stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);

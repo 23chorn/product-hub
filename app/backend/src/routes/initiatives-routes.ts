@@ -207,6 +207,7 @@ router.patch('/:id', (req: Request, res: Response) => {
 /**
  * DELETE /api/initiatives/:id
  * Delete a local initiative and all associated sessions/workflows/files.
+ * If the item was created by a demo workflow, clean up external ADO resources first.
  */
 router.delete('/:id', async (req: Request, res: Response) => {
   const { id } = req.params;
@@ -216,7 +217,88 @@ router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const sessions = stmts.getSessions.all(id) as { id: string }[];
 
-    // Delete session directory from disk
+    // ── Check if this is a demo item ───────────────────────────────────────
+    const isDemo = db.prepare<[string], { count: number }>(
+      `SELECT COUNT(*) as count FROM workflows
+       WHERE item_id = ? AND (policy_overrides LIKE '%demo_mode%' OR policy_overrides LIKE '%demo_auto_approve%')`
+    ).get(id);
+
+    // ── Clean up external resources if demo item ───────────────────────────
+    if (isDemo && isDemo.count > 0) {
+      logger.info(`[INITIATIVE DELETE] Item ${id} is a demo — cleaning external resources`);
+
+      const { appConfig } = require('../config/app-config');
+      const adoEnabled = appConfig.integrations.workItems === 'ado';
+
+      if (adoEnabled) {
+        try {
+          // Collect external resource IDs before deleting DB rows
+          const fs = await import('fs');
+          const path = await import('path');
+
+          // Wiki artifact paths (analyst, pm_prd, solution_architect, prototype)
+          const wikiPaths = db.prepare<[string], { external_path: string }>(
+            `SELECT DISTINCT a.external_path
+             FROM artifacts a JOIN sessions s ON a.session_id = s.id
+             WHERE s.item_id = ? AND a.external_system = 'azure_wiki' AND a.external_path IS NOT NULL`
+          ).all(id).map(r => r.external_path);
+
+          // ADO work item IDs — delete children before parents (stories → features → epic)
+          const adoWorkItemIds = db.prepare<[string], { ado_id: number }>(
+            `SELECT ado_id FROM ado_work_item_map
+             WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?)
+             ORDER BY CASE ado_type WHEN 'story' THEN 1 WHEN 'feature' THEN 2 ELSE 3 END`
+          ).all(id).map(r => r.ado_id);
+
+          // ADO test plan IDs (from qa_test_plan_map)
+          const adoTestPlanIds = db.prepare<[string], { plan_id: number }>(
+            `SELECT plan_id FROM qa_test_plan_map
+             WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?)`
+          ).all(id).map(r => r.plan_id);
+
+          // Delete external resources
+          if (wikiPaths.length > 0 || adoWorkItemIds.length > 0 || adoTestPlanIds.length > 0) {
+            const { AzureDevOpsClient } = require('../integrations/azure-devops');
+            const { deleteFromWiki } = require('../integrations/document-store/azure-wiki-store');
+            const client = new AzureDevOpsClient();
+
+            // Delete wiki pages (individual pages, then the feature folder placeholder)
+            for (const wikiPath of wikiPaths) {
+              await deleteFromWiki(wikiPath).catch((e: Error) =>
+                logger.warn(`[INITIATIVE DELETE] Wiki page delete failed (${wikiPath}): ${e.message}`)
+              );
+            }
+            // Delete the parent feature folder (best-effort)
+            if (wikiPaths.length > 0) {
+              const parentPath = wikiPaths[0].split('/').slice(0, -1).join('/');
+              if (parentPath) {
+                await deleteFromWiki(parentPath).catch(() => { /* folder may have children — ignore */ });
+              }
+            }
+
+            // Delete ADO work items (epic, features, stories)
+            if (adoWorkItemIds.length > 0) {
+              await client.deleteWorkItems(adoWorkItemIds).catch((e: Error) =>
+                logger.warn(`[INITIATIVE DELETE] Work item delete failed: ${e.message}`)
+              );
+            }
+
+            // Delete ADO test plans
+            for (const planId of adoTestPlanIds) {
+              await client.deleteTestPlan(planId).catch((e: Error) =>
+                logger.warn(`[INITIATIVE DELETE] Test plan delete failed (#${planId}): ${e.message}`)
+              );
+            }
+
+            logger.info(`[INITIATIVE DELETE] Cleaned external resources (wiki: ${wikiPaths.length}, ado_items: ${adoWorkItemIds.length}, test_plans: ${adoTestPlanIds.length})`);
+          }
+        } catch (externalErr: any) {
+          logger.warn(`[INITIATIVE DELETE] External cleanup error for item ${id}: ${externalErr.message}`);
+        }
+      }
+    }
+
+    // ── Delete session directory from disk ─────────────────────────────────
     const fs = await import('fs');
     const path = await import('path');
     const DATA_DIR = (await import('../data/database')).DATA_DIR;
@@ -225,12 +307,29 @@ router.delete('/:id', async (req: Request, res: Response) => {
       fs.rmSync(sessionDir, { recursive: true, force: true });
     }
 
-    // Delete in FK-safe order within a transaction:
-    // context_diffs → checkpoints → workflows → sessions (messages/artifacts cascade) → item
+    // ── Delete local DB rows in FK-safe order ──────────────────────────────
+    // Tables that CASCADE from workflows (workflow_events, coordinator_sessions,
+    // workflow_skill_assignments, pipeline_runs) are deleted automatically.
+    // Tables that CASCADE from sessions (messages, artifacts, staged_decisions,
+    // context_loads) are also deleted automatically.
+    // Everything else must be deleted explicitly in dependency order.
     db.transaction(() => {
+      // cr_artifact_versions → change_requests + artifacts
+      db.prepare(`DELETE FROM cr_artifact_versions WHERE change_request_id IN (SELECT id FROM change_requests WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?))`).run(id);
+      // qa_test_plan_map + ado_work_item_map → workflows + artifacts
+      db.prepare(`DELETE FROM qa_test_plan_map WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?)`).run(id);
+      db.prepare(`DELETE FROM ado_work_item_map WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?)`).run(id);
+      // change_requests → workflows
+      db.prepare(`DELETE FROM change_requests WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?)`).run(id);
+      // context_diffs → workflows
       db.prepare(`DELETE FROM context_diffs WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?)`).run(id);
+      // checkpoints → workflows + artifacts
       db.prepare(`DELETE FROM checkpoints WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?)`).run(id);
+      // workflows (CASCADE: workflow_events, coordinator_sessions, workflow_skill_assignments, pipeline_runs)
       db.prepare(`DELETE FROM workflows WHERE item_id = ?`).run(id);
+      // context_change_proposals → sessions (no cascade)
+      db.prepare(`DELETE FROM context_change_proposals WHERE session_id IN (SELECT id FROM sessions WHERE item_id = ?)`).run(id);
+      // sessions (CASCADE: messages, artifacts, staged_decisions, context_loads)
       db.prepare(`DELETE FROM sessions WHERE item_id = ?`).run(id);
       stmts.delete.run(id);
     })();

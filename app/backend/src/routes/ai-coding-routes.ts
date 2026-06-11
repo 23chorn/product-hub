@@ -4,7 +4,7 @@ import * as path from 'path';
 import db from '../data/database';
 import { insertEvent } from '../agents/workflow-db';
 import { isDemoMode } from '../demo/demo-mode';
-import { getLatestArtifactPathByType } from '../agents/artifact-helpers';
+import { loadArtifactContentById } from '../agents/artifact-helpers';
 import Logger from '../utils/logger';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
@@ -224,7 +224,7 @@ aiCodingRoutes.get('/workflow/:id/ai-coding/status', (req: Request, res: Respons
  *
  * Returns: { prompt: string, workflowId, title }
  */
-aiCodingRoutes.get('/workflow/:id/ticket-context', (req: Request, res: Response) => {
+aiCodingRoutes.get('/workflow/:id/ticket-context', async (req: Request, res: Response) => {
   const workflowId = req.params.id;
   const workItemId = req.query.workItemId ? Number(req.query.workItemId) : null;
 
@@ -246,36 +246,38 @@ aiCodingRoutes.get('/workflow/:id/ticket-context', (req: Request, res: Response)
 
     // ── PRD artifact ───────────────────────────────────────────────────────
     try {
-      const row = db.prepare<[string], { file_path: string }>(
-        `SELECT a.file_path FROM artifacts a JOIN sessions s ON a.session_id = s.id
+      const row = db.prepare<[string], { id: number }>(
+        `SELECT a.id FROM artifacts a JOIN sessions s ON a.session_id = s.id
          WHERE s.workflow_id = ? AND a.type = 'prd' ORDER BY a.created_at DESC LIMIT 1`
       ).get(workflowId);
-      if (row?.file_path && fs.existsSync(row.file_path)) {
-        const content = fs.readFileSync(row.file_path, 'utf-8').slice(0, 3000);
-        sections.push('', '## PRD Summary', content);
+      if (row) {
+        const content = await loadArtifactContentById(row.id);
+        if (content) sections.push('', '## PRD Summary', content.slice(0, 3000));
       }
     } catch { /* artifact missing */ }
 
     // ── Architecture artifact ──────────────────────────────────────────────
     try {
-      const row = db.prepare<[string], { file_path: string }>(
-        `SELECT a.file_path FROM artifacts a JOIN sessions s ON a.session_id = s.id
+      const row = db.prepare<[string], { id: number }>(
+        `SELECT a.id FROM artifacts a JOIN sessions s ON a.session_id = s.id
          WHERE s.workflow_id = ? AND a.type = 'architecture' ORDER BY a.created_at DESC LIMIT 1`
       ).get(workflowId);
-      if (row?.file_path && fs.existsSync(row.file_path)) {
-        const content = fs.readFileSync(row.file_path, 'utf-8').slice(0, 2000);
-        sections.push('', '## Architecture Decisions', content);
+      if (row) {
+        const content = await loadArtifactContentById(row.id);
+        if (content) sections.push('', '## Architecture Decisions', content.slice(0, 2000));
       }
     } catch { /* artifact missing */ }
 
     // ── Backlog stories ────────────────────────────────────────────────────
     try {
-      const backlogPath = getLatestArtifactPathByType(
-        (db.prepare<[string], { item_id: string }>('SELECT item_id FROM workflows WHERE id = ?').get(workflowId))?.item_id ?? '',
-        'backlog'
-      );
-      if (backlogPath && fs.existsSync(backlogPath)) {
-        const raw = fs.readFileSync(backlogPath, 'utf-8');
+      const backlogArtRow = db.prepare<[string], { id: number }>(
+        `SELECT a.id FROM artifacts a JOIN sessions s ON a.session_id = s.id
+         WHERE s.item_id = (SELECT item_id FROM workflows WHERE id = ?) AND a.type = 'backlog'
+         ORDER BY a.created_at DESC LIMIT 1`
+      ).get(workflowId);
+      if (backlogArtRow) {
+        const raw = await loadArtifactContentById(backlogArtRow.id);
+        if (raw) {
         const parsed = JSON.parse(raw);
         const stories: string[] = [];
 
@@ -297,22 +299,26 @@ aiCodingRoutes.get('/workflow/:id/ticket-context', (req: Request, res: Response)
           }
         }
         if (stories.length > 0) sections.push('', '## Stories & Acceptance Criteria', stories.slice(0, 5).join('\n\n'));
+        }
       }
     } catch { /* backlog missing or malformed */ }
 
     // ── QA test cases ──────────────────────────────────────────────────────
     try {
-      const row = db.prepare<[string], { file_path: string }>(
-        `SELECT a.file_path FROM artifacts a JOIN sessions s ON a.session_id = s.id
+      const row = db.prepare<[string], { id: number }>(
+        `SELECT a.id FROM artifacts a JOIN sessions s ON a.session_id = s.id
          WHERE s.workflow_id = ? AND a.type = 'qa_tests' ORDER BY a.created_at DESC LIMIT 1`
       ).get(workflowId);
-      if (row?.file_path && fs.existsSync(row.file_path)) {
-        const raw = fs.readFileSync(row.file_path, 'utf-8').replace(/^```(?:json)?\s*/m, '').replace(/\n?```\s*$/m, '').trim();
-        const qa = JSON.parse(raw);
-        const cases = (qa.test_cases ?? []).slice(0, 10).map((tc: any) =>
-          `  ${tc.id} [${tc.priority}/${tc.type}]: ${tc.title}`
-        ).join('\n');
-        if (cases) sections.push('', '## QA Test Cases (implement tests matching these TC-IDs)', cases);
+      if (row) {
+        const qaContent = await loadArtifactContentById(row.id);
+        if (qaContent) {
+          const raw = qaContent.replace(/^```(?:json)?\s*/m, '').replace(/\n?```\s*$/m, '').trim();
+          const qa = JSON.parse(raw);
+          const cases = (qa.test_cases ?? []).slice(0, 10).map((tc: any) =>
+            `  ${tc.id} [${tc.priority}/${tc.type}]: ${tc.title}`
+          ).join('\n');
+          if (cases) sections.push('', '## QA Test Cases (implement tests matching these TC-IDs)', cases);
+        }
       }
     } catch { /* qa artifact missing */ }
 

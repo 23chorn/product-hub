@@ -7,8 +7,8 @@
   },
   "features": [
     {
-      "title": "Channel Discovery & Membership",
-      "description": "Users can browse, join, and leave topic-based channels organised by ticker or theme.",
+      "title": "Channel Management",
+      "description": "Users can create, join, and leave topic-based trading channels with persistent membership.",
       "phase": "MVP",
       "stories": [
         {
@@ -73,8 +73,8 @@
       ]
     },
     {
-      "title": "Real-Time Messaging",
-      "description": "Users can send and receive text messages and live ticker cards in channels with sub-500ms delivery.",
+      "title": "Real-time Text Messaging",
+      "description": "Users can send and receive text messages in channels with sub-second latency during market hours.",
       "phase": "MVP",
       "stories": [
         {
@@ -142,50 +142,49 @@
       ]
     },
     {
-      "title": "Content Moderation & Compliance",
-      "description": "Automated and human moderation pipeline to block harmful content, with MiFID II-compliant 7-year message archiving.",
+      "title": "Live Ticker Card Sharing",
+      "description": "Users can embed live-updating ticker price cards directly into any message.",
       "phase": "MVP",
       "stories": [
         {
-          "title": "Messages are screened before delivery",
-          "persona": "System",
-          "goal": "automatically block pump-and-dump signals, hate speech, and investment advice before they reach users",
-          "benefit": "so that TradeEasy meets its regulatory obligations and protects users from harmful content",
+          "title": "Attach ticker card from instrument screen",
+          "persona": "Alex — Active Self-Directed Trader",
+          "goal": "share a ticker card while discussing a stock so others see live price",
+          "benefit": "so that I can reference specific price points and enable quick trades",
           "acceptanceCriteria": [
-            "Given I send a message containing a blocked keyword pattern, When the message is submitted, Then it is not delivered to other members and I see 'Your message is under review'",
-            "Given the automated classifier flags a message, When a compliance reviewer approves it, Then the message is delivered retroactively and I receive a notification 'Your message has been approved'",
-            "Given the automated classifier flags a message and a reviewer rejects it, When the rejection is confirmed, Then the message is permanently deleted and I receive a notification 'Your message was removed — it violates community guidelines'",
-            "Given a channel receives >10 messages mentioning the same ticker in 5 minutes, When the velocity threshold is hit, Then all new messages mentioning that ticker in that channel are held for human review for 15 minutes"
+            "Given I am viewing an instrument detail screen, When I tap 'Share to Chat', Then I see a sheet to select a channel",
+            "Given I select a channel, When the sheet closes, Then I return to the channel thread with a ticker card attached to my message draft",
+            "Given a ticker card is attached, When I send the message, Then the card renders inline with the symbol, current price, and % change"
           ],
-          "prdRef": { "functionalRequirements": ["FR-08", "FR-09"], "userJourney": "N/A" },
+          "prdRef": { "functionalRequirements": ["FR-05"], "userJourney": "Journey 2 · Steps 1–2" },
           "technical": {
-            "constraints": ["Rule-based check is synchronous (<5ms); LLM classifier is async (~200ms); message is delivered only after rule-based passes"],
-            "affectedComponents": ["ModerationService", "MessageService", "ComplianceReviewQueue"],
-            "dataChanges": "messages.moderation_status field; INSERT moderation_events",
-            "apiChanges": "Internal only"
-          },
-          "effort": 5,
-          "storyPoints": 5
-        },
-        {
-          "title": "Messages are archived for 7-year MiFID II retention",
-          "persona": "System / Compliance",
-          "goal": "ensure all messages are durably stored and searchable by the compliance team for 7 years",
-          "benefit": "so that TradeEasy meets its MiFID II Article 16 record-keeping obligations",
-          "acceptanceCriteria": [
-            "Given a message is sent, When the message is persisted, Then it is also published to the archive pipeline and written to cold storage within 1 hour",
-            "Given the compliance team queries for messages by user or channel, When the query is submitted, Then results are returned from the archive within 30 seconds",
-            "Given a message is moderation-rejected, When it is archived, Then its moderation_status and rejection reason are included in the archive record"
-          ],
-          "prdRef": { "functionalRequirements": ["FR-10"], "userJourney": "N/A" },
-          "technical": {
-            "constraints": ["Cassandra native TTL set to 7 years; Kafka consumer writes to S3 Parquet; Athena for compliance queries"],
-            "affectedComponents": ["ArchivePipeline (new)", "KafkaProducer", "S3Bucket"],
-            "dataChanges": "S3 Parquet partitioned by channel_id/year/month",
-            "apiChanges": "Internal compliance API: GET /internal/compliance/messages?userId=&channelId=&from=&to="
+            "constraints": ["Card subscribes to market data feed; updates every 15s during market hours"],
+            "affectedComponents": ["InstrumentDetailScreen", "MessageComposer", "TickerCardComponent"],
+            "dataChanges": "tickerRef field in messages",
+            "apiChanges": "WS: send with tickerRef: { symbol }"
           },
           "effort": 3,
           "storyPoints": 3
+        },
+        {
+          "title": "Ticker card updates in real time",
+          "persona": "Jamie — Casual Community Investor",
+          "goal": "see live price updates on ticker cards in messages",
+          "benefit": "so that I know the current price when deciding whether to trade",
+          "acceptanceCriteria": [
+            "Given a ticker card is displayed in a message, When the price changes, Then the card updates within 15 seconds during market hours",
+            "Given the market is closed, When I view a ticker card, Then it shows the previous close with a 'Market Closed' label",
+            "Given I tap a ticker card, When it opens, Then I navigate to the instrument detail screen pre-filled with a buy order"
+          ],
+          "prdRef": { "functionalRequirements": ["FR-05"], "userJourney": "Journey 2 · Steps 3–4" },
+          "technical": {
+            "constraints": ["WebSocket subscription to quotes:{symbol} Redis channel"],
+            "affectedComponents": ["TickerCardComponent", "MarketDataService"],
+            "dataChanges": null,
+            "apiChanges": "WS: subscribe to quotes:{symbol}"
+          },
+          "effort": 2,
+          "storyPoints": 2
         }
       ]
     }
