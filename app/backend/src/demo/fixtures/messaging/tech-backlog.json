@@ -1,4 +1,4 @@
-{
+﻿{
   "techRefinements": [
     {
       "storyId": "TC-INFRA-001",
@@ -67,7 +67,7 @@
       "type": "backend",
       "priority": "high",
       "description": "Set up a Kafka topic `messages.archive`. Debezium connector captures Cassandra inserts and publishes to the topic. A Kafka consumer writes to S3 as Parquet files, partitioned by channel_id/year/month. Athena table configured for compliance queries.",
-      "technicalNotes": "Use Kafka 3.x. Debezium Cassandra connector for CDC. Consumer: Apache Kafka Streams or Flink (TBD with data engineering). S3 bucket: tradeeasy-messages-archive with 7-year lifecycle policy. Athena: CREATE EXTERNAL TABLE over S3 with Parquet serde.",
+      "technicalNotes": "Use Kafka 3.x. Debezium Cassandra connector for CDC. Consumer: Apache Kafka Streams or Flink (TBD with data engineering). S3 bucket: xCube-messages-archive with 7-year lifecycle policy. Athena: CREATE EXTERNAL TABLE over S3 with Parquet serde.",
       "estimatedEffort": 3,
       "acceptanceCriteria": [
         "All new messages written to S3 within 1 hour of creation",

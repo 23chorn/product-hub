@@ -188,6 +188,22 @@ ${policyLines}`;
       workflow?.policy_overrides ?? '{}'
     );
 
+    // Resolve productArea from item metadata (set at workflow start from Airtable)
+    let productAreaScope: string | null = null;
+    if (workflow?.item_id) {
+      const itemRow = db
+        .prepare<[string], { metadata: string | null }>('SELECT metadata FROM items WHERE id = ?')
+        .get(workflow.item_id);
+      if (itemRow?.metadata) {
+        try {
+          const meta = JSON.parse(itemRow.metadata) as Record<string, unknown>;
+          if (typeof meta.productArea === 'string' && meta.productArea.trim()) {
+            productAreaScope = meta.productArea.trim();
+          }
+        } catch { /* malformed metadata — ignore */ }
+      }
+    }
+
     const stageFormat = this.resolveStageFormat(stage);
     const outputLabel = stageFormat.label;
     const outputFormat = stageFormat.format;
@@ -202,7 +218,10 @@ ${policyLines}`;
       .filter(([k]) => k !== 'kb_queries')
       .map(([k, v]) => `- ${k}: ${v} *(workflow override)*`)
       .join('\n');
-    const constraintsText = [relevantPolicies, overrideLines].filter(Boolean).join('\n') || 'None.';
+    const platformLine = productAreaScope
+      ? `- Platform scope: ${productAreaScope} — design only for the platforms this tag implies; do not design for others`
+      : null;
+    const constraintsText = [relevantPolicies, overrideLines, platformLine].filter(Boolean).join('\n') || 'None.';
 
     // ── Prior stage outputs & human preferences (from approved checkpoints) ────
     const approvedCheckpoints = db

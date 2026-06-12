@@ -1,8 +1,8 @@
-# Architecture: In-App Messaging & Trade Chat — TradeEasy
+﻿# Architecture: In-App Messaging & Trade Chat — xCube
 
 ## Overview
 
-The messaging feature adds a real-time channel-based chat layer to TradeEasy. The architecture prioritises sub-500ms delivery latency, horizontal scalability to 10,000 concurrent connections, and a compliant 7-year message retention pipeline.
+The messaging feature adds a real-time channel-based chat layer to xCube. The architecture prioritises sub-500ms delivery latency, horizontal scalability to 10,000 concurrent connections, and a compliant 7-year message retention pipeline.
 
 ---
 

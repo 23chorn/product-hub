@@ -1,9 +1,9 @@
-{
+﻿{
   "epic": {
     "title": "In-App Messaging & Trade Chat",
-    "description": "Enable retail investors to discuss trade ideas, share live ticker cards, and build community within TradeEasy without context-switching to external platforms.",
+    "description": "Enable retail investors to discuss trade ideas, share live ticker cards, and build community within xCube without context-switching to external platforms.",
     "businessValue": "Reduces 6–8 minute execution gap from external chat tools, increasing trade conversion by an estimated 18%. Users who engage in chat are 3.4× more likely to remain active 30 days later.",
-    "prdLink": "PRD: In-App Messaging & Trade Chat — TradeEasy",
+    "prdLink": "PRD: In-App Messaging & Trade Chat — xCube",
     "definitionOfDone": "Users can create or join topic-based channels, send text messages with live ticker cards, and receive messages in under 500ms during market hours"
   },
   "features": [

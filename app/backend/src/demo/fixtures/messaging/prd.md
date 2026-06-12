@@ -1,4 +1,4 @@
-# PRD: In-App Messaging & Trade Chat — TradeEasy
+﻿# PRD: In-App Messaging & Trade Chat — xCube
 
 **Status:** Draft
 
@@ -6,7 +6,7 @@
 
 ## Problem Statement
 
-TradeEasy retail investors discuss trades and market setups on external platforms (Discord, WhatsApp, Telegram) and then context-switch back to the app to execute. This 6–8 minute execution gap reduces trade conversion and increases abandonment to competitor apps. There is no way to share a live ticker directly into a conversation or act on a peer's trade idea without leaving TradeEasy.
+xCube retail investors discuss trades and market setups on external platforms (Discord, WhatsApp, Telegram) and then context-switch back to the app to execute. This 6–8 minute execution gap reduces trade conversion and increases abandonment to competitor apps. There is no way to share a live ticker directly into a conversation or act on a peer's trade idea without leaving xCube.
 
 ---
 
@@ -18,7 +18,7 @@ TradeEasy retail investors discuss trades and market setups on external platform
 
 **Jamie — Casual Community Investor** — buys and holds, follows finance influencers
 - Goal: Learn from more experienced traders in real time to build confidence
-- Pain: No way to ask questions about a position from within TradeEasy; must go to Reddit or Discord
+- Pain: No way to ask questions about a position from within xCube; must go to Reddit or Discord
 
 ---
 
@@ -53,7 +53,7 @@ TradeEasy retail investors discuss trades and market setups on external platform
 | FR-02 | Users can join/leave a channel; joined channels appear in the sidebar |
 | FR-03 | Users can send text messages up to 2,000 characters in a channel |
 | FR-04 | Messages are delivered to all channel members within 500ms (p95) |
-| FR-05 | Users can attach a live ticker card from any TradeEasy instrument to a message |
+| FR-05 | Users can attach a live ticker card from any xCube instrument to a message |
 | FR-06 | Ticker cards display: symbol, current price, intraday % change (updated every 15s) |
 | FR-07 | Tapping a ticker card opens the instrument detail screen |
 | FR-08 | All messages pass through content moderation before delivery |

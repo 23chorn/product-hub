@@ -1,4 +1,4 @@
-# Research Brief: In-App Messaging & Trade Chat — TradeEasy
+﻿# Research Brief: In-App Messaging & Trade Chat — xCube
 
 ## Executive Summary
 
@@ -10,11 +10,11 @@ Two findings dominate. First, ticker-card sharing — attaching a live instrumen
 
 ## Background & Context
 
-TradeEasy's core user base (22–40 year old self-directed retail investors) is already highly social about investing — just not inside the app. Discord servers dedicated to individual tickers can have 10,000+ members; WhatsApp groups organised by trading style or sector are common. The pain is not a desire to communicate — it is the friction of context-switching.
+xCube's core user base (22–40 year old self-directed retail investors) is already highly social about investing — just not inside the app. Discord servers dedicated to individual tickers can have 10,000+ members; WhatsApp groups organised by trading style or sector are common. The pain is not a desire to communicate — it is the friction of context-switching.
 
 Three market data points frame the opportunity:
 - eToro reports users who engage with social features have 3.1× higher 90-day retention than non-social users [3]
-- 68% of TradeEasy users surveyed in Q3 2025 reported using at least one external chat for trading discussion (internal NPS survey, n=2,840)
+- 68% of xCube users surveyed in Q3 2025 reported using at least one external chat for trading discussion (internal NPS survey, n=2,840)
 - When a user reads a trade idea in native chat and taps through to an order screen, conversion to execution is 2.8× higher than cold opens [5]
 
 ---
@@ -25,7 +25,7 @@ Three market data points frame the opportunity:
 Trading-community messages are time-sensitive. A setup discussed at market open at 9:31 AM can be irrelevant by 9:35 AM. Any feature with >500ms end-to-end delivery will be abandoned for external alternatives. WebSocket-based delivery is the only viable architecture.
 
 **Finding 2: Ticker card sharing drives adoption — not plain text**
-Analysis of 12 trading Discord communities shows messages containing a ticker reference generate 4.2× more replies than plain text. A native ticker card pulling TradeEasy's existing live quote data turns the chat into an action surface — users tap the card to open the order screen directly, collapsing the context-switch gap to zero.
+Analysis of 12 trading Discord communities shows messages containing a ticker reference generate 4.2× more replies than plain text. A native ticker card pulling xCube's existing live quote data turns the chat into an action surface — users tap the card to open the order screen directly, collapsing the context-switch gap to zero.
 
 **Finding 3: Topic-based channels map to trader behaviour better than DMs**
 Traders self-organise by ticker, sector, and strategy — not by social graph. DMs have low natural adoption in trading communities because traders want to broadcast ideas. Channel-first architecture (like Discord's #aapl-watchers pattern) is correct for MVP; peer-to-peer DMs should be deferred to Phase 2.
@@ -46,9 +46,9 @@ MiFID II Article 16 requires electronic communications related to transactions b
 | Webull | ✓ (community tab) | ✓ | ✗ (per-stock only) | ~2s |
 | Public.com | ✓ | ✓ | ✗ (per-stock only) | ~3s |
 | Robinhood | ✗ | ✗ | ✗ | N/A |
-| **TradeEasy target** | **✓** | **✓** | **✓** | **<500ms** |
+| **xCube target** | **✓** | **✓** | **✓** | **<500ms** |
 
-TradeEasy's opportunity: the only platform with topic-based channels AND sub-500ms ticker-card sharing. This positions it closer to Discord — where traders already spend time — than to Webull's community tab.
+xCube's opportunity: the only platform with topic-based channels AND sub-500ms ticker-card sharing. This positions it closer to Discord — where traders already spend time — than to Webull's community tab.
 
 ---
 

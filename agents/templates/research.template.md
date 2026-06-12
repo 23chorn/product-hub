@@ -83,5 +83,6 @@ OUTPUT BUDGET: You have a fixed output token limit. A complete document is alway
 **Rules:**
 - Every inline [N] must appear here. Every entry here must be cited inline at least once.
 - Only include URLs returned by actual web searches — never construct or guess URLs.
-- If you cannot find a source for a claim, state it as an assumption and mark it with "[unverified]" instead of a reference number.
-- Aim for a minimum of 5 references in any research brief.
+- If you cannot find a source for a claim, mark it with "[Unverified]" instead of a reference number.
+- If web search was not available, omit this section entirely or note "No web search was performed — claims marked [Unverified] require manual verification." Do not fabricate references.
+- When web search was available, aim for a minimum of 5 references.

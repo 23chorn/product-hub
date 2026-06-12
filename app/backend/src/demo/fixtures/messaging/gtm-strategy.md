@@ -1,8 +1,8 @@
-# GTM Strategy: In-App Messaging & Trade Chat — TradeEasy
+﻿# GTM Strategy: In-App Messaging & Trade Chat — xCube
 
 ## Launch Objective
 
-Drive 25% of monthly active users to the Chat feature within 90 days of launch. Establish TradeEasy as the only brokerage platform with real-time topic-based trading communities — positioning the product against Discord and Telegram, not just competitor brokerages.
+Drive 25% of monthly active users to the Chat feature within 90 days of launch. Establish xCube as the only brokerage platform with real-time topic-based trading communities — positioning the product against Discord and Telegram, not just competitor brokerages.
 
 ---
 
@@ -25,15 +25,15 @@ Drive 25% of monthly active users to the Chat feature within 90 days of launch. 
 - In-app notification to all users: "Chat is live — join a trading community"
 - Push notification (opted-in users only): "Your peers are discussing [top trending channel] right now"
 - App Store update with "Messaging & Trade Chat" feature banner
-- Social post from TradeEasy official accounts: "You asked for it — we built it"
+- Social post from xCube official accounts: "You asked for it — we built it"
 
 ### Phase 2: Influencer-led channel launches (week 2–4 post-launch)
 - Partner with 3 finance influencers (combined reach: 500k+) to host live "office hours" in their dedicated channels
 - Influencer creates and owns their channel (e.g. #trading-with-alex); branded channel badge displayed
-- Drives new user acquisition: influencer audience is encouraged to join TradeEasy to access the channel
+- Drives new user acquisition: influencer audience is encouraged to join xCube to access the channel
 
 ### Phase 3: Organic growth mechanics (ongoing)
-- Deep link: "Join #aapl-watchers on TradeEasy" shared externally drives new registrations
+- Deep link: "Join #aapl-watchers on xCube" shared externally drives new registrations
 - Ticker detail page cross-link: "44 people are discussing AAPL in #aapl-watchers right now — join the conversation"
 
 ---
@@ -59,4 +59,4 @@ Mitigation: Seeded beta cohort ensures initial content. Moderation team monitors
 Mitigation: Moderation pipeline live from day one. Zero-tolerance policy published pre-launch. Designated compliance reviewer on-call for first 30 days.
 
 **Risk: Users prefer to stay on Discord**
-Mitigation: Ticker card action surface is TradeEasy-exclusive. The value proposition is "same discussion, but one tap to trade" — Discord can't replicate the order flow.
+Mitigation: Ticker card action surface is xCube-exclusive. The value proposition is "same discussion, but one tap to trade" — Discord can't replicate the order flow.

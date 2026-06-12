@@ -5,7 +5,7 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { api } from '../../services/api';
 import { deriveStageStatus } from '../../utils/stage-tracker-helpers';
 import { StageRow } from './StageRow';
-import { STAGE_LABELS } from '../../constants/stage-labels';
+import { STAGE_LABELS, STAGE_SHORT_LABELS } from '../../constants/stage-labels';
 import type { StageStatus, CoordinatorMessage } from '../../stores/workflowStore';
 import { InlineCheckpointActions } from '../coordinator/InlineCheckpointActions';
 import { PipelineStatusSection } from './PipelineStatusSection';
@@ -54,6 +54,8 @@ const EVENT_CFG: Record<string, { icon: string; color: string; bgColor: string }
   cr_stage_completed:  { icon: '✓', color: 'text-indigo-600 dark:text-indigo-400', bgColor: 'bg-indigo-100 dark:bg-indigo-900/30' },
   cr_complete:         { icon: '✓', color: 'text-green-600 dark:text-green-400',    bgColor: 'bg-green-100 dark:bg-green-900/30' },
   curator_reasoning:   { icon: '📝', color: 'text-teal-600 dark:text-teal-300',   bgColor: 'bg-teal-100 dark:bg-teal-900/20' },
+  wiki_synced:         { icon: '⬆', color: 'text-blue-600 dark:text-blue-400',    bgColor: 'bg-blue-100 dark:bg-blue-900/30' },
+  ado_pushed:          { icon: '⬆', color: 'text-blue-600 dark:text-blue-400',    bgColor: 'bg-blue-100 dark:bg-blue-900/30' },
   board_synced:        { icon: '⬆', color: 'text-blue-600 dark:text-blue-400',    bgColor: 'bg-blue-100 dark:bg-blue-900/30' },
   workflow_started:    { icon: '🚀', color: 'text-teal-600 dark:text-teal-400',   bgColor: 'bg-teal-100 dark:bg-teal-900/30' },
   workflow_complete:   { icon: '✓', color: 'text-green-600 dark:text-green-400',  bgColor: 'bg-green-100 dark:bg-green-900/30' },
@@ -219,8 +221,8 @@ function EventRow({ msg }: { msg: CoordinatorMessage }) {
   const isFeatureStage = msg.stage?.startsWith('story_decomposition_F') ?? false;
   const isQaFeatureStage = msg.stage?.startsWith('qa_engineer_F') ?? false;
   const isTechFeatureStage = msg.stage?.startsWith('tech_refinement_F') ?? false;
-  const isWikiLink = msg.eventType === 'stage_completed' && !!externalUrl && !adoStages.has(msg.stage ?? '') && !isFeatureStage && !isQaFeatureStage && !isTechFeatureStage;
-  const isAdoStageLink = msg.eventType === 'stage_completed' && !!externalUrl && (adoStages.has(msg.stage ?? '') || isFeatureStage || isQaFeatureStage || isTechFeatureStage);
+  const isWikiLink = (msg.eventType === 'stage_completed' || msg.eventType === 'wiki_synced') && !!externalUrl && !adoStages.has(msg.stage ?? '') && !isFeatureStage && !isQaFeatureStage && !isTechFeatureStage;
+  const isAdoStageLink = (msg.eventType === 'stage_completed' || msg.eventType === 'ado_pushed') && !!externalUrl && (adoStages.has(msg.stage ?? '') || isFeatureStage || isQaFeatureStage || isTechFeatureStage);
   const isAdoLink = msg.eventType === 'board_synced' && !!externalUrl;
 
   return (
@@ -405,7 +407,10 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   if (!activeWorkflow) return null;
 
   const isComplete = activeWorkflow.status === 'complete';
-  const isCancelled = isComplete && coordinatorMessages.some(m => m.eventType === 'workflow_cancelled');
+  const lastTerminalEvent = [...coordinatorMessages]
+    .reverse()
+    .find(m => m.eventType === 'workflow_cancelled' || m.eventType === 'workflow_complete');
+  const isCancelled = isComplete && lastTerminalEvent?.eventType === 'workflow_cancelled';
 
   const handleStop = async () => {
     if (stopping || isComplete) return;
@@ -751,7 +756,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
 
         {/* Artifacts section (sticky at bottom of right panel) */}
         {artifacts.length > 0 && (() => {
-          // Group by stage and keep only the latest per stage
+          // Group by stage, keep only the latest per stage
           const latestByStage = new Map<string, typeof artifacts[0]>();
           artifacts.forEach(artifact => {
             const stage = artifact.stage ?? 'unknown';
@@ -760,13 +765,25 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
               latestByStage.set(stage, artifact);
             }
           });
-          const latestArtifacts = Array.from(latestByStage.values());
+
+          // Collapse epic_feature_planner + all story_decomposition_F* into a single "Tickets" button.
+          // artifact.stage = s.mode (session mode), not the workflow stage name:
+          //   epic_feature_planner → mode 'epic_features'
+          //   story_decomposition_F* → mode 'backlog'
+          const TICKET_MODES = new Set(['epic_features', 'backlog']);
+          const ticketCandidates = Array.from(latestByStage.values())
+            .filter(a => TICKET_MODES.has(a.stage ?? ''))
+            .sort((a, b) => b.created_at - a.created_at);
+          const ticketArtifact = ticketCandidates[0] ?? null;
+
+          const regularArtifacts = Array.from(latestByStage.values())
+            .filter(a => !TICKET_MODES.has(a.stage ?? ''));
 
           return (
             <div className="flex-shrink-0 border-t border-slate-200 dark:border-slate-700/60 bg-white dark:bg-[#0d1117] px-2 py-2">
               <div className="flex flex-wrap gap-1.5">
-                {latestArtifacts.map((artifact) => {
-                  const stageLabel = STAGE_LABELS[artifact.stage ?? ''] ?? artifact.type;
+                {regularArtifacts.map((artifact) => {
+                  const stageLabel = STAGE_SHORT_LABELS[artifact.stage ?? ''] ?? STAGE_LABELS[artifact.stage ?? ''] ?? artifact.type;
                   return (
                     <button
                       key={artifact.id}
@@ -777,6 +794,14 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                     </button>
                   );
                 })}
+                {ticketArtifact && (
+                  <button
+                    onClick={() => setViewingArtifactId(ticketArtifact.id)}
+                    className="px-2.5 py-1 text-xs font-medium rounded bg-slate-100 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors"
+                  >
+                    Tickets
+                  </button>
+                )}
               </div>
             </div>
           );

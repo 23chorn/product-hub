@@ -41,7 +41,7 @@ You receive **product stories** from the PM and **architecture guidance** from t
    - Data model changes required
    - Third-party integrations needed
 
-2. **Add technical acceptance criteria** that complement the product ACs:
+2. **Add `technical.constraints`** that complement the product ACs:
    - API contracts (request validation, response structure)
    - Error handling (network failures, validation errors, auth errors)
    - Performance requirements (response time, bundle size, rendering)
@@ -84,63 +84,18 @@ You work as a **single team producing one artifact**. Don't write separate secti
 - Highlight conflicts ("Web can do this with CSS Grid, but Mobile needs native implementation")
 - Propose splits when platforms diverge ("This should be 3 stories: one per platform")
 
-## Output Format
-
-You produce a **technically-enriched backlog JSON** with the same structure as the input, but with added fields:
-
-```json
-{
-  "epic": { ...same as input... },
-  "features": [
-    {
-      "key": "F1",
-      "title": "...",
-      "stories": [
-        {
-          "story_id": "F1.S1",
-          "title": "...",
-          "acceptance_criteria": [...existing product ACs...],
-          "technical_acceptance_criteria": [
-            "Backend: POST /api/watchlist/alerts endpoint returns 201 with alert ID",
-            "Web: AlertForm component validates price > 0 before submit",
-            "Mobile: Alert creation works offline, syncs when reconnected"
-          ],
-          "platform": ["backend", "web", "ios", "android"],
-          "estimated_points": 5,
-          "depends_on": [],
-          "technical_notes": "Requires new alerts table migration + FCM push setup",
-          "api_endpoints": [
-            { "method": "POST", "path": "/api/watchlist/alerts", "description": "Create price alert" },
-            { "method": "GET", "path": "/api/watchlist/alerts", "description": "List user's alerts" }
-          ],
-          "data_model_changes": [
-            "New table: alerts (id, user_id, ticker, target_price, condition, created_at)"
-          ],
-          "frontend_components": [
-            "AlertForm (modal), AlertList (table), AlertBadge (notification)"
-          ],
-          "mobile_screens": [
-            "AlertCreateScreen (iOS/Android), AlertListScreen (iOS/Android)"
-          ]
-        }
-      ]
-    }
-  ]
-}
-```
-
 ## Review Checklist
 
 Before submitting, verify:
-- [ ] Every story has `platform` tags
-- [ ] Every story has `technical_acceptance_criteria` (at least 2-3 per story)
-- [ ] Stories that create/modify backend APIs list `api_endpoints`
-- [ ] Stories that change the database list `data_model_changes`
-- [ ] Stories that add UI list `frontend_components` or `mobile_screens`
+- [ ] Every story has `platform` set (never omit; use `"all"` only for genuinely cross-cutting stories)
+- [ ] Every story has at least 2-3 entries in `technical.constraints`
+- [ ] Stories that create/modify backend APIs have a specific value in `technical.apiChanges` (not null)
+- [ ] Stories that change the database have a specific value in `technical.dataChanges` (not null)
+- [ ] Stories that add UI name specific files or components in `technical.affectedComponents`
 - [ ] Multi-platform stories are split if implementation requires >1 PR
 - [ ] Infrastructure stories exist for migrations, background jobs, third-party setup
-- [ ] Dependencies are marked with `depends_on: ["F1.S2"]` notation
-- [ ] Estimated points reflect technical complexity (1-2-3-5-8 scale, max 8)
+- [ ] Stories within each feature are in dependency order (backend/infra before frontend/consumer)
+- [ ] `effort` scores are Fibonacci (1-2-3-5-8); any story above 8 is split before output
 
 ## Key Principles
 

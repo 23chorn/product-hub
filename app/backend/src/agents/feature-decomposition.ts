@@ -61,7 +61,7 @@ export async function injectFeatureDecompositionStages(workflowId: string): Prom
   }
 
   // Replace story_decomposition with feature-specific collaborative refinement stages
-  // Each story_decomposition_F* stage runs a 7-agent workflow (Product + QA + 4 Engineers)
+  // Each story_decomposition_F* stage runs a multi-agent workflow (platform-filtered participants)
   // Also remove standalone qa_engineer and tech_refinement stages (now embedded in the multi-agent workflow)
   const featureStages: string[] = [];
   for (let i = 0; i < featureCount; i++) {
@@ -296,7 +296,7 @@ export async function pushEpicAndFeaturesToADO(
 export async function pushFeatureToADO(
   workflowId: string,
   featureIndex: number
-): Promise<{ epicId: number; featureId: number; storyIds: number[] }> {
+): Promise<{ epicId: number; featureId: number; storyIds: number[]; testPlanId: number | null; testPlanUrl: string | null; testCaseCount: number }> {
   const workflow = stmts.getWorkflow.get(workflowId);
   if (!workflow) throw new Error(`Workflow not found: ${workflowId}`);
 
@@ -353,7 +353,7 @@ export async function pushFeatureToADO(
   if (existingStories.length > 0) {
     logger.info(`[STORY PUSH] Feature F${featureIndex + 1} already has ${existingStories.length} stories in ADO — skipping duplicate creation`);
     const featureUrl = `https://dev.azure.com/${process.env.AZURE_DEVOPS_ORG}/${process.env.AZURE_DEVOPS_PROJECT}/_workitems/edit/${featureId}`;
-    return { epicId, featureId, storyIds: existingStories.map(s => s.ado_id) };
+    return { epicId, featureId, storyIds: existingStories.map(s => s.ado_id), testPlanId: null, testPlanUrl: null, testCaseCount: 0 };
   }
 
   // Create stories under the existing feature

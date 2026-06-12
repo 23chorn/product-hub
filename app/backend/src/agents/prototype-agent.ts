@@ -29,7 +29,7 @@ const TEMPLATES_DIR = path.join(AGENTS_ROOT, 'templates');
 const PROTOTYPE_DIR = path.join(TEMPLATES_DIR, 'prototype');
 const CONTEXT_ROOT = path.join(PROJECT_ROOT, 'context');
 
-// ── Result type ────────────────────────────────────────────────────────────────
+// ── Result types ───────────────────────────────────────────────────────────────
 
 export interface PrototypeResult {
   title: string;
@@ -39,15 +39,19 @@ export interface PrototypeResult {
   files: Record<string, string>;
 }
 
+export type PrototypePlatform = 'web' | 'mobile' | 'both';
+
+export type GeneratePrototypeOutput =
+  | { platform: 'web' | 'mobile'; result: PrototypeResult | null }
+  | { platform: 'both'; web: PrototypeResult | null; mobile: PrototypeResult | null };
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 export async function loadWorkflowArtifacts(itemId: string): Promise<string> {
-  // Prototype stage now runs early (after PRD, before architecture)
-  // Load whatever artifacts exist at that point: analyst + PRD are always present, architecture may not exist yet
+  // Prototype runs after PRD, before architecture — only load what's available at that point
   const stages: Array<{ type: string; label: string }> = [
     { type: 'analyst', label: 'Research Brief' },
     { type: 'prd', label: 'PRD' },
-    { type: 'architecture', label: 'Architecture Document' },
   ];
   const results = await Promise.all(stages.map(s => loadLatestArtifactContent(itemId, s.type)));
   const sections: string[] = [];
@@ -208,36 +212,136 @@ export function repairTruncatedJson(raw: string): string {
   return s;
 }
 
+// ── Platform resolution ────────────────────────────────────────────────────────
+
+/**
+ * Read productArea from items.metadata and map to a prototype platform.
+ * productArea values from Airtable e.g. "Web", "Mobile", "iOS", "Android", "Web, Mobile".
+ */
+export function resolveItemPlatform(itemId: string): PrototypePlatform {
+  const row = db.prepare<[string], { metadata: string | null }>(
+    'SELECT metadata FROM items WHERE id = ?'
+  ).get(itemId);
+  if (!row?.metadata) return 'web';
+  try {
+    const meta = JSON.parse(row.metadata) as { productArea?: string };
+    const area = (meta.productArea ?? '').toLowerCase();
+    const hasWeb = /web|browser|desktop/.test(area);
+    const hasMobile = /mobile|ios|android|app/.test(area);
+    if (hasWeb && hasMobile) return 'both';
+    if (hasMobile) return 'mobile';
+    return 'web';
+  } catch {
+    return 'web';
+  }
+}
+
+/** Mobile-specific prompt instructions injected when generating a mobile prototype. */
+const MOBILE_PLATFORM_HINT = `## Platform: Mobile App
+
+Generate a **native mobile app** prototype, NOT a web layout. Apply these conventions:
+
+- **Navigation**: Bottom tab bar (4–5 tabs) as the primary nav. Use full-screen card sheets (slide up from bottom) for detail views. No top horizontal navbars.
+- **Touch targets**: All interactive elements minimum 44×44 px (use \`min-h-[44px]\`). No hover states.
+- **Layout**: Constrained to ~390 px wide. Full-width cards with \`rounded-2xl\`. Sticky headers with safe-area padding (\`pt-safe\` / \`pb-safe\` — approximate with \`pt-12\` / \`pb-8\`).
+- **Gestures**: Simulate swipe-back as a "← Back" button. Simulate pull-to-refresh as a "Refresh" button at the top.
+- **Typography**: Slightly larger base font (\`text-base\` / \`text-lg\`) for readability on small screens.
+- **Lists**: Use card-based lists with subtle dividers; avoid dense table layouts.
+- **Forms**: Full-width inputs, large submit buttons pinned to the bottom of the screen.
+- **Screens**: Name them like iOS/Android screens — Home, Detail, Modal, Settings, etc.`;
+
+const WEB_PLATFORM_HINT = `## Platform: Web App
+
+Generate a **desktop/browser** prototype with web-native conventions:
+
+- **Navigation**: Top header nav or left sidebar. Tabs and breadcrumbs for secondary navigation.
+- **Layout**: Use the full viewport width. Multi-column layouts where appropriate (sidebar + main content, grid views).
+- **Hover states**: Interactive elements should have hover feedback (\`hover:bg-ui-02\`, \`hover:opacity-80\`).
+- **Data density**: Tables, data grids, and compact list rows are appropriate. Users are on wide screens with precise pointing.
+- **Forms**: Inline labels, compact inputs, form sections with clear headings.
+- **Screens**: Name them like web pages — Dashboard, List, Detail, Settings, etc.`;
+
 // ── Artifact persistence ───────────────────────────────────────────────────────
 
 async function savePrototypeArtifact(
   itemId: string,
-  _workflowId: string,
   prototype: PrototypeResult,
+  artifactType: 'prototype' | 'prototype_web' | 'prototype_mobile' = 'prototype',
 ): Promise<void> {
   const session = db.prepare<[string], { id: string }>(`
     SELECT id FROM sessions WHERE item_id = ? ORDER BY created_at DESC LIMIT 1
   `).get(itemId);
 
-  await saveMainArtifact(session?.id ?? '', 'prototype', JSON.stringify(prototype, null, 2), itemId);
-  logger.info(`Saved prototype artifact to wiki for item ${itemId}`);
+  await saveMainArtifact(session?.id ?? '', artifactType, JSON.stringify(prototype, null, 2), itemId);
+  logger.info(`Saved ${artifactType} artifact for item ${itemId}`);
+}
+
+// ── Public API ─────────────────────────────────────────────────────────────────
+
+// ── Core generation (single platform) ─────────────────────────────────────────
+
+async function* generateSinglePrototype(
+  workflowId: string,
+  workflow: { item_id: string; goal: string },
+  artifacts: string,
+  stable: string,
+  platform: 'web' | 'mobile',
+  scope: string | undefined,
+  onTokens: ((usage: TokenUsage) => void) | undefined,
+): AsyncGenerator<string, PrototypeResult | null, unknown> {
+  const platformHint = platform === 'mobile' ? MOBILE_PLATFORM_HINT : WEB_PLATFORM_HINT;
+  const dynamicParts = [
+    platformHint,
+    '\n\n## Workflow Artifacts\n\nUse these documents to understand what to prototype:\n\n' + artifacts,
+  ];
+  if (scope) dynamicParts.push(`\n\n## Scope\n\nFocus the prototype on: ${scope}`);
+
+  const systemPrompt: SystemPrompt = { stable, dynamic: dynamicParts.join('\n\n') };
+  const userMessage = scope
+    ? `Generate an interactive React ${platform === 'mobile' ? 'mobile app' : 'web'} prototype focused on: ${scope}\n\nThe workflow goal was: ${workflow.goal}`
+    : `Generate an interactive React ${platform === 'mobile' ? 'mobile app' : 'web'} prototype for the complete feature described in the workflow artifacts.\n\nThe workflow goal was: ${workflow.goal}`;
+
+  const model = resolveModelId(undefined);
+  logger.info(`Generating ${platform} prototype for workflow ${workflowId}`);
+
+  let fullResponse = '';
+  const generator = streamAI(model, systemPrompt, [{ role: 'user', content: userMessage }], 64_000, { onTokens });
+  for await (const chunk of generator) {
+    fullResponse += chunk;
+    yield chunk;
+  }
+
+  const rawDir = path.join(PROJECT_ROOT, 'data', 'sessions', workflow.item_id, 'prototype', 'raw');
+  await fsAsync.mkdir(rawDir, { recursive: true });
+  await fsAsync.writeFile(path.join(rawDir, `${Date.now()}-${platform}-raw.txt`), fullResponse, 'utf-8');
+
+  try {
+    const repaired = repairTruncatedJson(fullResponse);
+    const parsed = JSON.parse(repaired) as PrototypeResult;
+    logger.info(`${platform} prototype generated: "${parsed.title}" — ${parsed.screens.length} screens`);
+    const artifactType = platform === 'mobile' ? 'prototype_mobile' : 'prototype_web';
+    await savePrototypeArtifact(workflow.item_id, parsed, artifactType);
+    // Also save as generic 'prototype' so existing callers that load by type still work
+    await savePrototypeArtifact(workflow.item_id, parsed, 'prototype');
+    return parsed;
+  } catch (err) {
+    logger.error(`Failed to parse ${platform} prototype JSON even after repair`, err);
+    return null;
+  }
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────────
 
 /**
  * Generate an interactive React prototype from workflow artifacts.
+ * Platform (web / mobile / both) is read from items.metadata.productArea.
  * Yields status/content strings for SSE streaming.
- * Returns the PrototypeResult (React file map) when complete.
- *
- * If FIGMA_DESIGN_SYSTEM_FILE is configured, reads real component/token data from
- * Figma first to inform the generated prototype's design language.
  */
 export async function* generatePrototype(
   workflowId: string,
   scope?: string,
   onTokens?: (usage: TokenUsage) => void,
-): AsyncGenerator<string, PrototypeResult | null, unknown> {
+): AsyncGenerator<string, GeneratePrototypeOutput | null, unknown> {
   const workflow = db.prepare<[string], { item_id: string; goal: string }>(`
     SELECT item_id, goal FROM workflows WHERE id = ?
   `).get(workflowId);
@@ -246,10 +350,12 @@ export async function* generatePrototype(
   const artifacts = await loadWorkflowArtifacts(workflow.item_id);
   if (!artifacts.trim()) throw new Error('No workflow artifacts found — run earlier stages first');
 
+  const platform = resolveItemPlatform(workflow.item_id);
+  logger.info(`Prototype platform resolved to "${platform}" for workflow ${workflowId}`);
+
   const statusLines: string[] = [];
   const statusCb = (msg: string) => { statusLines.push(msg); };
 
-  // Load all context in parallel (Figma call is separate to handle failures gracefully)
   const [persona, template, localDesignSystem, projectContext] = await Promise.all([
     loadPersona(),
     loadTemplate(),
@@ -257,15 +363,12 @@ export async function* generatePrototype(
     loadProjectContext(),
   ]);
 
-  // Try to enrich with real Figma design system data
   const figmaDesignSystem = await loadFigmaDesignSystem(statusCb);
   const designSystemContext = figmaDesignSystem || localDesignSystem;
 
-  // Flush any status messages collected during Figma load
   for (const line of statusLines) yield line;
-  statusLines.length = 0;
 
-  // Build system prompt
+  // Stable system prompt shared across all platform runs
   const stable = [
     persona,
     '\n\n## Design System\n\n' + designSystemContext,
@@ -273,43 +376,30 @@ export async function* generatePrototype(
     '\n\n## Output Template\n\n' + template,
   ].join('');
 
-  const dynamicParts = [
-    '## Workflow Artifacts\n\nUse these documents to understand what to prototype:\n\n' + artifacts,
-  ];
-  if (scope) dynamicParts.push(`\n\n## Scope\n\nFocus the prototype on: ${scope}`);
+  if (platform === 'both') {
+    yield `Generating web prototype...\n`;
+    let webResult: PrototypeResult | null = null;
+    for await (const chunk of generateSinglePrototype(workflowId, workflow, artifacts, stable, 'web', scope, onTokens)) {
+      if (typeof chunk === 'string') yield chunk;
+      else webResult = chunk;
+    }
 
-  const systemPrompt: SystemPrompt = { stable, dynamic: dynamicParts.join('') };
+    yield `\n\nGenerating mobile prototype...\n`;
+    let mobileResult: PrototypeResult | null = null;
+    for await (const chunk of generateSinglePrototype(workflowId, workflow, artifacts, stable, 'mobile', scope, onTokens)) {
+      if (typeof chunk === 'string') yield chunk;
+      else mobileResult = chunk;
+    }
 
-  const userMessage = scope
-    ? `Generate an interactive React prototype focused on: ${scope}\n\nThe workflow goal was: ${workflow.goal}`
-    : `Generate an interactive React prototype for the complete feature described in the workflow artifacts.\n\nThe workflow goal was: ${workflow.goal}`;
-
-  const model = resolveModelId(undefined);
-  logger.info(`Generating prototype for workflow ${workflowId} (item ${workflow.item_id}), model=${model}`);
-
-  let fullResponse = '';
-  const generator = streamAI(model, systemPrompt, [{ role: 'user', content: userMessage }], 64_000, { onTokens });
-
-  for await (const chunk of generator) {
-    fullResponse += chunk;
-    yield chunk;
+    return { platform: 'both', web: webResult, mobile: mobileResult };
   }
 
-  // Save raw output
-  const rawDir = path.join(PROJECT_ROOT, 'data', 'sessions', workflow.item_id, 'prototype', 'raw');
-  await fsAsync.mkdir(rawDir, { recursive: true });
-  await fsAsync.writeFile(path.join(rawDir, `${Date.now()}-raw.txt`), fullResponse, 'utf-8');
-
-  try {
-    const repaired = repairTruncatedJson(fullResponse);
-    const parsed = JSON.parse(repaired) as PrototypeResult;
-    logger.info(`Prototype generated: "${parsed.title}" — ${parsed.screens.length} screens, ${Object.keys(parsed.files).length} files`);
-    await savePrototypeArtifact(workflow.item_id, workflowId, parsed);
-    return parsed;
-  } catch (err) {
-    logger.error('Failed to parse prototype JSON output even after repair', err);
-    return null;
+  let result: PrototypeResult | null = null;
+  for await (const chunk of generateSinglePrototype(workflowId, workflow, artifacts, stable, platform, scope, onTokens)) {
+    if (typeof chunk === 'string') yield chunk;
+    else result = chunk;
   }
+  return { platform, result };
 }
 
 /**
@@ -380,7 +470,10 @@ export async function* revisePrototype(
     };
 
     logger.info(`Prototype revised: ${Object.keys(partial.files ?? {}).length} files changed`);
-    await savePrototypeArtifact(workflow.item_id, workflowId, merged);
+    const platform = resolveItemPlatform(workflow.item_id);
+    const artifactType = platform === 'mobile' ? 'prototype_mobile' : platform === 'both' ? 'prototype_web' : 'prototype_web';
+    await savePrototypeArtifact(workflow.item_id, merged, artifactType);
+    await savePrototypeArtifact(workflow.item_id, merged, 'prototype');
     return merged;
   } catch (err) {
     logger.error('Failed to parse revised prototype JSON', err);
@@ -390,25 +483,38 @@ export async function* revisePrototype(
 
 /**
  * Load the most recent prototype artifact for a workflow.
+ * Returns both web and mobile variants if both were generated.
  */
-export function loadLatestPrototype(workflowId: string): PrototypeResult | null {
+export function loadLatestPrototype(workflowId: string): { platform: PrototypePlatform; web?: PrototypeResult; mobile?: PrototypeResult } | null {
   const workflow = db.prepare<[string], { item_id: string }>(`
     SELECT item_id FROM workflows WHERE id = ?
   `).get(workflowId);
   if (!workflow) return null;
 
-  const row = db.prepare<[string, string], { file_path: string }>(`
-    SELECT a.file_path
-    FROM artifacts a
-    LEFT JOIN sessions s ON a.session_id = s.id
-    WHERE (s.item_id = ? OR a.session_id IS NULL) AND a.type = ?
-    ORDER BY a.created_at DESC LIMIT 1
-  `).get(workflow.item_id, 'prototype');
+  const loadByType = (type: string): PrototypeResult | null => {
+    const row = db.prepare<[string, string], { file_path: string }>(`
+      SELECT a.file_path
+      FROM artifacts a
+      LEFT JOIN sessions s ON a.session_id = s.id
+      WHERE (s.item_id = ? OR a.session_id IS NULL) AND a.type = ?
+      ORDER BY a.created_at DESC LIMIT 1
+    `).get(workflow.item_id, type);
+    if (!row?.file_path) return null;
+    try {
+      return JSON.parse(fs.readFileSync(resolveArtifactPath(row.file_path), 'utf-8')) as PrototypeResult;
+    } catch {
+      return null;
+    }
+  };
 
-  if (!row?.file_path) return null;
-  try {
-    return JSON.parse(fs.readFileSync(resolveArtifactPath(row.file_path), 'utf-8')) as PrototypeResult;
-  } catch {
-    return null;
-  }
+  const webResult = loadByType('prototype_web');
+  const mobileResult = loadByType('prototype_mobile');
+
+  if (webResult && mobileResult) return { platform: 'both', web: webResult, mobile: mobileResult };
+  if (mobileResult) return { platform: 'mobile', mobile: mobileResult };
+  if (webResult) return { platform: 'web', web: webResult };
+
+  // Backward compat: fall back to untyped 'prototype' artifact
+  const legacy = loadByType('prototype');
+  return legacy ? { platform: 'web', web: legacy } : null;
 }

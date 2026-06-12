@@ -528,7 +528,11 @@ No changes needed to tech-stack.md or process.md — those remain accurate as wr
   insertEvent(workflowId, 'stage_started', nextStage,
     STAGE_NARRATION[nextStage] ?? `Starting ${nextStage}...`);
 
-  const stageMap = STAGE_SESSION_MAP[nextStage] ?? { mode: 'analyst' as AppMode, agentType: 'analyst' as AgentType };
+  let stageMap = STAGE_SESSION_MAP[nextStage];
+  if (!stageMap && nextStage.match(/^story_decomposition_F\d+$/)) stageMap = STAGE_SESSION_MAP['story_decomposition'];
+  if (!stageMap && nextStage.match(/^qa_engineer_F\d+$/)) stageMap = STAGE_SESSION_MAP['qa_engineer'];
+  if (!stageMap && nextStage.match(/^tech_refinement_F\d+$/)) stageMap = STAGE_SESSION_MAP['tech_refinement'];
+  if (!stageMap) stageMap = { mode: 'analyst' as AppMode, agentType: 'analyst' as AgentType };
   const session = sessionManager.createSpecialistSession(workflow.item_id, stageMap.mode, stageMap.agentType);
   logger.info(`Created ${stageMap.mode} session ${session.id} for stage "${nextStage}"`);
 

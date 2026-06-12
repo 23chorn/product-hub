@@ -1,7 +1,7 @@
-{
+﻿{
   "epic": {
     "title": "In-App Messaging & Trade Chat",
-    "description": "Add real-time channel-based chat so users can discuss trades and market ideas without leaving the TradeEasy app. Includes live ticker card sharing, content moderation, and MiFID II-compliant message retention."
+    "description": "Add real-time channel-based chat so users can discuss trades and market ideas without leaving the xCube app. Includes live ticker card sharing, content moderation, and MiFID II-compliant message retention."
   },
   "features": [
     {
@@ -15,7 +15,7 @@
           "title": "Browse and join a public channel",
           "as_a": "Alex — Active Self-Directed Trader",
           "i_want": "find and join a channel dedicated to a stock I'm watching",
-          "so_that": "I can follow live discussions about that ticker without leaving TradeEasy",
+          "so_that": "I can follow live discussions about that ticker without leaving xCube",
           "acceptance_criteria": [
             "Given I open the Chat tab, When the channel list loads, Then I see public channels sorted by recent activity, each showing: name, topic, and member count",
             "Given I tap a channel I haven't joined, When I tap 'Join', Then I am added as a member and the channel thread is displayed immediately",

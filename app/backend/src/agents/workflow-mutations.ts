@@ -218,8 +218,8 @@ export async function extendWorkflow(workflowId: string, stagesToAdd: string[]):
 export async function retryCurrentStage(workflowId: string): Promise<{ stage: string }> {
   const workflow = stmts.getWorkflow.get(workflowId);
   if (!workflow) throw new Error(`Workflow not found: ${workflowId}`);
-  if (workflow.status !== 'active') {
-    throw new Error(`Workflow is not active (status: ${workflow.status})`);
+  if (workflow.status !== 'active' && workflow.status !== 'paused_at_checkpoint') {
+    throw new Error(`Workflow cannot be retried (status: ${workflow.status})`);
   }
   if (!workflow.current_stage) {
     throw new Error('No current stage to retry');

@@ -3,7 +3,7 @@ import * as fsAsync from 'fs/promises';
 import * as path from 'path';
 import db from '../data/database';
 import { STAGE_ARTIFACT_TYPE } from './stage-metadata';
-import { saveToWiki, loadFromWiki, wikiPathForArtifact } from '../integrations/document-store/azure-wiki-store';
+import { saveToWiki, wikiPathForArtifact } from '../integrations/document-store/azure-wiki-store';
 import Logger from '../utils/logger';
 
 const logger = new Logger('ARTIFACT-HELPERS');
@@ -11,9 +11,13 @@ const logger = new Logger('ARTIFACT-HELPERS');
 const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
 
 type ArtifactRow = {
+  id: number;
+  session_id: string;
+  type: string;
   file_path: string;
   external_system: string | null;
   external_path: string | null;
+  external_url: string | null;
 };
 
 /**
@@ -44,29 +48,15 @@ export function resolveArtifactPath(storedPath: string): string {
 }
 
 /**
- * Read content from an artifact row — fetches from the wiki for external artifacts,
- * reads from disk for local ones.
+ * Read content from an artifact row — local disk only.
  */
 async function readArtifactRow(row: ArtifactRow): Promise<string | null> {
-  if (row.external_system === 'azure_wiki' && row.external_path) {
-    logger.info(`[FETCH] azure_wiki → ${row.external_path}`);
-    try {
-      const content = await loadFromWiki(row.external_path);
-      logger.info(`[FETCH] azure_wiki ✓ ${row.external_path} (${content?.length ?? 0} chars)`);
-      return content;
-    } catch (err: any) {
-      logger.warn(`[FETCH] azure_wiki ✗ ${row.external_path}: ${err.message}`);
-      return null;
-    }
+  if (!row.file_path) return null;
+  try {
+    return fs.readFileSync(resolveArtifactPath(row.file_path), 'utf-8');
+  } catch {
+    return null;
   }
-  if (row.file_path) {
-    try {
-      return fs.readFileSync(resolveArtifactPath(row.file_path), 'utf-8');
-    } catch {
-      return null;
-    }
-  }
-  return null;
 }
 
 // ── Main artifact save (wiki-backed) ─────────────────────────────────────────
@@ -178,7 +168,9 @@ export async function saveLocalArtifact(
     : (STAGE_ARTIFACT_TYPE[stage] ?? stage);
   const artifactDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, stage, 'artifacts');
   await fsAsync.mkdir(artifactDir, { recursive: true });
-  const artifactPath = path.join(artifactDir, `${Date.now()}-${stage}.json`);
+  const jsonTypes = new Set(['backlog', 'qa_tests', 'prototype']);
+  const ext = jsonTypes.has(artifactType) ? 'json' : 'md';
+  const artifactPath = path.join(artifactDir, `${Date.now()}-${stage}.${ext}`);
   await fsAsync.writeFile(artifactPath, content, 'utf-8');
 
   const result = db.prepare(`
@@ -227,7 +219,7 @@ export async function loadArtifactContentById(artifactId: number): Promise<strin
     'SELECT file_path, external_system, external_path FROM artifacts WHERE id = ?'
   ).get(artifactId);
   if (!row) return null;
-  logger.info(`Loading artifact id=${artifactId} via ${row.external_system ?? 'local disk'}`);
+  logger.info(`Loading artifact id=${artifactId} from local disk (external_system=${row.external_system ?? 'none'})`);
   return readArtifactRow(row);
 }
 

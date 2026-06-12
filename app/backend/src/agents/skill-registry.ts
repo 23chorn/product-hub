@@ -130,7 +130,7 @@ const SEED_TOOL_DEFINITIONS: Record<string, string> = {
   analyst: JSON.stringify([
     {
       name: 'validate_research_brief',
-      description: 'Validate your research brief before returning it. Checks inline citation format ([N]), References section completeness, and minimum source count. Call after drafting to catch citation issues early.',
+      description: 'Validate your research brief before returning it. Checks required sections (Executive Summary, Problem Space, market/competitive context, Recommendations or PM Questions) and flags fabricated URLs. References are not required — use [Unverified] markers when web search was not available.',
       input_schema: { type: 'object', properties: { text: { type: 'string', description: 'The complete research brief text to validate' } }, required: ['text'] },
     },
   ]),

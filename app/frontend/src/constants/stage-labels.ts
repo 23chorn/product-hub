@@ -15,7 +15,7 @@ const STAGE_LABELS_BASE: Record<string, string> = {
 };
 
 // Proxy to handle dynamic feature stages (story_decomposition_F1, F2, etc.)
-// Each story_decomposition_F* stage runs a 7-agent collaborative refinement (Product + QA + 4 Engineers)
+// Each story_decomposition_F* stage runs a multi-agent collaborative refinement with platform-filtered participants
 export const STAGE_LABELS: Record<string, string> = new Proxy(STAGE_LABELS_BASE, {
   get(target, prop: string) {
     // Map story_decomposition_F1, F2, F3, etc. → "Refinement - F1", "Refinement - F2", etc.
@@ -39,7 +39,7 @@ export const TOGGLEABLE_STAGES: Array<{ key: string; label: string; short: strin
   { key: 'prototype',            label: 'Prototype — Nova',             short: 'Nova · Prototype' },
   { key: 'solution_architect',   label: 'Architect — Atlas',            short: 'Atlas · Architect' },
   { key: 'epic_feature_planner', label: 'Epic & Features — Apex',       short: 'Apex · Features' },
-  { key: 'story_decomposition',  label: 'Collaborative Refinement — 7 Agents',  short: '7 Agents · Refinement' },
+  { key: 'story_decomposition',  label: 'Collaborative Refinement',             short: 'Multi-Agent · Refinement' },
   { key: 'qa_engineer',          label: 'QA Engineer — Vera',           short: 'Vera · QA' },
   { key: 'curator',              label: 'Curator — Ivy',                short: 'Ivy · Curator' },
 ];
@@ -56,6 +56,10 @@ const STAGE_SHORT_LABELS_BASE: Record<string, string> = {
   feature_marketing: 'Marketing',
   qa_engineer: 'QA Tests',
   tech_refinement: 'Tech Review',
+  // Session mode aliases — artifact.stage = s.mode, not the workflow stage name
+  prd: 'PRD',
+  architecture: 'Arch',
+  qa: 'QA Tests',
 };
 
 // Proxy to handle dynamic feature stages and QA feature stages

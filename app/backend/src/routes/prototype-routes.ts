@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
-import { generatePrototype, revisePrototype, loadLatestPrototype, repairTruncatedJson, type PrototypeResult } from '../agents/prototype-agent';
+import { generatePrototype, revisePrototype, loadLatestPrototype, repairTruncatedJson, type PrototypeResult, type GeneratePrototypeOutput } from '../agents/prototype-agent';
 import { costTracker } from '../agents/workflow-router';
 import Logger from '../utils/logger';
 
@@ -26,16 +26,20 @@ prototypeRoutes.post('/workflow/:id/prototype/generate', async (req: Request, re
   try {
     const onTokens = costTracker(workflowId);
     const generator = generatePrototype(workflowId, scope, onTokens);
-    let result: PrototypeResult | null = null;
+    let output: GeneratePrototypeOutput | null = null;
 
     while (true) {
       const next = await generator.next();
-      if (next.done) { result = next.value; break; }
+      if (next.done) { output = next.value; break; }
       res.write(`data: ${JSON.stringify({ type: 'content', content: next.value })}\n\n`);
     }
 
-    if (result) {
-      res.write(`data: ${JSON.stringify({ type: 'prototype', prototype: result })}\n\n`);
+    if (output) {
+      if (output.platform === 'both') {
+        res.write(`data: ${JSON.stringify({ type: 'prototype_multi', platform: 'both', web: output.web, mobile: output.mobile })}\n\n`);
+      } else {
+        res.write(`data: ${JSON.stringify({ type: 'prototype', platform: output.platform, prototype: output.result })}\n\n`);
+      }
     } else {
       res.write(`data: ${JSON.stringify({ type: 'parse_failed' })}\n\n`);
     }
@@ -128,10 +132,11 @@ prototypeRoutes.get('/prototype/design-system', (_req: Request, res: Response) =
 
 /**
  * GET /api/workflow/:id/prototype
- * Load the most recently generated prototype for a workflow.
+ * Load the most recently generated prototype(s) for a workflow.
+ * Returns { platform, web?, mobile? } — callers check platform to know which variants exist.
  */
 prototypeRoutes.get('/workflow/:id/prototype', (req: Request, res: Response) => {
-  const prototype = loadLatestPrototype(req.params.id);
-  if (!prototype) return res.status(404).json({ error: 'No prototype found for this workflow' });
-  res.json(prototype);
+  const result = loadLatestPrototype(req.params.id);
+  if (!result) return res.status(404).json({ error: 'No prototype found for this workflow' });
+  res.json(result);
 });

@@ -75,29 +75,66 @@ function validateBacklogJson(input: Record<string, unknown>): string {
   const issues: string[] = [];
   const FIBONACCI = new Set([1, 2, 3, 5, 8]);
   const GWT_RE = /^\s*(given|when|then)\b/i;
+  const STORY_ID_RE = /^F\d+\.S\d+$/;
+  const VALID_PLATFORMS = new Set(['backend', 'web', 'ios', 'android']);
 
   function validateStory(story: any, p: string): void {
-    for (const field of ['title', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'effort']) {
-      if (story[field] === undefined || story[field] === null || story[field] === '') {
-        issues.push(`${p}: missing required field "${field}"`);
-      }
+    // story_id format
+    if (!story.story_id) {
+      issues.push(`${p}: missing story_id`);
+    } else if (!STORY_ID_RE.test(story.story_id)) {
+      issues.push(`${p}: story_id "${story.story_id}" must follow F?.S? format (e.g. F1.S2)`);
     }
 
-    if (!Array.isArray(story.acceptanceCriteria) || story.acceptanceCriteria.length === 0) {
-      issues.push(`${p}: acceptanceCriteria must be a non-empty array`);
+    if (!story.title) issues.push(`${p}: missing title`);
+
+    // Support both new canonical names and old aliases
+    const asA = story.as_a ?? story.persona;
+    const iWant = story.i_want ?? story.goal;
+    const soThat = story.so_that ?? story.benefit;
+    if (!asA)   issues.push(`${p}: missing as_a (who the story is for)`);
+    if (!iWant) issues.push(`${p}: missing i_want (the capability requested)`);
+    if (!soThat) issues.push(`${p}: missing so_that (the benefit)`);
+
+    // acceptance_criteria (product ACs, Given/When/Then)
+    const ac = story.acceptance_criteria ?? story.acceptanceCriteria;
+    if (!Array.isArray(ac) || ac.length === 0) {
+      issues.push(`${p}: acceptance_criteria must be a non-empty array`);
     } else {
-      const ac = story.acceptanceCriteria;
       if (ac.length < 2) issues.push(`${p}: too few acceptance criteria (${ac.length}) — minimum 2 required`);
-      if (ac.length > 4) issues.push(`${p}: too many acceptance criteria (${ac.length}) — split the story if it needs more than 4`);
+      if (ac.length > 5) issues.push(`${p}: too many acceptance criteria (${ac.length}) — split the story if it needs more than 5`);
       ac.forEach((criterion: any, i: number) => {
         if (typeof criterion === 'string' && !GWT_RE.test(criterion)) {
-          issues.push(`${p}.acceptanceCriteria[${i}]: must start with Given / When / Then`);
+          issues.push(`${p}.acceptance_criteria[${i}]: must start with Given / When / Then`);
         }
       });
     }
 
-    if (typeof story.effort !== 'number' || !FIBONACCI.has(story.effort)) {
-      issues.push(`${p}: effort must be a Fibonacci number (1, 2, 3, 5, or 8)`);
+    // technical_acceptance_criteria (engineer ACs)
+    if (!Array.isArray(story.technical_acceptance_criteria) || story.technical_acceptance_criteria.length === 0) {
+      issues.push(`${p}: missing technical_acceptance_criteria — backend/platform engineers must add technical ACs`);
+    }
+
+    // platform tags
+    const platforms = story.platform;
+    if (!Array.isArray(platforms) || platforms.length === 0) {
+      issues.push(`${p}: missing platform array — must include at least one of: backend, web, ios, android`);
+    } else {
+      const invalid = platforms.filter((pl: any) => !VALID_PLATFORMS.has(pl));
+      if (invalid.length > 0) {
+        issues.push(`${p}: invalid platform value(s): ${invalid.join(', ')} — must be one of: backend, web, ios, android`);
+      }
+    }
+
+    // estimated_points (Fibonacci)
+    const points = story.estimated_points ?? story.effort ?? story.storyPoints;
+    if (typeof points !== 'number' || !FIBONACCI.has(points)) {
+      issues.push(`${p}: estimated_points must be a Fibonacci number (1, 2, 3, 5, or 8)`);
+    }
+
+    // test_cases should be present (can be empty but must exist)
+    if (!Array.isArray(story.test_cases)) {
+      issues.push(`${p}: missing test_cases array — QA engineer must populate test cases`);
     }
   }
 
@@ -113,11 +150,7 @@ function validateBacklogJson(input: Record<string, unknown>): string {
     }
   }
 
-  if (parsed.story) {
-    validateStory(parsed.story, 'story');
-  } else if (parsed.feature) {
-    validateFeature(parsed.feature, 'feature');
-  } else if (parsed.epic && parsed.features) {
+  if (parsed.epic && parsed.features) {
     if (!parsed.epic.title) issues.push('epic: missing title');
     if (!Array.isArray(parsed.features) || parsed.features.length === 0) {
       issues.push('features must be a non-empty array');
@@ -127,8 +160,12 @@ function validateBacklogJson(input: Record<string, unknown>): string {
       }
       parsed.features.forEach((f: any, i: number) => validateFeature(f, `features[${i}]`));
     }
+  } else if (parsed.feature) {
+    validateFeature(parsed.feature, 'feature');
+  } else if (parsed.story) {
+    validateStory(parsed.story, 'story');
   } else {
-    issues.push('Root must have one of: "story", "feature" (with stories), or "epic" + "features"');
+    issues.push('Root must be one of: { epic, features[] } (standard), { feature } (single feature), or { story } (single story)');
   }
 
   return result(issues);
@@ -142,44 +179,36 @@ function validateResearchBrief(input: Record<string, unknown>): string {
 
   const issues: string[] = [];
 
-  // Inline citations [N]
-  const inlineCitations = text.match(/\[\d+\]/g) ?? [];
-  if (inlineCitations.length < 5) {
-    issues.push(`Only ${inlineCitations.length} inline citation(s) [N] found — minimum 5 required. Add a bracketed number immediately after every factual claim.`);
-  }
-
-  // References section
-  const refSectionMatch = text.split(/^#{1,3}\s*references/im);
-  if (refSectionMatch.length < 2) {
-    issues.push('Missing References section. Add "## References" at the end listing all sources with matching [N] numbers.');
+  // Required sections
+  if (!/executive summary/i.test(text)) {
+    issues.push('Missing "Executive Summary" section — required at the top of every research brief.');
   } else {
-    const refBody = refSectionMatch[1].split(/^#{1,3}\s/m)[0] ?? '';
-    const refEntries = refBody.match(/^\[?\d+\]?[\.\)\s]/gm) ?? [];
-    if (refEntries.length < 5) {
-      issues.push(`References section has ${refEntries.length} entry/entries — minimum 5 required.`);
-    }
-    // Citation number vs reference count mismatch
-    if (inlineCitations.length > 0 && refEntries.length > 0) {
-      const maxNum = Math.max(...inlineCitations.map(c => parseInt(c.replace(/\[|\]/g, ''))));
-      if (maxNum > refEntries.length) {
-        issues.push(`Highest inline citation is [${maxNum}] but only ${refEntries.length} reference entries found — every [N] must have a matching entry.`);
-      }
+    const afterExec = text.split(/executive summary/i)[1] ?? '';
+    const execBody = afterExec.split(/^#{1,3}\s/m)[0] ?? '';
+    if (execBody.trim().length < 100) {
+      issues.push('"Executive Summary" is too brief — summarise the key opportunity, top 2–3 findings, and the recommended PM action.');
     }
   }
 
-  // Suspicious / fabricated URLs
+  if (!/problem space/i.test(text)) {
+    issues.push('Missing "Problem Space" section — explain the user problem and current friction before any solution discussion.');
+  }
+
+  if (!/market|competitive|landscape/i.test(text)) {
+    issues.push('Missing market or competitive landscape section — include at least one of: Market Size & Growth, Competitive Landscape, or Market Context.');
+  }
+
+  if (!/recommendation|pm question/i.test(text)) {
+    issues.push('Missing Recommendations or PM Questions section — the brief must close with actionable output for the PM.');
+  }
+
+  // Suspicious / fabricated URLs (if web search WAS used, ensure URLs look real)
   const urls = text.match(/https?:\/\/[^\s\)>\]]+/g) ?? [];
   const fakeDomains = /\b(example|placeholder|fake|sample|test|foo|bar|yourdomain)\.com\b/i;
   for (const url of urls) {
     if (fakeDomains.test(url)) {
-      issues.push(`Suspicious URL detected: ${url} — replace with a real source or use "[Assumption — no source found]".`);
+      issues.push(`Suspicious URL detected: ${url} — replace with a real source or remove the link entirely.`);
     }
-  }
-
-  // Too many unverified assumptions
-  const assumptions = (text.match(/\[assumption/gi) ?? []).length;
-  if (assumptions > 3) {
-    issues.push(`${assumptions} "[Assumption — no source found]" markers — try to find real citations for at least some of these before submitting.`);
   }
 
   return result(issues);
@@ -237,6 +266,11 @@ function validatePrd(input: Record<string, unknown>): string {
     issues.push('No personas section found — PRD must define who the target users are.');
   }
 
+  // Open questions / risks section
+  if (!/open questions?|open risks?/i.test(text)) {
+    issues.push('Missing "Open Questions & Risks" section — unresolved questions and identified risks must be listed before handoff to architecture and backlog stages.');
+  }
+
   return result(issues);
 }
 
@@ -254,19 +288,32 @@ function validateArchitecture(input: Record<string, unknown>): string {
     issues.push(`${tbdMatches.length} unresolved "TBD" decision(s) found — the architecture must make definitive technology choices, not defer them.`);
   }
 
-  // Cost estimates
+  // Repository Impact section — required for every initiative
+  if (!/repository impact/i.test(text)) {
+    issues.push('Missing "Repository Impact" section — every repo in repos.md must be listed with the changes required (or "No changes"). Story decomposition agents depend on this.');
+  } else {
+    const afterRepoImpact = text.split(/repository impact/i)[1] ?? '';
+    const repoBody = afterRepoImpact.split(/^#{1,3}\s/m)[0] ?? '';
+    // Should reference at least a few known repos
+    const repoRefs = repoBody.match(/xcube-\w+/gi) ?? [];
+    if (repoRefs.length < 3) {
+      issues.push('Repository Impact section references fewer than 3 repos — ensure all repos in repos.md are accounted for, even if they have "No changes".');
+    }
+  }
+
+  // Cross-Platform Contracts section — required when multiple platforms are involved
+  if (!/cross.platform contracts/i.test(text)) {
+    issues.push('Missing "Cross-Platform Contracts" section — shared DTOs, pub/sub channel names, and cross-repo API calls must be documented so platform engineers agree on interfaces before story decomposition.');
+  }
+
+  // Cost estimates (Estimated Cost table in Deployment section)
   if (!/cost estimate|estimated cost|monthly cost|per month|infrastructure cost|\$\d/i.test(text)) {
-    issues.push('No cost estimates found — infrastructure costs must be estimated for all major components so the PM can evaluate the architecture.');
+    issues.push('No cost estimates found — the Deployment section must include estimated infrastructure costs so the PM can evaluate build vs buy decisions.');
   }
 
   // Failure modes / resilience
-  if (!/failure mode|failover|fallback|circuit.breaker|retry|timeout|unavailable|what happens (if|when)/i.test(text)) {
-    issues.push('No failure mode documentation found — document how each core integration fails and what the system does in response.');
-  }
-
-  // Scalability assumptions
-  if (!/scal|load|concurrent users|throughput|rps|rpm|peak (load|traffic)|requests per/i.test(text)) {
-    issues.push('No scalability or load assumptions stated — define expected peak load and scaling approach for user-facing components.');
+  if (!/failure mode|failover|fallback|circuit.breaker|retry|timeout|unavailable/i.test(text)) {
+    issues.push('No failure mode documentation found — the "Key Dependencies & Failure Modes" table must cover what happens when each external dependency is unavailable.');
   }
 
   return result(issues);

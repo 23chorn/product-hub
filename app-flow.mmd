@@ -1,0 +1,231 @@
+# Product Hub — Application Flow
+
+## 1. System Architecture
+
+```mermaid
+flowchart TB
+
+    USER([User])
+
+    subgraph INPUTS[External Inputs]
+        AIRTABLE[(Airtable\nRoadmap Items)]
+        NOTION[(Notion / GitBook\nKnowledge Base)]
+        CTX[context/*.md\ncompany · strategy · repos\ntech-stack · current-state]
+    end
+
+    subgraph OUTPUTS[Work Item Outputs]
+        ADO[(Azure DevOps\nEpics · Features · Stories · Test Plans)]
+        WIKI[(Azure Wiki\nArtifact Docs)]
+    end
+
+    LLM([LLM Provider\nAnthropic · AWS Bedrock · Ollama])
+
+    subgraph BACKEND[Backend — Express port 3001]
+
+        subgraph COORD_LAYER[Coordinator]
+            COORD[Aria — Coordinator\nPlanning · Stage Briefs\nMid-workflow Chat · CR Briefs]
+        end
+
+        subgraph SPECIALIST_LAYER[Specialist Agents]
+            SAGE[Sage\nAnalyst]
+            REX[Rex\nPM / PRD]
+            NOVA[Nova\nPrototype]
+            ATLAS[Atlas\nSolution Architect]
+            APEX[Apex\nEpic Feature Planner]
+            IVY[Ivy\nCurator]
+        end
+
+        subgraph MAR_LAYER[Multi-Agent Refinement\nper feature — participants filtered by productArea]
+            SHARD[Shard\nProduct Lead]
+            VERA[Vera\nQA]
+            FINN[Finn\nBackend always]
+            REMI[Remi\nWeb if in scope]
+            IOSAG[iOS Cole\nif mobile]
+            ANDAG[Android Cole\nif mobile]
+        end
+
+        FLINT[Flint — Critic\nloads critic-stage.md\nqualitative review only]
+
+        subgraph TOOLS[Inline Validation Tools]
+            VRB[validate_research_brief\nanalyst]
+            VPRD[validate_prd\npm_prd]
+            VARCH[validate_architecture\nsolution_architect]
+            VBLOG[validate_backlog_json\npm_backlog]
+            GDSC[get_domain_skill_context\narchitect · pm_backlog]
+        end
+
+        subgraph DBSTORE[SQLite Database]
+            ITEMS[items\nmetadata · productArea]
+            ARTS[artifacts\nexternal_url]
+            CKPTS[checkpoints]
+            EVTS[workflow_events\nSSE feed]
+            SKILLS[skill_versions\ntool_definitions · persona]
+            ADOMAP[ado_work_item_map\nF1.S1 to ADO ID]
+        end
+
+    end
+
+    subgraph FRONTEND[Frontend — React 18 port 5173]
+        UI[Studio UI\nTerminal · Checkpoint Panel\nArtifact Viewer · Prototype Preview]
+        STORES[Zustand Stores\nworkflow · session · model · theme]
+    end
+
+    USER <--> UI
+    UI <-->|SSE events + REST| BACKEND
+    AIRTABLE -->|item + productArea| BACKEND
+    NOTION -->|KB context| COORD
+    CTX --> COORD
+    LLM <-->|all LLM calls| SPECIALIST_LAYER
+    LLM <-->|all LLM calls| MAR_LAYER
+    LLM <-->|all LLM calls| COORD
+    LLM <-->|all LLM calls| FLINT
+    SPECIALIST_LAYER -->|calls inline| TOOLS
+    SPECIALIST_LAYER --> FLINT
+    MAR_LAYER --> FLINT
+    ADO_PUSH -->|push on approval| ADO
+    ARTS -->|sync on approval| WIKI
+    ADOMAP -.->|traceability| ARTS
+
+    ADO_PUSH[ADO Push\non checkpoint approval]
+```
+
+---
+
+## 2. Workflow Pipeline — Stage by Stage
+
+```mermaid
+flowchart TB
+
+    START([User enters goal\nor selects Airtable item])
+
+    subgraph PLAN[① Coordinator Planning]
+        P1[Read context files\ncompany · strategy · current-state · repos]
+        P2[Query Knowledge Base\nNotion or GitBook if configured]
+        P3[COORDINATOR_READY\nenriched context · max 3 rounds]
+        P4[User toggles stages\nconfirm scope]
+    end
+
+    subgraph LOOP[② Per-Stage Execution Loop]
+        L1[Coordinator generates Stage Brief\nincludes productArea platform scope]
+        L2[Specialist runs\nloads persona from skill_versions\nloads output template\nstreams via LLM]
+        L3{Validation Tool\ncalled inline by specialist}
+        L4[Self-correct\nrevise based on tool issues]
+        L5[Flint — Critic\nloads critic-stage.md\nqualitative checks only]
+        L6[Checkpoint created\npending human review]
+    end
+
+    subgraph STAGES[③ Stage Sequence]
+        S1[Sage — Analyst\nvalidate_research_brief]
+        S2[Rex — PM / PRD\nvalidate_prd]
+        S3[Nova — Prototype\nweb · mobile · both\nresolved from productArea]
+        S4[Atlas — Solution Architect\nvalidate_architecture\nget_domain_skill_context]
+        S5[Apex — Epic Feature Planner\npushEpicAndFeaturesToADO on approval\ninjects story_decomposition_F1 F2 F3]
+
+        subgraph MAR[Multi-Agent Refinement — story_decomposition_Fn]
+            direction LR
+            MA1[Phase 1 Draft\nall agents in parallel]
+            MA2[Phase 2 Refine x2\ncross-agent review]
+            MA3[Phase 3 Synthesize\nShard merges final backlog JSON]
+        end
+
+        S6[Ivy — Curator\nauto-runs after last stage\nwrites context_diffs]
+    end
+
+    subgraph REVIEW[④ Human Checkpoint]
+        R1{Human Review}
+        R2[✅ Approve]
+        R3[✏️ Revise with feedback]
+        R4[❌ Reject]
+    end
+
+    subgraph ADO[⑤ ADO Push on Approval]
+        A1[epic_feature_planner\npushEpicAndFeaturesToADO\ncreates epic + feature shells]
+        A2[story_decomposition_Fn\npushFeatureToADO\nadds stories + cumulative test plan]
+        A3[stamp artifacts.external_url\nSQLite traceability]
+    end
+
+    subgraph POST[⑥ Post-Completion]
+        PC1[context_diffs approved\ncontext files updated in place]
+        PC2[Change Request system\nassess impact via Coordinator\ntargeted stage re-run]
+        PC3[Redo from any stage\nwith feedback propagation]
+    end
+
+    START --> P1 --> P2 --> P3 --> P4
+
+    P4 --> S1
+    S1 --> S2 --> S3 --> S4 --> S5 --> MAR --> S6
+
+    S1 & S2 & S4 & S5 -.->|each runs via| LOOP
+    MAR -.->|runs via| LOOP
+
+    L1 --> L2
+    L2 -->|calls tool| L3
+    L3 -->|issues| L4 --> L2
+    L3 -->|valid| L5 --> L6
+
+    L6 --> R1
+    R1 --> R2
+    R1 --> R3
+    R1 --> R4
+
+    R2 -->|epic_feature_planner| A1
+    R2 -->|story_decomposition_Fn| A2
+    A1 & A2 --> A3
+
+    R3 -->|feedback injected into brief| L1
+
+    S6 --> PC1
+    S6 --> POST
+    R4 --> POST
+
+    subgraph PARTICIPANTS[Multi-Agent Participants\nfiltered by productArea]
+        PA1[Shard — Product Lead\nalways]
+        PA2[Vera — QA\nalways]
+        PA3[Finn — Backend\nalways]
+        PA4[Remi — Web\nif web in productArea]
+        PA5[iOS Cole\nif mobile in productArea]
+        PA6[Android Cole\nif mobile in productArea]
+    end
+
+    MAR -.- PARTICIPANTS
+```
+
+---
+
+## 3. Integration Points
+
+| Integration | Provider Options | Direction | Trigger |
+|---|---|---|---|
+| Roadmap Items | Airtable · none | Inbound | Workflow start — populates item + productArea |
+| LLM | Anthropic · AWS Bedrock · Ollama | Bidirectional | Every agent call |
+| Work Items | Azure DevOps · Jira · none | Outbound | Checkpoint approval |
+| Documentation | Azure Wiki · none | Outbound | Checkpoint approval |
+| Knowledge Base | Notion · GitBook · none | Inbound | Coordinator planning phase |
+| Context Files | context/*.md on disk | Inbound | Every agent system prompt |
+
+---
+
+## 4. Validation Tool → Stage Mapping
+
+| Tool | Stage | What it enforces |
+|---|---|---|
+| `validate_research_brief` | analyst | ≥5 citations, References section, no fake URLs, assumption count |
+| `validate_prd` | pm_prd | Out of Scope, metric baselines, counter-metrics, measurable NFRs, Open Questions |
+| `validate_architecture` | solution_architect | No TBDs, Repository Impact section, Cross-Platform Contracts, cost estimates, failure modes |
+| `validate_backlog_json` | pm_backlog | story_id format, as_a/i_want/so_that, GWT ACs, Fibonacci points, platform tags, technical ACs, test_cases |
+| `validate_gtm_strategy` | gtm_strategy | Moore positioning template, 3 launch phases, leading/lagging indicators, channel recommendations |
+| `get_domain_skill_context` | solution_architect · pm_backlog | Loads service-specific patterns from skill_versions DB |
+
+---
+
+## 5. ADO Traceability Chain
+
+```
+Airtable item
+  └── items.metadata.productArea (SQLite)
+        └── workflow (SQLite workflows table)
+              └── artifact (SQLite artifacts table)
+                    └── artifacts.external_url → ADO URL
+                          └── ado_work_item_map (F1.S1 → ADO work item ID)
+                                └── Azure DevOps Epic → Feature → Story → Test Plan
+```

@@ -17,16 +17,10 @@ interface WorkflowEvent {
 export function eventToMessage(event: WorkflowEvent): { role: 'coordinator'; content: string; timestamp: number; eventType: string; stage?: string } | null {
   let content = event.summary;
 
-  // stage_completed — append external URL (wiki or ADO board) for direct linking
-  if (event.event_type === 'stage_completed' && event.details) {
+  // stage_completed / ado_pushed — append external URL for direct linking
+  if ((event.event_type === 'stage_completed' || event.event_type === 'ado_pushed') && event.details) {
     try {
       const details = JSON.parse(event.details);
-
-      // Debug log for story_decomposition stages
-      if (event.stage?.startsWith('story_decomposition')) {
-        console.log(`[EVENT DEBUG] ${event.stage} details:`, details);
-      }
-
       if (details.wiki_url) {
         content = `${content}\n→ ${details.wiki_url}`;
       } else if (details.feature_url && details.test_plan_url) {
@@ -87,6 +81,14 @@ export function eventToMessage(event: WorkflowEvent): { role: 'coordinator'; con
 
       content = parts.join('\n');
     } catch { /* fall through to raw summary */ }
+  }
+
+  // Wiki sync after approval — append the wiki URL
+  if (event.event_type === 'wiki_synced' && event.details) {
+    try {
+      const details = JSON.parse(event.details);
+      if (details.wiki_url) content = `${content}\n→ ${details.wiki_url}`;
+    } catch { /* ignore */ }
   }
 
   // Board sync — surface the top-level ticket or test plan URL prominently

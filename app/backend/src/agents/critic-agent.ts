@@ -15,7 +15,18 @@ import Logger from '../utils/logger';
 const logger = new Logger('CRITIC');
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
-const PERSONA_PATH = path.join(PROJECT_ROOT, 'agents', 'personas', 'critic.md');
+const PERSONAS_DIR = path.join(PROJECT_ROOT, 'agents', 'personas');
+const CORE_PERSONA_PATH = path.join(PERSONAS_DIR, 'critic-core.md');
+
+const STAGE_CRITIC_FILE: Record<string, string> = {
+  analyst:           'critic-analyst.md',
+  pm_prd:            'critic-prd.md',
+  solution_architect:'critic-architect.md',
+  pm_backlog:        'critic-backlog.md',
+  gtm_strategy:      'critic-gtm.md',
+  feature_marketing: 'critic-feature-marketing.md',
+  qa_engineer:       'critic-qa.md',
+};
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -49,33 +60,47 @@ function buildStageInstructions(stage?: string): string {
     case 'analyst':
       return `## Artifact Stage: Research Brief (Sage)
 
-Apply the **Research Brief** stage-specific checks from your persona. Key enforcement reminder:
-- Source/citation questions are **Issues**, never PM Questions. The PM cannot verify research provenance.
-- Risks must be domain-specific — generic risks are **MAJOR**.
-- PM Questions are limited to methodology scope only (geography, segments, depth requested).
+Structural validation (citation counts, references section, suspicious URLs, assumption markers) has already been performed by automated tools before this review. Do not re-raise those checks.
+
+Focus on:
+- Is the analysis genuinely insightful, or does it only restate commonly known facts?
+- Are risks and opportunities specific to this domain, market, and user segment — or generic?
+- Does the research directly address the stated initiative goal, or drift into adjacent topics?
+- Are strategic implications actionable enough for the PM to make a scoping decision?
+- If the brief names a specific geography or segment, is it actually covered — not just a proxy market?
 
 `;
 
     case 'pm_prd':
       return `## Artifact Stage: PRD (Rex)
 
-Apply the **PRD** stage-specific checks from your persona. Key enforcement reminders:
-- Every FR must trace to a user problem. Solution-first requirements are **MAJOR**.
-- Success metrics without a baseline, target, timeframe, or measurement method are **MAJOR**.
-- Counter-metrics missing entirely is **MAJOR**.
-- Empty or missing Out of Scope section is **MAJOR**.
-- PM Questions cover scope, edge case behaviour, and business logic — not implementation.
+Structural validation (required sections, metric baselines/targets, counter-metric presence, NFR measurability, personas section, Out of Scope presence, Open Questions presence) has already been performed by automated tools. Do not re-raise those checks.
+
+Focus on:
+- Does every FR trace to a stated user problem — or is it a solution assumption?
+- Are FRs written as capabilities ("users can…"), not implementation instructions?
+- Are missing FRs for obviously implied behaviour present (error states, empty states, permission failures)?
+- Are personas grounded in the research brief — or invented archetypes?
+- Are success metrics measuring the right outcome (not a vanity proxy)?
+- Are metric targets directionally plausible — or aspirational with no basis?
+- Are counter-metrics protecting the specific existing flows at risk from this change?
+- The PRD is provided as a reference document — use it to check FR completeness.
 
 `;
 
     case 'solution_architect':
       return `## Artifact Stage: Architecture Document (Atlas)
 
-Apply the **Architecture Document** stage-specific checks from your persona. Key enforcement reminders:
-- Unresolved technology choices are **CRITICAL** (core path) or **MAJOR** (non-critical).
-- Every NFR from the PRD must be addressed — silence is **MAJOR**.
-- Missing cost estimates are **MAJOR**.
-- Silent introduction of technologies not in the existing tech stack is **MAJOR**.
+Structural validation (TBD detection, Repository Impact section, Cross-Platform Contracts section, cost estimates, failure mode table) has already been performed by automated tools. Do not re-raise those checks.
+
+Focus on:
+- Are technology choices appropriate for xCube's existing stack — or do they introduce unjustified new dependencies?
+- Are Repository Impact entries that say "No changes" plausible — or has the architect silently omitted repos that clearly need work?
+- Are Cross-Platform Contracts internally consistent with the API surface described elsewhere in the document?
+- Does every NFR from the PRD have a specific architectural decision addressing it — not just an acknowledgement?
+- Are PRD open questions resolved or explicitly acknowledged with a mitigation approach?
+- Is the data model sound (normalisation choices, indexing for query patterns)?
+- Does the scalability approach actually support the stated load assumptions?
 - PM Questions cover business constraints only — not technology choices.
 
 `;
@@ -83,14 +108,19 @@ Apply the **Architecture Document** stage-specific checks from your persona. Key
     case 'pm_backlog':
       return `## Artifact Stage: Backlog (Pip)
 
-Apply the **Backlog** stage-specific checks from your persona. Key enforcement reminders:
-- The PRD document is provided above in the Reference Documents section. Use it to verify that every functional requirement has a corresponding story — do not flag FR coverage as unverifiable.
-- ACs written as "system shall..." without Given/When/Then are **MAJOR**.
-- Stories scored above 8 that haven't been decomposed are **MAJOR**.
-- Inconsistent effort scoring across similar-complexity stories is **MAJOR**.
-- PRD functional requirements with no corresponding story are **MAJOR** — scope has been silently dropped.
-- Phase tags contradicting the PRD's Out of Scope section are **CRITICAL**.
-- PM Questions cover scope ambiguity — not estimation or AC format.
+Structural validation (story_id format, field names, Given/When/Then format, AC counts, Fibonacci points, platform tags, technical ACs, test cases) has already been performed by automated tools. Do not re-raise those checks.
+
+The PRD document is provided above in the Reference Documents section. Use it to verify that every functional requirement has a corresponding story.
+
+Focus on:
+- Are stories independently deliverable — or do hidden dependencies exist?
+- Are circular dependencies present (CRITICAL)?
+- Are ACs testable by a QA engineer, or do they require judgement calls?
+- Are effort scores internally consistent across similar-complexity stories?
+- Are stories covering significant integration work underestimated?
+- Does every PRD functional requirement have a corresponding story — or has scope been silently dropped?
+- Are platform tags accurate — does a "web-only" story hide backend work?
+- Do phase tags contradict the PRD's Out of Scope section (CRITICAL)?
 
 `;
 
@@ -158,11 +188,23 @@ Apply the **QA Test Suite** stage-specific checks. Key enforcement reminders:
 // ── CriticAgent ───────────────────────────────────────────────────────────────
 
 export class CriticAgent {
-  private readonly persona: string;
+  private readonly corePersona: string;
 
   constructor() {
-    this.persona = fs.readFileSync(PERSONA_PATH, 'utf-8');
-    logger.info('Critic persona loaded');
+    this.corePersona = fs.readFileSync(CORE_PERSONA_PATH, 'utf-8');
+    logger.info('Critic core persona loaded');
+  }
+
+  private loadStageChecks(stage?: string): string {
+    if (!stage) return '';
+    const file = STAGE_CRITIC_FILE[stage];
+    if (!file) return '';
+    try {
+      return fs.readFileSync(path.join(PERSONAS_DIR, file), 'utf-8');
+    } catch {
+      logger.warn(`No stage-specific critic file found for stage "${stage}" (${file})`);
+      return '';
+    }
   }
 
   /**
@@ -194,13 +236,16 @@ export class CriticAgent {
 - Focus your review on the quality of analysis, reasoning, structure, completeness, and actionability of the content itself`
       : '';
 
-    const stable = `${this.persona}${providerNote}
+    const stable = `${this.corePersona}${providerNote}
 
 ---
 
-Review the document provided below according to your persona and output format. Produce Issues, Questions for the PM, Strengths, and Verdict sections.`;
+Review the document provided below according to your identity, output format, and the stage-specific checks injected below. Produce Issues, Questions for the PM, Strengths, and Verdict sections.`;
 
-    const stageInstructions = buildStageInstructions(stage);
+    const stageChecks = this.loadStageChecks(stage);
+    const stageInstructions = stageChecks
+      ? `## Stage-Specific Review Checks\n\n${stageChecks}\n\n`
+      : buildStageInstructions(stage); // fallback to inline for unlisted stages
 
     const revisionContext = (priorIssues && priorIssues.length > 0)
       ? `## This Is a Revision

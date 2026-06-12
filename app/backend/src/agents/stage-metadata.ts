@@ -23,7 +23,7 @@ export const STAGE_MAX_OUTPUT_TOKENS: Record<string, number> = {
   analyst:              12_000,
   pm_prd:               12_000,
   epic_feature_planner: 16_000,
-  solution_architect:   16_000,  // Increased to accommodate dual output (markdown + JSON)
+  solution_architect:   16_000,
   story_decomposition:  32_000,  // Same as old pm_backlog
   pm_backlog:           32_000,
   gtm_strategy:         12_000,
@@ -336,7 +336,7 @@ export function stageGoal(stage: string, goal: string): string {
     analyst:              `Produce a comprehensive, sourced research brief that gives the PM everything they need to write a PRD for: ${goal}`,
     pm_prd:               `Produce a complete PRD that translates research findings into clear product requirements and success criteria for: ${goal}`,
     epic_feature_planner: `Decompose the PRD requirements into a clear epic and feature structure (2-8 features) with feature-level acceptance criteria and phase labels for: ${goal}`,
-    solution_architect:   `Produce an architecture document that makes all technology decisions needed to build the PRD's requirements, and enrich the epic/features JSON with technical metadata (repos, data contracts, cross-repo boundaries) for: ${goal}`,
+    solution_architect:   `Produce a cross-platform architecture document covering technology decisions, data model, API surface, repository impact across all repos, and cross-platform contracts — to serve as the technical reference for epic planning and story decomposition for: ${goal}`,
     story_decomposition:  `Decompose each feature from the tech-enriched epic/features JSON into 6-8 actionable stories or technical tasks, with story points, acceptance criteria, and PRD traceability for: ${goal}`,
     prototype:            `Produce an interactive React prototype that demonstrates the key user journeys from the PRD and architecture document for: ${goal}`,
     pm_backlog:           `Produce a prioritised backlog of epics, features, and stories covering the full MVP scope defined in the PRD for: ${goal}`,
@@ -365,9 +365,10 @@ export function stageNotDecide(stage: string): string {
       'Do not choose technologies or architecture patterns — those belong to the architect. ' +
       'Your job ends at feature-level boundaries and acceptance criteria. Story decomposition happens in the next stage.',
     solution_architect:
-      'Do not redefine personas, success metrics, or product scope — those are fixed in the approved PRD and epic/features. ' +
+      'Do not redefine personas, success metrics, or product scope — those are fixed in the approved PRD. ' +
       'Do not create new requirements; if something is missing from the PRD, flag it as a gap rather than adding scope silently. ' +
-      'Do not write user stories — enrich features with technical metadata only.',
+      'Do not write user stories or create epics — the epic planner reads this document next. ' +
+      'Do not output JSON structures or attempt to enrich epics that do not exist yet.',
     story_decomposition:
       'Do not modify epic or feature titles, descriptions, or phase labels from the architect\'s JSON — those are fixed. ' +
       'Do not invent requirements not present in the PRD. ' +

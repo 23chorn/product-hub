@@ -1,8 +1,8 @@
-# Feature Marketing: In-App Messaging & Trade Chat — TradeEasy
+﻿# Feature Marketing: In-App Messaging & Trade Chat — xCube
 
 ## Positioning Statement
 
-**For** active retail traders who discuss setups on Discord and WhatsApp before trading on TradeEasy, **the Chat feature** is a real-time trading community built into the app, **that** eliminates the context-switch between conversation and execution — so traders can go from idea to order in one tap, not six minutes.
+**For** active retail traders who discuss setups on Discord and WhatsApp before trading on xCube, **the Chat feature** is a real-time trading community built into the app, **that** eliminates the context-switch between conversation and execution — so traders can go from idea to order in one tap, not six minutes.
 
 ---
 
@@ -11,7 +11,7 @@
 - "Your trading community, where you actually trade."
 - "Discuss. Share. Trade. All in one app."
 - "The trading chat that connects to your order screen."
-- "#aapl-watchers is live on TradeEasy."
+- "#aapl-watchers is live on xCube."
 
 ---
 
@@ -60,7 +60,7 @@ Connect with thousands of traders in real-time channels organised by ticker and 
 ## Social Media Assets (suggested)
 
 **Twitter/X:**
-"You've been asking for this. TradeEasy Chat is live — topic-based trading channels with live ticker cards. Go from idea to order in one tap. Join #aapl-watchers now."
+"You've been asking for this. xCube Chat is live — topic-based trading channels with live ticker cards. Go from idea to order in one tap. Join #aapl-watchers now."
 
 **LinkedIn:**
-"We built the trading community that lives where you trade. TradeEasy Chat brings real-time ticker discussions and live price sharing directly into the brokerage app — eliminating the context-switch that costs traders execution quality. Available now on iOS and Android."
+"We built the trading community that lives where you trade. xCube Chat brings real-time ticker discussions and live price sharing directly into the brokerage app — eliminating the context-switch that costs traders execution quality. Available now on iOS and Android."

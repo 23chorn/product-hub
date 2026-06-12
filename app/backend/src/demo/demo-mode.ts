@@ -227,7 +227,7 @@ export function getDemoFixture(stage: string): string | null {
     console.log(`[DEMO FIXTURE] Successfully loaded fallback ${baseFixturePath} (${content.length} chars)`);
     return content;
   } catch (err) {
-    console.error(`[DEMO FIXTURE ERROR] Failed to load both theme and base fixtures for "${stage}":`, err.message);
+    console.error(`[DEMO FIXTURE ERROR] Failed to load both theme and base fixtures for "${stage}":`, err instanceof Error ? err.message : String(err));
     return null;
   }
 }

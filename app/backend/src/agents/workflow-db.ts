@@ -180,6 +180,14 @@ export function insertEvent(
 }
 
 /**
+ * Touch a workflow's updated_at without changing its status.
+ * Call periodically from long-running stages to prevent stale-recovery from firing.
+ */
+export function touchWorkflow(workflowId: string): void {
+  db.prepare('UPDATE workflows SET updated_at = ? WHERE id = ?').run(Date.now(), workflowId);
+}
+
+/**
  * Atomically add an estimated cost (USD) to a workflow's running total.
  */
 export function addWorkflowCost(workflowId: string, cost: number): void {

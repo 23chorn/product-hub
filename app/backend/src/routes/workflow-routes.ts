@@ -25,7 +25,7 @@ import {
 } from '../agents/change-request';
 import db from '../data/database';
 import { insertEvent } from '../agents/workflow-db';
-import { resolveArtifactPath, loadArtifactContentById, updateArtifactContent } from '../agents/artifact-helpers';
+import { resolveArtifactPath, loadArtifactContentById, updateArtifactContent, syncArtifactToWiki } from '../agents/artifact-helpers';
 import Logger from '../utils/logger';
 import { loadPrdForItem, buildEpicEnrichment, buildFeatureEnrichment } from '../utils/prd-enrichment';
 import { isDemoMode } from '../demo/demo-mode';
@@ -126,7 +126,7 @@ function cleanCoordinatorResponse(text: string): string {
   return cleaned;
 }
 
-const KNOWN_STAGES = new Set(['analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'gtm_strategy', 'feature_marketing', 'critic', 'curator', 'tech_refinement']);
+const KNOWN_STAGES = new Set(['analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'gtm_strategy', 'feature_marketing', 'critic', 'curator']);
 
 /**
  * Validate a candidate stage sequence.
@@ -175,7 +175,7 @@ export const workflowRoutes = Router();
 
 // Critic no longer appears as a standalone stage — it runs inline after each specialist stage.
 // The curator runs at the end to update project context files.
-const DEFAULT_STAGES = ['analyst', 'pm_prd', 'epic_feature_planner', 'solution_architect', 'story_decomposition', 'curator'];
+const DEFAULT_STAGES = ['analyst', 'pm_prd', 'solution_architect', 'epic_feature_planner', 'story_decomposition', 'curator'];
 
 // ── Coordinator planning phase ─────────────────────────────────────────────────
 
@@ -369,7 +369,7 @@ workflowRoutes.get('/coordinator/session/:id', (req: Request, res: Response) => 
  *   { workflowId, stage, sessionId, complete, stages }
  */
 workflowRoutes.post('/start', async (req: Request, res: Response) => {
-  let { itemId, goal, enrichedContext, stageSequence, policyOverrides, planningSessionId, kbQueries } = req.body as {
+  let { itemId, goal, enrichedContext, stageSequence, policyOverrides, planningSessionId, kbQueries, productArea } = req.body as {
     itemId?: string;
     goal?: string;
     enrichedContext?: string;
@@ -377,6 +377,7 @@ workflowRoutes.post('/start', async (req: Request, res: Response) => {
     policyOverrides?: Record<string, string>;
     planningSessionId?: string;
     kbQueries?: string[];
+    productArea?: string;
   };
 
   if (!goal) {
@@ -391,22 +392,28 @@ workflowRoutes.post('/start', async (req: Request, res: Response) => {
     const id = uuid();
     const now = Date.now();
     const title = goal.slice(0, 100) + (goal.length > 100 ? '...' : '');
+    const metadata = productArea ? JSON.stringify({ productArea }) : null;
     db.prepare(`
-      INSERT INTO items (id, type, title, description, status, source, airtable_id, created_at, updated_at)
-      VALUES (?, 'initiative', ?, ?, 'active', 'local', NULL, ?, ?)
-    `).run(id, title, goal.slice(0, 500), now, now);
+      INSERT INTO items (id, type, title, description, status, source, airtable_id, metadata, created_at, updated_at)
+      VALUES (?, 'initiative', ?, ?, 'active', 'local', NULL, ?, ?, ?)
+    `).run(id, title, goal.slice(0, 500), metadata, now, now);
     itemId = id;
     logger.info(`Auto-created local item ${id} for workflow`);
   } else {
-    const existing = db.prepare('SELECT id FROM items WHERE id = ?').get(itemId);
+    const existing = db.prepare('SELECT id, metadata FROM items WHERE id = ?').get(itemId) as { id: string; metadata: string | null } | undefined;
     if (!existing) {
       const now = Date.now();
       const title = goal.slice(0, 100) + (goal.length > 100 ? '...' : '');
+      const metadata = productArea ? JSON.stringify({ productArea }) : null;
       db.prepare(`
-        INSERT INTO items (id, type, title, description, status, source, airtable_id, created_at, updated_at)
-        VALUES (?, 'initiative', ?, ?, 'active', 'airtable', ?, ?, ?)
-      `).run(itemId, title, goal.slice(0, 500), itemId, now, now);
+        INSERT INTO items (id, type, title, description, status, source, airtable_id, metadata, created_at, updated_at)
+        VALUES (?, 'initiative', ?, ?, 'active', 'airtable', ?, ?, ?, ?)
+      `).run(itemId, title, goal.slice(0, 500), itemId, metadata, now, now);
       logger.info(`Created shadow item ${itemId} for Airtable initiative`);
+    } else if (productArea && !existing.metadata) {
+      // Backfill productArea onto existing items that didn't have it
+      db.prepare('UPDATE items SET metadata = ? WHERE id = ?')
+        .run(JSON.stringify({ productArea }), itemId);
     }
   }
 
@@ -416,16 +423,9 @@ workflowRoutes.post('/start', async (req: Request, res: Response) => {
       ? stageSequence
       : DEFAULT_STAGES;
 
-    // tech_refinement is always injected after story_decomposition or pm_backlog (required stage)
-    if (!stages.includes('tech_refinement')) {
-      if (stages.includes('story_decomposition')) {
-        const idx = stages.indexOf('story_decomposition');
-        stages = [...stages.slice(0, idx + 1), 'tech_refinement', ...stages.slice(idx + 1)];
-      } else if (stages.includes('pm_backlog')) {
-        const idx = stages.indexOf('pm_backlog');
-        stages = [...stages.slice(0, idx + 1), 'tech_refinement', ...stages.slice(idx + 1)];
-      }
-    }
+    // tech_refinement is now embedded inside multi-agent refinement (story_decomposition_F*).
+    // Remove it if somehow still present in a supplied stage sequence.
+    stages = stages.filter(s => s !== 'tech_refinement');
 
     // Fold coordinator-gathered context into the goal so all stage briefs benefit from it
     const fullGoal = enrichedContext
@@ -536,19 +536,84 @@ workflowRoutes.post('/checkpoint/resolve', async (req: Request, res: Response) =
 
       resolveCheckpoint(cpId, 'approved', feedback);
 
-      // ── Feature decomposition: inject dynamic sub-stages after epic_feature_planner ──
+      // Fetch itemId once — needed by pm_backlog and qa_engineer pushes
+      const wfRow = db.prepare<[string], { item_id: string }>(
+        'SELECT item_id FROM workflows WHERE id = ?'
+      ).get(workflowId);
+      const itemId = wfRow?.item_id ?? '';
+
+      // Stamp the ADO URL back onto the artifact row so artifact → ADO is directly traceable
+      const stampArtifactUrl = (url: string) => {
+        if (cpDetail?.artifact_id) {
+          db.prepare('UPDATE artifacts SET external_url = ? WHERE id = ?')
+            .run(url, cpDetail.artifact_id);
+        }
+      };
+
+      // ── epic_feature_planner: push epic + feature shells, then inject sub-stages ──
       if (cpDetail && cpDetail.stage === 'epic_feature_planner') {
+        try {
+          const { appConfig } = require('../config/app-config');
+          if (appConfig.integrations.workItems === 'ado') {
+            const { pushEpicAndFeaturesToADO } = await import('../agents/feature-decomposition');
+            const result = await pushEpicAndFeaturesToADO(workflowId);
+            const { AzureDevOpsClient } = await import('../integrations/azure-devops');
+            const client = new AzureDevOpsClient();
+            const epicUrl = client.getEpicUrl(result.epicId);
+            stampArtifactUrl(epicUrl);
+            insertEvent(workflowId, 'ado_pushed', 'epic_feature_planner',
+              `Epic & ${result.featureIds.length} features pushed to Azure DevOps`,
+              { ado_url: epicUrl });
+            logger.info(`[CHECKPOINT] epic_feature_planner → pushed epic #${result.epicId} + ${result.featureIds.length} features to ADO`);
+          }
+        } catch (err: any) {
+          logger.error(`[CHECKPOINT] Failed to push epic to ADO: ${err.message}`);
+        }
+
         const { injectFeatureDecompositionStages } = await import('../agents/feature-decomposition');
         try {
           const featureCount = await injectFeatureDecompositionStages(workflowId);
           logger.info(`[CHECKPOINT] epic_feature_planner approved → injected ${featureCount} feature stages`);
-          // Note: Epic + features were already pushed to ADO when the stage completed
         } catch (err: any) {
           logger.error(`[CHECKPOINT] Failed to inject feature stages: ${err.message}`);
         }
       }
 
-      // ── Incremental ADO push after each feature approval ──────────────────────
+      // ── pm_backlog: push full backlog to ADO Boards ────────────────────────────
+      if (cpDetail && cpDetail.stage === 'pm_backlog') {
+        try {
+          const { pushBacklogToAdo } = await import('../agents/ado-stage-push');
+          const epicUrl = await pushBacklogToAdo(workflowId, itemId);
+          if (epicUrl) {
+            stampArtifactUrl(epicUrl);
+            insertEvent(workflowId, 'ado_pushed', 'pm_backlog',
+              'Backlog pushed to Azure DevOps',
+              { ado_url: epicUrl });
+            logger.info(`[CHECKPOINT] pm_backlog → pushed backlog to ADO: ${epicUrl}`);
+          }
+        } catch (err: any) {
+          logger.error(`[CHECKPOINT] pm_backlog ADO push failed: ${err.message}`);
+        }
+      }
+
+      // ── qa_engineer: push test plan to ADO Test Plans ─────────────────────────
+      if (cpDetail && (cpDetail.stage === 'qa_engineer' || /^qa_engineer_F\d+$/.test(cpDetail.stage))) {
+        try {
+          const { pushTestPlanToAdo } = await import('../agents/ado-stage-push');
+          const testPlanUrl = await pushTestPlanToAdo(workflowId, itemId);
+          if (testPlanUrl) {
+            stampArtifactUrl(testPlanUrl);
+            insertEvent(workflowId, 'ado_pushed', cpDetail.stage,
+              'QA test plan pushed to Azure DevOps',
+              { ado_url: testPlanUrl });
+            logger.info(`[CHECKPOINT] ${cpDetail.stage} → pushed test plan to ADO: ${testPlanUrl}`);
+          }
+        } catch (err: any) {
+          logger.error(`[CHECKPOINT] ${cpDetail.stage} ADO push failed: ${err.message}`);
+        }
+      }
+
+      // ── story_decomposition_F*: push stories + test cases to ADO ──────────────
       if (cpDetail && cpDetail.stage.startsWith('story_decomposition_F')) {
         const { parseFeatureStage, pushFeatureToADO } = await import('../agents/feature-decomposition');
         const featureIndex = parseFeatureStage(cpDetail.stage);
@@ -558,12 +623,44 @@ workflowRoutes.post('/checkpoint/resolve', async (req: Request, res: Response) =
             const { appConfig } = require('../config/app-config');
             if (appConfig.integrations.workItems === 'ado') {
               const result = await pushFeatureToADO(workflowId, featureIndex);
+              const { AzureDevOpsClient } = await import('../integrations/azure-devops');
+              const client = new AzureDevOpsClient();
+              const featureUrl = `https://dev.azure.com/${client['organization']}/${client['project']}/_workitems/edit/${result.featureId}`;
+              const testPlanUrl = result.testPlanUrl ?? null;
+              stampArtifactUrl(featureUrl);
+              const eventMeta: Record<string, any> = { feature_url: featureUrl };
+              if (testPlanUrl) eventMeta.test_plan_url = testPlanUrl;
+              insertEvent(workflowId, 'ado_pushed', cpDetail.stage,
+                `Feature ${featureIndex + 1} stories & test cases pushed to Azure DevOps`,
+                eventMeta);
               logger.info(`[CHECKPOINT] Feature ${featureIndex + 1} approved → pushed to ADO: epic #${result.epicId}, feature #${result.featureId}, ${result.storyIds.length} stories`);
             }
           } catch (err: any) {
             logger.error(`[CHECKPOINT] Failed to push feature to ADO: ${err.message}`);
-            // Don't block workflow progression on ADO push failure
           }
+        }
+      }
+
+      // ── Wiki-backed stages: sync artifact to Azure Wiki on first approval ────
+      const isAdoHandledStage =
+        cpDetail?.stage === 'epic_feature_planner' ||
+        cpDetail?.stage === 'pm_backlog' ||
+        cpDetail?.stage === 'qa_engineer' ||
+        /^(qa_engineer|story_decomposition)_F\d+$/.test(cpDetail?.stage ?? '');
+
+      if (cpDetail && cpDetail.artifact_id && !isAdoHandledStage) {
+        try {
+          const { appConfig } = require('../config/app-config');
+          if (appConfig.integrations.workItems === 'ado') {
+            const wikiUrl = await syncArtifactToWiki(cpDetail.artifact_id);
+            stampArtifactUrl(wikiUrl);
+            insertEvent(workflowId, 'wiki_synced', cpDetail.stage,
+              'Artifact synced to Azure Wiki',
+              { wiki_url: wikiUrl });
+            logger.info(`[CHECKPOINT] ${cpDetail.stage} → synced artifact to wiki: ${wikiUrl}`);
+          }
+        } catch (err: any) {
+          logger.warn(`[CHECKPOINT] Wiki sync failed for ${cpDetail.stage}: ${err.message}`);
         }
       }
 
@@ -1173,7 +1270,9 @@ workflowRoutes.get('/:id/artifacts', (req: Request, res: Response) => {
       FROM artifacts a
       JOIN sessions s ON a.session_id = s.id
       WHERE s.item_id = ?
-      AND a.type NOT IN ('critic_review', 'analyst_diff', 'pm_backlog_diff', 'prototype_diff', 'qa_engineer_diff')
+      AND a.type != 'critic_review'
+      AND a.type NOT LIKE '%_diff'
+      AND a.type != 'epic_features_enriched'
       ORDER BY a.created_at
     `).all(workflow.item_id);
 

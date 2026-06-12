@@ -627,6 +627,11 @@ class APIClient {
   } | null> {
     try {
       const response = await axios.get(`${this.baseURL}/api/workflow/${workflowId}/prototype`);
+      // Unwrap { platform, web?, mobile? } — prefer web, fall back to mobile
+      const raw = response.data as { platform: string; web?: unknown; mobile?: unknown };
+      if (raw && (raw.web || raw.mobile)) {
+        return (raw.web ?? raw.mobile) as { title: string; description: string; screens: string[]; entryScreen: string; files: Record<string, string> };
+      }
       return response.data;
     } catch {
       return null;
@@ -679,6 +684,10 @@ class APIClient {
               callbacks.onContent(event.content);
             } else if (event.type === 'prototype') {
               callbacks.onPrototype(event.prototype);
+            } else if (event.type === 'prototype_multi') {
+              // Both web + mobile generated — prefer web for preview
+              const proto = event.web ?? event.mobile;
+              if (proto) callbacks.onPrototype(proto);
             } else if (event.type === 'parse_failed') {
               try {
                 const repaired = await this.parsePrototypeRaw(workflowId, rawAccumulator);

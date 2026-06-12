@@ -23,9 +23,8 @@ import {
   STAGE_ARTIFACT_LABEL,
 } from './stage-metadata';
 import {
-  saveCriticArtifact, saveMainArtifact, saveLocalArtifact, loadLatestArtifactContent,
+  saveCriticArtifact, saveLocalArtifact, loadLatestArtifactContent,
 } from './artifact-helpers';
-import { pushBacklogToAdo, pushTestPlanToAdo } from './ado-stage-push';
 import { getActiveSkill } from './skill-registry';
 import { type ToolDefinition, getRegisteredTools } from './tool-registry';
 import { loadWorkflowArtifacts, loadLocalDesignSystem, loadFigmaDesignSystem, repairTruncatedJson } from './prototype-agent';
@@ -120,7 +119,7 @@ export async function runAutonomousStage(
   skipCritic?: boolean
 ): Promise<void> {
   // ── Multi-Agent Refinement for story_decomposition_F* stages ────────────────
-  // Each feature runs a 7-agent collaborative session (Product + QA + 4 Engineers)
+  // Each feature runs a multi-agent collaborative session (platform-filtered participants)
   const featureMatch = stage.match(/^story_decomposition_F(\d+)$/);
   if (featureMatch) {
     const featureIndex = parseInt(featureMatch[1], 10) - 1; // Convert to 0-based
@@ -128,7 +127,8 @@ export async function runAutonomousStage(
 
     try {
       const artifactContent = await runMultiAgentRefinement(workflowId, itemId, stage, featureIndex);
-      const newFeature = JSON.parse(artifactContent);
+      const strippedArtifact = artifactContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+      const newFeature = JSON.parse(strippedArtifact);
 
       // Load accumulated backlog (if any previous features completed)
       let accumulatedBacklog: any;
@@ -145,53 +145,20 @@ export async function runAutonomousStage(
         accumulatedBacklog = newFeature;
       }
 
-      // Save the accumulated backlog artifact (epic + all features so far)
+      // Save the accumulated backlog artifact (epic + all features so far).
+      // Type is always 'backlog' so loadLatestArtifactContent(itemId, 'backlog') finds it for accumulation.
       const { saveLocalArtifact } = await import('./artifact-helpers');
-      const artifactId = await saveLocalArtifact(sessionId, stage, JSON.stringify(accumulatedBacklog, null, 2), itemId, null);
+      const artifactId = await saveLocalArtifact(sessionId, 'backlog', JSON.stringify(accumulatedBacklog, null, 2), itemId, null);
 
-      // Push stories + test cases to ADO (adds to existing feature created by epic_feature_planner)
-      let featureUrl: string | null = null;
-      let testPlanUrl: string | null = null;
-      try {
-        const { appConfig } = require('../config/app-config');
-        if (appConfig.integrations.workItems === 'ado') {
-          const { pushFeatureToADO } = await import('./feature-decomposition');
-          const result = await pushFeatureToADO(workflowId, featureIndex);
-          logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} — added ${result.storyIds.length} stories to existing feature #${result.featureId}`);
-          logger.info(`[MULTI-AGENT] pushFeatureToADO result: testPlanId=${result.testPlanId}, testPlanUrl=${result.testPlanUrl}, testCaseCount=${result.testCaseCount}`);
-
-          const { AzureDevOpsClient } = await import('../integrations/azure-devops');
-          const client = new AzureDevOpsClient();
-          featureUrl = `https://dev.azure.com/${client['organization']}/${client['project']}/_workitems/edit/${result.featureId}`;
-          testPlanUrl = result.testPlanUrl ?? null;
-
-          if (testPlanUrl) {
-            logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} — test plan ${result.testPlanId} updated with ${result.testCaseCount} test cases`);
-          } else {
-            logger.warn(`[MULTI-AGENT] Feature ${featureIndex + 1} — NO TEST PLAN URL in result!`);
-          }
-        }
-      } catch (err: any) {
-        logger.error(`[MULTI-AGENT] Failed to push Feature ${featureIndex + 1} to ADO: ${err.message}`);
-      }
-
-      // Create checkpoint for human review
+      // Create checkpoint for human review — ADO push happens at checkpoint approval
       const { pauseAtCheckpoint } = await import('./workflow-router');
-      await pauseAtCheckpoint(workflowId, stage, artifactId, null);
+      await pauseAtCheckpoint(workflowId, stage, artifactId, undefined);
 
       logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} refinement complete — checkpoint created`);
 
-      // Build event metadata with both URLs
-      const eventMeta: any = { artifact_id: artifactId };
-      if (featureUrl) eventMeta.feature_url = featureUrl;
-      if (testPlanUrl) eventMeta.test_plan_url = testPlanUrl;
-
-      logger.info(`[MULTI-AGENT] Event metadata for F${featureIndex + 1}: featureUrl=${featureUrl ? 'present' : 'null'}, testPlanUrl=${testPlanUrl ? 'present' : 'null'}`);
-
-      // Summary message (URLs will be appended by frontend from metadata)
-      const summary = `7-agent collaborative refinement complete for Feature ${featureIndex + 1} — ready for human review`;
-
-      insertEvent(workflowId, 'stage_completed', stage, summary, eventMeta);
+      insertEvent(workflowId, 'stage_completed', stage,
+        `Multi-agent collaborative refinement complete for Feature ${featureIndex + 1} — ready for human review`,
+        { artifact_id: artifactId });
 
       return;
     } catch (err: any) {
@@ -348,12 +315,8 @@ export async function runAutonomousStage(
       }
     } else if (stage === 'solution_architect') {
       const parts: string[] = [];
-      const [prdContent, epicFeaturesContent] = await Promise.all([
-        loadLatestArtifactContent(itemId, 'prd'),
-        loadLatestArtifactContent(itemId, 'epic_features'),
-      ]);
+      const prdContent = await loadLatestArtifactContent(itemId, 'prd');
       if (prdContent) parts.push(`**PRD Document (use as source of requirements for the architecture):**\n\n${prdContent}`);
-      if (epicFeaturesContent) parts.push(`**Epic & Features Structure (enrich each feature with technical metadata at the end of your architecture document):**\n\n${epicFeaturesContent}`);
 
       const techStackPath = path.join(PROJECT_ROOT, 'context', 'tech-stack.md');
       let techStackNote = '';
@@ -735,7 +698,7 @@ export async function runAutonomousStage(
       : isTechRefinementFeatureStage ? 'backlog'
       : (STAGE_ARTIFACT_TYPE[stage] ?? stage);
     const localOnlyStages = new Set(['story_decomposition']);
-    const adoBackedStages = new Set(['pm_backlog', 'epic_feature_planner', 'qa_engineer', 'tech_refinement']);
+    const adoBackedStages = new Set(['pm_backlog', 'epic_feature_planner', 'qa_engineer']);
 
     let artifactId: number;
     if (localOnlyStages.has(stage) || isFeatureStage(stage) || isQaFeatureStage || isTechRefinementFeatureStage) {
@@ -745,8 +708,8 @@ export async function runAutonomousStage(
       // ADO-backed stages: save locally first, then push to ADO (ADO push happens below)
       artifactId = await saveLocalArtifact(sessionId, stage, artifactContent, itemId, skillVersionId);
     } else {
-      // Document stages: push to Azure Wiki immediately
-      artifactId = await saveMainArtifact(sessionId, stage, artifactContent, itemId, skillVersionId);
+      // Document stages: save locally; wiki push deferred to checkpoint approval
+      artifactId = await saveLocalArtifact(sessionId, stage, artifactContent, itemId, skillVersionId);
     }
 
     // ── Special handling for solution_architect: extract tech-enriched JSON ──────
@@ -803,81 +766,37 @@ export async function runAutonomousStage(
       }
     }
 
-    // After saving backlog/QA/epic_features artifacts, auto-push to ADO immediately.
-    // Capture the resulting URL for use in stage_completed events.
+    // ADO push for pm_backlog, qa_engineer, and epic_feature_planner happens at checkpoint approval.
+    // tech_refinement and story_decomposition_F* just read existing ADO URLs for event metadata.
     let adoUrl: string | null = null;
-    if (stage === 'pm_backlog') {
-      // pm_backlog pushes the full backlog (legacy single-stage flow without feature decomposition)
-      adoUrl = await pushBacklogToAdo(workflowId, itemId).catch(err => {
-        logger.error(`pushBacklogToAdo failed for ${stage}: ${err.message}`);
-        return null;
-      });
-    } else if (stage === 'tech_refinement' || stage.match(/^tech_refinement_F\d+$/)) {
-      // tech_refinement only enriches stories with technical details — stories already pushed during feature decomposition
-      // Just fetch the epic URL from existing mappings for the stage_completed event
+    if (stage === 'tech_refinement' || stage.match(/^tech_refinement_F\d+$/)) {
       try {
         const epicMapping = db.prepare<[string], { ado_url: string }>(
           `SELECT ado_url FROM ado_work_item_map
            WHERE workflow_id = ? AND ado_type = 'epic' AND local_key = 'epic'
            LIMIT 1`
         ).get(workflowId);
-        if (epicMapping) {
-          adoUrl = epicMapping.ado_url;
-        }
+        if (epicMapping) adoUrl = epicMapping.ado_url;
       } catch (err: any) {
         logger.error(`Failed to fetch epic URL for tech_refinement event: ${err.message}`);
       }
-    } else if (stage === 'qa_engineer' || stage.match(/^qa_engineer_F\d+$/)) {
-      // Both full QA and feature-specific QA push to ADO Test Plans
-      // Feature-specific stages push test cases incrementally (linked to that feature's stories only)
-      adoUrl = await pushTestPlanToAdo(workflowId, itemId).catch(err => {
-        logger.error(`pushTestPlanToAdo failed for ${stage}: ${err.message}`);
-        return null;
-      });
-    } else if (stage === 'epic_feature_planner') {
-      // Push epic + features to ADO immediately after stage completes
-      try {
-        const { appConfig } = require('../config/app-config');
-        if (appConfig.integrations.workItems === 'ado') {
-          logger.info(`[EPIC PUSH] Starting ADO push for workflow ${workflowId}, item ${itemId}, artifact ${artifactId}`);
-          const { pushEpicAndFeaturesToADO } = await import('./feature-decomposition');
-          const result = await pushEpicAndFeaturesToADO(workflowId);
-          logger.info(`[EPIC PUSH] Created epic #${result.epicId} + ${result.featureIds.length} features in ADO`);
-          // Set adoUrl to the epic URL for the stage_completed event
-          const { AzureDevOpsClient } = await import('../integrations/azure-devops');
-          const client = new AzureDevOpsClient();
-          adoUrl = client.getEpicUrl(result.epicId);
-          logger.info(`[EPIC PUSH] Captured ADO URL for event: ${adoUrl}`);
-        }
-      } catch (err: any) {
-        logger.error(`pushEpicAndFeaturesToADO failed: ${err.message}`);
-        logger.error(`[EPIC PUSH ERROR] Full error: ${err.stack}`);
-        // Don't block workflow progression on ADO push failure
-      }
     } else if (stage.match(/^story_decomposition_F\d+$/)) {
-      // Feature-specific stage - get the feature URL from ADO mappings
       try {
         const { appConfig } = require('../config/app-config');
         if (appConfig.integrations.workItems === 'ado') {
           const { parseFeatureStage } = await import('./feature-decomposition');
           const featureIndex = parseFeatureStage(stage);
           if (featureIndex !== null) {
-            // Fetch the feature URL from ado_work_item_map
             const featureMapping = db.prepare<[string, string], { ado_url: string }>(
               `SELECT ado_url FROM ado_work_item_map
                WHERE workflow_id = ? AND ado_type = 'feature' AND local_key = ?
                LIMIT 1`
             ).get(workflowId, `F${featureIndex + 1}`);
-
-            if (featureMapping) {
-              adoUrl = featureMapping.ado_url;
-              logger.info(`[FEATURE STAGE] Captured feature URL for event: ${adoUrl}`);
-            }
+            if (featureMapping) adoUrl = featureMapping.ado_url;
           }
         }
       } catch (err: any) {
         logger.error(`Failed to get feature URL for ${stage}: ${err.message}`);
-        // Don't block workflow progression
       }
     }
 
@@ -918,19 +837,16 @@ export async function runAutonomousStage(
     else if (stage === 'qa_engineer' || stage.match(/^qa_engineer_F\d+$/)) stageLabel = 'QA Test Suite';
     else if (stage.match(/^story_decomposition_F\d+$/)) stageLabel = 'Story Decomposition';
 
-    // Fetch the wiki URL for wiki-backed artifacts (null for ADO-backed stages like epic_feature_planner, pm_backlog, qa_engineer, qa_engineer_F*, story_decomposition_F*, tech_refinement_F*)
-    const noWikiStages = new Set(['epic_feature_planner', 'pm_backlog', 'qa_engineer', 'tech_refinement']);
+    // Wiki push is deferred to checkpoint approval — no wiki URL available at stage execution time
     const isStoryFeatureStage = stage.match(/^story_decomposition_F\d+$/);
-    const wikiUrl = (noWikiStages.has(stage) || isQaFeatureStage || isStoryFeatureStage || isTechRefinementFeatureStage) ? null : (db.prepare<[number], { external_url: string | null }>(
-      'SELECT external_url FROM artifacts WHERE id = ?'
-    ).get(artifactId))?.external_url ?? null;
+    const wikiUrl: string | null = null;
 
     // ── Inline critic review for specialist stages ────────────────────────────
     // After each specialist produces an artifact, the critic reviews it.
     // If issues are found, auto-revise once. If still unresolved,
     // pause and ask the human for input.
-    const specialistStages = new Set(['analyst', 'pm_prd', 'epic_feature_planner', 'solution_architect', 'prototype', 'pm_backlog', 'gtm_strategy', 'feature_marketing', 'qa_engineer', 'tech_refinement']);
-    const isSpecialistStage = specialistStages.has(stage) || stage.match(/^(story_decomposition|qa_engineer|tech_refinement)_F\d+$/);
+    const specialistStages = new Set(['analyst', 'pm_prd', 'epic_feature_planner', 'solution_architect', 'prototype', 'pm_backlog', 'gtm_strategy', 'feature_marketing', 'qa_engineer']);
+    const isSpecialistStage = specialistStages.has(stage) || stage.match(/^(story_decomposition|qa_engineer)_F\d+$/);
     const policies = loadGlobalPolicies();
     const criticEnabled = policies.get('require_critic_review') !== 'false' && policies.get('require_critic_review') !== (false as any);
 

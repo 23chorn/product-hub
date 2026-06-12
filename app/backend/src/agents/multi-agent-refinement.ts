@@ -1,18 +1,21 @@
 /**
- * Multi-Agent Story Refinement — 7-agent collaborative session.
+ * Multi-Agent Story Refinement — dynamic collaborative session.
  *
  * Replaces the sequential story_decomposition → qa_engineer → tech_refinement flow
- * with a single collaborative session where Product, QA, and 4 Engineers work together
- * to produce one unified backlog artifact per feature.
+ * with a single collaborative session. The participant set is resolved from the
+ * initiative's productArea: Product (Shard), QA (Vera), and Backend (Finn) are always
+ * present; Web (Remi), iOS, and Android engineers are included only when their platform
+ * is in scope. This reduces token cost for single-platform features.
  *
  * Pattern: Draft (parallel) → Refine (2 rounds) → Synthesize (merge)
  */
 
-import { logger, insertEvent } from './workflow-db';
+import { logger, insertEvent, touchWorkflow } from './workflow-db';
 import { isDemoMode, getDemoFixture } from '../demo/demo-mode';
 import { loadLatestArtifactContent } from './artifact-helpers';
 import { SpecialistAgent } from './specialist-agent';
 import type { AgentType } from '@pap/shared';
+import db from '../data/database';
 
 interface RefinementParticipant {
   name: string;
@@ -25,12 +28,54 @@ const PARTICIPANTS: RefinementParticipant[] = [
   { name: 'Vera', agentType: 'qa-engineer', role: 'QA Engineer — Testability & Quality' },
   { name: 'Finn', agentType: 'backend-engineer', role: 'Backend Engineer — APIs & Data' },
   { name: 'Remi', agentType: 'web-engineer', role: 'Web Engineer — Frontend & UX' },
-  { name: 'iOS Cole', agentType: 'ios-engineer', role: 'iOS Engineer — Native Mobile' },
-  { name: 'Android Cole', agentType: 'android-engineer', role: 'Android Engineer — Native Mobile' },
+  { name: 'Cole', agentType: 'ios-engineer', role: 'Mobile Engineer — iOS & Android Native' },
 ];
 
 /**
- * Run a 7-agent collaborative story refinement session for a single feature.
+ * Filter the participant list based on the productArea stored in items.metadata.
+ * - Shard (Product) and Vera (QA) are always included.
+ * - Finn (Backend) is always included.
+ * - Remi (Web) only when productArea includes web/browser/desktop.
+ * - iOS Cole only when productArea includes mobile/ios/app.
+ * - Android Cole only when productArea includes mobile/android/app.
+ * Falls back to all participants when productArea is unset or unrecognised.
+ */
+function resolveRefinementParticipants(itemId: string): RefinementParticipant[] {
+  try {
+    const row = db
+      .prepare<[string], { metadata: string | null }>('SELECT metadata FROM items WHERE id = ?')
+      .get(itemId);
+    if (!row?.metadata) return PARTICIPANTS;
+    const meta = JSON.parse(row.metadata) as Record<string, unknown>;
+
+    // productArea may be a string or an array of strings
+    const rawArea = meta.productArea;
+    const area = Array.isArray(rawArea)
+      ? rawArea.join(' ').toLowerCase()
+      : typeof rawArea === 'string'
+        ? rawArea.toLowerCase()
+        : '';
+    if (!area) return PARTICIPANTS;
+
+    const hasWeb = /web|browser|desktop/.test(area);
+    const hasMobile = /\bmobile\b|\bios\b|\bandroid\b/.test(area);
+
+    // If neither signal is present default to all platforms
+    if (!hasWeb && !hasMobile) return PARTICIPANTS;
+
+    return PARTICIPANTS.filter(p => {
+      if (p.name === 'Shard' || p.name === 'Vera' || p.name === 'Finn') return true;
+      if (p.name === 'Remi') return hasWeb;
+      if (p.name === 'Cole') return hasMobile;
+      return true;
+    });
+  } catch {
+    return PARTICIPANTS;
+  }
+}
+
+/**
+ * Run a multi-agent collaborative story refinement session for a single feature.
  *
  * @param workflowId - The workflow ID
  * @param itemId - The initiative ID
@@ -58,7 +103,7 @@ export async function runMultiAgentRefinement(
     if (fixture) {
       logger.info(`[MULTI-AGENT] Demo fixture found for ${stage} (${fixture.length} chars) — skipping LLM calls`);
       insertEvent(workflowId, 'stage_progress', stage,
-        `Demo fixture loaded for Feature ${featureNum} — 7-agent refinement skipped in demo mode`);
+        `Demo fixture loaded for Feature ${featureNum} — multi-agent refinement skipped in demo mode`);
       return fixture;
     }
 
@@ -66,6 +111,11 @@ export async function runMultiAgentRefinement(
   } else {
     logger.warn(`[MULTI-AGENT] Demo mode is DISABLED — will make real LLM calls (expensive!)`);
   }
+
+  // ── Resolve active participants based on productArea ───────────────────────
+  const activeParticipants = resolveRefinementParticipants(itemId);
+  const participantNames = activeParticipants.map(p => p.name).join(', ');
+  logger.info(`[MULTI-AGENT] Active participants for Feature ${featureNum}: ${participantNames}`);
 
   // ── Load Context ────────────────────────────────────────────────────────────
   const [prdContent, archContent, epicFeaturesContent] = await Promise.all([
@@ -110,23 +160,23 @@ ${archContent ? '(See architecture document below)' : '(No architecture availabl
 
   // ── Phase 1: Draft (Parallel) ──────────────────────────────────────────────
   insertEvent(workflowId, 'stage_progress', stage,
-    `Phase 1: Draft — All 6 agents proposing initial contributions in parallel...`);
+    `Phase 1: Draft — ${activeParticipants.length} agents proposing initial contributions in parallel (${participantNames})...`);
 
-  const draftPrompts = buildDraftPrompts(featureNum, featureBrief, prdContent, archContent);
+  const draftPrompts = buildDraftPrompts(featureNum, featureBrief, prdContent, archContent, activeParticipants);
   const drafts = await runPhaseInParallel(workflowId, stage, 'Draft', draftPrompts);
 
   // ── Phase 2: Refine Round 1 ────────────────────────────────────────────────
   insertEvent(workflowId, 'stage_progress', stage,
     `Phase 2.1: Refine — All agents review each other's drafts and refine...`);
 
-  const refine1Prompts = buildRefineRound1Prompts(featureNum, featureBrief, drafts);
+  const refine1Prompts = buildRefineRound1Prompts(featureNum, featureBrief, drafts, activeParticipants);
   const refined1 = await runPhaseInParallel(workflowId, stage, 'Refine-1', refine1Prompts);
 
   // ── Phase 2: Refine Round 2 ────────────────────────────────────────────────
   insertEvent(workflowId, 'stage_progress', stage,
     `Phase 2.2: Refine — Final polish and conflict resolution...`);
 
-  const refine2Prompts = buildRefineRound2Prompts(featureNum, featureBrief, refined1);
+  const refine2Prompts = buildRefineRound2Prompts(featureNum, featureBrief, refined1, activeParticipants);
   const refined2 = await runPhaseInParallel(workflowId, stage, 'Refine-2', refine2Prompts);
 
   // ── Phase 3: Synthesize ────────────────────────────────────────────────────
@@ -196,9 +246,10 @@ function buildDraftPrompts(
   featureNum: number,
   featureBrief: string,
   prdContent: string | null,
-  archContent: string | null
+  archContent: string | null,
+  participants: RefinementParticipant[] = PARTICIPANTS
 ): Array<{ participant: RefinementParticipant; prompt: string }> {
-  return PARTICIPANTS.map(participant => {
+  return participants.map(participant => {
     let prompt = `${featureBrief}\n\n`;
 
     if (participant.name === 'Shard') {
@@ -291,13 +342,14 @@ Plain text list of technical requirements. Example:
 function buildRefineRound1Prompts(
   featureNum: number,
   featureBrief: string,
-  drafts: Map<string, string>
+  drafts: Map<string, string>,
+  participants: RefinementParticipant[] = PARTICIPANTS
 ): Array<{ participant: RefinementParticipant; prompt: string }> {
   const allDrafts = Array.from(drafts.entries())
     .map(([name, draft]) => `**${name}'s Draft:**\n${draft}`)
     .join('\n\n---\n\n');
 
-  return PARTICIPANTS.map(participant => {
+  return participants.map(participant => {
     let prompt = `${featureBrief}\n\n**All Drafts from Phase 1:**\n\n${allDrafts}\n\n`;
 
     if (participant.name === 'Shard') {
@@ -313,21 +365,17 @@ function buildRefineRound1Prompts(
 `;
     } else if (participant.name === 'Vera') {
       prompt += `
-**Phase 2.1 Task — Map Test Cases:**
-1. Review Shard's story breakdown
-2. For each story, propose 2-5 test case titles (don't write full test cases yet, just titles)
-3. Flag any stories that still seem untestable
+**Phase 2.1 Task — Testability Review:**
+1. Review Shard's story breakdown and each story's acceptance criteria
+2. Flag any stories whose ACs are too vague to verify (missing observable outcome, no failure condition, untestable state)
+3. Suggest specific AC improvements for clarity — do not write test cases, just sharpen the criteria language
+4. Note any missing bad-path or edge-case scenarios that should be in the ACs
 
 **Output Format:**
-\`\`\`json
-{
-  "test_cases_by_story": {
-    "F?.S1": ["TC: User can create alert with valid ticker", "TC: Alert rejects negative price"],
-    "F?.S2": [...]
-  },
-  "untestable_stories": ["F?.S3 — needs clearer success criteria"]
-}
-\`\`\`
+Plain text per-story feedback. Example:
+- F?.S1: ACs are clear and testable — no changes needed
+- F?.S2: AC 2 is vague ("loads quickly") — suggest "returns within 2 seconds under normal load"
+- F?.S3: Missing failure path — add AC for what happens when the upstream service is unavailable
 `;
     } else {
       prompt += `
@@ -354,13 +402,14 @@ Plain text mapping of story_id → technical ACs. Example:
 function buildRefineRound2Prompts(
   featureNum: number,
   featureBrief: string,
-  refined1: Map<string, string>
+  refined1: Map<string, string>,
+  participants: RefinementParticipant[] = PARTICIPANTS
 ): Array<{ participant: RefinementParticipant; prompt: string }> {
   const allRefined1 = Array.from(refined1.entries())
     .map(([name, content]) => `**${name}'s Round 1 Output:**\n${content}`)
     .join('\n\n---\n\n');
 
-  return PARTICIPANTS.map(participant => {
+  return participants.map(participant => {
     let prompt = `${featureBrief}\n\n**All Round 1 Outputs:**\n\n${allRefined1}\n\n`;
 
     if (participant.name === 'Shard') {
@@ -420,13 +469,22 @@ Merge all contributions into a single JSON artifact following the backlog templa
 {
   "epic": {
     "title": "...",
-    "description": "..."
+    "description": "...",
+    "business_value": "...",
+    "definition_of_done": "...",
+    "out_of_scope": ["..."]
   },
   "features": [
     {
       "key": "F?",
       "title": "...",
       "description": "...",
+      "phase": "MVP | Phase 2 | Phase 3",
+      "acceptance_criteria": [
+        "Feature-level condition 1 — what must be true when this feature is complete",
+        "Feature-level condition 2",
+        "Feature-level condition 3"
+      ],
       "stories": [
         {
           "story_id": "F?.S1",
@@ -439,15 +497,7 @@ Merge all contributions into a single JSON artifact following the backlog templa
           "platform": ["backend", "web", "ios", "android"],
           "estimated_points": 5,
           "depends_on": [],
-          "technical_notes": "...",
-          "test_cases": [
-            {
-              "id": "TC-F?.S1-001",
-              "scenario": { "given": ["..."], "when": ["..."], "then": ["..."] },
-              "type": "happy_path",
-              "priority": "critical"
-            }
-          ]
+          "technical_notes": "..."
         }
       ]
     }
@@ -457,9 +507,12 @@ Merge all contributions into a single JSON artifact following the backlog templa
 
 **Important:**
 - Include ONLY the JSON artifact in your response (no explanatory text before or after)
-- Embed test cases from Vera directly into each story's "test_cases" array
+- Carry forward epic fields (business_value, definition_of_done, out_of_scope) and feature fields (phase, acceptance_criteria) from the Epic & Features artifact — do not drop them
+- Feature acceptance_criteria are high-level "done" conditions for the whole feature, not story-level Gherkin
+- Apply Vera's AC improvements — sharpen any vague acceptance criteria language she flagged
 - Ensure all story_id references are consistent (F?.S1, F?.S2, etc.)
 - Platform tags should reflect which engineers contributed technical ACs
+- Do NOT include a test_cases field — the QA engineer stage owns the full test suite as a separate artifact
 `;
 
   const facilitator = new SpecialistAgent('story-decomposition');
@@ -475,6 +528,9 @@ Merge all contributions into a single JSON artifact following the backlog templa
   );
 
   let finalArtifact = '';
+  let lastHeartbeat = Date.now();
+  const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000; // touch updated_at every 5 minutes
+
   for await (const chunk of facilitator.streamResponse(
     systemPrompt,
     [{ role: 'user', content: synthesisPrompt }],
@@ -483,6 +539,13 @@ Merge all contributions into a single JSON artifact following the backlog templa
     32_000 // Large output for full backlog
   )) {
     finalArtifact += chunk;
+    const now = Date.now();
+    if (now - lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
+      touchWorkflow(workflowId);
+      insertEvent(workflowId, 'stage_progress', stage,
+        `Phase 3: Synthesize — still merging contributions (${Math.round(finalArtifact.length / 1000)}k chars so far)...`);
+      lastHeartbeat = now;
+    }
   }
 
   return finalArtifact.trim();

@@ -221,7 +221,7 @@ async function cleanupPreviousDemoRuns(): Promise<void> {
 
 // Demo webhook stage sequence (matches TOGGLEABLE_STAGES order in frontend)
 // NOTE: 'qa_engineer' and 'tech_refinement' are NOT included here — they are now embedded in story_decomposition_F* stages
-// as a 7-agent collaborative refinement session (Product + QA + 4 Engineers working together per feature).
+// as a multi-agent collaborative refinement session with platform-filtered participants per feature.
 // epic_feature_planner injects story_decomposition_F1, F2, F3 (each runs the multi-agent workflow internally).
 const CORE_STAGES = ['analyst', 'pm_prd', 'prototype', 'solution_architect', 'epic_feature_planner', 'story_decomposition'];
 
