@@ -32,10 +32,32 @@ const STAGE_TEMPLATE_MAP: Record<string, string> = {
 };
 
 /**
- * Module-level shared context cache — all SpecialistAgent instances read from here.
- * Cleared by invalidateContextCache() so the next AI request reloads from disk.
+ * Parsed representation of a context file after stripping YAML frontmatter.
+ * Files without a `stages` key are injected into every agent (universal).
+ * Files with `stages: [a, b]` are only injected when the current stage matches.
  */
-let _projectContextCache: string | null = null;
+type ContextFile = { body: string; stages: string[] | null };
+
+/** Raw parsed files — loaded once, shared across all instances and stage calls. */
+let _contextFilesCache: ContextFile[] | null = null;
+/** Per-stage assembled strings derived from _contextFilesCache. */
+const _contextByStageCache = new Map<string, string>();
+
+/** Strip YAML frontmatter and extract `stages` list if present. */
+function parseContextFrontmatter(raw: string): ContextFile {
+  const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+  if (!m) return { stages: null, body: raw };
+  const stagesMatch = m[1].match(/^stages:\s*\[([^\]]*)\]/m);
+  const body = raw.slice(m[0].length);
+  if (!stagesMatch) return { stages: null, body };
+  const stages = stagesMatch[1].split(',').map(s => s.trim()).filter(Boolean);
+  return { stages, body };
+}
+
+/** A file tagged `stages: [story_decomposition]` matches `story_decomposition_F1` etc. */
+function stageMatches(fileStages: string[], stage: string): boolean {
+  return fileStages.some(s => stage === s || stage.startsWith(s + '_'));
+}
 
 /**
  * Invalidate the shared in-memory project context cache.
@@ -43,7 +65,8 @@ let _projectContextCache: string | null = null;
  * picks up the update without a server restart.
  */
 export function invalidateContextCache(): void {
-  _projectContextCache = null;
+  _contextFilesCache = null;
+  _contextByStageCache.clear();
   logger.info('Global project context cache invalidated — will reload on next request');
 }
 
@@ -85,40 +108,42 @@ export class SpecialistAgent {
   }
 
   /**
-   * Load all markdown files from the context/ directory
+   * Load context/*.md files, filtered by stage if the file declares a `stages` frontmatter key.
+   * Files without `stages` are universal and always included.
+   * Files with `stages: [a, b]` are only included when the current stage matches one of those keys
+   * (prefix-matched, so `story_decomposition` matches `story_decomposition_F1` etc.).
    */
-  async loadProjectContext(): Promise<string> {
-    if (_projectContextCache !== null) return _projectContextCache;
+  async loadProjectContext(stage?: string): Promise<string> {
+    const cacheKey = stage ?? '*';
+    if (_contextByStageCache.has(cacheKey)) return _contextByStageCache.get(cacheKey)!;
 
-    try {
-      const entries = await fs.readdir(CONTEXT_ROOT, { withFileTypes: true });
-      const mdFiles = entries.filter(e =>
-        e.isFile() &&
-        e.name.endsWith('.md') &&
-        !e.name.endsWith('.example.md') &&
-        e.name.toLowerCase() !== 'readme.md'
-      );
-
-      if (mdFiles.length === 0) {
-        _projectContextCache = '';
-        return '';
+    // Load and parse files once; reuse across all stage calls until invalidated.
+    if (_contextFilesCache === null) {
+      _contextFilesCache = [];
+      try {
+        const entries = await fs.readdir(CONTEXT_ROOT, { withFileTypes: true });
+        const mdFiles = entries.filter(e =>
+          e.isFile() &&
+          e.name.endsWith('.md') &&
+          !e.name.endsWith('.example.md') &&
+          e.name.toLowerCase() !== 'readme.md'
+        );
+        for (const file of mdFiles) {
+          const raw = await fs.readFile(path.join(CONTEXT_ROOT, file.name), 'utf-8');
+          _contextFilesCache.push(parseContextFrontmatter(raw.trim()));
+        }
+        logger.info(`Parsed ${mdFiles.length} context file(s) from context/`);
+      } catch (error: any) {
+        logger.warn(`Could not load project context: ${error.message}`);
       }
-
-      const contents: string[] = [];
-      for (const file of mdFiles) {
-        const filePath = path.join(CONTEXT_ROOT, file.name);
-        const content = await fs.readFile(filePath, 'utf-8');
-        contents.push(content.trim());
-      }
-
-      _projectContextCache = contents.join('\n\n');
-      logger.info(`Loaded project context from ${mdFiles.length} file(s) in context/`);
-    } catch (error: any) {
-      logger.warn(`Could not load project context: ${error.message}`);
-      _projectContextCache = '';
     }
 
-    return _projectContextCache;
+    const relevant = _contextFilesCache.filter(f =>
+      f.stages === null || (stage !== undefined && stageMatches(f.stages, stage))
+    );
+    const assembled = relevant.map(f => f.body).join('\n\n');
+    _contextByStageCache.set(cacheKey, assembled);
+    return assembled;
   }
 
   /**
@@ -174,8 +199,8 @@ Keep conversational responses short and focused to minimise output tokens:
 
 The full document is assembled at export. Mid-conversation your job is to gather and confirm information efficiently.`;
 
-    // Load shared project context (company info, etc.)
-    const projectContext = await this.loadProjectContext();
+    // Load shared project context, filtered to files relevant for this stage.
+    const projectContext = await this.loadProjectContext(stage);
     if (projectContext) {
       stable += `\n\n## Project & Company Context\nUse this as background for your output. It describes the company, product, and strategy context.\n\n${projectContext}`;
     }
@@ -332,7 +357,8 @@ Your responses have a token ceiling. A document that is cut off is always worse 
    * Call after writing a context file so the next AI message picks up the change.
    */
   clearContextCache(): void {
-    _projectContextCache = null;
+    _contextFilesCache = null;
+    _contextByStageCache.clear();
     logger.info('Project context cache cleared — will reload on next request');
   }
 

@@ -11,7 +11,7 @@
  */
 
 import { logger, insertEvent, touchWorkflow } from './workflow-db';
-import { isDemoMode, getDemoFixture } from '../demo/demo-mode';
+import { getDemoFixture } from '../demo/demo-mode';
 import { loadLatestArtifactContent } from './artifact-helpers';
 import { SpecialistAgent } from './specialist-agent';
 import type { AgentType } from '@pap/shared';
@@ -93,10 +93,14 @@ export async function runMultiAgentRefinement(
   logger.info(`[MULTI-AGENT] Starting collaborative refinement for Feature ${featureNum} (stage: ${stage})`);
 
   // ── Demo Mode: Return fixture immediately ──────────────────────────────────
-  const demoModeActive = isDemoMode();
-  logger.info(`[MULTI-AGENT] Demo mode check result: ${demoModeActive}`);
+  // Use per-workflow policy_overrides (same source as runAutonomousStage) so that
+  // demo and real workflows are distinguished consistently across all stage types.
+  const workflow = db.prepare('SELECT policy_overrides FROM workflows WHERE id = ?').get(workflowId) as { policy_overrides: string | null } | undefined;
+  const policyOverrides: Record<string, string> = workflow?.policy_overrides ? JSON.parse(workflow.policy_overrides) : {};
+  const isDemoWorkflow = policyOverrides.demo_mode === 'true' || policyOverrides.demo_auto_approve === 'true';
+  logger.info(`[MULTI-AGENT] Demo mode check result: ${isDemoWorkflow}`);
 
-  if (demoModeActive) {
+  if (isDemoWorkflow) {
     logger.info(`[MULTI-AGENT] Demo mode enabled — returning fixture for ${stage}`);
     const fixture = getDemoFixture(stage);
 

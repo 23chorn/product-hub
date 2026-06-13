@@ -12,6 +12,7 @@ import { QATestsView, tryParseQATests } from './QATestsView';
 import { TechRefinementView, tryParseTechRefinement } from './TechRefinementView';
 import { extractPersonas, PersonaPanel } from './PersonaPanel';
 import { PrototypePreview, type PrototypeData } from '../coordinator/PrototypePreview';
+import { convertArtifactToMarkdown, isDocumentArtifact } from '../../utils/artifact-to-markdown';
 
 export function ArtifactViewer() {
   const { viewingArtifactId, setViewingArtifactId, checkpoints, activeWorkflow, applyWorkflowStatus, addCoordinatorMessage } = useWorkflowStore();
@@ -586,6 +587,18 @@ export function ArtifactViewer() {
                             );
                           }
                         } catch { /* fall through to raw view */ }
+                      }
+                      // Document artifacts (analyst, prd, architecture, gtm, feature_marketing) are now
+                      // stored as JSON but rendered as markdown via the converter.
+                      if (isDocumentArtifact(artifactType)) {
+                        const md = convertArtifactToMarkdown(artifactType, content);
+                        if (md !== null) {
+                          return (
+                            <div className="prose prose-sm dark:prose-invert max-w-none">
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>{md}</ReactMarkdown>
+                            </div>
+                          );
+                        }
                       }
                       return (
                         <div className="prose prose-sm dark:prose-invert max-w-none">

@@ -1,4 +1,4 @@
-﻿{
+{
   "epic": {
     "title": "In-App Messaging & Trade Chat",
     "description": "Add real-time channel-based chat so users can discuss trades and market ideas without leaving the xCube app. Includes live ticker card sharing, content moderation, and MiFID II-compliant message retention."

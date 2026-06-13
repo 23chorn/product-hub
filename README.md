@@ -28,6 +28,7 @@ You talk to one agent: the **Coordinator** (Chief of Staff). It gathers requirem
 | Frontend | React 18 + TypeScript + Vite + Tailwind CSS (port 5173) |
 | Backend | Node.js + Express + TypeScript (port 3001) |
 | Database | SQLite via `better-sqlite3` (`db/product-ops.db`) |
+| Artifact storage | MongoDB (local via Docker) — JSON artifacts stored as BSON; disk fallback when unavailable |
 | AI | Anthropic API, AWS Bedrock, or Ollama (local) — model selectable from UI |
 | Integrations | Airtable (roadmap items), Azure DevOps, Jira, Notion |
 
@@ -59,6 +60,7 @@ product-agent/
 
 - Node.js >= 18
 - npm >= 9
+- Docker (for local MongoDB — `docker compose up -d` starts it on port 27017; the system falls back to disk storage if unavailable)
 - One of:
   - Anthropic API key (`AI_PROVIDER=anthropic`)
   - AWS credentials with Bedrock access (`AI_PROVIDER=bedrock`)
@@ -77,6 +79,9 @@ npm install
 cd app/shared && npm run build && cd ../..
 cp .env.example .env
 # Edit .env — set AI_PROVIDER and credentials
+
+# Start MongoDB (optional — artifacts fall back to disk without it)
+docker compose up -d
 
 # Validate configuration
 npm run validate-env
@@ -270,16 +275,20 @@ Token usage and estimated cost are logged on every request:
 
 ## Project Context
 
-The `context/` directory contains markdown files injected into every agent's system prompt. Fill these in to give agents background knowledge so they don't ask for information you've already documented.
+The `context/` directory contains markdown files injected into agent system prompts. Fill these in to give agents background knowledge so they don't ask for information you've already documented.
 
-| File | Contents | Status |
-|------|----------|--------|
-| `company.md` | Company overview, team, customers, business model | Template available |
-| `strategy.md` | North star, OKRs, roadmap themes | Template available |
-| `tech-stack.md` | Frontend/backend/infra of the product being built | Create to enable |
-| `db-schema.md` | Database schema of the product being built | Create to enable |
-| `process.md` | Dev lifecycle, definition of ready/done, release process | Create to enable |
-| `current-state.md` | Where things stand today, active work, known debt | Create to enable |
+| File | Contents | Scope |
+|------|----------|-------|
+| `company.md` | Company overview, team, customers, business model | All agents |
+| `strategy.md` | North star, OKRs, roadmap themes | All agents |
+| `tech-stack.md` | Frontend/backend/infra of the product being built | All agents |
+| `db-schema.md` | Database schema of the product being built | All agents |
+| `process.md` | Dev lifecycle, definition of ready/done, release process | All agents |
+| `current-state.md` | Where things stand today, active work, known debt | All agents |
+| `api-contracts.md` | REST/WebSocket API contracts and rate limits | Architect, story decomposition, tech refinement, QA |
+| `integrations.md` | Third-party integrations (FCM, SendGrid, analytics, payments) | Architect, story decomposition, tech refinement, QA |
+
+**Stage-scoped context**: Files with a YAML frontmatter `stages:` field are only injected into matching agents — useful for technical context (API contracts, DB schema, integrations) that the analyst and PM don't need. Example: `api-contracts.example.md` is injected only into the architect and story decomposition agents.
 
 Context files can be edited from the UI (**Context** button in the header) or on disk. Changes take effect immediately — no restart needed.
 
@@ -301,8 +310,9 @@ cd app/backend && npx tsc --noEmit
 
 See [CUSTOMIZING.md](CUSTOMIZING.md) for fork customization and [docs/developer-guide/adding-an-agent-stage.md](docs/developer-guide/adding-an-agent-stage.md) for adding new specialist stages.
 
-## Database
+## Storage
 
+### SQLite (operational data)
 Schema in `db/schema.sql`, mirrored in `app/backend/src/data/database.ts`.
 
 | Table | Purpose |
@@ -322,3 +332,20 @@ Schema in `db/schema.sql`, mirrored in `app/backend/src/data/database.ts`.
 | `change_requests` | Post-completion change requests with impact assessment and status |
 | `cr_artifact_versions` | Links change requests to new artifact versions and their parents |
 | `ado_work_item_map` | Maps local backlog keys to Azure DevOps work item IDs for sync |
+
+### MongoDB (artifact content)
+JSON artifacts from specialist stages are stored in a local MongoDB instance (`docker-compose.yml` at project root, port 27017). The SQLite `artifacts` table tracks the MongoDB ObjectId in `external_path` with `external_system='mongodb'`. If MongoDB is unreachable on first connect, all artifacts fall back to disk automatically — no configuration needed for basic local development.
+
+```bash
+# Start MongoDB
+docker compose up -d
+
+# Stop MongoDB
+docker compose down
+```
+
+Environment variables (both optional — defaults shown):
+```
+MONGODB_URI=mongodb://localhost:27017
+MONGODB_DB=product-agent
+```

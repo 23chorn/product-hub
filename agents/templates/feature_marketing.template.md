@@ -1,126 +1,46 @@
-<!-- START OUTPUT HERE -->
-# Feature Marketing: [Feature Name]
+Output a single valid JSON object wrapped in a ```json code block. No prose before or after the block.
 
-## Feature Name & Tagline
+Schema:
 
-**Recommended:**
-- Name: [Feature name]
-- Tagline: [Tagline — short, benefit-focused phrase]
-- Rationale: [One sentence on why this name and tagline combination works for the target audience]
+```json
+{
+  "feature_name": {
+    "recommended": { "name": "Feature name", "tagline": "Short benefit-focused phrase", "rationale": "One sentence why this works for the target audience" },
+    "alternative_a": { "name": "Alternative name", "tagline": "Alternative tagline", "rationale": "One sentence" },
+    "alternative_b": { "name": "Alternative name", "tagline": "Alternative tagline", "rationale": "One sentence" }
+  },
+  "value_proposition": "≤20 words. Benefit-first. Describes what changes for the user — not what the feature does.",
+  "messaging_hierarchy": {
+    "headline": "≤8 words",
+    "sub_headline": "≤25 words",
+    "supporting_bullets": ["Specific outcome, no generic superlatives", "Specific outcome", "Specific outcome"]
+  },
+  "channel_copy": {
+    "app_store": "≤170 characters, plain text, no markdown",
+    "website_hero": {
+      "headline": "Headline",
+      "body": "Sentence 1 — what it does and who it's for. Sentence 2 — the outcome or proof point."
+    },
+    "email": {
+      "subject_line": "≤60 characters",
+      "body_paragraph_1": "Hook. Opens with the problem or moment this feature solves. 2–3 sentences.",
+      "body_paragraph_2": "Benefit detail. What specifically changes for the reader? 2–3 sentences.",
+      "body_paragraph_3": "CTA. Clear single action. Where do they go next? 1–2 sentences."
+    },
+    "linkedin": "≤150 words, professional but conversational, ends with a question",
+    "twitter": "≤280 characters + one hashtag",
+    "short_form_social": {
+      "instagram": { "hook_concept": "What stops the scroll", "format": "Carousel|Reel|Static", "caption_style": "Tone and length guidance", "hashtag_approach": "3–5 hashtag categories" },
+      "tiktok": { "hook_concept": "First 3 seconds concept", "format": "Tutorial|Before-after|POV|Trending sound", "caption_style": "Short and punchy|question-led|CTA-focused", "hashtag_approach": "Mix of broad and niche tags" }
+    }
+  },
+  "internal_faq": [
+    { "question": "Real question sales/support will get", "answer": "2–3 sentence answer. User-facing language only." }
+  ]
+}
+```
 
-**Alternative A:**
-- Name: [Alternative name]
-- Tagline: [Alternative tagline]
-- Rationale: [One sentence]
-
-**Alternative B:**
-- Name: [Alternative name]
-- Tagline: [Alternative tagline]
-- Rationale: [One sentence]
-
----
-
-## Value Proposition Sentence
-
-[≤20 words. Benefit-first. Describes what changes for the user — not what the feature does.]
-
-_Example format: "[User type] can now [outcome] without [pain point]."_
-
----
-
-## Messaging Hierarchy
-
-**Headline** (≤8 words):
-[Headline]
-
-**Sub-headline** (≤25 words):
-[Sub-headline — expands on the headline, introduces the key benefit with a touch more specificity]
-
-**Supporting Bullets** (3 bullets — each traces back to the value proposition):
-- [Bullet 1 — specific outcome, no generic superlatives]
-- [Bullet 2 — specific outcome]
-- [Bullet 3 — specific outcome]
-
----
-
-## Channel Copy Pack
-
-### App Store / Play Store
-_Constraint: ≤170 characters, plain text, no markdown or bullet points._
-
-[App Store copy — fits in 170 characters]
-
----
-
-### Website Hero
-
-**Headline:**
-[Headline]
-
-**Body:**
-[Sentence 1 — what it does and who it's for.] [Sentence 2 — the outcome or the proof point.]
-
----
-
-### Email Announcement
-
-**Subject:** [Subject line — ≤60 characters]
-
-**Body:**
-
-[Paragraph 1 — hook. Open with the problem or the moment this feature solves. 2–3 sentences.]
-
-[Paragraph 2 — benefit detail. Expand on the value proposition. What specifically changes for the reader? 2–3 sentences.]
-
-[Paragraph 3 — CTA. Clear, single action. Where do they go next? 1–2 sentences.]
-
----
-
-### LinkedIn Post
-_Constraint: ≤150 words. Professional but conversational. End with a question._
-
-[LinkedIn post — written in first person or company voice per project context. Ends with a question to drive engagement.]
-
----
-
-### X / Twitter
-_Constraint: ≤280 characters + one hashtag._
-
-[Tweet text] #[Hashtag]
-
----
-
-### Short-form Social Strategy
-
-**Instagram:**
-- Hook concept: [What stops the scroll — the visual or first-frame idea]
-- Format: [Carousel / Reel / Static image — and why]
-- Caption style: [Tone, length guidance, whether to mirror the tweet or expand]
-- Hashtag approach: [3–5 hashtag categories to use]
-
-**TikTok:**
-- Hook concept: [First 3 seconds — what the viewer sees or hears]
-- Format: [Tutorial / Before-after / POV / Trending sound — and why]
-- Caption style: [Short and punchy / question-led / CTA-focused]
-- Hashtag approach: [Mix of broad and niche tags]
-
----
-
-## Internal FAQ
-
-_5 real questions that sales and support teams will get. 2–3 sentence answers. No implementation detail._
-
-**Q1: [Question a prospect or user would actually ask]**
-[Answer — 2–3 sentences. User-facing language only.]
-
-**Q2: [Question]**
-[Answer]
-
-**Q3: [Question]**
-[Answer]
-
-**Q4: [Question]**
-[Answer]
-
-**Q5: [Question]**
-[Answer]
+Rules:
+- internal_faq must contain exactly 5 entries.
+- Do not reference features not in the approved PRD or GTM strategy.
+- Do not suggest product changes.

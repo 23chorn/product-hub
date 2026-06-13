@@ -4,6 +4,13 @@ import * as path from 'path';
 import db from '../data/database';
 import { STAGE_ARTIFACT_TYPE } from './stage-metadata';
 import { saveToWiki, wikiPathForArtifact } from '../integrations/document-store/azure-wiki-store';
+import {
+  insertArtifactDoc,
+  updateArtifactDocId,
+  readArtifactDoc,
+  replaceArtifactDocContent,
+  parseContentForMongo,
+} from '../data/mongo-client';
 import Logger from '../utils/logger';
 
 const logger = new Logger('ARTIFACT-HELPERS');
@@ -48,9 +55,15 @@ export function resolveArtifactPath(storedPath: string): string {
 }
 
 /**
- * Read content from an artifact row — local disk only.
+ * Read content from an artifact row — MongoDB first, disk fallback.
  */
 async function readArtifactRow(row: ArtifactRow): Promise<string | null> {
+  if (row.external_system === 'mongodb' && row.external_path) {
+    const content = await readArtifactDoc(row.external_path);
+    if (content !== null) return content;
+    logger.warn(`MongoDB read miss for artifact external_path=${row.external_path} — no disk fallback available`);
+    return null;
+  }
   if (!row.file_path) return null;
   try {
     return fs.readFileSync(resolveArtifactPath(row.file_path), 'utf-8');
@@ -145,9 +158,8 @@ export async function syncArtifactToWiki(artifactId: number): Promise<string> {
 // ── Local artifact save (disk only, no wiki push) ────────────────────────────
 
 /**
- * Saves an artifact to local disk only — no wiki push.
- * Used for stages whose output goes directly to ADO rather than the Azure Wiki
- * (pm_backlog, tech_refinement, qa_engineer).
+ * Saves an artifact to MongoDB (with disk fallback if MongoDB is unavailable).
+ * Used for all specialist-stage outputs that don't go to Azure Wiki or ADO directly.
  */
 export async function saveLocalArtifact(
   sessionId: string,
@@ -156,16 +168,39 @@ export async function saveLocalArtifact(
   itemId: string,
   skillVersionId?: number | null
 ): Promise<number> {
-  // Feature-specific stages (story_decomposition_F1, F2, etc.) use 'backlog' type
-  // QA feature-specific stages (qa_engineer_F1, F2, etc.) use 'qa_tests' type
-  // Tech refinement feature-specific stages (tech_refinement_F1, F2, etc.) use 'backlog' type
-  const isFeatureStage = /^story_decomposition_F\d+$/.test(stage);
-  const isQaFeatureStage = /^qa_engineer_F\d+$/.test(stage);
+  const isFeatureStage             = /^story_decomposition_F\d+$/.test(stage);
+  const isQaFeatureStage           = /^qa_engineer_F\d+$/.test(stage);
   const isTechRefinementFeatureStage = /^tech_refinement_F\d+$/.test(stage);
   const artifactType = isFeatureStage ? 'backlog'
     : isQaFeatureStage ? 'qa_tests'
     : isTechRefinementFeatureStage ? 'backlog'
     : (STAGE_ARTIFACT_TYPE[stage] ?? stage);
+
+  // ── Attempt MongoDB storage ────────────────────────────────────────────────
+  const mongoId = await insertArtifactDoc({
+    item_id:       itemId,
+    session_id:    sessionId,
+    stage,
+    artifact_type: artifactType,
+    content:       parseContentForMongo(content),
+    created_at:    new Date(),
+    updated_at:    new Date(),
+  });
+
+  if (mongoId) {
+    const result = db.prepare(`
+      INSERT INTO artifacts (session_id, type, file_path, external_system, external_path, skill_version_id, created_at)
+      VALUES (?, ?, '', 'mongodb', ?, ?, ?)
+    `).run(sessionId, artifactType, mongoId, skillVersionId ?? null, Date.now());
+
+    const artifactId = result.lastInsertRowid as number;
+    await updateArtifactDocId(mongoId, artifactId);
+    logger.info(`Artifact "${stage}" saved to MongoDB (mongo_id=${mongoId}, artifact_id=${artifactId})`);
+    return artifactId;
+  }
+
+  // ── Disk fallback ──────────────────────────────────────────────────────────
+  logger.warn(`MongoDB unavailable — writing artifact "${stage}" to disk`);
   const artifactDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, stage, 'artifacts');
   await fsAsync.mkdir(artifactDir, { recursive: true });
   const jsonTypes = new Set(['backlog', 'qa_tests', 'prototype']);
@@ -178,7 +213,7 @@ export async function saveLocalArtifact(
     VALUES (?, ?, ?, ?, ?)
   `).run(sessionId, artifactType, artifactPath, skillVersionId ?? null, Date.now());
 
-  logger.info(`Local artifact "${stage}" saved: ${artifactPath}`);
+  logger.info(`Artifact "${stage}" saved to disk (fallback): ${artifactPath}`);
   return result.lastInsertRowid as number;
 }
 
@@ -256,14 +291,20 @@ export async function loadLatestArtifactContent(itemId: string, artifactType: st
 }
 
 /**
- * Update an externally stored artifact's content (pushes to wiki).
- * Falls back to overwriting the local file for disk-backed artifacts.
+ * Update artifact content — dispatches to MongoDB, Azure Wiki, or disk depending on where it's stored.
  */
 export async function updateArtifactContent(artifactId: number, content: string): Promise<{ url?: string }> {
   const row = db.prepare<[number], ArtifactRow & { external_url: string | null }>(
     'SELECT file_path, external_system, external_path, external_url FROM artifacts WHERE id = ?'
   ).get(artifactId);
   if (!row) throw new Error(`Artifact ${artifactId} not found`);
+
+  if (row.external_system === 'mongodb' && row.external_path) {
+    const ok = await replaceArtifactDocContent(row.external_path, parseContentForMongo(content));
+    if (!ok) throw new Error(`MongoDB update failed for artifact ${artifactId}`);
+    logger.info(`[UPDATE] mongodb ✓ ${row.external_path}`);
+    return {};
+  }
 
   if (row.external_system === 'azure_wiki' && row.external_path) {
     logger.info(`[UPDATE] azure_wiki → ${row.external_path}`);

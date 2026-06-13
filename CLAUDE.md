@@ -147,6 +147,26 @@ Post-completion targeted changes without full reruns. Flow: create CR → assess
 - **Pattern A (Specialist)** — document-producing agents (Analyst, PM, Architect, Prototype). Extend `SpecialistAgent`. Persona files are markdown with YAML frontmatter stripped before injection.
 - **Pattern B (plain class)** — orchestration/review agents (Coordinator, Critic, Curator). Load persona via `readFileSync`, use `streamAI()`.
 
+### Per-stage JSON validators (`agents/tool-registry.ts`)
+Each specialist stage has a structural validator registered as a tool the agent calls before returning output. Validators check field presence, array minimums, character/word limits, format constraints, and flag TBD/vague language. Key validators:
+- `validate_analyst_json` — title, market_size sub-fields, ≥2 competitive entries, inline [N] citations, no placeholder URLs
+- `validate_prd_json` — personas, journeys (steps ≥2), success_metrics (primary/secondary/counter), NFR measurability, FR count 10–20
+- `validate_architecture_json` — recursive TBD scan, technology_decisions (alternatives must be substantive, not "None"/"N/A"), `new_dependencies` structure validation, data_model, api_surface, epic_features_enriched
+- `validate_gtm_strategy_json` — Moore positioning template, segment enums, headline ≤8 words, exactly 3 phases
+- `validate_feature_marketing_json` — 3 name variants, value_proposition ≤20 words, app_store ≤170 chars, exactly 5 FAQ entries
+
+`syncSeedSkillTools()` in `skill-registry.ts` auto-bumps skill version on server start when tool names differ from the seed — existing installs pick up renamed validators without manual migration.
+
+### Architecture `new_dependencies` field
+The architecture JSON schema includes a `new_dependencies` array (added in `agents/templates/architecture.template.md`). Every technology not in `context/tech-stack.md` must appear here with:
+- `not_solvable_with_existing_stack_because` — specific gap (>20 chars required by validator)
+- `existing_alternatives_evaluated` — what existing tech was tried first
+- `cost_or_risk` — operational/licensing implications
+
+Empty `new_dependencies: []` = deliberate statement that no new tech is introduced. The field is rendered prominently at the top of the human review artifact view (`architectureToMarkdown()` in `artifact-to-markdown.ts`) — the PM sees it before the technology decisions table.
+
+The architect persona (`agents/personas/architect.md`) has an "Extend before adopting" principle, and the critic (`agents/personas/critic-architect.md`) flags undeclared new dependencies as **CRITICAL**.
+
 ### Frontend state (Zustand stores)
 - `workflowStore.ts` — `activeWorkflow`, `stageSequence`, `currentStage`, `completedStages`, `checkpoints`, `coordinatorMessages`, `studioOutput` (terminal persistence per workflowId)
 - `sessionStore.ts` — `selectedItem`
@@ -156,7 +176,20 @@ Post-completion targeted changes without full reruns. Flow: create CR → assess
 Key shared frontend modules: `constants/stage-labels.ts`, `utils/coordinator-helpers.ts`, `utils/backlog-helpers.ts`.
 
 ### Project context (`context/`)
-Any `.md` file here is injected into every agent's system prompt. Cached in memory; invalidated when files are saved via UI or context diffs are approved. Canonical files: `company.md`, `strategy.md`, `tech-stack.md`, `db-schema.md`, `repos.md`, `process.md`, `current-state.md`.
+Any `.md` file here is injected into agent system prompts. Cached in memory; invalidated when files are saved via UI or context diffs are approved. Canonical files: `company.md`, `strategy.md`, `tech-stack.md`, `db-schema.md`, `repos.md`, `process.md`, `current-state.md`.
+
+**Stage-scoped context**: Files with a YAML frontmatter `stages:` field are only injected into matching agents. Files without `stages:` are universal. The `stageMatches()` helper prefix-matches so `story_decomposition` covers `story_decomposition_F1/F2/F3`. Implementation in `specialist-agent.ts`: `parseContextFrontmatter()`, `loadProjectContext(stage)`, `_contextByStageCache`.
+
+Example stage-scoped file (injected only into architect + story decomposition agents):
+```markdown
+---
+stages: [solution_architect, story_decomposition, tech_refinement, qa_engineer]
+---
+# API Contracts
+...
+```
+
+Example files (tracked but gitignored in prod): `api-contracts.example.md`, `integrations.example.md`, `db-schema.example.md`, `repos.example.md`.
 
 ### Output templates (`agents/templates/`)
 `research.template.md`, `prd.template.md`, `architecture.template.md`, `backlog.template.md`. Read from disk per-stage (no caching), so UI edits take effect immediately on the next run.
@@ -171,6 +204,17 @@ Configured via `app/backend/src/config/app-config.ts`:
 
 ### Demo
 `POST /api/demo/webhook/trigger` launches a full pipeline without coordinator planning, cycling through 4 sample initiatives. Set `DEMO_FIXTURE_THEME=price-alerts` (default) or `messaging`. Fixtures in `app/backend/src/demo/fixtures/`; system auto-falls back to base theme if themed fixture missing. `USE_MOCK_DATA=true` bypasses Airtable for local dev.
+
+**Fixture format**: All fixtures are `.json` files. The `messaging/` subdirectory contains theme-specific overrides for `analyst.json`, `prd.json`, `architecture.json`, `gtm-strategy.json`, `feature-marketing.json`. Common fixtures (backlog, qa-tests, prototype, epic-features) are shared across themes. Demo artifacts flow through the same `saveLocalArtifact()` path as real LLM outputs — MongoDB is attempted first; falls back to disk if unavailable.
+
+### Artifact storage (`app/backend/src/data/mongo-client.ts`)
+Specialist-stage JSON artifacts are stored in locally hosted MongoDB (`docker-compose.yml` at project root). The `artifacts` SQLite table tracks the storage location via `external_system='mongodb'` and `external_path=<ObjectId>`. Disk fallback is automatic when MongoDB is unreachable (`serverSelectionTimeoutMS: 3000`).
+
+Key exports: `insertArtifactDoc()`, `updateArtifactDocId()`, `readArtifactDoc()`, `replaceArtifactDocContent()`, `parseContentForMongo()` (stores JSON as real BSON, non-JSON as string).
+
+`saveLocalArtifact()` in `artifact-helpers.ts` dispatches: MongoDB → disk fallback. `updateArtifactContent()` dispatches: MongoDB → azure_wiki → disk based on `external_system`.
+
+To start MongoDB locally: `docker compose up -d`. Set `MONGODB_URI` and `MONGODB_DB` in `.env` (defaults: `mongodb://localhost:27017`, `product-agent`).
 
 ### Misc
 - **Airtable formula**: use `NOT({Field})` not `{Field} = BLANK()` for link fields (Airtable returns SERVER_ERROR for the latter)

@@ -1,88 +1,45 @@
-<!-- START OUTPUT HERE — no preamble, no introductory text, no commentary. Begin directly with the heading below. -->
+Output a single valid JSON object wrapped in a ```json code block. No prose before or after the block.
 
-<!--
-OUTPUT BUDGET: You have a fixed output token limit. A complete document is always better than a thorough-but-truncated one.
-- Write all sections. Do not skip or omit any section.
-- If you are running long, condense earlier sections (Problem Space, Market Size, Target Users, Competitive Landscape) — not later ones.
-- The final two sections — Strategic Recommendations and References — must always be present and complete.
-- Prefer concise paragraphs over exhaustive coverage of any single topic.
--->
+Schema:
 
-# Research Brief: [Initiative Name]
+```json
+{
+  "title": "Research Brief: [Initiative Name]",
+  "executive_summary": "Two paragraphs. Paragraph 1: market opportunity. Paragraph 2: top 2–3 findings the PM needs to act on. Inline refs like [1].",
+  "problem_space": "What problem are users experiencing today, what it costs them. Cite evidence with [N] refs.",
+  "market_size": {
+    "tam": "Total addressable market figure + source ref",
+    "growth_cagr": "Growth rate + source ref",
+    "key_driver": "Primary growth driver"
+  },
+  "target_users": [
+    {
+      "segment": "Segment name",
+      "job_to_be_done": "What they are trying to accomplish",
+      "current_workaround": "How they do it today",
+      "key_frustration": "What breaks down"
+    }
+  ],
+  "competitive_landscape": [
+    { "player": "Competitor name", "strength": "What they do well", "gap": "Where they fall short" }
+  ],
+  "constraints_and_risks": [
+    { "risk": "Risk description", "mitigation": "Brief mitigation" }
+  ],
+  "strategic_recommendations": [
+    "Recommendation 1 with brief rationale",
+    "Recommendation 2 with brief rationale",
+    "Recommendation 3 with brief rationale"
+  ],
+  "conclusion": "Concluding statements based on findings.",
+  "references": [
+    { "id": 1, "title": "Page title", "url": "URL returned by web search" }
+  ]
+}
+```
 
-## Executive Summary
-
-[Two paragraphs: the market opportunity and the top 2–3 findings the PM team needs to act on. Include inline references for key claims.]
-
----
-
-## Problem Space
-
-[What problem are users experiencing today? What does the current situation cost them? Cite specific evidence with inline references like [1].]
-
----
-
-## Market Size & Growth
-
-[TAM, SAM if available. Growth rate and trajectory. Key driver of that growth.]
-
-| Metric | Value | Source |
-|--------|-------|--------|
-| TAM | | [N] |
-| Growth (CAGR) | | [N] |
-
----
-
-## Target Users
-
-[Who are we building for? 2–3 user segments max.]
-
-**[Segment name]**
-- Job to be done: [what they're trying to accomplish]
-- Current workaround: [how they do it today]
-- Key frustration: [what breaks down]
-
----
-
-## Competitive Landscape
-
-[Key players, what they do well, and where they fall short.]
-
-| Player | Strength | Gap |
-|--------|----------|-----|
-| | | |
-
----
-
-## Constraints & Risks
-
-- [Risk 1] — [brief mitigation]
-- [Risk 2] — [brief mitigation]
-
----
-
-## Strategic Recommendations
-
-1. [Recommendation with brief rationale]
-2. [Recommendation with brief rationale]
-3. [Recommendation with brief rationale]
-
----
-
-## Conclusion
-
-[Provide a concluding set of statements based on the findings of the report]
-
----
-
-## References
-
-[1] [Page title] — [URL returned by web search]
-[2] [Page title] — [URL returned by web search]
-
-**Rules:**
-- Every inline [N] must appear here. Every entry here must be cited inline at least once.
-- Only include URLs returned by actual web searches — never construct or guess URLs.
-- If you cannot find a source for a claim, mark it with "[Unverified]" instead of a reference number.
-- If web search was not available, omit this section entirely or note "No web search was performed — claims marked [Unverified] require manual verification." Do not fabricate references.
-- When web search was available, aim for a minimum of 5 references.
+Citation rules:
+- Every factual claim must have an inline [N] immediately after it.
+- Only include URLs that web search actually returned — never fabricate URLs.
+- If no source exists for a claim, write "[Unverified]" instead of a number.
+- Every inline [N] must appear in references; every references entry must be cited inline.

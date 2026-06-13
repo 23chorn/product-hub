@@ -1,0 +1,108 @@
+{
+  "title": "PRD: In-App Messaging & Trade Chat — xCube",
+  "status": "Draft",
+  "problem_statement": "xCube retail investors discuss trades and market setups on external platforms (Discord, WhatsApp, Telegram) and then context-switch back to the app to execute. This 6–8 minute execution gap reduces trade conversion and increases abandonment to competitor apps. There is no way to share a live ticker directly into a conversation or act on a peer's trade idea without leaving xCube. Users who receive a timely in-context prompt are 2.8× more likely to execute a trade on the same platform.",
+  "personas": [
+    {
+      "name": "Alex — Active Self-Directed Trader",
+      "description": "Trades 10–20 times per month, follows 3–5 stock communities on Discord",
+      "goal": "Discuss live setups and share positions with peers without leaving the trading app",
+      "pain": "Misses execution windows while copying ticker symbols between Discord and the order screen"
+    },
+    {
+      "name": "Jamie — Casual Community Investor",
+      "description": "Buys and holds, follows finance influencers; checks portfolio weekly",
+      "goal": "Learn from more experienced traders in real time to build confidence",
+      "pain": "No way to ask questions about a position from within xCube; must go to Reddit or Discord"
+    }
+  ],
+  "user_journeys": [
+    {
+      "id": "Journey 1",
+      "name": "Join a topic channel and discuss a ticker",
+      "steps": [
+        "User opens the Chat tab in the bottom nav",
+        "User browses available channels (e.g. #aapl-watchers, #macro-watch)",
+        "User taps to join a channel and sees the live message thread",
+        "User reads an AAPL setup message with an embedded ticker card showing $227.52 (+1.83%)",
+        "User taps the ticker card → lands on AAPL detail screen with a pre-filled buy order"
+      ]
+    },
+    {
+      "id": "Journey 2",
+      "name": "Share a live ticker card in a message",
+      "steps": [
+        "User is viewing a ticker detail screen (e.g. NVDA at $875)",
+        "User taps 'Share to Chat' → channel picker opens",
+        "User selects #nvda-bulls → a ticker card is attached to the message draft",
+        "User adds text ('My updated target after yesterday's run:') and sends",
+        "The message appears in the channel thread with a live price card that updates in real time"
+      ]
+    },
+    {
+      "id": "Journey 3",
+      "name": "Send a message in a channel",
+      "steps": [
+        "User opens a channel, types in the compose box",
+        "Presses Enter / taps Send",
+        "Message appears in the thread within 500ms; other channel members see it simultaneously"
+      ]
+    }
+  ],
+  "success_metrics": {
+    "primary": {
+      "metric": "% of MAUs using Chat (sent or read at least once per week)",
+      "baseline": "0%",
+      "target": "25%",
+      "timeframe": "90 days post-launch",
+      "measurement": "Analytics event chat_opened or message_sent, deduplicated by user per 7-day window"
+    },
+    "secondary": [
+      { "metric": "Message-to-trade conversion rate (user chats then trades within 10 min)", "baseline": "0%", "target": "8%", "timeframe": "90 days post-launch", "measurement": "Analytics funnel event: ticker_card_tap → order_submitted within 10 min window" },
+      { "metric": "Ticker card share actions per DAU", "baseline": "0", "target": "0.4", "timeframe": "30 days post-launch", "measurement": "Analytics event share_to_chat with tickerRef set" },
+      { "metric": "30-day retention lift (Chat users vs non-Chat users)", "baseline": "—", "target": "+15%", "timeframe": "90 days post-launch", "measurement": "Cohort comparison: login_event within 30 days of signup, Chat vs non-Chat cohort" }
+    ],
+    "counter": [
+      { "metric": "Moderation false-positive rate (legit messages incorrectly held)", "current_value": "N/A", "acceptable_floor": "Must stay below 5%", "measurement": "Human review queue: reviewer_verdict = approved / total reviewed" },
+      { "metric": "Message delivery latency (p95)", "current_value": "N/A", "acceptable_floor": "Must stay below 500ms", "measurement": "Prometheus metric: message_delivery_latency_p95" }
+    ]
+  },
+  "non_functional_requirements": [
+    { "id": "NFR-01", "category": "Performance", "requirement": "Message delivery end-to-end latency < 500ms at p95 under 5,000 concurrent users", "priority": "Must" },
+    { "id": "NFR-02", "category": "Performance", "requirement": "Message history loads within 1 second for up to 500 messages per channel", "priority": "Must" },
+    { "id": "NFR-03", "category": "Scalability", "requirement": "System supports 10,000 concurrent WebSocket connections", "priority": "Must" },
+    { "id": "NFR-04", "category": "Compliance", "requirement": "All messages retained in cold storage for 7 years (MiFID II Article 16)", "priority": "Must" },
+    { "id": "NFR-05", "category": "Safety", "requirement": "Moderation classifier achieves >92% precision on pump-and-dump detection", "priority": "Must" },
+    { "id": "NFR-06", "category": "Platform", "requirement": "Feature available on iOS and Android at launch; web in Phase 2", "priority": "Must" }
+  ],
+  "functional_requirements": [
+    { "id": "FR-01", "requirement": "Users can browse a list of public channels sorted by activity." },
+    { "id": "FR-02", "requirement": "Users can join or leave a channel; joined channels appear in the sidebar." },
+    { "id": "FR-03", "requirement": "Users can send text messages up to 2,000 characters in a channel." },
+    { "id": "FR-04", "requirement": "Messages are delivered to all channel members within 500ms (p95)." },
+    { "id": "FR-05", "requirement": "Users can attach a live ticker card from any xCube instrument to a message." },
+    { "id": "FR-06", "requirement": "Ticker cards display: symbol, current price, and intraday % change — updated every 15 seconds." },
+    { "id": "FR-07", "requirement": "Tapping a ticker card opens the instrument detail screen." },
+    { "id": "FR-08", "requirement": "All messages pass through content moderation before delivery." },
+    { "id": "FR-09", "requirement": "Messages flagged by moderation are held pending human review and not delivered to channel members." },
+    { "id": "FR-10", "requirement": "All messages are retained for 7 years (MiFID II compliance)." },
+    { "id": "FR-11", "requirement": "Users can create a new public channel with a name and topic description." }
+  ],
+  "out_of_scope": [
+    "Direct messages (peer-to-peer) — deferred to Phase 2",
+    "Voice or video channels",
+    "Message reactions or emoji responses",
+    "File or image attachments (non-ticker)",
+    "Private (invite-only) channels",
+    "Message threads or replies",
+    "Per-channel notification preferences",
+    "Web platform support (iOS and Android only at launch)"
+  ],
+  "open_questions": [
+    { "id": 1, "type": "Risk", "description": "MiFID II Article 16 scope — does general channel discussion meet the 'related to a transaction' threshold requiring 7-year retention?", "impact": "High", "owner": "Legal", "status": "Open" },
+    { "id": 2, "type": "Question", "description": "Should moderation hold messages before delivery (safe but adds latency) or deliver then post-remove (faster but risks exposure)?", "impact": "High", "owner": "PM + Legal", "status": "Open" },
+    { "id": 3, "type": "Risk", "description": "WebSocket infrastructure cost scaling beyond 10,000 concurrent connections — at what user milestone do we need to re-architecture?", "impact": "Med", "owner": "Engineering", "status": "Open" },
+    { "id": 4, "type": "Question", "description": "Should channel creation be open to all users (network effects) or gated to power users (quality control)?", "impact": "Med", "owner": "PM", "status": "Open" },
+    { "id": 5, "type": "Risk", "description": "Finance influencer partnerships — liability if influencer uses the channel to promote positions they hold", "impact": "High", "owner": "Legal + Marketing", "status": "Open" }
+  ]
+}

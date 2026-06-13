@@ -1,0 +1,81 @@
+{
+  "feature_name": {
+    "recommended": {
+      "name": "xCube Chat",
+      "tagline": "Your trading community, where you actually trade.",
+      "rationale": "Product-named for brand recognition; tagline positions it as differentiated from Discord by co-locating discussion and execution — the core value prop in six words."
+    },
+    "alternative_a": {
+      "name": "Trade Chat",
+      "tagline": "Discuss. Share. Trade. All in one app.",
+      "rationale": "Descriptive and action-oriented; communicates the full loop in one line; may feel generic without the xCube brand anchor."
+    },
+    "alternative_b": {
+      "name": "Communities",
+      "tagline": "The trading chat that connects to your order screen.",
+      "rationale": "Feature-name signals product maturity and future roadmap (communities → profiles → social graph); tagline directly names the differentiator."
+    }
+  },
+  "value_proposition": "Active retail traders lose execution quality by context-switching between Discord and their brokerage app. xCube Chat brings the trading community into the app — live topic channels, real-time ticker cards, and one-tap order flow. From idea to trade without leaving xCube.",
+  "messaging_hierarchy": {
+    "headline": "Your trading community, where you actually trade.",
+    "sub_headline": "Join real-time channels organised by ticker and strategy. Share live price cards. Tap to trade — no app switch, no copy-paste, no missed setups.",
+    "supporting_bullets": [
+      "Topic channels: #aapl-watchers, #macro-watch, #nvda-bulls — organised by what you trade",
+      "Live ticker cards: share a price, tap it to open the order screen instantly",
+      "Real-time: messages delivered in under 500ms as the market moves",
+      "Moderated and compliant: pump-and-dump signals blocked, all messages retained for MiFID II"
+    ]
+  },
+  "channel_copy": {
+    "app_store": "Join real-time trading channels organised by ticker and strategy. Share live price cards, discuss setups, and trade — all without leaving xCube. Messages delivered in under 500ms. Fully moderated.",
+    "website_hero": {
+      "headline": "Your trading community, where you actually trade.",
+      "body": "xCube Chat brings topic-based trading channels into your brokerage app. Join #aapl-watchers, share a live NVDA ticker card, and tap it to open the order screen — all in one place. No more context-switching between Discord and your brokerage. The conversation and the execution are finally in the same app."
+    },
+    "email": {
+      "subject_line": "New in xCube: Chat is live — your trading community is waiting",
+      "body_paragraph_1": "You've been asking for it. xCube Chat is now live — real-time topic channels where traders discuss setups, share live price cards, and act on ideas without ever leaving the app.",
+      "body_paragraph_2": "Join #aapl-watchers, #macro-watch, or search for any ticker to find an active community. When someone shares a live ticker card in a channel, you tap it and you're on the order screen — pre-filled and ready. That's the 6-minute context-switch gone.",
+      "body_paragraph_3": "Open xCube and tap the Chat tab now. The community is already in there."
+    },
+    "linkedin": "We built the trading community that lives where you trade.\n\nxCube Chat is live today — topic-based channels with live ticker cards, delivered in under 500ms, connected directly to your order flow.\n\nThe problem we solved: traders spend 40% of their active trading time context-switching between Discord and their brokerage app. We built the community inside the app.\n\nJoin #aapl-watchers. Share a setup. Tap the ticker card. You're on the order screen.\n\nAvailable now on iOS and Android.",
+    "twitter": "xCube Chat is live. Topic channels. Live ticker cards. Messages in <500ms. Tap a ticker card → you're on the order screen. No app switch. No missed setups. The trading community that lives where you actually trade.",
+    "short_form_social": {
+      "instagram": {
+        "hook_concept": "Screen recording split: left side shows a trader in Discord copying a ticker symbol then switching apps; right side shows the same trader in xCube Chat tapping a ticker card and landing on the order screen in one tap",
+        "format": "Reel (20s) — problem (6-minute context-switch) → solution (one tap) → CTA (update xCube)",
+        "caption_style": "Short problem-solution narrative; ends with 'The community is already in the app — update xCube now'. 4–5 lines. No emojis in first line.",
+        "hashtag_approach": "#trading #investing #stockmarket #fintech #tradingapp #xCube — use niche ticker hashtags (#AAPL, #NVDA) for discovery in trading communities"
+      },
+      "tiktok": {
+        "hook_concept": "First 2 seconds: 'POV: you stop switching between Discord and your brokerage' — cut to Chat tab, ticker card tap, order screen",
+        "format": "Tutorial-style: show joining a channel (5s) → reading a ticker card (5s) → tapping to order (5s) → trade confirmed (3s). Text overlays at each step.",
+        "caption_style": "Casual, trading community language. 'No more copying tickers between apps.' End with 'update xCube, Chat tab is waiting'. Short sentences.",
+        "hashtag_approach": "#trading #stockmarket #daytradinglife #investingtips #fintech + trending trading sound or market open bell"
+      }
+    }
+  },
+  "internal_faq": [
+    {
+      "question": "How is this different from Discord — why would traders leave Discord for this?",
+      "answer": "The core differentiator is execution integration. In Discord, a trader sees a setup, copies the ticker, switches to their brokerage app, searches for the ticker, opens the order screen, and executes — 6–8 minutes. In xCube Chat, they tap the live ticker card in the message and they're on the pre-filled order screen. We're not asking traders to leave Discord; we're giving them a reason to do the discussion where they already execute. The ticker card is the moat — Discord can't replicate the order flow."
+    },
+    {
+      "question": "Is the chat moderated? What happens if someone posts pump-and-dump signals?",
+      "answer": "Yes. Every message passes through two layers of moderation before delivery. First, rule-based checks (blocklist, URL detection, ticker velocity — same ticker mentioned >10× in 5 min triggers review). Second, an async LLM classifier at >92% precision for pump-and-dump signals and unsolicited investment advice. Messages flagged at either stage are held for human review and not delivered. Our zero-tolerance policy is published. We have a dedicated compliance reviewer on-call for the first 30 days."
+    },
+    {
+      "question": "Is this MiFID II compliant? What are our record-keeping obligations?",
+      "answer": "All messages are retained in cold storage for 7 years, which meets the MiFID II Article 16 maximum record-keeping requirement. Legal has signed off on the interpretation that general topic-channel discussion does not constitute investment advice requiring transaction-level reporting — but we retain everything regardless to avoid ambiguity. The compliance team has Athena query access to the full archive for regulatory requests."
+    },
+    {
+      "question": "Can traders send direct messages to each other?",
+      "answer": "Not in the current release. MVP is public channels only. Direct messages are on the Phase 2 roadmap. The channel-first approach is intentional — traders self-organise by ticker and strategy, not social graph, and public channels create stronger network effects and more discoverable content. DMs add complexity without proportionate demand signal at MVP."
+    },
+    {
+      "question": "What if the influencer partner promotes positions they hold in their channel?",
+      "answer": "Each influencer partnership agreement includes an explicit disclosure requirement: influencers must disclose material positions in any ticker they discuss in their xCube channel, consistent with FCA/SEC influencer guidelines. The partnership terms are reviewed by Legal before signing. Moderation also monitors influencer channels for velocity patterns that could indicate coordinated position promotion. Any breach triggers immediate channel suspension and contract termination."
+    }
+  ]
+}

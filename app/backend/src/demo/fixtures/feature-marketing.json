@@ -1,0 +1,80 @@
+{
+  "feature_name": {
+    "recommended": {
+      "name": "Price Alerts",
+      "tagline": "Know the moment it moves.",
+      "rationale": "Active and confident — positions the feature as real-time intelligence without implying advice. Short enough for push copy and app store banners."
+    },
+    "alternative_a": {
+      "name": "Smart Alerts",
+      "tagline": "Set it. Watch nothing. Act when it counts.",
+      "rationale": "Emphasises the time-saving benefit for busy traders; 'Smart' signals intelligence but may feel generic."
+    },
+    "alternative_b": {
+      "name": "Price Watch",
+      "tagline": "Never miss your entry again.",
+      "rationale": "Benefit-first language resonates with active traders; 'Watch' links naturally to the Watchlist feature already in the product."
+    }
+  },
+  "value_proposition": "Retail investors get notified the instant a stock hits their target price — so they can act with intention instead of reacting to surprises.",
+  "messaging_hierarchy": {
+    "headline": "Know the moment it moves.",
+    "sub_headline": "Set a price target on any stock or ETF and get a push notification the instant it's crossed — in under 30 seconds.",
+    "supporting_bullets": [
+      "Instant: alerts arrive within 30 seconds, not 30 minutes like email-only alternatives",
+      "In control: alerts don't execute — you decide whether to trade when the moment comes",
+      "Seamless: create an alert in one tap from your existing TradeEasy watchlist"
+    ]
+  },
+  "channel_copy": {
+    "app_store": "Set price alerts on any stock or ETF. Get notified in under 30s when your target is crossed — no limit orders, no accidental fills.",
+    "website_hero": {
+      "headline": "Know the moment it moves.",
+      "body": "Price Alerts notify you the instant a stock or ETF hits your target price — on any device, in under 30 seconds. Set your price, go about your day, and act with intention when the moment arrives."
+    },
+    "email": {
+      "subject_line": "New in TradeEasy: Price Alerts are here",
+      "body_paragraph_1": "You've been waiting for this. Price Alerts are now live in TradeEasy — the fastest way to know when a stock or ETF hits your target price, without watching screens all day.",
+      "body_paragraph_2": "Set an alert on any position or watchlist item in one tap. When your price is crossed during market hours, you'll get a push notification within 30 seconds — with a direct link to an order ticket, pre-filled and ready to go.",
+      "body_paragraph_3": "Open TradeEasy and set your first alert now. Your watchlist is already waiting."
+    },
+    "linkedin": "We just shipped something our traders have been asking for: Price Alerts in TradeEasy.\n\nSet a target price on any stock or ETF. When it crosses, you get a push notification in under 30 seconds — not an email 15 minutes later.\n\nNo automatic executions. You decide whether to act. Full control, instant information.\n\nThe feature is live for all TradeEasy users today. What price level are you watching right now?",
+    "twitter": "Price Alerts are now live in TradeEasy. Set a target, get notified in <30s when it's crossed. No limit orders. No accidental fills. Just the right information at the right moment. #TradeSmart",
+    "short_form_social": {
+      "instagram": {
+        "hook_concept": "Split-screen: phone showing market chaos on one side, person calmly having coffee on the other — alert notification appears on the calm side",
+        "format": "Reel (15s) — contrast hook → product feature → outcome",
+        "caption_style": "Short, benefit-first, ends with CTA to update the app. 3–4 lines max. No emojis in first line.",
+        "hashtag_approach": "Mix: #investing #stockmarket #tradingapp #fintech + 1 brand hashtag #TradeEasy"
+      },
+      "tiktok": {
+        "hook_concept": "First 2 seconds: 'POV: you finally stop refreshing your brokerage app every 5 minutes' — cut to alert arriving on phone",
+        "format": "POV-style tutorial showing alert creation (3 taps) + notification arriving + order pre-filled",
+        "caption_style": "Casual, first-person, short sentences. End with 'update TradeEasy and try it'",
+        "hashtag_approach": "#investing #stockalerts #tradinglife #daytrading + trending finance sound"
+      }
+    }
+  },
+  "internal_faq": [
+    {
+      "question": "How fast are the alerts — my current broker takes 15 minutes?",
+      "answer": "TradeEasy Price Alerts are delivered via push notification within 30 seconds of a price crossing your threshold during market hours (9:30–4:00 PM ET). That's real-time, not delayed. If push fails for any reason, an email fallback sends within 5 minutes."
+    },
+    {
+      "question": "Will an alert automatically execute a trade for me?",
+      "answer": "No — alerts are informational only. When your target price is crossed, you receive a notification and can choose to open a pre-filled order ticket. You always decide whether to trade. This is intentionally different from limit orders."
+    },
+    {
+      "question": "How many alerts can I set?",
+      "answer": "You can have up to 20 active alerts at one time. Triggered alerts move to your Alert History and free up a slot. You can re-arm any triggered alert with one tap if you want to watch that level again."
+    },
+    {
+      "question": "Does this work on the web app too?",
+      "answer": "Web users receive email alerts instead of push notifications in the current release. Push notifications for web browsers are planned for a future update. If you use the iOS or Android app, you'll get the full real-time push experience."
+    },
+    {
+      "question": "What types of assets can I set alerts on?",
+      "answer": "Price Alerts support US equities and ETFs — the same universe available for trading on TradeEasy today. Options alerts, futures, and international equities are not supported in this release and are on the future roadmap."
+    }
+  ]
+}

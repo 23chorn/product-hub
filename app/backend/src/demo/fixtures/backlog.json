@@ -170,15 +170,98 @@
           "effort": 2
         }
       ]
+    },
+    {
+      "title": "Alert History & Analytics",
+      "description": "Users can review past alerts, see which ones they acted on, and gain insights into their monitoring patterns.",
+      "phase": "Phase 2",
+      "stories": [
+        {
+          "title": "View 90-day alert history",
+          "persona": "Maya — Passive Portfolio Reviewer",
+          "goal": "see a complete log of all alerts that have fired in the past 90 days",
+          "benefit": "so that I can review whether my price targets were well-calibrated and understand my own monitoring patterns",
+          "acceptanceCriteria": [
+            "Given I open the Alerts screen and tap the 'History' tab, When the view loads, Then I see all fired alerts from the past 90 days sorted newest-first, each showing: ticker, direction, target price, triggered price, and triggered timestamp",
+            "Given I have no fired alerts in the past 90 days, When I open the History tab, Then an empty state is shown with copy 'No alerts have triggered in the last 90 days'",
+            "Given an alert fired more than 90 days ago, When I view the History tab, Then that alert does not appear (retention policy enforced)"
+          ],
+          "prdRef": { "functionalRequirements": ["FR-08", "FR-10"], "userJourney": "Journey 1 · Step 4" },
+          "technical": {
+            "constraints": ["Query filters price_alerts WHERE status = 'triggered' AND triggered_at >= NOW() - 90 days"],
+            "affectedComponents": ["AlertsHistoryTab", "AlertsService"],
+            "dataChanges": null,
+            "apiChanges": "GET /api/alerts/history?days=90"
+          },
+          "effort": 2
+        },
+        {
+          "title": "Filter alert history by ticker and date range",
+          "persona": "Alex — Active Self-Directed Trader",
+          "goal": "narrow the alert history to a specific ticker or time window",
+          "benefit": "so that I can quickly find the alerts relevant to a position I'm reviewing rather than scrolling through everything",
+          "acceptanceCriteria": [
+            "Given I am on the History tab, When I tap the filter icon and select a ticker (e.g. 'AAPL'), Then the list updates to show only AAPL alerts",
+            "Given I apply a date range filter (e.g. last 7 days), When the filter is applied, Then only alerts triggered within that window are shown and the active filter is visible as a chip",
+            "Given I tap 'Clear Filters', When the tap is registered, Then all filters are removed and the full 90-day history is restored"
+          ],
+          "prdRef": { "functionalRequirements": ["FR-08"], "userJourney": "Journey 1 · Step 4" },
+          "technical": {
+            "constraints": ["Filtering is client-side over the already-fetched 90-day dataset; no additional API calls"],
+            "affectedComponents": ["AlertsHistoryTab", "AlertFilterSheet"],
+            "dataChanges": null,
+            "apiChanges": null
+          },
+          "effort": 2
+        },
+        {
+          "title": "View alert-to-trade conversion rate",
+          "persona": "Alex — Active Self-Directed Trader",
+          "goal": "see what percentage of my fired alerts resulted in a trade within 24 hours",
+          "benefit": "so that I can judge whether my price targets are actionable or if I'm missing opportunities",
+          "acceptanceCriteria": [
+            "Given I have at least 5 fired alerts in the past 90 days, When I view the History tab, Then a summary card at the top shows: '% of alerts that led to a trade within 24h'",
+            "Given fewer than 5 fired alerts exist, When I view the History tab, Then the conversion card shows 'Not enough data yet — fire at least 5 alerts to see conversion stats'",
+            "Given a trade is executed within 24 hours of an alert trigger on the same ticker, When the summary refreshes, Then that alert is counted as converted in the rate calculation"
+          ],
+          "prdRef": { "functionalRequirements": ["FR-16"], "userJourney": "Journey 1 · Step 4" },
+          "technical": {
+            "constraints": ["Join price_alerts.triggered_at with orders.created_at on same ticker; 24h window"],
+            "affectedComponents": ["AlertsHistoryTab", "AlertsAnalyticsService"],
+            "dataChanges": null,
+            "apiChanges": "GET /api/alerts/analytics → {conversionRate, totalFired, totalConverted}"
+          },
+          "effort": 3
+        },
+        {
+          "title": "View aggregate monitoring stats",
+          "persona": "Maya — Passive Portfolio Reviewer",
+          "goal": "see a summary of my overall alert activity — total set, total fired, and my most-watched tickers",
+          "benefit": "so that I can understand my own investing behaviour and identify which securities I monitor most actively",
+          "acceptanceCriteria": [
+            "Given I have alert activity in the past 90 days, When I view the History tab, Then an 'Insights' section shows: total alerts set (lifetime), total fired (90 days), top 3 most-watched tickers by alert count",
+            "Given I tap on a ticker in the top-3 list, When the tap registers, Then I am navigated to that ticker's detail screen",
+            "Given all stats are zero (new user), When I view the Insights section, Then it shows placeholder values of 0 with helper text 'Start setting alerts to build your insights'"
+          ],
+          "prdRef": { "functionalRequirements": ["FR-17"], "userJourney": "Journey 1 · Step 4" },
+          "technical": {
+            "constraints": ["Aggregate query on price_alerts grouped by ticker; cached in Redis for 5 minutes to avoid repeated scans"],
+            "affectedComponents": ["AlertsHistoryTab", "AlertsAnalyticsService", "RedisCache"],
+            "dataChanges": null,
+            "apiChanges": "GET /api/alerts/stats → {totalSet, totalFired, topTickers: [{ticker, count}]}"
+          },
+          "effort": 3
+        }
+      ]
     }
   ],
   "sprintMetadata": {
     "sprintVelocity": 20,
     "capacityFactor": 0.8,
     "effectiveVelocity": 16,
-    "totalEffort": 20,
-    "sprintsRequired": 1.3,
-    "totalHours": 80,
+    "totalEffort": 30,
+    "sprintsRequired": 1.9,
+    "totalHours": 120,
     "aiAssisted": false
   }
 }

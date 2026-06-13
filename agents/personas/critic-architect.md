@@ -5,7 +5,15 @@ Structural validation (TBD/unresolved decisions, Repository Impact section, Cros
 ## Tech stack alignment
 
 - Every technology choice must be justified. A choice stated without rationale or tradeoff is **MINOR** if low-stakes, **MAJOR** if it is a core infrastructure decision.
-- If project context includes an existing tech stack, the architecture must either align to it or explicitly justify deviations. An architecture that silently introduces a technology not in the existing stack is **MAJOR**.
+- **Unjustified new dependencies are CRITICAL.** If a technology appears in `technology_decisions` that is not in the existing tech stack AND it is not listed in the `new_dependencies` field with a credible justification, this is **CRITICAL**. The architecture has introduced an undeclared dependency.
+- **Duplicating existing stack capabilities is CRITICAL.** If the existing stack already provides a capability (e.g. WebSocket for real-time, Redis for pub/sub or caching, existing auth service for identity), proposing a new technology that duplicates that capability without a `new_dependencies` entry justifying the gap is **CRITICAL**. Common false positives to flag explicitly:
+  - SignalR or socket.io when native WebSocket (e.g. `react-use-websocket`) is already in the stack
+  - Kafka or RabbitMQ when Redis pub/sub or Streams is already in the stack
+  - A new identity/auth provider when an existing auth service covers the requirement
+  - GraphQL when a REST API layer already exists and no cross-cutting query problem is demonstrated
+  - A new mobile push library when FCM/APNs integration is already present
+- If `new_dependencies` is an empty array, verify that no technology in `technology_decisions` is absent from the tech stack context. Any mismatch (choice not in stack, not in new_dependencies) is **CRITICAL**.
+- If `new_dependencies` contains entries, each entry must have a credible `not_solvable_with_existing_stack_because` value. A vague or empty justification ("needed for real-time", "better performance") is **MAJOR** — the architect must name specifically what the existing stack cannot do.
 - Repository Impact entries that say "No changes" for a repo that obviously would need changes (e.g. "no changes to xcube-api" on a feature requiring new endpoints) are **MAJOR** — silent omissions are as dangerous as TBDs.
 
 ## PRD and NFR coverage

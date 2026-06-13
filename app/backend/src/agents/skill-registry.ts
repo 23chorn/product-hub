@@ -125,29 +125,30 @@ export function deprecateSkill(skillName: string, version: string): void {
 }
 
 // Tool definitions seeded per skill (JSON strings).
-// syncSeedSkillTools() applies these to existing installs that pre-date the tool additions.
+// syncSeedSkillTools() bumps the skill version when the tool names differ from the seed,
+// ensuring existing installs pick up renamed or newly added validators automatically.
 const SEED_TOOL_DEFINITIONS: Record<string, string> = {
   analyst: JSON.stringify([
     {
-      name: 'validate_research_brief',
-      description: 'Validate your research brief before returning it. Checks required sections (Executive Summary, Problem Space, market/competitive context, Recommendations or PM Questions) and flags fabricated URLs. References are not required — use [Unverified] markers when web search was not available.',
-      input_schema: { type: 'object', properties: { text: { type: 'string', description: 'The complete research brief text to validate' } }, required: ['text'] },
+      name: 'validate_analyst_json',
+      description: 'Validate your research brief JSON before returning it. Checks all required top-level fields, market_size sub-fields, target_users/competitive_landscape/constraints_and_risks arrays, inline [N] citations against the references list, and flags placeholder URLs. Call after completing the full JSON object.',
+      input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete research brief JSON string (may be wrapped in a ```json code block)' } }, required: ['json'] },
     },
   ]),
 
   pm_prd: JSON.stringify([
     {
-      name: 'validate_prd',
-      description: 'Validate your PRD before returning it. Checks that Out of Scope is present, success metrics have baselines and targets, counter-metrics exist, and NFRs have measurable thresholds. Call after drafting.',
-      input_schema: { type: 'object', properties: { text: { type: 'string', description: 'The complete PRD text to validate' } }, required: ['text'] },
+      name: 'validate_prd_json',
+      description: 'Validate your PRD JSON before returning it. Checks personas, user journeys, success_metrics (primary/secondary/counter), NFR measurability, functional requirement count (10–20), out_of_scope, and open_questions. Call after completing the full JSON object.',
+      input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete PRD JSON string (may be wrapped in a ```json code block)' } }, required: ['json'] },
     },
   ]),
 
   solution_architect: JSON.stringify([
     {
-      name: 'validate_architecture',
-      description: 'Validate your architecture document before returning it. Checks for unresolved TBD decisions, missing cost estimates, undocumented failure modes, and absent scalability assumptions. Call after drafting.',
-      input_schema: { type: 'object', properties: { text: { type: 'string', description: 'The complete architecture document text to validate' } }, required: ['text'] },
+      name: 'validate_architecture_json',
+      description: 'Validate your architecture JSON before returning it. Checks technology_decisions (including that alternatives are substantive), new_dependencies structure, data_model entities and ERD, api_surface endpoints, repository_impact, data_flows, infrastructure (cost_estimate, failure_modes), security_considerations, and the epic_features_enriched block required by story decomposition agents. Also scans for unresolved TBD decisions. Call after completing the full JSON object.',
+      input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete architecture JSON string (may be wrapped in a ```json code block)' } }, required: ['json'] },
     },
     {
       name: 'get_domain_skill_context',
@@ -159,7 +160,7 @@ const SEED_TOOL_DEFINITIONS: Record<string, string> = {
   pm_backlog: JSON.stringify([
     {
       name: 'validate_backlog_json',
-      description: 'Validate your backlog JSON structure before returning it. Checks required fields, Fibonacci effort scores, AC count (2–4 per story), Given/When/Then format, and story/feature count limits. Call after drafting.',
+      description: 'Validate your backlog JSON structure before returning it. Checks story_id format (F?.S?), as_a/i_want/so_that fields, Given/When/Then acceptance criteria (2–5 per story), technical_acceptance_criteria, platform tags, Fibonacci estimated_points, and story/feature count limits. Call after drafting.',
       input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete backlog JSON string to validate' } }, required: ['json'] },
     },
     {
@@ -171,9 +172,17 @@ const SEED_TOOL_DEFINITIONS: Record<string, string> = {
 
   gtm_strategy: JSON.stringify([
     {
-      name: 'validate_gtm_strategy',
-      description: 'Validate your GTM strategy before returning it. Checks Moore positioning template format, presence of all three launch phases with success signals, leading/lagging indicator distinction, and channel recommendations. Call after drafting.',
-      input_schema: { type: 'object', properties: { text: { type: 'string', description: 'The complete GTM strategy text to validate' } }, required: ['text'] },
+      name: 'validate_gtm_strategy_json',
+      description: 'Validate your GTM strategy JSON before returning it. Checks the Geoffrey Moore positioning template (For…who…Unlike…), target_segments fields and enums, messaging_framework word limits, all three launch phases with success signals, competitive_positioning, and leading/lagging success metrics with 30/60/90-day targets. Call after completing the full JSON object.',
+      input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete GTM strategy JSON string (may be wrapped in a ```json code block)' } }, required: ['json'] },
+    },
+  ]),
+
+  feature_marketing: JSON.stringify([
+    {
+      name: 'validate_feature_marketing_json',
+      description: 'Validate your feature marketing JSON before returning it. Checks feature_name variants, value_proposition word limit (≤20 words), messaging_hierarchy word limits, channel_copy character limits (app_store ≤170, twitter ≤280, email subject ≤60), short_form_social structure for instagram and tiktok, and that internal_faq contains exactly 5 entries. Call after completing the full JSON object.',
+      input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete feature marketing JSON string (may be wrapped in a ```json code block)' } }, required: ['json'] },
     },
   ]),
 };
@@ -187,16 +196,35 @@ function bumpPatch(version: string): string {
 }
 
 /**
- * Runs at server startup. For each skill that has a SEED_TOOL_DEFINITIONS entry but
- * currently has no tool_definitions in the DB, publishes a new patch version with the
- * tools added. Safe to call on existing installs — only acts when tool_definitions is null.
+ * Runs at server startup. For each skill in SEED_TOOL_DEFINITIONS, compares the tool names
+ * in the DB against the seed. If they differ (missing tools, renamed tools, new tools added),
+ * bumps the skill version and writes the updated tool_definitions. Safe to call on every
+ * startup — only writes when a difference is detected.
  */
 export function syncSeedSkillTools(): void {
   let synced = 0;
   for (const [skillName, toolDefs] of Object.entries(SEED_TOOL_DEFINITIONS)) {
     const current = getActiveSkill(skillName);
     if (!current) continue;
-    if (current.tool_definitions) continue; // already has tools — don't overwrite
+
+    // Compare seed tool names against what's in the DB
+    const seedNames = new Set(
+      (JSON.parse(toolDefs) as Array<{ name: string }>).map(t => t.name)
+    );
+    if (current.tool_definitions) {
+      try {
+        const existing = JSON.parse(current.tool_definitions) as Array<{ name: string }>;
+        const existingNames = new Set(existing.map(t => t.name));
+        const unchanged =
+          seedNames.size === existingNames.size &&
+          [...seedNames].every(n => existingNames.has(n));
+        if (unchanged) continue;
+        logger.info(`Tool names changed for "${skillName}" — updating from [${[...existingNames].join(', ')}] to [${[...seedNames].join(', ')}]`);
+      } catch {
+        // Malformed JSON in DB — fall through and overwrite
+      }
+    }
+
     const newVersion = bumpPatch(current.version);
     publishSkill({
       ...current,

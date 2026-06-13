@@ -58,16 +58,16 @@ const FIXTURES_DIR = path.join(__dirname, 'fixtures');
 
 // Stage → fixture file mapping
 const DEMO_FIXTURE_FILES: Record<string, string> = {
-  analyst:               'analyst.md',
-  pm_prd:                'prd.md',
+  analyst:               'analyst.json',
+  pm_prd:                'prd.json',
   epic_feature_planner:  'epic-features.json',
-  solution_architect:    'architecture.md',
+  solution_architect:    'architecture.json',
   story_decomposition:   'backlog.json',
   pm_backlog:            'backlog.json',
   tech_refinement:       'tech-backlog.json',
   qa_engineer:           'qa-tests.json',
-  gtm_strategy:          'gtm-strategy.md',
-  feature_marketing:     'feature-marketing.md',
+  gtm_strategy:          'gtm-strategy.json',
+  feature_marketing:     'feature-marketing.json',
   prototype:             'prototype.json',
 };
 
@@ -118,7 +118,7 @@ export function getDemoFixture(stage: string): string | null {
     const isTechRefinement = featureMatch[1] === 'tech_refinement';
     const fixturePath = path.join(getFixturesDir(), isTechRefinement ? 'tech-backlog.json' : 'backlog.json');
     try {
-      const fullBacklogContent = fs.readFileSync(fixturePath, 'utf-8');
+      const fullBacklogContent = fs.readFileSync(fixturePath, 'utf-8').replace(/^﻿/, '');
       // Parse and extract only the target feature's stories
       const fullBacklog = JSON.parse(fullBacklogContent);
 

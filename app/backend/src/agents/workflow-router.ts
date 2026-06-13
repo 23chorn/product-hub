@@ -427,7 +427,7 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
     let reasoning: string | null;
 
     const workflowPolicies = JSON.parse(workflow.policy_overrides ?? '{}');
-    const isDemoWorkflow = isDemoMode() || workflowPolicies.demo_auto_approve === 'true';
+    const isDemoWorkflow = isDemoMode() || workflowPolicies.demo_mode === 'true' || workflowPolicies.demo_auto_approve === 'true';
 
     if (isDemoWorkflow) {
       await demoSleep(DEMO_STAGE_DELAY_MS['curator'] ?? 1500);
@@ -537,7 +537,7 @@ No changes needed to tech-stack.md or process.md — those remain accurate as wr
   logger.info(`Created ${stageMap.mode} session ${session.id} for stage "${nextStage}"`);
 
   insertEvent(workflowId, 'stage_progress', nextStage, 'Coordinator is briefing the specialist...');
-  const brief = isDemoMode()
+  const brief = isDemoMode() || _wfPolicyOverrides.demo_mode === 'true' || _isDemoAutoApprove
     ? `## Goal\nDemo mode — running with fixture data.\n\n## Output required\nSee fixture.`
     : await getCoordinator().generateStageBrief(workflowId, nextStage);
   sessionManager.updateWorkflow(session.id, workflowId, brief);

@@ -1,3 +1,6 @@
+---
+stages: [solution_architect, story_decomposition, tech_refinement, qa_engineer]
+---
 # Database Schema
 
 > **How to use this file:** Copy to `db-schema.md`, fill in your real details, and delete this note.

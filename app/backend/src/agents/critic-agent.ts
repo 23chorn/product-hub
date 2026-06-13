@@ -94,7 +94,9 @@ Focus on:
 Structural validation (TBD detection, Repository Impact section, Cross-Platform Contracts section, cost estimates, failure mode table) has already been performed by automated tools. Do not re-raise those checks.
 
 Focus on:
-- Are technology choices appropriate for xCube's existing stack — or do they introduce unjustified new dependencies?
+- **CRITICAL**: Does any technology in technology_decisions that is absent from the existing tech stack also appear in the new_dependencies field with a credible justification? If not, the architecture has introduced an undeclared dependency.
+- **CRITICAL**: Does any technology choice duplicate a capability already provided by the existing stack (e.g. SignalR when WebSocket exists, Kafka/RabbitMQ when Redis pub/sub exists, a new auth provider when existing auth covers it)? Name the overlap explicitly.
+- **MAJOR**: Is each new_dependencies entry justified with a specific, nameable gap in the existing stack — or does it use vague language ("better performance", "needed for real-time")?
 - Are Repository Impact entries that say "No changes" plausible — or has the architect silently omitted repos that clearly need work?
 - Are Cross-Platform Contracts internally consistent with the API surface described elsewhere in the document?
 - Does every NFR from the PRD have a specific architectural decision addressing it — not just an acknowledgement?

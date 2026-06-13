@@ -23,7 +23,7 @@ import {
   STAGE_ARTIFACT_LABEL,
 } from './stage-metadata';
 import {
-  saveCriticArtifact, saveLocalArtifact, loadLatestArtifactContent,
+  saveCriticArtifact, saveLocalArtifact, loadLatestArtifactContent, updateArtifactContent,
 } from './artifact-helpers';
 import { getActiveSkill } from './skill-registry';
 import { type ToolDefinition, getRegisteredTools } from './tool-registry';
@@ -646,11 +646,16 @@ export async function runAutonomousStage(
         artifactContent = jsonContent;
       }
     } else {
-      // Strip any preamble before the first markdown heading (e.g. "Here's the research brief:")
-      const match = fullResponse.match(/^# /m);
-      artifactContent = match?.index && match.index > 0
-        ? fullResponse.slice(match.index)
-        : fullResponse;
+      // Formerly-markdown stages (analyst, pm_prd, solution_architect, gtm_strategy, feature_marketing)
+      // now produce JSON. Strip code fences, skip any preamble before {, pretty-print.
+      const stripped = fullResponse.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+      const jsonStart = stripped.indexOf('{');
+      const jsonContent = jsonStart > 0 ? stripped.slice(jsonStart) : stripped;
+      try {
+        artifactContent = JSON.stringify(JSON.parse(jsonContent), null, 2);
+      } catch {
+        artifactContent = jsonContent;
+      }
     }
 
     // ── Feature-specific stage: merge with prior backlog ────────────────────────
@@ -712,23 +717,19 @@ export async function runAutonomousStage(
       artifactId = await saveLocalArtifact(sessionId, stage, artifactContent, itemId, skillVersionId);
     }
 
-    // ── Special handling for solution_architect: extract tech-enriched JSON ──────
+    // ── Special handling for solution_architect: extract epic_features_enriched from JSON ──
     if (stage === 'solution_architect') {
-      // Look for the ## Technical Feature Metadata section with a JSON code block
-      const jsonMatch = fullResponse.match(/## Technical Feature Metadata\s*\n\s*```json\s*\n([\s\S]*?)\n```/);
-      if (jsonMatch) {
-        const enrichedJson = jsonMatch[1].trim();
-        try {
-          // Validate it's parseable
-          JSON.parse(enrichedJson);
-          // Save as a separate artifact (local storage, type: epic_features_enriched)
+      try {
+        const parsed = JSON.parse(artifactContent);
+        if (parsed.epic_features_enriched) {
+          const enrichedJson = JSON.stringify(parsed.epic_features_enriched, null, 2);
           await saveLocalArtifact(sessionId, 'epic_features_enriched', enrichedJson, itemId, skillVersionId);
-          logger.info(`Extracted and saved tech-enriched epic/features JSON from architect output`);
-        } catch (err: any) {
-          logger.warn(`Failed to parse tech-enriched JSON from architect: ${err.message}`);
+          logger.info(`Extracted and saved tech-enriched epic/features JSON from architect JSON output`);
+        } else {
+          logger.warn(`No epic_features_enriched field in architect JSON — story decomposition will use non-enriched features`);
         }
-      } else {
-        logger.warn(`No ## Technical Feature Metadata section found in architect output — story decomposition will use non-enriched features`);
+      } catch (err: any) {
+        logger.warn(`Failed to parse architect JSON for epic_features_enriched extraction: ${err.message}`);
       }
     }
 
@@ -753,14 +754,10 @@ export async function runAutonomousStage(
           }
           artifactContent = JSON.stringify(parsed, null, 2);
         }
-        // Update the artifact file in-place (don't create a new artifact row)
-        const artifactRow = db.prepare<[number], { file_path: string }>(
-          'SELECT file_path FROM artifacts WHERE id = ?'
-        ).get(artifactId);
-        if (artifactRow) {
-          await fsAsync.writeFile(artifactRow.file_path, artifactContent, 'utf-8');
-          logger.info(`Updated artifact file in-place: ${artifactRow.file_path}`);
-        }
+        // Update the artifact in-place (works for MongoDB, wiki, and disk)
+        await updateArtifactContent(artifactId, artifactContent);
+        logger.info(`Updated artifact in-place for stage "${stage}"`);
+
       } catch (err: any) {
         logger.warn(`Failed to parse JSON for ${stage}: ${err.message}`);
       }

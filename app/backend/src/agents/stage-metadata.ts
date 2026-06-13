@@ -103,17 +103,15 @@ export const STAGE_LABELS_BRIEF: Record<string, string> = {
 export const STAGE_OUTPUT_FORMATS: Record<string, { label: string; format: string }> = {
   analyst: {
     label: 'Research Brief (Sage)',
-    format: `Produce a comprehensive market research document in markdown following the research output template injected into your system prompt. Use web search to find and verify facts before writing each section.
+    format: `Produce a single valid JSON object wrapped in a \`\`\`json code block following the research output template injected into your system prompt. No prose before or after the JSON block. Use web search to find and verify facts before writing each field.
 
 **CITATION FORMAT — MANDATORY:**
-- Every factual claim must have a bracketed number [N] immediately after it: "Market reached $4.2B [1]."
-- NEVER use footnotes, superscripts, inline URLs, or "(Source: ...)" format.
-- If web search found no source for a claim, write "[Assumption — no source found]" instead of inventing a reference.
-- Never fabricate URLs. Only cite URLs that your web search actually returned.
+- Every factual claim in string fields must have an inline [N] immediately after it: "Market reached $4.2B [1]."
+- Only cite URLs that web search actually returned — never fabricate URLs.
+- If no source exists for a claim, write "[Unverified]" instead of a number.
+- Every inline [N] must appear in the references array; every references entry must be cited inline.
 
-The output template defines the exact section structure. Fill every section. End with a ## References section listing every source as: [N] Page title — URL. Every inline [N] must appear in References; every References entry must be cited inline.
-
-Depth guide: each section should be as long as the evidence warrants. Do not pad short sections or truncate evidence-rich ones. Aim for a document the PM can use directly to write a PRD without doing additional research.`,
+The output template defines the exact JSON schema. Fill every field. Aim for depth the PM can use directly to write a PRD.`,
   },
 
   epic_feature_planner: {
@@ -134,57 +132,29 @@ The output template defines the exact JSON structure. Follow it precisely.`,
 
   pm_prd: {
     label: 'Product Requirements Document (Rex)',
-    format: `Produce a PRD in markdown with these required sections:
+    format: `Produce a single valid JSON object wrapped in a \`\`\`json code block following the PRD output template injected into your system prompt. No prose before or after the JSON block.
 
-## Problem Statement
-What problem are we solving and for whom. One paragraph.
-
-## User Personas
-The primary user types. Bullet list, 2–4 personas max.
-
-## Key User Journeys
-The 2–3 most important user journeys as step-by-step narratives.
-
-## Success Metrics
-Three tables as defined in the template:
-- **Primary metric** — the single number that defines success. Must include baseline, target, timeframe, and how it is measured.
-- **Secondary metrics** — 2–3 supporting signals with the same fields.
-- **Counter-metrics** — 1–2 metrics that must not regress, with an acceptable floor value. These are as important as the primary metric — omitting them is a quality failure.
-
-## Non-Functional Requirements
-NFR-numbered table covering only the categories relevant to this initiative: performance (with specific thresholds), scalability, security, accessibility, data retention, availability. Each NFR must have a measurable threshold and a priority (Must / Should / Nice-to-have). Omit categories that genuinely do not apply.
-
-## Functional Requirements
-FR-numbered list (FR1, FR2, …) of capabilities the feature must have. Each FR states WHAT the system does, not HOW. Aim for 10–20 FRs.
-
-## Open Questions & Risks
-Up to 10 unresolved questions or identified risks ranked by impact. Each entry has: Type (Question/Risk), description, Impact (High/Med/Low), Owner, Status (Open). If more than 10 exist, include the top 10 and note the rest belong in a separate risk sheet.
-
-Do not include non-functional requirements, domain compliance, innovation patterns, or appendices in the default output — those go in a separate extended document only if requested.`,
+Key requirements:
+- **success_metrics**: all three sub-objects required — primary (single metric), secondary (2–3 metrics), counter (1–2 metrics that must not regress). Omitting counter is a quality failure.
+- **non_functional_requirements**: include only NFR categories relevant to this initiative; each must have a measurable threshold and priority.
+- **functional_requirements**: aim for 10–20 FRs; each states WHAT the system does, not HOW.
+- **open_questions**: up to 10 entries ranked by impact.`,
   },
 
   solution_architect: {
     label: 'Architecture Document (Atlas)',
-    format: `Produce TWO outputs:
+    format: `Produce a single valid JSON object wrapped in a \`\`\`json code block following the architecture output template injected into your system prompt. No prose before or after the JSON block.
 
-1. **Architecture Document (markdown)** — following the architecture output template injected into your system prompt. Key requirements:
-   - **Key Technology Decisions**: Name specific products, versions, and pricing tiers. State alternatives and tradeoffs in the table.
-   - **Data Model**: Full entity table with PKs, fields, relationships, and notes. Include an ASCII entity-relationship diagram.
-   - **API Surface**: Every endpoint with method, path, request/response shapes, and notes on auth/idempotency.
-   - **System Architecture**: ASCII service diagram showing all components and data flow. Include 2-3 detailed data flow walkthroughs for primary user journeys.
-   - **Infrastructure Notes**: Hosting topology with per-component cost estimates. Deployment pipeline steps. Failure modes table with mitigations.
-   - **Open Questions & Risks**: Unresolved decisions table with recommendations. Known risks with severity and specific mitigations.
+Key requirements:
+- **technology_decisions**: name specific products, versions, and pricing tiers. State alternatives and rationale for every decision. Include only platform keys that are in scope.
+- **data_model.entities**: full table with PKs, key fields, relationships, and notes. entity_relationship_diagram must be an ASCII string.
+- **api_surface**: every endpoint with method, path, request/response shapes, auth, and idempotency notes.
+- **system_diagram**: ASCII service diagram showing all components and data flow.
+- **data_flows**: 2–3 walkthroughs for primary user journeys.
+- **infrastructure**: hosting topology with per-component cost estimates, deployment steps, and failure modes.
+- **epic_features_enriched**: take the epic/features from the prior stage and enrich each feature with target_repos, data_contracts, cross_repo_boundaries, technical_notes, and risks. This field is consumed by the story decomposition agent.
 
-2. **Technical Feature Metadata (JSON)** — at the end of your markdown document, include a section titled \`## Technical Feature Metadata\` with a \`\`\`json code block containing the epic/features structure from the prior stage, enriched with technical details for each feature:
-   - \`targetRepos\`: which repositories are touched
-   - \`dataContracts\`: key entities/models created or modified
-   - \`crossRepoBoundaries\`: how services communicate for this feature
-   - \`technicalNotes\`: implementation details that constrain story decomposition
-   - \`risks\`: technical risks or scalability concerns
-
-The enriched JSON will be parsed and used by the story decomposition agent. Ensure valid JSON syntax.
-
-If a context/tech-stack.md file was provided, align all choices with the existing stack and explain any deviations. If no tech stack was provided, recommend specific technologies with tradeoffs for each choice.`,
+If a context/tech-stack.md file was provided, align all choices with the existing stack and explain deviations. If no tech stack was provided, recommend specific technologies with tradeoffs.`,
   },
 
   prototype: {
@@ -252,35 +222,29 @@ Concrete, specific changes required before this artifact should be approved. Be 
 
   gtm_strategy: {
     label: 'GTM Strategy (Quinn)',
-    format: `Produce a GTM Strategy document in markdown following the GTM output template injected into your system prompt. Key requirements:
+    format: `Produce a single valid JSON object wrapped in a \`\`\`json code block following the GTM output template injected into your system prompt. No prose before or after the JSON block.
 
-- **Positioning Statement**: Use the Geoffrey Moore template exactly: "For [segment] who [need], [product] is [category] that [benefit]. Unlike [alternative], [product] [differentiator]."
-- **Target Segments & Channels**: Ranked table with columns: Segment | Description | Priority | Channels | Rationale | Cost-to-Reach. Every segment must have a channel and a rationale.
-- **Messaging Framework**: Headline (≤8 words), sub-headline (≤25 words), 3 supporting bullets (each starting with a bold outcome word, ≤15 words each).
-- **Launch Timeline**: Phases table with columns: Phase | Duration | Key Activities | Success Signal. Must include Pre-launch, Launch Week, and Post-Launch phases — each with a success signal.
-- **Competitive Positioning**: We-win / We-lose table (3–5 rows each) plus a response playbook paragraph for the top competitive threat.
-- **GTM Success Metrics**: Two tables — leading indicators (tracked weekly in first 30 days) and lagging indicators (at 30/60/90 days). Each metric must have a target and measurement method.
+Key requirements:
+- **positioning_statement**: Geoffrey Moore template exactly — "For [segment] who [need], [product] is [category] that [benefit]. Unlike [alternative], [product] [differentiator]."
+- **target_segments**: ranked by priority; every entry must have channels and rationale.
+- **launch_timeline**: must include Pre-launch, Launch Week, and Post-Launch entries, each with a success_signal.
+- **competitive_positioning**: 3–5 we_win_when entries, 3–5 we_lose_when entries, and a response_playbook paragraph.
+- **success_metrics**: both leading_indicators (weekly, first 30 days) and lagging_indicators (30/60/90 day checkpoints), each with target and measurement.
 
 Do not propose budget figures. Do not redefine personas or success metrics from the PRD. Do not propose new features.`,
   },
 
   feature_marketing: {
     label: 'Feature Marketing Content Pack (Milo)',
-    format: `Produce a Feature Marketing Content Pack in markdown following the feature marketing output template injected into your system prompt. Key requirements:
+    format: `Produce a single valid JSON object wrapped in a \`\`\`json code block following the feature marketing output template injected into your system prompt. No prose before or after the JSON block.
 
-- **Feature Name & Tagline**: Recommended name + tagline, plus Alternative A and Alternative B — each with a one-sentence rationale.
-- **Value Proposition Sentence**: ≤20 words, benefit-first (not a feature description). This is the north star all channel copy must trace back to.
-- **Messaging Hierarchy**: Headline (≤8 words) → sub-headline (≤25 words) → 3 supporting bullets.
-- **Channel Copy Pack** (all channels required):
-  - App Store / Play Store: ≤170 chars, plain text, no markdown
-  - Website hero: headline + 2-sentence body
-  - Email announcement: subject line + 3-paragraph body
-  - LinkedIn post: ≤150 words, ends with a question
-  - X / Twitter: ≤280 chars + one hashtag
-  - Short-form social strategy: Instagram and TikTok — hook concept, format, caption style, hashtag approach (this is a strategy section, not copy)
-- **Internal FAQ**: Exactly 5 Q&A pairs. Real sales/support questions with 2–3 sentence answers. No implementation detail.
+Key requirements:
+- **feature_name**: recommended option plus two named alternatives, each with rationale.
+- **value_proposition**: ≤20 words, benefit-first — this is the north star all channel copy must trace back to.
+- **channel_copy**: all channels required — app_store (≤170 chars plain text), website_hero, email (subject + 3 paragraphs), linkedin (≤150 words ending with a question), twitter (≤280 chars + hashtag), short_form_social (strategy for instagram and tiktok).
+- **internal_faq**: exactly 5 Q&A entries. Real sales/support questions with 2–3 sentence answers. No implementation detail.
 
-Do not reference features or capabilities not in the approved PRD or GTM strategy. Do not suggest product changes.`,
+Do not reference features not in the approved PRD or GTM strategy. Do not suggest product changes.`,
   },
 
   tech_refinement: {

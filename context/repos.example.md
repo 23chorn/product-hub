@@ -1,3 +1,6 @@
+---
+stages: [solution_architect, story_decomposition, tech_refinement, qa_engineer]
+---
 # Repository Structure
 
 This document describes the purpose and boundaries of each repository in the TradeEasy ecosystem.

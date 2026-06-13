@@ -1,0 +1,99 @@
+{
+  "title": "GTM Strategy: Price Alerts & Watchlist — TradeEasy",
+  "positioning_statement": "For retail investors who miss price opportunities because they can't watch screens all day, TradeEasy Price Alerts is a real-time notification system that tells you the exact moment a stock hits your target price. Unlike limit orders that execute automatically, Price Alerts give you control — you decide whether to trade when the moment arrives.",
+  "target_segments": [
+    {
+      "segment": "Active Self-Directed Traders",
+      "description": "Log in ≥3×/week, hold 5–20 positions, trade 10–20 times per month",
+      "priority": "High",
+      "channels": ["In-app push notification", "In-app banner", "Watchlist tooltip"],
+      "rationale": "Highest-frequency users; most likely to set multiple alerts and generate trade events from alerts; already use watchlist",
+      "cost_to_reach": "Low"
+    },
+    {
+      "segment": "Watchlist Users (Passive Reviewers)",
+      "description": "Use watchlist but rarely trade; check portfolio weekly",
+      "priority": "Med",
+      "channels": ["Push notification: 'Your watchlist just got smarter'", "In-app announcement"],
+      "rationale": "Large segment (68K users) already invested in the watchlist surface; alerts directly extend their current behaviour",
+      "cost_to_reach": "Low"
+    },
+    {
+      "segment": "Dormant Users (60–180 days no login)",
+      "description": "Had TradeEasy accounts but stopped logging in; likely using a competitor for alerts",
+      "priority": "Low",
+      "channels": ["Re-engagement email with deep-link to alert creation on their top held position"],
+      "rationale": "Price alerts are a proven re-engagement hook; alerts give dormant users a reason to return without requiring active trading intent",
+      "cost_to_reach": "Med"
+    }
+  ],
+  "messaging_framework": {
+    "headline": "Know the moment it moves.",
+    "sub_headline": "Set a price target on any stock or ETF — TradeEasy alerts you the instant it's hit so you can decide whether to act.",
+    "supporting_bullets": [
+      "Instant: push notifications arrive within 30 seconds of your target price being crossed",
+      "In control: alerts don't execute automatically — you decide when to trade",
+      "Connected: sync with your watchlist and set an alert in one tap"
+    ]
+  },
+  "launch_timeline": [
+    {
+      "phase": "Pre-launch",
+      "duration": "2 weeks before release",
+      "key_activities": [
+        "Brief support team on top 5 FAQs and escalation path",
+        "Legal sign-off on all notification copy templates",
+        "App store screenshots and 'What's New' copy finalised",
+        "Internal beta with 50 opted-in active traders"
+      ],
+      "success_signal": "Zero P0 issues in internal beta; all copy approved by Legal"
+    },
+    {
+      "phase": "Launch Week",
+      "duration": "Day 0–7",
+      "key_activities": [
+        "App store release with updated screenshots",
+        "In-app announcement banner (dismissable, shown once) to 100% of users",
+        "Push notification to watchlist users: 'Your watchlist just got smarter'",
+        "Monitor notification delivery rate, alert-set funnel, crash rate daily"
+      ],
+      "success_signal": "≥15% of active traders set at least one alert in first 7 days; crash rate stays below 0.6%"
+    },
+    {
+      "phase": "Post-Launch",
+      "duration": "Week 2–8",
+      "key_activities": [
+        "Email re-engagement campaign to 31K dormant users (Week 4)",
+        "Deep-link from email directly to alert creation for their top held position",
+        "A/B test tagline variants on onboarding tooltip",
+        "Analyse conversion rate (alert triggered → trade executed) and surface insights to PM"
+      ],
+      "success_signal": "≥8% of dormant users reactivate (vs 3% baseline); 25% of MAU have set ≥1 alert by day 60"
+    }
+  ],
+  "competitive_positioning": {
+    "top_threat": "Competitor B — offers 30-second push alerts with alert history but lacks watchlist integration",
+    "response_playbook": "When a prospect raises Competitor B, acknowledge their alert speed parity, then pivot to integration: TradeEasy alerts are created in one tap from your existing watchlist, and the notification deep-links directly to a pre-filled order ticket. Competitor B requires switching apps to execute. Our retention metric is the trade that follows the alert, not just the alert itself.",
+    "we_win_when": [
+      { "scenario": "User already has a TradeEasy watchlist", "why_we_win": "Alert creation requires zero context-switching; one tap from the watchlist row to set an alert" },
+      { "scenario": "User wants to act on an alert immediately", "why_we_win": "Notification tap deep-links to a pre-filled order ticket — no navigation required" },
+      { "scenario": "User values control over automatic execution", "why_we_win": "Alerts inform, limit orders commit — our messaging explicitly addresses this anxiety" }
+    ],
+    "we_lose_when": [
+      { "scenario": "User wants complex conditional alerts (% change, moving average)", "why_we_lose": "MVP supports simple price-crossing alerts only", "mitigation": "Acknowledge and commit to Phase 2 timeline; position simple alerts as 'the reliable foundation'" },
+      { "scenario": "User is on web and wants push notifications", "why_we_lose": "Web users get email-only alerts in MVP", "mitigation": "Frame as 'alerts wherever you check email'; Phase 2 will add web push" }
+    ]
+  },
+  "success_metrics": {
+    "leading_indicators": [
+      { "metric": "Alert-set rate (% of MAU who create ≥1 alert)", "target": "≥15% in first 7 days", "measurement": "DB count on price_alerts WHERE created_at > launch_date" },
+      { "metric": "Push notification delivery rate", "target": "≥85% of triggered alerts delivered within 30s", "measurement": "alert_notifications.status + timestamp delta" },
+      { "metric": "Alert creation funnel completion rate (tapped Set Alert → created)", "target": "≥60%", "measurement": "Analytics funnel events" }
+    ],
+    "lagging_indicators": [
+      { "metric": "7-day active user rate", "target_30d": "26%", "target_60d": "31%", "target_90d": "33%", "measurement": "Analytics DAU/WAU event" },
+      { "metric": "Dormant user reactivation rate (email campaign)", "target_30d": "5%", "target_60d": "8%", "target_90d": "8%", "measurement": "Login event from dormant cohort after campaign send" },
+      { "metric": "Alert-to-trade conversion rate (alert triggered → trade within 24h)", "target_30d": "12%", "target_60d": "18%", "target_90d": "20%", "measurement": "Join on alert triggers and order submissions by user_id, ticker, 24h window" }
+    ]
+  }
+}
