@@ -52,6 +52,85 @@ db.exec(safeSchema);
 // Migrations — add columns that don't exist yet on existing databases
 try { db.exec('ALTER TABLE items ADD COLUMN metadata TEXT'); } catch { /* already exists */ }
 try { db.exec('ALTER TABLE checkpoints ADD COLUMN token_usage TEXT'); } catch { /* already exists */ }
+try { db.exec('ALTER TABLE checkpoints ADD COLUMN required_role TEXT'); } catch { /* already exists */ }
+try { db.exec('ALTER TABLE checkpoints ADD COLUMN resolved_by_user_id INTEGER REFERENCES users(id)'); } catch { /* already exists */ }
+
+// ── Auth / RBAC tables ────────────────────────────────────────────────────────
+try {
+  db.exec(`CREATE TABLE IF NOT EXISTS users (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    username     TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+    email        TEXT    UNIQUE COLLATE NOCASE,
+    name         TEXT    NOT NULL,
+    password_hash TEXT   NOT NULL,
+    is_admin     INTEGER NOT NULL DEFAULT 0,
+    slack_user_id TEXT,
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL
+  )`);
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username COLLATE NOCASE)');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email COLLATE NOCASE)');
+} catch { /* already exists */ }
+// Migration: add username column to existing installs (backfill from email prefix)
+try { db.exec("ALTER TABLE users ADD COLUMN username TEXT"); } catch { /* already exists */ }
+try {
+  db.exec(`UPDATE users SET username = lower(substr(email, 1, instr(email, '@') - 1))
+           WHERE username IS NULL AND email IS NOT NULL`);
+} catch { /* */ }
+try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username COLLATE NOCASE)'); } catch { /* */ }
+
+try {
+  db.exec(`CREATE TABLE IF NOT EXISTS roles (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT    NOT NULL UNIQUE,
+    description TEXT
+  )`);
+  // Seed default roles
+  db.exec(`INSERT OR IGNORE INTO roles (name, description) VALUES
+    ('product',   'Product managers — approve research and PRD stages'),
+    ('tech_lead', 'Tech leads — approve architecture, epic planning, and story decomposition'),
+    ('design',    'Designers — approve prototype stages')`);
+} catch { /* already exists */ }
+
+try {
+  db.exec(`CREATE TABLE IF NOT EXISTS user_roles (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role_name TEXT NOT NULL,
+    PRIMARY KEY (user_id, role_name)
+  )`);
+} catch { /* already exists */ }
+
+try {
+  db.exec(`CREATE TABLE IF NOT EXISTS stage_roles (
+    stage     TEXT NOT NULL PRIMARY KEY,
+    role_name TEXT NOT NULL
+  )`);
+  // Seed default stage → role mappings
+  db.exec(`INSERT OR IGNORE INTO stage_roles (stage, role_name) VALUES
+    ('analyst',                'product'),
+    ('pm_prd',                 'product'),
+    ('solution_architect',     'tech_lead'),
+    ('epic_feature_planner',   'tech_lead'),
+    ('story_decomposition_F1', 'tech_lead'),
+    ('story_decomposition_F2', 'tech_lead'),
+    ('story_decomposition_F3', 'tech_lead'),
+    ('prototype',              'design')`);
+} catch { /* already exists */ }
+
+try {
+  db.exec(`CREATE TABLE IF NOT EXISTS checkpoint_audit (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    checkpoint_id INTEGER NOT NULL REFERENCES checkpoints(id),
+    user_id       INTEGER REFERENCES users(id),
+    user_name     TEXT    NOT NULL,
+    user_email    TEXT    NOT NULL,
+    action        TEXT    NOT NULL CHECK(action IN ('approved','rejected','revised')),
+    notes         TEXT,
+    created_at    INTEGER NOT NULL
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_checkpoint_audit_cp ON checkpoint_audit(checkpoint_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_checkpoint_audit_user ON checkpoint_audit(user_id)');
+} catch { /* already exists */ }
 try { db.exec('ALTER TABLE artifacts ADD COLUMN skill_version_id INTEGER REFERENCES skill_versions(id)'); } catch { /* already exists */ }
 try { db.exec('ALTER TABLE artifacts ADD COLUMN external_system TEXT'); } catch { /* already exists */ }
 try { db.exec('ALTER TABLE artifacts ADD COLUMN external_path TEXT'); } catch { /* already exists */ }

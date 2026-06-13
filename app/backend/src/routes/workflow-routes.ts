@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
+import { canApproveCheckpoint } from '../middleware/auth';
+import type { AuthRequest } from '../middleware/auth';
 import {
   createWorkflow,
   advanceStage,
@@ -507,7 +509,7 @@ workflowRoutes.post('/complete-stage', (req: Request, res: Response) => {
  *
  * Returns: { workflow: WorkflowStatus, nextStage?, nextSessionId?, complete? }
  */
-workflowRoutes.post('/checkpoint/resolve', async (req: Request, res: Response) => {
+workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Response) => {
   const { checkpointId, status, feedback, enrichedContext } = req.body as {
     checkpointId?: number;
     status?: 'approved' | 'rejected' | 'revised';
@@ -523,10 +525,37 @@ workflowRoutes.post('/checkpoint/resolve', async (req: Request, res: Response) =
   }
 
   try {
-    // Peek at checkpoint to get workflowId before resolving
-    const cpRow = db.prepare<[number], { workflow_id: string }>('SELECT workflow_id FROM checkpoints WHERE id = ?').get(cpId);
+    // Peek at checkpoint to get workflowId + required_role before resolving
+    const cpRow = db.prepare<[number], { workflow_id: string; required_role: string | null; status: string }>(
+      'SELECT workflow_id, required_role, status FROM checkpoints WHERE id = ?'
+    ).get(cpId);
     if (!cpRow) return res.status(404).json({ error: `Checkpoint not found: ${cpId}` });
+    if (cpRow.status !== 'pending') return res.status(409).json({ error: 'Checkpoint is not pending' });
     const workflowId = cpRow.workflow_id;
+
+    // Role-based permission check
+    if (!canApproveCheckpoint(req.user, cpRow.required_role)) {
+      return res.status(403).json({
+        error: `This stage requires the "${cpRow.required_role}" role to approve`,
+        required_role: cpRow.required_role,
+        code: 'INSUFFICIENT_ROLE',
+      });
+    }
+
+    // Record audit entry
+    const auditor = req.user
+      ? { id: req.user.id, name: req.user.name, username: req.user.username }
+      : { id: null, name: 'System', username: 'system' };
+
+    db.prepare(`
+      INSERT INTO checkpoint_audit (checkpoint_id, user_id, user_name, user_email, action, notes, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(cpId, auditor.id, auditor.name, auditor.username, status, feedback ?? null, Date.now());
+
+    // Stamp resolver on the checkpoint row
+    if (req.user) {
+      db.prepare('UPDATE checkpoints SET resolved_by_user_id = ? WHERE id = ?').run(req.user.id, cpId);
+    }
 
     if (status === 'approved') {
       // Read checkpoint stage + artifact before resolving
@@ -1535,8 +1564,43 @@ workflowRoutes.get('/:id/events', (req: Request, res: Response) => {
  * GET /api/workflow/list
  * Returns all workflows ordered by created_at DESC, for the workflow history sidebar.
  */
-workflowRoutes.get('/list/all', (_req: Request, res: Response) => {
+workflowRoutes.get('/list/all', (req: AuthRequest, res: Response) => {
   try {
+    const { needs_approval } = req.query as { needs_approval?: string };
+
+    if (needs_approval === 'true' && req.user) {
+      // Return only workflows with a pending checkpoint that this user's roles can approve
+      const roleList = req.user.is_admin
+        ? null  // admin sees all pending checkpoints
+        : req.user.roles;
+
+      let workflows;
+      if (req.user.is_admin || !roleList?.length) {
+        workflows = db.prepare(`
+          SELECT DISTINCT w.*, COUNT(approved.id) as checkpoint_count
+          FROM workflows w
+          JOIN checkpoints c ON c.workflow_id = w.id AND c.status = 'pending'
+          LEFT JOIN checkpoints approved ON approved.workflow_id = w.id AND approved.status = 'approved'
+          GROUP BY w.id
+          ORDER BY w.created_at DESC
+          LIMIT 50
+        `).all();
+      } else {
+        const placeholders = roleList.map(() => '?').join(',');
+        workflows = db.prepare(`
+          SELECT DISTINCT w.*, COUNT(approved.id) as checkpoint_count
+          FROM workflows w
+          JOIN checkpoints c ON c.workflow_id = w.id AND c.status = 'pending'
+            AND (c.required_role IS NULL OR c.required_role IN (${placeholders}))
+          LEFT JOIN checkpoints approved ON approved.workflow_id = w.id AND approved.status = 'approved'
+          GROUP BY w.id
+          ORDER BY w.created_at DESC
+          LIMIT 50
+        `).all(...roleList);
+      }
+      return res.json({ workflows });
+    }
+
     const workflows = db.prepare(`
       SELECT w.*, COUNT(c.id) as checkpoint_count
       FROM workflows w
@@ -1608,6 +1672,52 @@ workflowRoutes.get('/:id/checkpoints', (req: Request, res: Response) => {
   } catch (err: any) {
     if (err.message.includes('not found')) return res.status(404).json({ error: err.message });
     logger.error('Failed to get checkpoints', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** GET /api/workflow/:id/audit — approval audit trail */
+workflowRoutes.get('/:id/audit', (req: Request, res: Response) => {
+  try {
+    const rows = db.prepare<[string], {
+      id: number; checkpoint_id: number; stage: string;
+      user_name: string; user_email: string; action: string;
+      notes: string | null; created_at: number;
+    }>(`
+      SELECT ca.id, ca.checkpoint_id, c.stage, ca.user_name, ca.user_email, ca.action, ca.notes, ca.created_at
+      FROM checkpoint_audit ca
+      JOIN checkpoints c ON c.id = ca.checkpoint_id
+      WHERE c.workflow_id = ?
+      ORDER BY ca.created_at ASC
+    `).all(req.params.id);
+    res.json({ audit: rows });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** GET /api/workflow/my-pending-count — count of pending checkpoints the current user can approve */
+workflowRoutes.get('/my-pending-count', (req: AuthRequest, res: Response) => {
+  if (!req.user) return res.json({ count: 0 });
+  try {
+    let count: number;
+    if (req.user.is_admin) {
+      const row = db.prepare<[], { count: number }>(
+        `SELECT COUNT(*) as count FROM checkpoints WHERE status = 'pending'`
+      ).get();
+      count = row?.count ?? 0;
+    } else {
+      const roles = req.user.roles;
+      if (!roles.length) return res.json({ count: 0 });
+      const placeholders = roles.map(() => '?').join(',');
+      const row = db.prepare<string[], { count: number }>(
+        `SELECT COUNT(*) as count FROM checkpoints
+         WHERE status = 'pending' AND (required_role IS NULL OR required_role IN (${placeholders}))`
+      ).get(...roles);
+      count = row?.count ?? 0;
+    }
+    res.json({ count });
+  } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });

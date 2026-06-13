@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import http from 'http';
 import express from 'express';
+import cookieParser from 'cookie-parser';
 
 // Load .env from root directory
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
@@ -25,12 +26,12 @@ import { ticketRoutes } from './routes/ticket-routes';
 import { skillRoutes } from './routes/skill-routes';
 import { personaRoutes } from './routes/persona-routes';
 import { seedSkills, syncSeedSkillTools } from './agents/skill-registry';
-import { attachDemoWebSocket } from './demo/ws-demo-handler';
-import { attachAiCodingWebSocket } from './demo/ws-ai-coding-handler';
-import { aiCodingRoutes } from './routes/ai-coding-routes';
 import { demoWebhookRoutes } from './routes/demo-webhook-routes';
 import { demoProjectRoutes } from './routes/demo-project-routes';
 import settingsRoutes from './routes/settings-routes';
+import authRoutes from './routes/auth-routes';
+import userRoutes from './routes/user-routes';
+import { authMiddleware } from './middleware/auth';
 
 const logger = new Logger('SERVER');
 
@@ -70,6 +71,7 @@ app.use('/api/', limiter);
 
 // Request size limits — generous for pipeline media uploads (base64 videos can be large)
 app.use(express.json({ limit: '50mb' }));
+app.use(cookieParser());
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -80,8 +82,15 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Auth routes — always public (no authMiddleware here)
+app.use('/api/auth', authRoutes);
+
+// Protected API routes — apply auth middleware globally
+app.use('/api', authMiddleware);
+
 // API routes
 app.use('/api/prd', prdRoutes);
+app.use('/api/users', userRoutes);
 app.use('/api/config', configRoutes);
 app.use('/api/decision-log', decisionLogRoutes);
 app.use('/api/context', contextRoutes);
@@ -102,7 +111,6 @@ app.use('/api', prototypeRoutes);
 app.use('/api', ticketRoutes);
 app.use('/api/skills', skillRoutes);
 app.use('/api/agents/personas', personaRoutes);
-app.use('/api', aiCodingRoutes);
 app.use('/api', demoWebhookRoutes);
 app.use('/api', demoProjectRoutes);
 app.use('/api/settings', settingsRoutes);
@@ -140,21 +148,6 @@ app.use((req, res) => {
 
 // Start server
 const httpServer = http.createServer(app);
-const demoWss = attachDemoWebSocket(httpServer);
-const aiCodingWss = attachAiCodingWebSocket(httpServer);
-
-// Route WebSocket upgrades by path — multiple WSS on one server requires manual routing
-// because the ws package destroys the socket if a path doesn't match, blocking other handlers.
-httpServer.on('upgrade', (req, socket, head) => {
-  const pathname = (req.url ?? '').split('?')[0];
-  if (pathname === '/ws/demo') {
-    demoWss.handleUpgrade(req, socket, head, (ws) => demoWss.emit('connection', ws, req));
-  } else if (pathname === '/ws/ai-coding') {
-    aiCodingWss.handleUpgrade(req, socket, head, (ws) => aiCodingWss.emit('connection', ws, req));
-  } else {
-    socket.destroy();
-  }
-});
 
 httpServer.listen(PORT, () => {
   const models = appConfig.ai.models.map(m => m.id).join(', ');
@@ -162,8 +155,6 @@ httpServer.listen(PORT, () => {
   logger.info(`📡 CORS enabled for: ${FRONTEND_URL}`);
   logger.info(`🌍 Environment: ${appConfig.server.nodeEnv}`);
   logger.info(`🤖 AI provider: ${appConfig.ai.provider} | models: ${models}`);
-  logger.info(`🔌 WebSocket demo available at ws://localhost:${PORT}/ws/demo`);
-  logger.info(`💻 AI Coding WebSocket at ws://localhost:${PORT}/ws/ai-coding`);
   logger.info(`\n✅ APIs ready!`);
 });
 

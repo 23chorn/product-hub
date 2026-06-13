@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useWorkflowStore } from '../../stores/workflowStore';
 import { useConfigStore } from '../../stores/configStore';
+import { useAuthStore, canApprove, ROLE_LABELS } from '../../stores/authStore';
 import { api } from '../../services/api';
 import { CriticQuestionForm, CriticIssuesPanel } from './CriticQuestionForm';
 import { STAGE_LABELS } from '../../constants/stage-labels';
@@ -42,10 +43,14 @@ export function ArtifactViewer() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveToast, setSaveToast] = useState<string | null>(null);
 
+  const { user, noAuth } = useAuthStore();
+
   // Find the pending checkpoint that has this artifact
   const pendingCheckpoint = checkpoints.find(
     c => c.status === 'pending' && c.artifact_id === viewingArtifactId
   );
+
+  const hasApprovePermission = canApprove(user, noAuth, pendingCheckpoint?.required_role ?? null);
 
   useEffect(() => {
     if (!viewingArtifactId) { setContent(null); setError(null); setVersionInfo(null); return; }
@@ -707,7 +712,24 @@ export function ArtifactViewer() {
             <div className={`px-4 pb-4 pt-3 border-t border-slate-200 dark:border-slate-700 flex-shrink-0 space-y-2 ${isFullscreen ? 'mx-auto w-full max-w-4xl' : ''}`}>
               {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
 
-              {showReviseForm && !showSidePanel ? (
+              {/* Permission lock — shown when user lacks the required role */}
+              {!hasApprovePermission && (
+                <div className="flex items-center gap-2 py-2 text-xs text-slate-400 dark:text-slate-500">
+                  <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                  <span>
+                    Approval requires{' '}
+                    <strong className="text-slate-300">
+                      {pendingCheckpoint.required_role
+                        ? (ROLE_LABELS[pendingCheckpoint.required_role] ?? pendingCheckpoint.required_role)
+                        : 'a specific role'}
+                    </strong>
+                  </span>
+                </div>
+              )}
+
+              {hasApprovePermission && showReviseForm && !showSidePanel ? (
                 /* Plain textarea fallback for checkpoints without critic questions */
                 <div className="space-y-2">
                   <textarea
@@ -734,7 +756,7 @@ export function ArtifactViewer() {
                     </button>
                   </div>
                 </div>
-              ) : !showSidePanel ? (
+              ) : hasApprovePermission && !showSidePanel ? (
                 <div className="flex gap-2">
                   <button
                     onClick={() => resolve('approved')}

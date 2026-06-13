@@ -310,8 +310,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     // ── Delete local DB rows in FK-safe order ──────────────────────────────
     // Tables that CASCADE from workflows (workflow_events, coordinator_sessions,
     // workflow_skill_assignments, pipeline_runs) are deleted automatically.
-    // Tables that CASCADE from sessions (messages, artifacts, staged_decisions,
-    // context_loads) are also deleted automatically.
+    // Tables that CASCADE from sessions (messages, artifacts) are also deleted automatically.
     // Everything else must be deleted explicitly in dependency order.
     db.transaction(() => {
       // cr_artifact_versions → change_requests + artifacts
@@ -329,7 +328,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
       db.prepare(`DELETE FROM workflows WHERE item_id = ?`).run(id);
       // context_change_proposals → sessions (no cascade)
       db.prepare(`DELETE FROM context_change_proposals WHERE session_id IN (SELECT id FROM sessions WHERE item_id = ?)`).run(id);
-      // sessions (CASCADE: messages, artifacts, staged_decisions, context_loads)
+      // sessions (CASCADE: messages, artifacts)
       db.prepare(`DELETE FROM sessions WHERE item_id = ?`).run(id);
       stmts.delete.run(id);
     })();

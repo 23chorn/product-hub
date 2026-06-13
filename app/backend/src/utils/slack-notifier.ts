@@ -1,6 +1,7 @@
 import https from 'https';
 import Logger from './logger';
 import db from '../data/database';
+import { getUsersByRole, getAdminUsers, hasAnyUsers } from '../data/users';
 
 const logger = new Logger('SLACK');
 
@@ -53,20 +54,67 @@ function post(payload: object): void {
   }
 }
 
-export function notifyCheckpointPending(initiativeTitle: string, stage: string): void {
+function buildMentions(stage: string): string {
+  if (!hasAnyUsers()) return '';
+  try {
+    // Look up which role owns this stage
+    const stageRole = db.prepare<[string], { role_name: string }>(
+      'SELECT role_name FROM stage_roles WHERE stage = ? LIMIT 1'
+    ).get(stage);
+
+    const users = stageRole?.role_name
+      ? getUsersByRole(stageRole.role_name)
+      : getAdminUsers();
+
+    const mentions = users
+      .filter(u => u.slack_user_id)
+      .map(u => `<@${u.slack_user_id}>`)
+      .join(' ');
+
+    return mentions;
+  } catch {
+    return '';
+  }
+}
+
+function getAppUrl(): string {
+  return process.env.APP_URL || 'http://localhost:5173';
+}
+
+export function notifyCheckpointPending(initiativeTitle: string, stage: string, workflowId?: string): void {
   const label = STAGE_LABELS[stage] ?? stage;
-  post({
-    text: `${label} ready for review — ${initiativeTitle}`,
-    blocks: [
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `:eyes: *${label}* is ready for your review\n*Initiative:* ${initiativeTitle}`,
-        },
+  const mentions = buildMentions(stage);
+  const appUrl = getAppUrl();
+
+  const text = mentions
+    ? `${mentions} — *${label}* ready for review on "${initiativeTitle}"`
+    : `${label} ready for review — ${initiativeTitle}`;
+
+  const blocks: object[] = [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: mentions
+          ? `:eyes: *${label}* is ready for review\n*Initiative:* ${initiativeTitle}\n${mentions}`
+          : `:eyes: *${label}* is ready for your review\n*Initiative:* ${initiativeTitle}`,
       },
-    ],
-  });
+    },
+  ];
+
+  if (workflowId) {
+    blocks.push({
+      type: 'actions',
+      elements: [{
+        type: 'button',
+        text: { type: 'plain_text', text: 'Open Review' },
+        url: `${appUrl}`,
+        style: 'primary',
+      }],
+    });
+  }
+
+  post({ text, blocks });
 }
 
 export function notifyWikiPublished(initiativeTitle: string, pageName: string, wikiUrl: string): void {

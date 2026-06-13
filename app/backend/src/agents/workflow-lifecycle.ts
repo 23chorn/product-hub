@@ -111,7 +111,7 @@ export function deleteWorkflow(workflowId: string): void {
     }
   }
 
-  // ── 4. Delete sessions (cascades to messages, artifacts, staged_decisions) ─
+  // ── 4. Delete sessions (cascades to messages, artifacts) ─────────────────
   for (const sessionId of sessionIds) {
     db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
   }

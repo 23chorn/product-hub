@@ -1,7 +1,11 @@
 import axios from 'axios';
 import type { AirtableItem, AppConfig, LocalInitiative, ModelOption, DecisionLogSession, MonthEntry } from '@pap/shared';
+import type { CurrentUser } from '../stores/authStore';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
+// Always send cookies (httpOnly auth cookie)
+axios.defaults.withCredentials = true;
 
 export interface SkillVersion {
   id: number;
@@ -829,13 +833,6 @@ class APIClient {
     }
   }
 
-  async triggerAiCoding(workflowId: string): Promise<{
-    epicId: number; epicUrl: string; taggedCount: number; pipelineRunId?: number; pipelineUrl?: string; demo?: boolean;
-  }> {
-    const response = await axios.post(`${this.baseURL}/api/workflow/${workflowId}/trigger-ai-coding`);
-    return response.data;
-  }
-
   async getPipelineRun(workflowId: string): Promise<{
     id: number; workflow_id: string; stage: string; status: string;
     pr_url: string | null; branch: string | null; pipeline_id: string | null;
@@ -851,15 +848,6 @@ class APIClient {
     const params = workItemId ? `?workItemId=${workItemId}` : '';
     const response = await axios.get(`${this.baseURL}/api/workflow/${workflowId}/ticket-context${params}`);
     return response.data;
-  }
-
-  async getAiCodingStatus(workflowId: string): Promise<{
-    triggered: boolean; triggeredAt?: number; epicId?: number; epicUrl?: string; pipelineRunId?: number; demo?: boolean;
-  } | null> {
-    try {
-      const response = await axios.get(`${this.baseURL}/api/workflow/${workflowId}/ai-coding/status`);
-      return response.data;
-    } catch { return null; }
   }
 
   async getPipelineDemoData(workflowId: string): Promise<{ summary: string; testCases: any[] }> {
@@ -949,6 +937,85 @@ class APIClient {
     return response.data;
   }
 
+  // ============================================
+  // Auth
+  // ============================================
+
+  async getMe(): Promise<{ user: CurrentUser | null; noAuth?: boolean }> {
+    const response = await axios.get(`${this.baseURL}/api/auth/me`);
+    return response.data;
+  }
+
+  async login(username: string, password: string): Promise<void> {
+    await axios.post(`${this.baseURL}/api/auth/login`, { username, password });
+  }
+
+  async logout(): Promise<void> {
+    await axios.post(`${this.baseURL}/api/auth/logout`);
+  }
+
+  // ============================================
+  // User Management (admin)
+  // ============================================
+
+  async listUsers(): Promise<{ users: CurrentUser[] }> {
+    const response = await axios.get(`${this.baseURL}/api/users`);
+    return response.data;
+  }
+
+  async createUser(data: {
+    username: string; name: string; password: string;
+    email?: string | null; is_admin?: boolean; slack_user_id?: string | null; roles?: string[];
+  }): Promise<{ user: CurrentUser }> {
+    const response = await axios.post(`${this.baseURL}/api/users`, data);
+    return response.data;
+  }
+
+  async updateUser(id: number, data: Partial<{
+    username: string; name: string; email: string | null; password: string;
+    is_admin: boolean; slack_user_id: string | null; roles: string[];
+  }>): Promise<{ user: CurrentUser }> {
+    const response = await axios.put(`${this.baseURL}/api/users/${id}`, data);
+    return response.data;
+  }
+
+  async deleteUser(id: number): Promise<void> {
+    await axios.delete(`${this.baseURL}/api/users/${id}`);
+  }
+
+  async getRoles(): Promise<{ roles: Array<{ id: number; name: string; description: string | null }> }> {
+    const response = await axios.get(`${this.baseURL}/api/users/roles`);
+    return response.data;
+  }
+
+  async getStageRoles(): Promise<{ stageRoles: Array<{ stage: string; role_name: string }> }> {
+    const response = await axios.get(`${this.baseURL}/api/users/stage-roles`);
+    return response.data;
+  }
+
+  async setStageRole(stage: string, role_name: string): Promise<void> {
+    await axios.put(`${this.baseURL}/api/users/stage-roles`, { stage, role_name });
+  }
+
+  async getWorkflowAudit(workflowId: string): Promise<{ audit: Array<{
+    id: number; checkpoint_id: number; stage: string;
+    user_name: string; user_email: string; action: string;
+    notes: string | null; created_at: number;
+  }> }> {
+    const response = await axios.get(`${this.baseURL}/api/workflow/${workflowId}/audit`);
+    return response.data;
+  }
+
+  async getMyPendingCount(): Promise<{ count: number }> {
+    const response = await axios.get(`${this.baseURL}/api/workflow/my-pending-count`);
+    return response.data;
+  }
+
+  async getWorkflowListFiltered(needsApproval?: boolean): Promise<{ workflows: any[] }> {
+    const params = needsApproval ? '?needs_approval=true' : '';
+    const response = await axios.get(`${this.baseURL}/api/workflow/list/all${params}`);
+    return response.data;
+  }
 }
 
 export const api = new APIClient();

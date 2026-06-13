@@ -1,7 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
 import { api } from '../services/api';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useThemeStore } from '../stores/themeStore';
 import { useToast } from '../hooks/useToast';
+import { useAuthStore } from '../stores/authStore';
+import { UserManagementPanel } from './UserManagementPanel';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -29,9 +32,7 @@ const STAGE_LABELS: Record<string, string> = {
 const STAGE_ORDER = ['analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'qa_engineer', 'tech_refinement', 'gtm_strategy', 'feature_marketing'];
 const ALWAYS_ON = new Set(['curator']);
 
-const SKILL_LEVELS = ['beginner', 'intermediate', 'expert'];
-
-type Tab = 'pipeline' | 'quality' | 'sprint' | 'user' | 'integrations';
+type Tab = 'general' | 'pipeline' | 'quality' | 'access';
 
 // ── Toggle ─────────────────────────────────────────────────────────────────────
 
@@ -65,7 +66,7 @@ function SectionHeader({ title, description }: { title: string; description?: st
 
 function FieldRow({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between py-2.5 border-b border-slate-100 dark:border-slate-800 last:border-0">
+    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800 last:border-0">
       <div className="flex-1 min-w-0 pr-4">
         <p className="text-sm text-slate-700 dark:text-slate-300">{label}</p>
         {hint && <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{hint}</p>}
@@ -79,8 +80,10 @@ function FieldRow({ label, hint, children }: { label: string; hint?: string; chi
 
 export function SettingsPanel() {
   const { closeSettings, setDemoMode } = useSettingsStore();
+  const { isDark, toggleTheme } = useThemeStore();
+  const { user } = useAuthStore();
   const toast = useToast();
-  const [tab, setTab] = useState<Tab>('pipeline');
+  const [tab, setTab] = useState<Tab>('general');
   const [settings, setSettings] = useState<Settings | null>(null);
   const [draft, setDraft] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -119,13 +122,13 @@ export function SettingsPanel() {
     }
   };
 
-  const TABS: Array<{ key: Tab; label: string }> = [
+  const ALL_TABS: Array<{ key: Tab; label: string; adminOnly?: boolean }> = [
+    { key: 'general',      label: 'General' },
     { key: 'pipeline',     label: 'Pipeline' },
     { key: 'quality',      label: 'Quality gates' },
-    { key: 'sprint',       label: 'Sprint planning' },
-    { key: 'user',         label: 'User & project' },
-    { key: 'integrations', label: 'Integrations' },
+    { key: 'access',       label: 'Access', adminOnly: true },
   ];
+  const TABS = ALL_TABS.filter(t => !t.adminOnly || !user || user.is_admin);
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
@@ -174,6 +177,17 @@ export function SettingsPanel() {
           </div>
         )}
 
+        {tab === 'general' && (
+          <div>
+            <SectionHeader title="Appearance" />
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800">
+              <FieldRow label="Dark mode" hint="Toggle between light and dark theme">
+                <Toggle checked={isDark} onChange={toggleTheme} />
+              </FieldRow>
+            </div>
+          </div>
+        )}
+
         {!loading && draft && tab === 'pipeline' && (
           <div>
             <SectionHeader
@@ -214,13 +228,6 @@ export function SettingsPanel() {
                   />
                 </FieldRow>
               </div>
-              {draft.demo.projectPath && (
-                <div className="mt-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
-                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Demo project path</p>
-                  <p className="text-xs font-mono text-slate-600 dark:text-slate-400 break-all">{draft.demo.projectPath}</p>
-                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Set via <code className="text-amber-500">DEMO_PROJECT_PATH</code> in .env</p>
-                </div>
-              )}
             </div>
           </div>
         )}
@@ -254,136 +261,16 @@ export function SettingsPanel() {
           </div>
         )}
 
-        {!loading && draft && tab === 'sprint' && (
-          <div className="space-y-5">
-            <div>
-              <SectionHeader
-                title="Team velocity"
-                description="Used to calculate sprint estimates in the backlog. Effective velocity = sprint velocity × capacity factor."
-              />
-              <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
-                <FieldRow label="Sprint velocity" hint="Total story points your team completes per 2-week sprint at full capacity.">
-                  <input
-                    type="number"
-                    min={1}
-                    max={999}
-                    value={draft.sprint.velocity}
-                    onChange={e => patch('sprint', { velocity: parseInt(e.target.value, 10) || 1 })}
-                    className="w-20 px-2 py-1.5 text-sm text-right border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  />
-                </FieldRow>
-                <FieldRow label="Capacity factor" hint="Proportion of each sprint available for planned features (0.0–1.0). Accounts for BAU, meetings, etc.">
-                  <input
-                    type="number"
-                    min={0.1}
-                    max={1.0}
-                    step={0.05}
-                    value={draft.sprint.capacityFactor}
-                    onChange={e => patch('sprint', { capacityFactor: parseFloat(e.target.value) || 0.1 })}
-                    className="w-20 px-2 py-1.5 text-sm text-right border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  />
-                </FieldRow>
-              </div>
-              <p className="text-xs text-slate-400 dark:text-slate-500 mt-2 px-1">
-                Effective velocity: <span className="font-semibold text-slate-600 dark:text-slate-300">
-                  {Math.round(draft.sprint.velocity * draft.sprint.capacityFactor)} pts/sprint
-                </span>
-              </p>
-            </div>
-
-            <div>
-              <SectionHeader
-                title="AI-assisted development"
-                description="When enabled, hour estimates reflect AI coding tool acceleration (e.g. Claude Code). Routine work gets a larger speedup than complex integration work."
-              />
-              <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
-                <FieldRow label="AI-assisted estimates" hint="Use AI-adjusted hours-per-point instead of traditional estimates.">
-                  <Toggle
-                    checked={draft.sprint.aiAssistedEnabled}
-                    onChange={v => patch('sprint', { aiAssistedEnabled: v })}
-                  />
-                </FieldRow>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {!loading && draft && tab === 'integrations' && (
+        {tab === 'access' && (
           <div>
             <SectionHeader
-              title="Slack notifications"
-              description="Paste an Incoming Webhook URL to receive a Slack message when a workflow completes or a checkpoint is ready for review."
+              title="Access control"
+              description="Manage users, roles, and which role is required to approve each pipeline stage."
             />
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Webhook URL</label>
-                <input
-                  type="url"
-                  value={draft.integrations.slackWebhookUrl ?? ''}
-                  onChange={e => patch('integrations', { slackWebhookUrl: e.target.value || null })}
-                  className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono"
-                  placeholder="https://hooks.slack.com/services/…"
-                />
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1.5">
-                  Create an Incoming Webhook in your Slack workspace. The URL is stored in the database and overrides the <code className="text-amber-500">SLACK_WEBHOOK_URL</code> env var.
-                </p>
-              </div>
-            </div>
+            <UserManagementPanel />
           </div>
         )}
 
-        {!loading && draft && tab === 'user' && (
-          <div>
-            <SectionHeader
-              title="User & project"
-              description="These values are injected into every agent session. Agents address you by name and tailor output to your project context."
-            />
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Your name</label>
-                <input
-                  type="text"
-                  value={draft.user.name}
-                  onChange={e => patch('user', { name: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  placeholder="Your name"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Project / product name</label>
-                <input
-                  type="text"
-                  value={draft.user.projectName}
-                  onChange={e => patch('user', { projectName: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  placeholder="My Product"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Experience level</label>
-                <select
-                  value={draft.user.skillLevel}
-                  onChange={e => patch('user', { skillLevel: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                >
-                  {SKILL_LEVELS.map(l => (
-                    <option key={l} value={l}>{l.charAt(0).toUpperCase() + l.slice(1)}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Communication language</label>
-                <input
-                  type="text"
-                  value={draft.user.communicationLanguage}
-                  onChange={e => patch('user', { communicationLanguage: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  placeholder="English"
-                />
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Footer */}

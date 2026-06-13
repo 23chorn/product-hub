@@ -18,11 +18,10 @@ function getPolicy(key: string): string | null {
 }
 
 function setPolicy(key: string, value: string): void {
-  db.prepare(`
-    INSERT INTO policies (scope, scope_value, rule_key, rule_value, created_at)
-    VALUES ('global', NULL, ?, ?, ?)
-    ON CONFLICT(scope, scope_value, rule_key) DO UPDATE SET rule_value = excluded.rule_value
-  `).run(key, value, Date.now());
+  db.transaction(() => {
+    db.prepare(`DELETE FROM policies WHERE scope = 'global' AND scope_value IS NULL AND rule_key = ?`).run(key);
+    db.prepare(`INSERT INTO policies (scope, scope_value, rule_key, rule_value, created_at) VALUES ('global', NULL, ?, ?, ?)`).run(key, value, Date.now());
+  })();
 }
 
 // ── YAML line-by-line read ─────────────────────────────────────────────────────

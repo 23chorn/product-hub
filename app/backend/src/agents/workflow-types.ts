@@ -21,6 +21,8 @@ export interface CheckpointRow {
   human_feedback: string | null;
   coordinator_action: string | null;  // JSON blob
   token_usage: string | null;       // JSON: StageTokenData
+  required_role: string | null;
+  resolved_by_user_id: number | null;
   created_at: number;
   resolved_at: number | null;
 }

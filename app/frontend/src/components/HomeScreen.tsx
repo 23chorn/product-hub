@@ -4,6 +4,7 @@ import { api } from '../services/api';
 import { useSessionStore } from '../stores/sessionStore';
 import { useConfigStore } from '../stores/configStore';
 import { useWorkflowStore } from '../stores/workflowStore';
+import { useAuthStore } from '../stores/authStore';
 import { useToast } from '../hooks/useToast';
 import { TOGGLEABLE_STAGES } from '../constants/stage-labels';
 import { extractReadyPayload } from '../utils/coordinator-helpers';
@@ -12,7 +13,7 @@ import { extractReadyPayload } from '../utils/coordinator-helpers';
 type WorkflowInfo = { id: string; status: string; currentStage: string | null; summary: string | null; pipelineStatus?: string; isCancelled?: boolean };
 type EnrichedItem = AirtableItem & { source?: string; workflow?: WorkflowInfo };
 type LaunchPhase = 'analyzing' | 'confirming' | 'launching';
-type StatusFilter = 'all' | 'active' | 'review' | 'done' | 'new';
+type StatusFilter = 'all' | 'active' | 'review' | 'done' | 'new' | 'mine';
 
 let _cachedLocalItems: EnrichedItem[] = [];
 
@@ -38,6 +39,7 @@ Constraints:
 
 const STATUS_FILTERS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'all',    label: 'All' },
+  { key: 'mine',   label: 'Needs my approval' },
   { key: 'active', label: 'Running' },
   { key: 'review', label: 'Needs review' },
   { key: 'done',   label: 'Done' },
@@ -81,6 +83,9 @@ export function HomeScreen() {
   const [syncing, setSyncing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [myPendingCount, setMyPendingCount] = useState(0);
+  const [mineWorkflowIds, setMineWorkflowIds] = useState<Set<string>>(new Set());
+  const { user, noAuth } = useAuthStore();
 
   const [showForm, setShowForm] = useState(false);
   const [formTitle, setFormTitle] = useState('');
@@ -122,6 +127,21 @@ export function HomeScreen() {
   }, []);
 
   useEffect(() => { loadLocalItems(); }, []);
+
+  // Fetch my pending approvals count (only when authenticated)
+  const loadMyPending = useCallback(async () => {
+    if (!user && !noAuth) return;
+    try {
+      const [countData, listData] = await Promise.all([
+        api.getMyPendingCount(),
+        api.getWorkflowListFiltered(true),
+      ]);
+      setMyPendingCount(countData.count);
+      setMineWorkflowIds(new Set(listData.workflows.map((w: any) => w.id)));
+    } catch { /* */ }
+  }, [user, noAuth]);
+
+  useEffect(() => { loadMyPending(); }, [loadMyPending]);
 
   // Listen for refresh signal from App.tsx (e.g. after Full Demo triggers)
   useEffect(() => {
@@ -281,7 +301,7 @@ export function HomeScreen() {
   const enabledCount = Object.values(enabledStages).filter(Boolean).length;
 
   const statusCounts = useMemo<Record<StatusFilter, number>>(() => {
-    const c: Record<StatusFilter, number> = { all: localItems.length, active: 0, review: 0, done: 0, new: 0 };
+    const c: Record<StatusFilter, number> = { all: localItems.length, active: 0, review: 0, done: 0, new: 0, mine: myPendingCount };
     localItems.forEach(item => {
       const s = item.workflow ? effectiveStatus(item.workflow) : undefined;
       if (s === 'active') c.active++;
@@ -290,12 +310,13 @@ export function HomeScreen() {
       else c.new++;
     });
     return c;
-  }, [localItems]);
+  }, [localItems, myPendingCount]);
 
   const filteredLocalItems = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     return localItems.filter(item => {
       const s = item.workflow ? effectiveStatus(item.workflow) : undefined;
+      if (statusFilter === 'mine' && (!item.workflow || !mineWorkflowIds.has(item.workflow.id))) return false;
       if (statusFilter === 'active' && s !== 'active') return false;
       if (statusFilter === 'review' && s !== 'paused_at_checkpoint') return false;
       if (statusFilter === 'done' && s !== 'complete' && s !== 'cancelled') return false;
@@ -303,7 +324,7 @@ export function HomeScreen() {
       if (!q) return true;
       return item.initiative.toLowerCase().includes(q) || (item.description?.toLowerCase().includes(q) ?? false);
     });
-  }, [localItems, statusFilter, searchQuery]);
+  }, [localItems, statusFilter, searchQuery, mineWorkflowIds]);
 
   const openForm = () => {
     setShowForm(true);
@@ -379,20 +400,25 @@ export function HomeScreen() {
             </div>
 
             <div className="flex items-center gap-1 flex-wrap">
-              {STATUS_FILTERS.map(f => {
+              {STATUS_FILTERS.filter(f => f.key !== 'mine' || (!noAuth && user)).map(f => {
                 const count = statusCounts[f.key];
                 const isActive = statusFilter === f.key;
                 const isReview = f.key === 'review';
+                const isMine = f.key === 'mine';
                 return (
                   <button
                     key={f.key}
                     onClick={() => setStatusFilter(f.key)}
                     className={`px-2.5 py-1 text-xs rounded-lg border transition-colors ${
                       isActive
-                        ? isReview
-                          ? 'bg-amber-100 dark:bg-amber-900/40 border-amber-300 dark:border-amber-600 text-amber-800 dark:text-amber-200 font-medium'
-                          : 'bg-teal-50 dark:bg-teal-900/40 border-teal-300 dark:border-teal-600 text-teal-800 dark:text-teal-200 font-medium'
-                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-600 text-slate-500 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-500'
+                        ? isMine
+                          ? 'bg-violet-100 dark:bg-violet-900/40 border-violet-300 dark:border-violet-600 text-violet-800 dark:text-violet-200 font-medium'
+                          : isReview
+                            ? 'bg-amber-100 dark:bg-amber-900/40 border-amber-300 dark:border-amber-600 text-amber-800 dark:text-amber-200 font-medium'
+                            : 'bg-teal-50 dark:bg-teal-900/40 border-teal-300 dark:border-teal-600 text-teal-800 dark:text-teal-200 font-medium'
+                        : isMine && myPendingCount > 0
+                          ? 'bg-violet-50 dark:bg-violet-900/20 border-violet-200 dark:border-violet-700 text-violet-600 dark:text-violet-400 hover:border-violet-300'
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-600 text-slate-500 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-500'
                     }`}
                   >
                     {f.label}

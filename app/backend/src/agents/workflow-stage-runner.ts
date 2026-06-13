@@ -30,7 +30,7 @@ import { type ToolDefinition, getRegisteredTools } from './tool-registry';
 import { loadWorkflowArtifacts, loadLocalDesignSystem, loadFigmaDesignSystem, repairTruncatedJson } from './prototype-agent';
 import {
   PROJECT_ROOT, logger, stmts, insertEvent, addWorkflowCost,
-  setCheckpointTokenUsage, loadGlobalPolicies, workflowOps,
+  setCheckpointTokenUsage, loadGlobalPolicies, workflowOps, getStageRole,
   type StageTokenData,
 } from './workflow-db';
 import { isDemoMode, getDemoFixture, getDemoFixtureForTheme, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
@@ -950,7 +950,7 @@ export async function runAutonomousStage(
         const cpResult = stmts.insertCheckpoint.run(
           workflowId, stage, artifactId, checkpointStatusCritic,
           JSON.stringify({ session_id: sessionId, autonomous: true, critic: criticDetails, auto_approved: autoApprove, ...(diffArtifactId ? { diff_artifact_id: diffArtifactId } : {}) }),
-          now
+          checkpointStatusCritic === 'pending' ? getStageRole(stage) : null, now
         );
         if (specialistTokenData) {
           setCheckpointTokenUsage(cpResult.lastInsertRowid as number,
@@ -996,7 +996,7 @@ export async function runAutonomousStage(
         stmts.insertCheckpoint.run(
           workflowId, stage, artifactId, 'revised',
           JSON.stringify({ session_id: sessionId, autonomous: true, critic: criticDetails }),
-          now
+          null, now
         );
         insertEvent(workflowId, 'critic_verdict', stage,
           `Quality review flagged issues. Auto-revising (attempt ${priorRevisions + 1}/${MAX_INLINE_REVISIONS}).`,
@@ -1030,7 +1030,7 @@ export async function runAutonomousStage(
       const cpResult2 = stmts.insertCheckpoint.run(
         workflowId, stage, artifactId, autoApprove ? 'approved' : 'pending',
         JSON.stringify({ session_id: sessionId, autonomous: true, critic: criticDetails, auto_approved: autoApprove, ...(diffArtifactId ? { diff_artifact_id: diffArtifactId } : {}) }),
-        now
+        autoApprove ? null : getStageRole(stage), now
       );
       if (specialistTokenData) {
         setCheckpointTokenUsage(cpResult2.lastInsertRowid as number,
@@ -1099,7 +1099,7 @@ export async function runAutonomousStage(
       stmts.insertCheckpoint.run(
         workflowId, stage, artifactId, checkpointStatusMock,
         JSON.stringify({ session_id: sessionId, autonomous: true, critic: approveDetails, auto_approved: autoApprove }),
-        now
+        checkpointStatusMock === 'pending' ? getStageRole(stage) : null, now
       );
       insertEvent(workflowId, 'critic_verdict', stage,
         'Quality review passed — no issues found. Approve to proceed.', approveDetails);
@@ -1129,7 +1129,7 @@ export async function runAutonomousStage(
     const cpResult3 = stmts.insertCheckpoint.run(
       workflowId, stage, artifactId, checkpointStatus,
       JSON.stringify({ session_id: sessionId, autonomous: true, auto_approved: autoApprove, ...(diffArtifactId ? { diff_artifact_id: diffArtifactId } : {}) }),
-      now
+      checkpointStatus === 'pending' ? getStageRole(stage) : null, now
     );
     if (specialistTokenData) {
       setCheckpointTokenUsage(cpResult3.lastInsertRowid as number,
@@ -1149,7 +1149,7 @@ export async function runAutonomousStage(
           stmts.insertCheckpoint.run(
             workflowId, stage, null, 'pending',
             JSON.stringify({ error: `Auto-advance failed: ${err.message}`, autonomous: true }),
-            now2
+            getStageRole(stage), now2
           );
           stmts.updateWorkflowStatus.run('paused_at_checkpoint', now2, workflowId);
         }
@@ -1172,7 +1172,7 @@ export async function runAutonomousStage(
       stmts.insertCheckpoint.run(
         workflowId, stage, null, 'pending',
         JSON.stringify({ error: err.message, autonomous: true }),
-        now
+        getStageRole(stage), now
       );
       stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
     }

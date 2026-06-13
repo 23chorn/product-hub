@@ -39,6 +39,8 @@ export interface CheckpointRow {
   human_feedback: string | null;
   coordinator_action: string | null;  // JSON blob
   token_usage: string | null;       // JSON: StageTokenData
+  required_role: string | null;     // role name required to approve
+  resolved_by_user_id: number | null;
   created_at: number;
   resolved_at: number | null;
 }
@@ -126,8 +128,8 @@ export const stmts = {
     UPDATE workflows SET stage_sequence = ?, updated_at = ? WHERE id = ?
   `),
   insertCheckpoint: db.prepare(`
-    INSERT INTO checkpoints (workflow_id, stage, artifact_id, status, human_feedback, coordinator_action, created_at)
-    VALUES (?, ?, ?, ?, NULL, ?, ?)
+    INSERT INTO checkpoints (workflow_id, stage, artifact_id, status, human_feedback, coordinator_action, required_role, created_at)
+    VALUES (?, ?, ?, ?, NULL, ?, ?, ?)
   `),
   getCheckpoint: db.prepare<[number], CheckpointRow>(
     'SELECT * FROM checkpoints WHERE id = ?'
@@ -163,6 +165,13 @@ export const eventStmts = {
 };
 
 // ── Helper functions ───────────────────────────────────────────────────────────
+
+export function getStageRole(stage: string): string | null {
+  const row = db.prepare<[string], { role_name: string }>(
+    'SELECT role_name FROM stage_roles WHERE stage = ? LIMIT 1'
+  ).get(stage);
+  return row?.role_name ?? null;
+}
 
 export function insertEvent(
   workflowId: string,

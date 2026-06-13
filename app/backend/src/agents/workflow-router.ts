@@ -115,8 +115,8 @@ const stmts = {
     UPDATE workflows SET current_stage = ?, status = ?, updated_at = ? WHERE id = ?
   `),
   insertCheckpoint: db.prepare(`
-    INSERT INTO checkpoints (workflow_id, stage, artifact_id, status, human_feedback, coordinator_action, created_at)
-    VALUES (?, ?, ?, ?, NULL, ?, ?)
+    INSERT INTO checkpoints (workflow_id, stage, artifact_id, status, human_feedback, coordinator_action, required_role, created_at)
+    VALUES (?, ?, ?, ?, NULL, ?, ?, ?)
   `),
   getCheckpoint: db.prepare<[number], CheckpointRow>(
     'SELECT * FROM checkpoints WHERE id = ?'
@@ -137,6 +137,13 @@ const stmts = {
     ORDER BY s.created_at DESC LIMIT 1
   `),
 };
+
+function getStageRole(stage: string): string | null {
+  const row = db.prepare<[string], { role_name: string }>(
+    'SELECT role_name FROM stage_roles WHERE stage = ? LIMIT 1'
+  ).get(stage);
+  return row?.role_name ?? null;
+}
 
 // ── Workflow event logging ────────────────────────────────────────────────────
 
@@ -350,7 +357,7 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
 
     if (autoApproveCritic && review.verdict === 'approve') {
       // Auto-approve: no human gate needed
-      stmts.insertCheckpoint.run(workflowId, nextStage, null, 'approved', coordinatorAction, now);
+      stmts.insertCheckpoint.run(workflowId, nextStage, null, 'approved', coordinatorAction, null, now);
       insertEvent(workflowId, 'critic_verdict', 'critic',
         'Quality review passed — no issues found. Auto-approved.',
         criticDetails);
@@ -364,7 +371,7 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
       // Auto-revise: roll back and rerun with critic feedback (max 2 retries)
       const revisionCount = (review as any)._revisionCount ?? 0;
       if (revisionCount < 2) {
-        stmts.insertCheckpoint.run(workflowId, nextStage, null, 'revised', coordinatorAction, now);
+        stmts.insertCheckpoint.run(workflowId, nextStage, null, 'revised', coordinatorAction, null, now);
         insertEvent(workflowId, 'critic_verdict', 'critic',
           `Quality review flagged issues. Auto-revising (attempt ${revisionCount + 1}/2).`,
           criticDetails);
@@ -391,7 +398,7 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
     }
 
     // Default: pause at checkpoint for human review
-    stmts.insertCheckpoint.run(workflowId, nextStage, null, 'pending', coordinatorAction, now);
+    stmts.insertCheckpoint.run(workflowId, nextStage, null, 'pending', coordinatorAction, getStageRole(nextStage), now);
     stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
 
     if (review.verdict === 'approve') {
@@ -472,7 +479,7 @@ No changes needed to tech-stack.md or process.md — those remain accurate as wr
     const curatorCpResult = stmts.insertCheckpoint.run(
       workflowId, nextStage, null, 'approved',
       JSON.stringify({ auto_approved: true, context_diffs_proposed: diffCount }),
-      now
+      null, now
     );
     if (curatorTokenData) {
       setCheckpointTokenUsage(curatorCpResult.lastInsertRowid as number,
@@ -562,7 +569,7 @@ No changes needed to tech-stack.md or process.md — those remain accurate as wr
           stmts.insertCheckpoint.run(
             workflowId, nextStage, null, 'pending',
             JSON.stringify({ error: err.message, autonomous: true, safety_net: true }),
-            now
+            getStageRole(nextStage), now
           );
           stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
           logger.info(`Safety net: created error checkpoint for stuck workflow ${workflowId}`);
@@ -616,6 +623,7 @@ export function completeStage(workflowId: string): void {
     artifactRow?.id ?? null,
     'pending',
     sessionId ? JSON.stringify({ session_id: sessionId }) : null,
+    getStageRole(workflow.current_stage),
     now
   );
   stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
@@ -658,7 +666,7 @@ export function pauseAtCheckpoint(
   const result = stmts.insertCheckpoint.run(
     workflowId, stage, artifactId ?? null, 'pending',
     Object.keys(coordinatorAction).length > 0 ? JSON.stringify(coordinatorAction) : null,
-    now
+    getStageRole(stage), now
   );
 
   stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);

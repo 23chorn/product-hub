@@ -254,7 +254,7 @@ export async function loadArtifactContentById(artifactId: number): Promise<strin
     'SELECT file_path, external_system, external_path FROM artifacts WHERE id = ?'
   ).get(artifactId);
   if (!row) return null;
-  logger.info(`Loading artifact id=${artifactId} from local disk (external_system=${row.external_system ?? 'none'})`);
+  logger.info(`Loading artifact id=${artifactId} from ${row.external_system ?? 'disk'}`);
   return readArtifactRow(row);
 }
 
