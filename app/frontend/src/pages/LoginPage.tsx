@@ -36,17 +36,22 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
         </div>
 
         <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl">
-          <form onSubmit={handleLogin} className="space-y-4">
+          <form onSubmit={handleLogin} className="space-y-4" autoComplete="off" data-1p-ignore data-lpignore="true">
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1.5">Username</label>
               <input
                 type="text"
+                name="username"
                 value={username}
                 onChange={e => setUsername(e.target.value)}
                 required
                 placeholder="your-username"
                 autoFocus
                 autoComplete="username"
+                data-1p-ignore
+                data-lpignore="true"
+                spellCheck={false}
+                autoCapitalize="none"
                 className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
               />
             </div>
@@ -55,11 +60,14 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
               <label className="block text-xs font-medium text-slate-400 mb-1.5">Password</label>
               <input
                 type="password"
+                name="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 required
                 placeholder="••••••••"
                 autoComplete="current-password"
+                data-1p-ignore
+                data-lpignore="true"
                 className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
               />
             </div>

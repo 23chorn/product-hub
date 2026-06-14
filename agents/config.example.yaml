@@ -65,6 +65,4 @@ enabled_stages:
   analyst: true
   pm_prd: true
   solution_architect: true
-  pm_backlog: true
-  gtm_strategy: true
-  feature_marketing: true
+  story_decomposition: true

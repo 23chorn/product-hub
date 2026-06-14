@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(npx tsc --noEmit)",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(sqlite3 *)",
+      "Bash(cat)",
+      "Bash(bash /tmp/comprehensive_check.sh)"
     ]
   }
 }

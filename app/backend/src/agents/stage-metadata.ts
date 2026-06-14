@@ -7,13 +7,7 @@ export const STAGE_SESSION_MAP: Record<string, { mode: AppMode; agentType: Agent
   pm_prd:               { mode: 'prd',               agentType: 'pm' },
   epic_feature_planner: { mode: 'epic_features',    agentType: 'epic-feature-planner' },
   solution_architect:   { mode: 'architecture',      agentType: 'architect' },
-  story_decomposition:  { mode: 'backlog',           agentType: 'story-decomposition' },
   prototype:            { mode: 'prototype',         agentType: 'prototype-builder' },
-  pm_backlog:           { mode: 'backlog',           agentType: 'pm' },  // DEPRECATED: Use epic_feature_planner + story_decomposition instead
-  gtm_strategy:         { mode: 'gtm',               agentType: 'gtm' },
-  feature_marketing:    { mode: 'feature_marketing', agentType: 'marketer' },
-  qa_engineer:          { mode: 'qa',                agentType: 'qa-engineer' },
-  tech_refinement:      { mode: 'tech_refinement',   agentType: 'tech-refinement' },
 };
 
 // Per-stage output token ceiling. Backlog gets more headroom because the JSON
@@ -24,13 +18,7 @@ export const STAGE_MAX_OUTPUT_TOKENS: Record<string, number> = {
   pm_prd:               12_000,
   epic_feature_planner: 16_000,
   solution_architect:   16_000,
-  story_decomposition:  32_000,  // Same as old pm_backlog
-  pm_backlog:           32_000,
-  gtm_strategy:         12_000,
   prototype:            64_000,
-  feature_marketing:    12_000,
-  qa_engineer:          64_000,
-  tech_refinement:      32_000,
 };
 
 // Maps stage name to the artifact.type value stored in the DB.
@@ -40,12 +28,6 @@ export const STAGE_ARTIFACT_TYPE: Record<string, string> = {
   pm_prd:               'prd',
   epic_feature_planner: 'epic_features',
   solution_architect:   'architecture',
-  story_decomposition:  'backlog',
-  pm_backlog:           'backlog',
-  gtm_strategy:         'gtm',
-  feature_marketing:    'feature_marketing',
-  qa_engineer:          'qa_tests',
-  tech_refinement:      'backlog',
 };
 
 // Human-readable labels for stage names (used for revision diffs and events)
@@ -54,12 +36,6 @@ export const STAGE_ARTIFACT_LABEL: Record<string, string> = {
   pm_prd: 'PRD',
   epic_feature_planner: 'Epic & Features',
   solution_architect: 'Architecture Document',
-  story_decomposition: 'Backlog',
-  pm_backlog: 'Backlog (DEPRECATED)',
-  gtm_strategy: 'GTM Strategy',
-  feature_marketing: 'Feature Marketing Content Pack',
-  qa_engineer: 'QA Test Suite',
-  tech_refinement: 'Technical Refinement Backlog',
 };
 
 // Internal labels used for event messages and logging
@@ -68,15 +44,9 @@ export const STAGE_LABELS_INTERNAL: Record<string, string> = {
   pm_prd:               'Requirements — Rex',
   epic_feature_planner: 'Epic & Feature Planning — Apex',
   solution_architect:   'Architect — Atlas',
-  story_decomposition:  'Story Decomposition — Shard',
   prototype:            'Prototype — Nova',
-  pm_backlog:           'Backlog — Pip (DEPRECATED)',
-  gtm_strategy:         'GTM Strategy — Quinn',
-  feature_marketing:    'Feature Marketing — Milo',
-  qa_engineer:          'QA Engineer — Vera',
   critic:               'Critic — Flint',
   curator:              'Curator — Ivy',
-  tech_refinement:      'Tech Refinement — Finn, Remi & Cole',
 };
 
 // Brief labels used in coordinator stage briefing
@@ -85,13 +55,7 @@ export const STAGE_LABELS_BRIEF: Record<string, string> = {
   pm_prd:               'PRD (Rex)',
   epic_feature_planner: 'Epic & Features (Apex)',
   solution_architect:   'Architecture Document (Atlas)',
-  story_decomposition:  'Backlog (Shard)',
   prototype:            'Prototype (Nova)',
-  pm_backlog:           'Backlog (Pip)',
-  gtm_strategy:         'GTM Strategy (Quinn)',
-  feature_marketing:    'Feature Marketing Content Pack (Milo)',
-  qa_engineer:          'QA Test Suite (Vera)',
-  tech_refinement:      'Technical Refinement (Finn, Remi & Cole)',
 };
 
 // ── Per-stage output format specifications ────────────────────────────────────
@@ -162,46 +126,6 @@ If a context/tech-stack.md file was provided, align all choices with the existin
     format: `Generate an interactive React prototype demonstrating the key user journeys from the PRD and architecture document. The output is a JSON file-map rendered in-browser via Sandpack. The prototype should cover the primary screens and user flows described in the PRD — not implement full backend logic, but show realistic UI interactions and navigation. Focus on fidelity to the approved product design, not on inventing new features.`,
   },
 
-  story_decomposition: {
-    label: 'Backlog JSON (Shard)',
-    format: `Produce a single valid JSON object wrapped in a \`\`\`json code block following the backlog output template injected into your system prompt. No prose before or after the JSON block.
-
-You will receive:
-- The PRD (for functional requirements and user journeys)
-- The tech-enriched epic/features JSON from the Solution Architect (with repo boundaries, data contracts, and technical notes)
-
-Your task: Decompose each feature into 6-8 actionable stories or tasks.
-
-Key requirements:
-- **6-8 stories per feature** — this is mandatory, not a guideline
-- **User stories** for user-facing changes: "As a [user], I want [action], so that [benefit]"
-- **Technical tasks** for infrastructure/enablers with no direct user benefit: imperative title like "Set up Redis pub/sub"
-- **Story points** (Fibonacci: 1, 2, 3, 5, 8) — most should be 2-3 points
-- **PRD traceability** — every story must reference at least one FR via \`prdRef.functionalRequirements\`
-- **Acceptance criteria** in Given/When/Then format
-- **Dependency order** — backend/infra before frontend within each feature
-- **Preserve epic/feature metadata** — do not modify titles, descriptions, or phase labels from the architect's JSON
-
-The output includes the full epic/features/stories structure. You are enriching features with stories, not creating features.`,
-  },
-
-  pm_backlog: {
-    label: 'Backlog JSON (Pip)',
-    format: `Produce a single valid JSON object wrapped in a \`\`\`json code block. Use the minimum structure that fits:
-
-Tier 1 — Single story (1 deliverable):
-{ "story": { "title": "string", "persona": "string", "goal": "string", "benefit": "string", "acceptanceCriteria": ["Given … When … Then …"], "effort": number } }
-
-Tier 2 — Single feature (2–8 related stories, one capability):
-{ "feature": { "title": "string", "description": "string", "phase": "string", "stories": [ { ...story fields... } ] } }
-
-Tier 3 — Epic with features (multiple distinct capabilities, 2+ features):
-{ "epic": { "title": "string", "description": "string", "businessValue": "string", "prdLink": "string" }, "features": [ { "title": "string", "description": "string", "phase": "string", "stories": [ { ...story fields... } ] } ] }
-
-Decision: 1 story → Tier 1. Multiple stories, one capability → Tier 2. Multiple distinct capabilities → Tier 3.
-Constraints: max 6 features per epic, max 12 stories per feature. Each story independently deliverable in a single sprint. Stories in dependency order.`,
-  },
-
   critic: {
     label: 'Critic Review — Flint',
     format: `Produce a structured review in markdown with these sections:
@@ -218,61 +142,6 @@ At least one BLOCKER must be present to recommend rejection.
 
 ## Recommended Changes
 Concrete, specific changes required before this artifact should be approved. Be prescriptive — "add X to section Y" not "consider improving Z".`,
-  },
-
-  gtm_strategy: {
-    label: 'GTM Strategy (Quinn)',
-    format: `Produce a single valid JSON object wrapped in a \`\`\`json code block following the GTM output template injected into your system prompt. No prose before or after the JSON block.
-
-Key requirements:
-- **positioning_statement**: Geoffrey Moore template exactly — "For [segment] who [need], [product] is [category] that [benefit]. Unlike [alternative], [product] [differentiator]."
-- **target_segments**: ranked by priority; every entry must have channels and rationale.
-- **launch_timeline**: must include Pre-launch, Launch Week, and Post-Launch entries, each with a success_signal.
-- **competitive_positioning**: 3–5 we_win_when entries, 3–5 we_lose_when entries, and a response_playbook paragraph.
-- **success_metrics**: both leading_indicators (weekly, first 30 days) and lagging_indicators (30/60/90 day checkpoints), each with target and measurement.
-
-Do not propose budget figures. Do not redefine personas or success metrics from the PRD. Do not propose new features.`,
-  },
-
-  feature_marketing: {
-    label: 'Feature Marketing Content Pack (Milo)',
-    format: `Produce a single valid JSON object wrapped in a \`\`\`json code block following the feature marketing output template injected into your system prompt. No prose before or after the JSON block.
-
-Key requirements:
-- **feature_name**: recommended option plus two named alternatives, each with rationale.
-- **value_proposition**: ≤20 words, benefit-first — this is the north star all channel copy must trace back to.
-- **channel_copy**: all channels required — app_store (≤170 chars plain text), website_hero, email (subject + 3 paragraphs), linkedin (≤150 words ending with a question), twitter (≤280 chars + hashtag), short_form_social (strategy for instagram and tiktok).
-- **internal_faq**: exactly 5 Q&A entries. Real sales/support questions with 2–3 sentence answers. No implementation detail.
-
-Do not reference features not in the approved PRD or GTM strategy. Do not suggest product changes.`,
-  },
-
-  tech_refinement: {
-    label: 'Technical Refinement Backlog (Finn, Remi & Cole)',
-    format: `Produce a single valid JSON object wrapped in a \`\`\`json code block following the tech-refinement template injected into your system prompt. This is a technically enriched version of the PM backlog. No prose before or after the JSON block.
-
-Key requirements:
-- **Preserve PM scope**: do not remove or change the scope of PM stories. You may add engineering stories (infra, migrations, platform setup) but cannot drop product stories.
-- **Platform field required**: every story must have a \`platform\` field — use \`"ios"\`, \`"android"\`, \`"backend"\`, \`"all"\`, or a compound like \`"ios+android"\`.
-- **Fully populated \`technical\` section**: name specific files, classes, API endpoints (with method, path, request/response shapes), and DB changes (table name, columns, types). No vague placeholders.
-- **Dependency order enforced**: backend/infra stories before frontend/consumer stories within each feature.
-- **Split oversized stories**: any story scored 8 that covers multiple platforms must be split into platform-specific stories before output.
-- **Risks documented**: every story that carries a technical risk must have a \`risks\` array entry with severity and mitigation. Empty array is allowed when no risks exist.
-- **Add missing engineering stories**: if the PM backlog is missing infra setup, DB migrations, or platform permission stories that are prerequisites for product stories, add them.`,
-  },
-
-  qa_engineer: {
-    label: 'QA Test Suite (Vera)',
-    format: `Produce a single valid JSON object wrapped in a \`\`\`json code block following the QA test suite template injected into your system prompt. No prose before or after the JSON block.
-
-Key requirements:
-- **Trace every FR**: every Functional Requirement from the PRD must appear in \`coverage.by_fr\` and have at least one \`critical\` happy path test and one \`bad_path\` test.
-- **Trace every story AC**: every backlog story acceptance criterion (Given/When/Then) must map to at least one test case via \`story_ref\`. Use the exact format \`F1.S1\`, \`F2.S3\`, etc. matching the backlog structure (Feature number dot Story number).
-- **Concrete test data**: every test case's \`test_data\` object must contain the exact field names and values to use — no placeholders like "valid input".
-- **Automation-first Given/When/Then**: steps must be specific enough to implement in Playwright or Cypress without interpretation.
-- **Priority tagging**: mark at minimum one test per FR as \`critical\` and include \`@smoke\` tags on the smallest set of tests that confirm the feature fundamentally works.
-- **Coverage summary**: the \`coverage\` object must be accurate — count and categorise every test case you produce.
-- **Minimum thresholds**: aim for at least 3× more bad_path + edge_case tests than happy_path tests. Happy paths are the minority — failure modes are not.`,
   },
 
   curator: {
@@ -301,16 +170,75 @@ export function stageGoal(stage: string, goal: string): string {
     pm_prd:               `Produce a complete PRD that translates research findings into clear product requirements and success criteria for: ${goal}`,
     epic_feature_planner: `Decompose the PRD requirements into a clear epic and feature structure (2-8 features) with feature-level acceptance criteria and phase labels for: ${goal}`,
     solution_architect:   `Produce a cross-platform architecture document covering technology decisions, data model, API surface, repository impact across all repos, and cross-platform contracts — to serve as the technical reference for epic planning and story decomposition for: ${goal}`,
-    story_decomposition:  `Decompose each feature from the tech-enriched epic/features JSON into 6-8 actionable stories or technical tasks, with story points, acceptance criteria, and PRD traceability for: ${goal}`,
     prototype:            `Produce an interactive React prototype that demonstrates the key user journeys from the PRD and architecture document for: ${goal}`,
-    pm_backlog:           `Produce a prioritised backlog of epics, features, and stories covering the full MVP scope defined in the PRD for: ${goal}`,
-    gtm_strategy:         `Produce a complete Go-to-Market strategy covering positioning, target segments, messaging, launch timeline, competitive positioning, and success metrics for: ${goal}`,
-    feature_marketing:    `Produce a ready-to-use feature marketing content pack with channel copy and internal FAQ based on the approved PRD and GTM strategy for: ${goal}`,
-    qa_engineer:          `Produce an exhaustive, automation-ready JSON test suite covering all happy paths, bad paths, and edge cases derived from the PRD and backlog for: ${goal}`,
-    tech_refinement:      `Review the PM backlog and produce a technically enriched version: break down oversized cross-platform stories, add implementation details (affected components, API changes, DB schema changes), enforce dependency ordering, and add missing engineering stories for: ${goal}`,
   };
   const outputLabel = STAGE_LABELS_BRIEF[stage] ?? stage;
   return STAGE_GOAL[stage] ?? `Produce the required ${outputLabel} for: ${goal}`;
+}
+
+export function stageProgressTarget(stage: string): string {
+  const target: Record<string, string> = {
+    analyst: 'the Research Brief',
+    pm_prd: 'the PRD',
+    epic_feature_planner: 'the epic and feature breakdown',
+    solution_architect: 'the Architecture Document',
+    prototype: 'the prototype screens and file map',
+  };
+  return target[stage] ?? `the ${STAGE_ARTIFACT_LABEL[stage] ?? stage}`;
+}
+
+export function stageProgressWorking(stage: string): string {
+  const subject = stageProgressTarget(stage);
+  const actor: Record<string, string> = {
+    analyst: 'Sage',
+    pm_prd: 'Rex',
+    epic_feature_planner: 'Apex',
+    solution_architect: 'Atlas',
+    prototype: 'Nova',
+  };
+  const name = actor[stage];
+  if (stage === 'prototype') return `${name} is generating ${subject}.`;
+  return `${name ?? 'The coordinator'} is writing ${subject}.`;
+}
+
+export function stageProgressSection(stage: string, section: string, index?: number): string {
+  const target = stageProgressTarget(stage);
+  if (stage === 'prototype') {
+    return `Writing ${section} for ${target}...`;
+  }
+  if (index !== undefined) {
+    return `Writing section ${index}: ${section} in ${target}...`;
+  }
+  return `Writing ${section} in ${target}...`;
+}
+
+export function stageProgressHeartbeat(stage: string, elapsedSec: number, writtenChars: number): string {
+  const target = stageProgressTarget(stage);
+  if (stage === 'prototype') {
+    const fileCount = Math.max(1, Math.round(writtenChars / 1000));
+    return `Still generating ${target} — ${elapsedSec}s elapsed, ${fileCount}k chars drafted`;
+  }
+  return `Still writing ${target} — ${elapsedSec}s elapsed, ${Math.round(writtenChars / 1000)}k chars drafted`;
+}
+
+export function stageProgressBriefing(stage: string): string {
+  return `Coordinator is briefing the team on ${stageProgressTarget(stage)}...`;
+}
+
+export function stageProgressBriefReceived(stage: string): string {
+  return `Brief received. Work is underway on ${stageProgressTarget(stage)}...`;
+}
+
+export function stageProgressReview(stage: string): string {
+  return `Running quality review on ${stageProgressTarget(stage)}...`;
+}
+
+export function stageProgressReviewComplete(stage: string): string {
+  return `Quality review complete for ${stageProgressTarget(stage)}. Processing results...`;
+}
+
+export function stageProgressRevision(stage: string): string {
+  return `Auto-revising ${stageProgressTarget(stage)} based on quality review feedback...`;
 }
 
 // Explicit boundaries (what this specialist must NOT decide)
@@ -333,40 +261,10 @@ export function stageNotDecide(stage: string): string {
       'Do not create new requirements; if something is missing from the PRD, flag it as a gap rather than adding scope silently. ' +
       'Do not write user stories or create epics — the epic planner reads this document next. ' +
       'Do not output JSON structures or attempt to enrich epics that do not exist yet.',
-    story_decomposition:
-      'Do not modify epic or feature titles, descriptions, or phase labels from the architect\'s JSON — those are fixed. ' +
-      'Do not invent requirements not present in the PRD. ' +
-      'Do not make unresolved architecture decisions — if a technical choice is unclear, reference the architect\'s notes or flag as a risk. ' +
-      'Do not use effort scores outside the Fibonacci scale (1, 2, 3, 5, 8). ' +
-      'Do not output fewer than 6 or more than 8 stories per feature.',
     prototype:
       'Do not invent new features or requirements not present in the approved PRD. ' +
       'Do not make architecture decisions — follow the architecture document. ' +
       'Focus on demonstrating existing user journeys, not designing new ones.',
-    pm_backlog:
-      'Do not invent requirements not present in the approved PRD. ' +
-      'Do not make architecture or technology decisions — if a story requires an unresolved technical choice, flag it as a dependency. ' +
-      'Do not use effort scores outside the Fibonacci scale (1, 2, 3, 5, 8).',
-    gtm_strategy:
-      'Do not redefine personas, success metrics, or product scope from the PRD — those are fixed. ' +
-      'Do not propose new features or scope expansions. ' +
-      'Do not commit to specific budget figures — produce a plan actionable at any spend level. ' +
-      'Pricing decisions belong to the PM, not this document.',
-    feature_marketing:
-      'Do not invent capabilities or benefits not present in the approved PRD or GTM strategy. ' +
-      'Do not make product decisions or suggest feature changes. ' +
-      'Do not write technical documentation — user-facing benefits only. ' +
-      'Brand guidelines and final copy approval belong to the marketing team.',
-    qa_engineer:
-      'Do not invent features or requirements not present in the PRD or backlog. ' +
-      'Do not test implementation internals — test observable user-facing behaviour only. ' +
-      'Do not write performance or load tests unless specific SLAs appear in the NFRs. ' +
-      'Do not make product decisions; if a requirement is ambiguous, flag it in metadata.notes.',
-    tech_refinement:
-      'Do not change story titles, personas, goals, or acceptance criteria from the PM backlog. ' +
-      'Do not propose new product features or alter product scope. ' +
-      'Do not make unresolved architecture decisions — flag them as risks instead. ' +
-      'Do not remove PM stories even if they seem technically trivial.',
   };
   return NOT_DECIDE[stage]
     ?? 'Follow the output format and scope defined above. Do not add scope that was not in the workflow goal.';

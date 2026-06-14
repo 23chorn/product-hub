@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import { api, type SkillVersion } from '../services/api';
 import { useThemeStore } from '../stores/themeStore';
+import { getAgentDisplayName } from '../utils/agent-display-names';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -256,6 +257,7 @@ interface SkillMeta { owner_team: string; agent_type: string; }
 
 interface SkillViewerProps {
   skill: SkillVersion;
+  displayName: string;
   activeTab: ContentTab;
   editContent: string;
   setEditContent: (v: string) => void;
@@ -268,7 +270,7 @@ interface SkillViewerProps {
 }
 
 function SkillViewer({
-  skill, activeTab, editContent, setEditContent,
+  skill, displayName, activeTab, editContent, setEditContent,
   newVersion, setNewVersion, versionHistory, isPublishing,
   onTabChange, onPublish,
 }: SkillViewerProps) {
@@ -303,7 +305,7 @@ function SkillViewer({
       {/* Header with editable metadata */}
       <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/30 flex-shrink-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 font-mono">{skill.skill_name}</h3>
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 font-mono">{displayName}</h3>
           <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${DISCIPLINE_COLORS[skill.discipline] ?? DISCIPLINE_COLORS.general}`}>
             {skill.discipline}
           </span>
@@ -646,7 +648,6 @@ export default function SkillPage() {
     }
     return tools;
   }, [allSkills]);
-
   useEffect(() => {
     const load = async () => {
       setIsLoading(true);
@@ -920,6 +921,7 @@ export default function SkillPage() {
           {selection?.type === 'skill' ? (
             <SkillViewer
               skill={selection.skill}
+              displayName={selection.skill.discipline === 'agent' ? getAgentDisplayName(selection.skill) : selection.skill.skill_name}
               activeTab={activeTab}
               editContent={skillEditContent}
               setEditContent={setSkillEditContent}

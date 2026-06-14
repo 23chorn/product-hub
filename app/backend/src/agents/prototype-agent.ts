@@ -1,7 +1,7 @@
 /**
  * Prototype Agent — generates interactive React prototypes from workflow artifacts.
  *
- * Runs as a workflow stage (between solution_architect and pm_backlog).
+ * Runs as a workflow stage (between solution_architect and story_decomposition).
  *
  * If FIGMA_DESIGN_SYSTEM_FILE is set, it first connects to figma-developer-mcp to read
  * the real design system components and tokens, then feeds that context to Claude for
@@ -40,10 +40,6 @@ export interface PrototypeResult {
 }
 
 export type PrototypePlatform = 'web' | 'mobile' | 'both';
-
-export type GeneratePrototypeOutput =
-  | { platform: 'web' | 'mobile'; result: PrototypeResult | null }
-  | { platform: 'both'; web: PrototypeResult | null; mobile: PrototypeResult | null };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -274,132 +270,6 @@ async function savePrototypeArtifact(
 
   await saveMainArtifact(session?.id ?? '', artifactType, JSON.stringify(prototype, null, 2), itemId);
   logger.info(`Saved ${artifactType} artifact for item ${itemId}`);
-}
-
-// ── Public API ─────────────────────────────────────────────────────────────────
-
-// ── Core generation (single platform) ─────────────────────────────────────────
-
-async function* generateSinglePrototype(
-  workflowId: string,
-  workflow: { item_id: string; goal: string },
-  artifacts: string,
-  stable: string,
-  platform: 'web' | 'mobile',
-  scope: string | undefined,
-  onTokens: ((usage: TokenUsage) => void) | undefined,
-): AsyncGenerator<string, PrototypeResult | null, unknown> {
-  const platformHint = platform === 'mobile' ? MOBILE_PLATFORM_HINT : WEB_PLATFORM_HINT;
-  const dynamicParts = [
-    platformHint,
-    '\n\n## Workflow Artifacts\n\nUse these documents to understand what to prototype:\n\n' + artifacts,
-  ];
-  if (scope) dynamicParts.push(`\n\n## Scope\n\nFocus the prototype on: ${scope}`);
-
-  const systemPrompt: SystemPrompt = { stable, dynamic: dynamicParts.join('\n\n') };
-  const userMessage = scope
-    ? `Generate an interactive React ${platform === 'mobile' ? 'mobile app' : 'web'} prototype focused on: ${scope}\n\nThe workflow goal was: ${workflow.goal}`
-    : `Generate an interactive React ${platform === 'mobile' ? 'mobile app' : 'web'} prototype for the complete feature described in the workflow artifacts.\n\nThe workflow goal was: ${workflow.goal}`;
-
-  const model = resolveModelId(undefined);
-  logger.info(`Generating ${platform} prototype for workflow ${workflowId}`);
-
-  let fullResponse = '';
-  const generator = streamAI(model, systemPrompt, [{ role: 'user', content: userMessage }], 64_000, { onTokens });
-  for await (const chunk of generator) {
-    fullResponse += chunk;
-    yield chunk;
-  }
-
-  const rawDir = path.join(PROJECT_ROOT, 'data', 'sessions', workflow.item_id, 'prototype', 'raw');
-  await fsAsync.mkdir(rawDir, { recursive: true });
-  await fsAsync.writeFile(path.join(rawDir, `${Date.now()}-${platform}-raw.txt`), fullResponse, 'utf-8');
-
-  try {
-    const repaired = repairTruncatedJson(fullResponse);
-    const parsed = JSON.parse(repaired) as PrototypeResult;
-    logger.info(`${platform} prototype generated: "${parsed.title}" — ${parsed.screens.length} screens`);
-    const artifactType = platform === 'mobile' ? 'prototype_mobile' : 'prototype_web';
-    await savePrototypeArtifact(workflow.item_id, parsed, artifactType);
-    // Also save as generic 'prototype' so existing callers that load by type still work
-    await savePrototypeArtifact(workflow.item_id, parsed, 'prototype');
-    return parsed;
-  } catch (err) {
-    logger.error(`Failed to parse ${platform} prototype JSON even after repair`, err);
-    return null;
-  }
-}
-
-// ── Public API ─────────────────────────────────────────────────────────────────
-
-/**
- * Generate an interactive React prototype from workflow artifacts.
- * Platform (web / mobile / both) is read from items.metadata.productArea.
- * Yields status/content strings for SSE streaming.
- */
-export async function* generatePrototype(
-  workflowId: string,
-  scope?: string,
-  onTokens?: (usage: TokenUsage) => void,
-): AsyncGenerator<string, GeneratePrototypeOutput | null, unknown> {
-  const workflow = db.prepare<[string], { item_id: string; goal: string }>(`
-    SELECT item_id, goal FROM workflows WHERE id = ?
-  `).get(workflowId);
-  if (!workflow) throw new Error(`Workflow ${workflowId} not found`);
-
-  const artifacts = await loadWorkflowArtifacts(workflow.item_id);
-  if (!artifacts.trim()) throw new Error('No workflow artifacts found — run earlier stages first');
-
-  const platform = resolveItemPlatform(workflow.item_id);
-  logger.info(`Prototype platform resolved to "${platform}" for workflow ${workflowId}`);
-
-  const statusLines: string[] = [];
-  const statusCb = (msg: string) => { statusLines.push(msg); };
-
-  const [persona, template, localDesignSystem, projectContext] = await Promise.all([
-    loadPersona(),
-    loadTemplate(),
-    loadLocalDesignSystem(),
-    loadProjectContext(),
-  ]);
-
-  const figmaDesignSystem = await loadFigmaDesignSystem(statusCb);
-  const designSystemContext = figmaDesignSystem || localDesignSystem;
-
-  for (const line of statusLines) yield line;
-
-  // Stable system prompt shared across all platform runs
-  const stable = [
-    persona,
-    '\n\n## Design System\n\n' + designSystemContext,
-    projectContext ? '\n\n' + projectContext : '',
-    '\n\n## Output Template\n\n' + template,
-  ].join('');
-
-  if (platform === 'both') {
-    yield `Generating web prototype...\n`;
-    let webResult: PrototypeResult | null = null;
-    for await (const chunk of generateSinglePrototype(workflowId, workflow, artifacts, stable, 'web', scope, onTokens)) {
-      if (typeof chunk === 'string') yield chunk;
-      else webResult = chunk;
-    }
-
-    yield `\n\nGenerating mobile prototype...\n`;
-    let mobileResult: PrototypeResult | null = null;
-    for await (const chunk of generateSinglePrototype(workflowId, workflow, artifacts, stable, 'mobile', scope, onTokens)) {
-      if (typeof chunk === 'string') yield chunk;
-      else mobileResult = chunk;
-    }
-
-    return { platform: 'both', web: webResult, mobile: mobileResult };
-  }
-
-  let result: PrototypeResult | null = null;
-  for await (const chunk of generateSinglePrototype(workflowId, workflow, artifacts, stable, platform, scope, onTokens)) {
-    if (typeof chunk === 'string') yield chunk;
-    else result = chunk;
-  }
-  return { platform, result };
 }
 
 /**

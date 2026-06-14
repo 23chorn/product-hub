@@ -1,6 +1,5 @@
 /**
- * Converts structured JSON artifacts (analyst, prd, architecture, gtm, feature_marketing)
- * back to human-readable markdown for display in the UI.
+ * Converts structured JSON artifacts back to human-readable markdown for display in the UI.
  */
 
 function row(...cells: string[]): string {
@@ -259,164 +258,11 @@ function architectureToMarkdown(d: Record<string, any>): string {
   return lines.join('\n');
 }
 
-function gtmToMarkdown(d: Record<string, any>): string {
-  const lines: string[] = [];
-  lines.push(`# ${d.title ?? 'GTM Strategy'}\n`);
-
-  if (d.positioning_statement) lines.push(`## Positioning Statement\n\n${d.positioning_statement}\n`);
-
-  if (Array.isArray(d.target_segments) && d.target_segments.length) {
-    lines.push(`## Target Segments & Channels\n`);
-    lines.push(tableHeader('Segment', 'Description', 'Priority', 'Channels', 'Rationale', 'Cost-to-Reach'));
-    for (const s of d.target_segments) {
-      const channels = Array.isArray(s.channels) ? s.channels.join(', ') : (s.channels ?? '');
-      lines.push(row(s.segment ?? '', s.description ?? '', s.priority ?? '', channels, s.rationale ?? '', s.cost_to_reach ?? ''));
-    }
-    lines.push('');
-  }
-
-  if (d.messaging_framework) {
-    lines.push(`## Messaging Framework\n`);
-    const mf = d.messaging_framework;
-    if (mf.headline) lines.push(`**Headline:** ${mf.headline}\n`);
-    if (mf.sub_headline) lines.push(`**Sub-headline:** ${mf.sub_headline}\n`);
-    if (Array.isArray(mf.supporting_bullets) && mf.supporting_bullets.length) {
-      lines.push('**Supporting Bullets:**');
-      for (const b of mf.supporting_bullets) lines.push(`- ${b}`);
-      lines.push('');
-    }
-  }
-
-  if (Array.isArray(d.launch_timeline) && d.launch_timeline.length) {
-    lines.push(`## Launch Timeline\n`);
-    lines.push(tableHeader('Phase', 'Duration', 'Key Activities', 'Success Signal'));
-    for (const phase of d.launch_timeline) {
-      const activities = Array.isArray(phase.key_activities) ? phase.key_activities.join('; ') : (phase.key_activities ?? '');
-      lines.push(row(phase.phase ?? '', phase.duration ?? '', activities, phase.success_signal ?? ''));
-    }
-    lines.push('');
-  }
-
-  if (d.competitive_positioning) {
-    const cp = d.competitive_positioning;
-    lines.push(`## Competitive Positioning\n`);
-    if (cp.top_threat) lines.push(`**Top Competitive Threat:** ${cp.top_threat}\n`);
-    if (cp.response_playbook) lines.push(`**Response Playbook:** ${cp.response_playbook}\n`);
-    if (Array.isArray(cp.we_win_when) && cp.we_win_when.length) {
-      lines.push('**Where We Win:**\n');
-      lines.push(tableHeader('Scenario', 'Why We Win'));
-      for (const w of cp.we_win_when) lines.push(row(w.scenario ?? '', w.why_we_win ?? ''));
-      lines.push('');
-    }
-    if (Array.isArray(cp.we_lose_when) && cp.we_lose_when.length) {
-      lines.push('**Where We Lose:**\n');
-      lines.push(tableHeader('Scenario', 'Why We Lose', 'Mitigation'));
-      for (const w of cp.we_lose_when) lines.push(row(w.scenario ?? '', w.why_we_lose ?? '', w.mitigation ?? ''));
-      lines.push('');
-    }
-  }
-
-  if (d.success_metrics) {
-    lines.push(`## GTM Success Metrics\n`);
-    const sm = d.success_metrics;
-    if (Array.isArray(sm.leading_indicators) && sm.leading_indicators.length) {
-      lines.push('### Leading Indicators (weekly, first 30 days)\n');
-      lines.push(tableHeader('Metric', 'Target', 'Measurement Method'));
-      for (const m of sm.leading_indicators) lines.push(row(m.metric ?? '', m.target ?? '', m.measurement ?? ''));
-      lines.push('');
-    }
-    if (Array.isArray(sm.lagging_indicators) && sm.lagging_indicators.length) {
-      lines.push('### Lagging Indicators (30 / 60 / 90 day checkpoints)\n');
-      lines.push(tableHeader('Metric', '30-day Target', '60-day Target', '90-day Target', 'Measurement'));
-      for (const m of sm.lagging_indicators) lines.push(row(m.metric ?? '', m.target_30d ?? '', m.target_60d ?? '', m.target_90d ?? '', m.measurement ?? ''));
-      lines.push('');
-    }
-  }
-
-  return lines.join('\n');
-}
-
-function featureMarketingToMarkdown(d: Record<string, any>): string {
-  const lines: string[] = [];
-  const name = d.feature_name?.recommended?.name ?? 'Feature Marketing';
-  lines.push(`# Feature Marketing: ${name}\n`);
-
-  if (d.feature_name) {
-    lines.push(`## Feature Name & Tagline\n`);
-    const fn = d.feature_name;
-    if (fn.recommended) {
-      lines.push(`**Recommended:** ${fn.recommended.name} — "${fn.recommended.tagline}"`);
-      if (fn.recommended.rationale) lines.push(`  _${fn.recommended.rationale}_`);
-      lines.push('');
-    }
-    for (const key of ['alternative_a', 'alternative_b'] as const) {
-      const alt = fn[key];
-      if (alt) {
-        lines.push(`**${key === 'alternative_a' ? 'Alternative A' : 'Alternative B'}:** ${alt.name ?? ''} — "${alt.tagline ?? ''}"`);
-        if (alt.rationale) lines.push(`  _${alt.rationale}_`);
-        lines.push('');
-      }
-    }
-  }
-
-  if (d.value_proposition) lines.push(`## Value Proposition\n\n${d.value_proposition}\n`);
-
-  if (d.messaging_hierarchy) {
-    lines.push(`## Messaging Hierarchy\n`);
-    const mh = d.messaging_hierarchy;
-    if (mh.headline) lines.push(`**Headline:** ${mh.headline}\n`);
-    if (mh.sub_headline) lines.push(`**Sub-headline:** ${mh.sub_headline}\n`);
-    if (Array.isArray(mh.supporting_bullets) && mh.supporting_bullets.length) {
-      lines.push('**Supporting Bullets:**');
-      for (const b of mh.supporting_bullets) lines.push(`- ${b}`);
-      lines.push('');
-    }
-  }
-
-  if (d.channel_copy) {
-    lines.push(`## Channel Copy Pack\n`);
-    const cc = d.channel_copy;
-    if (cc.app_store) lines.push(`### App Store / Play Store\n\n${cc.app_store}\n`);
-    if (cc.website_hero) {
-      lines.push(`### Website Hero\n\n**Headline:** ${cc.website_hero.headline ?? ''}\n\n${cc.website_hero.body ?? ''}\n`);
-    }
-    if (cc.email) {
-      lines.push(`### Email Announcement\n\n**Subject:** ${cc.email.subject_line ?? ''}\n`);
-      if (cc.email.body_paragraph_1) lines.push(`${cc.email.body_paragraph_1}\n`);
-      if (cc.email.body_paragraph_2) lines.push(`${cc.email.body_paragraph_2}\n`);
-      if (cc.email.body_paragraph_3) lines.push(`${cc.email.body_paragraph_3}\n`);
-    }
-    if (cc.linkedin) lines.push(`### LinkedIn\n\n${cc.linkedin}\n`);
-    if (cc.twitter) lines.push(`### X / Twitter\n\n${cc.twitter}\n`);
-    if (cc.short_form_social) {
-      lines.push(`### Short-Form Social Strategy\n`);
-      const sfs = cc.short_form_social;
-      for (const [platform, data] of Object.entries(sfs)) {
-        if (!data || typeof data !== 'object') continue;
-        lines.push(`**${platform.charAt(0).toUpperCase() + platform.slice(1)}:**`);
-        for (const [k, v] of Object.entries(data as Record<string, string>)) lines.push(`- ${k.replace(/_/g, ' ')}: ${v}`);
-        lines.push('');
-      }
-    }
-  }
-
-  if (Array.isArray(d.internal_faq) && d.internal_faq.length) {
-    lines.push(`## Internal FAQ\n`);
-    d.internal_faq.forEach((qa: { question: string; answer: string }, i: number) => {
-      lines.push(`**Q${i + 1}: ${qa.question ?? ''}**\n${qa.answer ?? ''}\n`);
-    });
-  }
-
-  return lines.join('\n');
-}
-
 const CONVERTERS: Record<string, (d: Record<string, any>) => string> = {
   analyst: analystToMarkdown,
   research: analystToMarkdown,
   prd: prdToMarkdown,
   architecture: architectureToMarkdown,
-  gtm: gtmToMarkdown,
-  feature_marketing: featureMarketingToMarkdown,
 };
 
 /**

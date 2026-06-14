@@ -14,9 +14,7 @@ const STAGE_PERSONA_MAP: Record<string, string> = {
   analyst:            'analyst',
   pm_prd:             'pm',
   solution_architect: 'architect',
-  pm_backlog:         'pm',
-  gtm_strategy:       'gtm',
-  feature_marketing:  'marketer',
+  story_decomposition:'story-decomposition',
   prototype:          'prototype-builder',
   coordinator:        'coordinator',
   critic:             'critic',
@@ -27,9 +25,7 @@ const STAGE_TEMPLATE_FILE_MAP: Record<string, string | null> = {
   analyst:            'research.template.md',
   pm_prd:             'prd.template.md',
   solution_architect: 'architecture.template.md',
-  pm_backlog:         'backlog.template.md',
-  gtm_strategy:       'gtm.template.md',
-  feature_marketing:  'feature_marketing.template.md',
+  story_decomposition:'backlog.template.md',
   prototype:          'prototype.template.md',
   coordinator:        null,
   critic:             null,
@@ -157,7 +153,7 @@ const SEED_TOOL_DEFINITIONS: Record<string, string> = {
     },
   ]),
 
-  pm_backlog: JSON.stringify([
+  story_decomposition: JSON.stringify([
     {
       name: 'validate_backlog_json',
       description: 'Validate your backlog JSON structure before returning it. Checks story_id format (F?.S?), as_a/i_want/so_that fields, Given/When/Then acceptance criteria (2–5 per story), technical_acceptance_criteria, platform tags, Fibonacci estimated_points, and story/feature count limits. Call after drafting.',
@@ -170,21 +166,6 @@ const SEED_TOOL_DEFINITIONS: Record<string, string> = {
     },
   ]),
 
-  gtm_strategy: JSON.stringify([
-    {
-      name: 'validate_gtm_strategy_json',
-      description: 'Validate your GTM strategy JSON before returning it. Checks the Geoffrey Moore positioning template (For…who…Unlike…), target_segments fields and enums, messaging_framework word limits, all three launch phases with success signals, competitive_positioning, and leading/lagging success metrics with 30/60/90-day targets. Call after completing the full JSON object.',
-      input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete GTM strategy JSON string (may be wrapped in a ```json code block)' } }, required: ['json'] },
-    },
-  ]),
-
-  feature_marketing: JSON.stringify([
-    {
-      name: 'validate_feature_marketing_json',
-      description: 'Validate your feature marketing JSON before returning it. Checks feature_name variants, value_proposition word limit (≤20 words), messaging_hierarchy word limits, channel_copy character limits (app_store ≤170, twitter ≤280, email subject ≤60), short_form_social structure for instagram and tiktok, and that internal_faq contains exactly 5 entries. Call after completing the full JSON object.',
-      input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete feature marketing JSON string (may be wrapped in a ```json code block)' } }, required: ['json'] },
-    },
-  ]),
 };
 
 function bumpPatch(version: string): string {

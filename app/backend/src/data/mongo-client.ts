@@ -86,7 +86,7 @@ export async function insertArtifactDoc(
   const col = await getArtifactCollection();
   if (!col) return null;
   try {
-    const result = await col.insertOne({ ...doc, artifact_id: 0 } as ArtifactDocument);
+    const result = await col.insertOne({ ...doc } as ArtifactDocument);
     return result.insertedId.toString();
   } catch (err: any) {
     logger.warn(`MongoDB insertArtifactDoc failed: ${err.message}`);

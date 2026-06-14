@@ -124,12 +124,12 @@ export function ArtifactViewer() {
   const workItemsEnabled = config?.integrations?.workItems && config.integrations.workItems !== 'none';
   const isBacklog = artifactType === 'backlog' || artifactType === 'epic_features';
   // Show push button only when workflow is complete and backlog was approved
-  const backlogApproved = isBacklog && checkpoints.some(c => c.stage === 'pm_backlog' && c.status === 'approved');
+  const backlogApproved = isBacklog && checkpoints.some(c => c.stage === 'story_decomposition' && c.status === 'approved');
   const workflowComplete = activeWorkflow?.status === 'complete';
   const showPushButton = isBacklog && workItemsEnabled && backlogApproved && workflowComplete;
 
   const isQATests = artifactType === 'qa_tests';
-  const qaApproved = isQATests && checkpoints.some(c => (c.stage === 'qa_engineer' || c.stage?.startsWith('qa_engineer_F')) && c.status === 'approved');
+  const qaApproved = isQATests && checkpoints.some(c => c.status === 'approved');
   const showTestPlanButton = isQATests && workItemsEnabled && qaApproved && workflowComplete;
 
   // Wiki sync button for research, PRD, and architecture documents
@@ -593,8 +593,7 @@ export function ArtifactViewer() {
                           }
                         } catch { /* fall through to raw view */ }
                       }
-                      // Document artifacts (analyst, prd, architecture, gtm, feature_marketing) are now
-                      // stored as JSON but rendered as markdown via the converter.
+                      // Document artifacts are stored as JSON but rendered as markdown via the converter.
                       if (isDocumentArtifact(artifactType)) {
                         const md = convertArtifactToMarkdown(artifactType, content);
                         if (md !== null) {

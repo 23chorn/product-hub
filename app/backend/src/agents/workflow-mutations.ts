@@ -12,6 +12,7 @@ import { sessionManager } from '../session/session-manager';
 import type { AppMode, AgentType } from '@pap/shared';
 import {
   STAGE_SESSION_MAP, STAGE_LABELS_INTERNAL,
+  stageProgressWorking,
 } from './stage-metadata';
 import { loadFullArtifact, loadLatestArtifactForStage, resolveArtifactPath } from './artifact-helpers';
 import {
@@ -20,6 +21,10 @@ import {
 import {
   runAutonomousStage, getCoordinator, SILENT_STAGES, clearCancelFlag,
 } from './workflow-stage-runner';
+
+function stageSession(stage: string): { mode: AppMode; agentType: AgentType } {
+  return STAGE_SESSION_MAP[stage] ?? { mode: 'analyst' as AppMode, agentType: 'analyst' as AgentType };
+}
 
 /**
  * Propagate human feedback on a checkpoint back to the specialist session.
@@ -66,7 +71,7 @@ export async function propagateFeedback(checkpointId: number, feedback: string):
   stmts.updateWorkflowStageAndStatus.run(checkpoint.stage, 'active', now, checkpoint.workflow_id);
 
   // Create a fresh specialist session and fire an autonomous re-run.
-  const stageMap = STAGE_SESSION_MAP[checkpoint.stage] ?? { mode: 'analyst' as AppMode, agentType: 'analyst' as AgentType };
+  const stageMap = stageSession(checkpoint.stage);
   const session = sessionManager.createSpecialistSession(workflow.item_id, stageMap.mode, stageMap.agentType);
   sessionManager.updateWorkflow(session.id, checkpoint.workflow_id, brief);
 
@@ -129,7 +134,7 @@ export async function reiterateFromStage(
       : await getCoordinator().generateStageBrief(workflowId, fromStage, feedback);
 
   // Create a new specialist session
-  const stageMap = STAGE_SESSION_MAP[fromStage] ?? { mode: 'analyst' as AppMode, agentType: 'analyst' as AgentType };
+  const stageMap = stageSession(fromStage);
   const session = sessionManager.createSpecialistSession(workflow.item_id, stageMap.mode, stageMap.agentType);
   sessionManager.updateWorkflow(session.id, workflowId, brief);
 
@@ -141,73 +146,6 @@ export async function reiterateFromStage(
     .catch(err => logger.error(`Reiteration re-run for stage "${fromStage}" failed: ${err.message}`));
 
   logger.info(`Reiteration started — session ${session.id} for stage "${fromStage}" in workflow ${workflowId}`);
-}
-
-/**
- * Extend a completed workflow by appending new stages.
- *
- * New stages are inserted before 'curator' (if present), so the curator runs
- * last after all new content has been produced. The workflow is re-activated
- * and advanceStage() fires the first new stage immediately.
- *
- * Rules:
- * - Workflow must be 'complete'.
- * - Stages must be known and not already in the sequence.
- * - At least one stage required.
- */
-export async function extendWorkflow(workflowId: string, stagesToAdd: string[]): Promise<void> {
-  const workflow = stmts.getWorkflow.get(workflowId);
-  if (!workflow) throw new Error(`Workflow not found: ${workflowId}`);
-  if (workflow.status !== 'complete') {
-    throw new Error(`Workflow ${workflowId} is not complete (status: ${workflow.status}) — only completed workflows can be extended`);
-  }
-  if (!stagesToAdd.length) throw new Error('At least one stage is required');
-
-  const sequence: string[] = JSON.parse(workflow.stage_sequence);
-
-  // Reject stages that are already in the sequence
-  const duplicates = stagesToAdd.filter(s => sequence.includes(s));
-  if (duplicates.length) {
-    throw new Error(`Stage(s) already in workflow: ${duplicates.join(', ')}`);
-  }
-
-  // Insert new stages before curator (if present), otherwise append
-  const curatorIdx = sequence.indexOf('curator');
-  const newSequence = curatorIdx >= 0
-    ? [...sequence.slice(0, curatorIdx), ...stagesToAdd, ...sequence.slice(curatorIdx)]
-    : [...sequence, ...stagesToAdd];
-
-  const firstNewStage = stagesToAdd[0];
-  const now = Date.now();
-
-  // If curator had an approved checkpoint, mark it revised so it will re-run
-  if (curatorIdx >= 0) {
-    db.prepare(`
-      UPDATE checkpoints SET status = 'revised'
-      WHERE workflow_id = ? AND stage = 'curator' AND status = 'approved'
-    `).run(workflowId);
-  }
-
-  // Set current_stage to the stage BEFORE firstNewStage so advanceStage()
-  // naturally advances into firstNewStage first. Without this, advanceStage
-  // would advance FROM firstNewStage TO the second new stage, skipping the first.
-  const firstNewIdx = newSequence.indexOf(firstNewStage);
-  const stageBeforeFirst = firstNewIdx > 0 ? newSequence[firstNewIdx - 1] : null;
-
-  // Persist the new sequence and re-activate the workflow
-  db.prepare(`
-    UPDATE workflows SET stage_sequence = ?, current_stage = ?, status = 'active', updated_at = ?
-    WHERE id = ?
-  `).run(JSON.stringify(newSequence), stageBeforeFirst, now, workflowId);
-
-  const addedLabels = stagesToAdd.map(s => STAGE_LABELS_INTERNAL[s] ?? s).join(', ');
-  insertEvent(workflowId, 'reiteration', firstNewStage,
-    `Workflow extended with new stage${stagesToAdd.length > 1 ? 's' : ''}: ${addedLabels}`);
-
-  logger.info(`Workflow ${workflowId} extended with [${stagesToAdd.join(', ')}] — new sequence: ${newSequence.join(' → ')}`);
-
-  // Kick off the first new stage
-  await workflowOps.advanceStage(workflowId);
 }
 
 /**
@@ -226,11 +164,10 @@ export async function retryCurrentStage(workflowId: string): Promise<{ stage: st
   }
 
   const stage = workflow.current_stage;
-  const stageLabel = STAGE_LABELS_INTERNAL[stage] ?? stage;
 
   logger.info(`Retrying stuck stage "${stage}" for workflow ${workflowId}`);
   insertEvent(workflowId, 'stage_progress', stage,
-    `Retrying ${stageLabel} (manually triggered)...`);
+    stageProgressWorking(stage));
 
   // Reset workflow status to active on this stage
   const now = Date.now();
@@ -240,7 +177,7 @@ export async function retryCurrentStage(workflowId: string): Promise<{ stage: st
   const brief = await getCoordinator().generateStageBrief(workflowId, stage);
 
   // Create a new specialist session
-  const stageMap = STAGE_SESSION_MAP[stage] ?? { mode: 'analyst' as AppMode, agentType: 'analyst' as AgentType };
+  const stageMap = stageSession(stage);
   const session = sessionManager.createSpecialistSession(workflow.item_id, stageMap.mode, stageMap.agentType);
   sessionManager.updateWorkflow(session.id, workflowId, brief);
 
@@ -282,6 +219,8 @@ export async function restartWorkflow(workflowId: string): Promise<void> {
   db.transaction(() => {
     // Delete context_diffs linked to this workflow (may reference artifacts)
     db.prepare(`DELETE FROM context_diffs WHERE workflow_id = ?`).run(workflowId);
+    // Delete checkpoint audit rows before deleting checkpoints
+    db.prepare(`DELETE FROM checkpoint_audit WHERE checkpoint_id IN (SELECT id FROM checkpoints WHERE workflow_id = ?)`).run(workflowId);
     // Delete checkpoints (artifact_ids will be stale after we delete sessions)
     db.prepare(`DELETE FROM checkpoints WHERE workflow_id = ?`).run(workflowId);
     // Wipe all events — the new workflow_started event inserted below becomes the first entry
@@ -306,7 +245,7 @@ export async function restartWorkflow(workflowId: string): Promise<void> {
   // Generate a fresh brief for the first stage (no prior draft)
   const brief = await getCoordinator().generateStageBrief(workflowId, firstStage);
 
-  const stageMap = STAGE_SESSION_MAP[firstStage] ?? { mode: 'analyst' as AppMode, agentType: 'analyst' as AgentType };
+  const stageMap = stageSession(firstStage);
   const session = sessionManager.createSpecialistSession(workflow.item_id, stageMap.mode, stageMap.agentType);
   sessionManager.updateWorkflow(session.id, workflowId, brief);
 

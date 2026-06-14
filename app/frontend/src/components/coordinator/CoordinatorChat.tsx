@@ -2,24 +2,20 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
-import { useWorkflowStore, type WorkflowEvent, type CoordinatorMessage } from '../../stores/workflowStore';
-import { deriveStageStatus } from '../../utils/stage-tracker-helpers';
+import { useWorkflowStore, type WorkflowEvent, type WorkflowStatus, type CoordinatorMessage } from '../../stores/workflowStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useConfigStore } from '../../stores/configStore';
 import { ContextDiffPanel } from './ContextDiffPanel';
 import { STAGE_LABELS, TOGGLEABLE_STAGES } from '../../constants/stage-labels';
-import { stripReadyMarker, extractReadyPayload, parseCriticData, criticSummaryLine } from '../../utils/coordinator-helpers';
-import { InlineCheckpointActions } from './InlineCheckpointActions';
+import { stripReadyMarker, extractReadyPayload } from '../../utils/coordinator-helpers';
 import { ConversationHeader } from './ConversationHeader';
 import { PrototypePreview, type PrototypeData } from './PrototypePreview';
 import { api } from '../../services/api';
 import { eventToMessage } from '../../utils/event-to-message';
 import { ChatInputArea } from './ChatInputArea';
-import { GoalEntryScreen } from './GoalEntryScreen';
 import { PrototypeActions } from './PrototypeActions';
 import { ChangeRequestSection } from './ChangeRequestSection';
-import { ExtendStagesPanel } from './ExtendStagesPanel';
-import { PipelineTerminalView } from '../workflow';
+import { PipelineTerminalView } from '../workflow/PipelineTerminalView';
 
 export function CoordinatorChat() {
   const {
@@ -40,8 +36,6 @@ export function CoordinatorChat() {
     s => s.key === 'curator' || !configEnabledStages || configEnabledStages[s.key] !== false
   );
 
-  const [goal, setGoal] = useState('');
-  const [pendingGoal, setPendingGoal] = useState('');
   const [reply, setReply] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [enabledStages, setEnabledStages] = useState<Record<string, boolean>>(
@@ -50,7 +44,7 @@ export function CoordinatorChat() {
   const [pendingLaunchData, setPendingLaunchData] = useState<{ enrichedContext: string; kbQueries: string[] } | null>(null);
   const [stageRationale, setStageRationale] = useState<string | null>(null);
   const [showDiffPanel, setShowDiffPanel] = useState(false);
-  const [stageStale, setStageStale] = useState(false);
+  const [, setStageStale] = useState(false);
   // Change request state
   const [showCRForm, setShowCRForm] = useState(false);
   const [crType, setCRType] = useState('correction');
@@ -59,10 +53,8 @@ export function CoordinatorChat() {
   const [crConfirmedStages, setCRConfirmedStages] = useState<Record<string, boolean>>({});
   const [crLoading, setCRLoading] = useState(false);
   const { activeCR, setActiveCR, clearActiveCR } = useWorkflowStore();
-  const [retryLoading, setRetryLoading] = useState(false);
   // Prototype state
   const [prototypeData, setPrototypeData] = useState<PrototypeData | null>(null);
-  const [protoLoading, setProtoLoading] = useState(false);
   const [showPrototype, setShowPrototype] = useState(false);
   const [showMsgInput, setShowMsgInput] = useState(false);
   const [animFrame, setAnimFrame] = useState(0);
@@ -304,40 +296,6 @@ export function CoordinatorChat() {
   }, [hasWorkflow, planningPhase, isComplete, isAtCheckpoint]);
 
   // ── Submit goal → open coordinator planning session ───────────────────────
-  async function handleSubmitGoal(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmedGoal = goal.trim();
-    if (!trimmedGoal || isStreaming) return;
-    setError(null);
-    setPendingGoal(trimmedGoal);
-    setGoal('');
-    setPlanningPhase('gathering');
-    setIsStreaming(true);
-
-    addCoordinatorMessage({ role: 'human', content: trimmedGoal, timestamp: Date.now() });
-    addCoordinatorMessage({ role: 'coordinator', content: '', timestamp: Date.now() });
-
-    try {
-      await api.openCoordinatorPlanning(
-        trimmedGoal,
-        (sessionId) => { setPlanningSessionId(sessionId); localStorage.setItem('coordinatorPlanningSessionId', sessionId); },
-        (chunk) => appendToLastCoordinatorMessage(chunk),
-        (fullContent) => {
-          setIsStreaming(false);
-          const payload = extractReadyPayload(fullContent);
-          if (payload.enrichedContext) handleCoordinatorReady(payload.enrichedContext, payload.kbQueries, payload.recommendedStages, payload.stageRationale);
-        },
-        (err) => { setError(err); setIsStreaming(false); },
-        undefined,
-        (cleaned) => replaceLastCoordinatorMessage(cleaned),
-      );
-    } catch (err: any) {
-      setError(err.message ?? 'Failed to contact coordinator');
-      setIsStreaming(false);
-      setPlanningPhase('idle');
-    }
-  }
-
   // ── Reply to coordinator / mid-workflow message ─────────────────────────
   async function handleSendReply(e: React.FormEvent) {
     e.preventDefault();
@@ -457,21 +415,6 @@ export function CoordinatorChat() {
     return items;
   }, [coordinatorMessages]);
 
-  const criticsByStage = useMemo(() => {
-    const map: Record<string, CoordinatorMessage> = {};
-    for (const msg of coordinatorMessages) {
-      if (msg.eventType === 'critic_verdict' && msg.stage) map[msg.stage] = msg;
-    }
-    return map;
-  }, [coordinatorMessages]);
-
-  const progressByStage = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const msg of coordinatorMessages) {
-      if (msg.isProgress && msg.stage) map[msg.stage] = msg.content;
-    }
-    return map;
-  }, [coordinatorMessages]);
 
 
 
@@ -520,7 +463,7 @@ export function CoordinatorChat() {
           <PipelineTerminalView
             coordinatorMessages={coordinatorMessages}
             isRunning={!isComplete}
-            onCheckpointResolved={(result) => {
+            onCheckpointResolved={(result: { workflow: WorkflowStatus; status: string; warning?: string }) => {
               applyWorkflowStatus(result.workflow);
               addCoordinatorMessage({
                 role: 'coordinator',
@@ -585,27 +528,8 @@ export function CoordinatorChat() {
                   {!showCRForm && !crAssessment && (
                     <PrototypeActions
                       prototypeData={prototypeData}
-                      protoLoading={protoLoading}
                       onShowCRForm={() => setShowCRForm(true)}
                       onViewPrototype={() => setShowPrototype(true)}
-                      onGeneratePrototype={async () => {
-                        if (!activeWorkflow) return;
-                        setProtoLoading(true);
-                        addCoordinatorMessage({ role: 'coordinator', content: '', timestamp: Date.now() });
-                        setIsStreaming(true);
-                        try {
-                          await api.generatePrototype(activeWorkflow.id, undefined, {
-                            onContent: (text) => appendToLastCoordinatorMessage(text),
-                            onPrototype: (proto) => { setPrototypeData(proto); setShowPrototype(true); },
-                            onError: (err) => setError(err),
-                            onDone: () => { setIsStreaming(false); setProtoLoading(false); },
-                          });
-                        } catch (err: any) {
-                          setError(err.message ?? 'Failed to generate prototype');
-                          setIsStreaming(false);
-                          setProtoLoading(false);
-                        }
-                      }}
                     />
                   )}
                   <ChangeRequestSection
@@ -656,19 +580,6 @@ export function CoordinatorChat() {
                       } finally { setCRLoading(false); }
                     }}
                     onCancel={() => { clearActiveCR(); setCRAssessment(null); setCRConfirmedStages({}); setCRDescription(''); setCRType('correction'); setShowCRForm(false); }}
-                  />
-                  <ExtendStagesPanel
-                    stageSequence={stageSequence}
-                    availableStages={availableStages}
-                    onExtend={async (orderedStages) => {
-                      if (!activeWorkflow) return;
-                      setError(null);
-                      try {
-                        const result = await api.extendWorkflow(activeWorkflow.id, orderedStages);
-                        applyWorkflowStatus(result);
-                        addCoordinatorMessage({ role: 'coordinator', content: `Added ${orderedStages.map((k: string) => STAGE_LABELS[k] ?? k).join(', ')} to the workflow. Running now.`, timestamp: Date.now() });
-                      } catch (err: any) { setError(err.response?.data?.error ?? err.message ?? 'Failed to extend workflow'); }
-                    }}
                   />
                 </div>
               )}
@@ -868,37 +779,8 @@ export function CoordinatorChat() {
             {!showCRForm && !crAssessment && (
               <PrototypeActions
                 prototypeData={prototypeData}
-                protoLoading={protoLoading}
                 onShowCRForm={() => setShowCRForm(true)}
                 onViewPrototype={() => setShowPrototype(true)}
-                onGeneratePrototype={async () => {
-                  if (!activeWorkflow) return;
-                  setProtoLoading(true);
-                  addCoordinatorMessage({
-                    role: 'coordinator',
-                    content: '',
-                    timestamp: Date.now(),
-                  });
-                  setIsStreaming(true);
-                  try {
-                    await api.generatePrototype(activeWorkflow.id, undefined, {
-                      onContent: (text) => appendToLastCoordinatorMessage(text),
-                      onPrototype: (proto) => {
-                        setPrototypeData(proto);
-                        setShowPrototype(true);
-                      },
-                      onError: (err) => setError(err),
-                      onDone: () => {
-                        setIsStreaming(false);
-                        setProtoLoading(false);
-                      },
-                    });
-                  } catch (err: any) {
-                    setError(err.message ?? 'Failed to generate prototype');
-                    setIsStreaming(false);
-                    setProtoLoading(false);
-                  }
-                }}
               />
             )}
 
@@ -984,28 +866,6 @@ export function CoordinatorChat() {
                   setShowCRForm(false);
                   setCRDescription('');
                   setCRType('correction');
-                }
-              }}
-            />
-
-            {/* Add stages panel */}
-            <ExtendStagesPanel
-              stageSequence={stageSequence}
-              availableStages={availableStages}
-              onExtend={async (orderedStages) => {
-                if (!activeWorkflow) return;
-                setError(null);
-                try {
-                  const result = await api.extendWorkflow(activeWorkflow.id, orderedStages);
-                  applyWorkflowStatus(result);
-                  const labels = orderedStages.map(k => STAGE_LABELS[k] ?? k).join(', ');
-                  addCoordinatorMessage({
-                    role: 'coordinator',
-                    content: `Added ${labels} to the workflow. Running now.`,
-                    timestamp: Date.now(),
-                  });
-                } catch (err: any) {
-                  setError(err.response?.data?.error ?? err.message ?? 'Failed to extend workflow');
                 }
               }}
             />

@@ -139,6 +139,8 @@ contextFileRouter.post('/', (req: Request, res: Response) => {
   try {
     fs.mkdirSync(CONTEXT_DIR, { recursive: true });
     fs.writeFileSync(filePath, content ?? '', 'utf-8');
+    db.prepare('INSERT INTO context_file_versions (file_name, content, created_at) VALUES (?, ?, ?)')
+      .run(fileName, content ?? '', Date.now());
     logger.info(`Created context file: ${fileName}`);
     invalidateContextCache();
     clearAllContextCaches();

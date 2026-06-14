@@ -9,7 +9,7 @@ const STAGE_LABELS: Record<string, string> = {
   analyst: 'Research Brief',
   pm_prd: 'PRD',
   solution_architect: 'Architecture',
-  pm_backlog: 'Backlog',
+  story_decomposition: 'Backlog',
   qa_engineer: 'QA Tests',
   tech_refinement: 'Tech Refinement',
   curator: 'Context Update',

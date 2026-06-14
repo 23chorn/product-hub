@@ -23,11 +23,8 @@ const STAGE_TEMPLATE_MAP: Record<string, string> = {
   epic_feature_planner: 'epic-features.template.md',
   solution_architect:   'architecture.template.md',
   story_decomposition:  'backlog.template.md',
-  pm_backlog:           'backlog.template.md',
   tech_refinement:      'tech-refinement.template.md',
-  gtm_strategy:         'gtm.template.md',
   prototype:            'prototype.template.md',
-  feature_marketing:    'feature_marketing.template.md',
   qa_engineer:          'qa-tests.template.md',
 };
 
@@ -83,7 +80,11 @@ export class SpecialistAgent {
   }
 
   /**
-   * Load the agent persona. Tries the skill registry first (by stage), falls back to disk.
+   * Load the agent persona. Lookup order:
+   * 1. Exact stage name (e.g. "analyst", "epic_feature_planner")
+   * 2. Agent's own type (e.g. "backend-engineer" for sub-agents in multi-agent refinement)
+   * 3. Stage name with _F\d+ suffix stripped (e.g. "story_decomposition_F1" → "story_decomposition")
+   * 4. Disk fallback
    */
   async loadPersona(stage?: string): Promise<string> {
     if (this.persona) return this.persona;
@@ -94,6 +95,25 @@ export class SpecialistAgent {
         this.persona = skill.persona_prompt;
         logger.info(`Loaded persona for stage "${stage}" from skill registry v${skill.version}`);
         return this.persona;
+      }
+    }
+
+    const ownSkill = getActiveSkill(this.agentType);
+    if (ownSkill) {
+      this.persona = ownSkill.persona_prompt;
+      logger.info(`Loaded persona for agent type "${this.agentType}" from skill registry v${ownSkill.version}`);
+      return this.persona;
+    }
+
+    if (stage) {
+      const normalized = stage.replace(/_F\d+$/, '');
+      if (normalized !== stage) {
+        const normalizedSkill = getActiveSkill(normalized);
+        if (normalizedSkill) {
+          this.persona = normalizedSkill.persona_prompt;
+          logger.info(`Loaded persona for stage "${normalized}" (normalized from "${stage}") from skill registry v${normalizedSkill.version}`);
+          return this.persona;
+        }
       }
     }
 

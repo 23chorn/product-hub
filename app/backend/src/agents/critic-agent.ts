@@ -22,9 +22,7 @@ const STAGE_CRITIC_FILE: Record<string, string> = {
   analyst:           'critic-analyst.md',
   pm_prd:            'critic-prd.md',
   solution_architect:'critic-architect.md',
-  pm_backlog:        'critic-backlog.md',
-  gtm_strategy:      'critic-gtm.md',
-  feature_marketing: 'critic-feature-marketing.md',
+  story_decomposition:'critic-backlog.md',
   qa_engineer:       'critic-qa.md',
 };
 
@@ -107,7 +105,7 @@ Focus on:
 
 `;
 
-    case 'pm_backlog':
+    case 'story_decomposition':
       return `## Artifact Stage: Backlog (Pip)
 
 Structural validation (story_id format, field names, Given/When/Then format, AC counts, Fibonacci points, platform tags, technical ACs, test cases) has already been performed by automated tools. Do not re-raise those checks.
@@ -123,62 +121,6 @@ Focus on:
 - Does every PRD functional requirement have a corresponding story — or has scope been silently dropped?
 - Are platform tags accurate — does a "web-only" story hide backend work?
 - Do phase tags contradict the PRD's Out of Scope section (CRITICAL)?
-
-`;
-
-    case 'gtm_strategy':
-      return `## Artifact Stage: GTM Strategy (Quinn)
-
-Apply the **GTM Strategy** stage-specific checks. Key enforcement reminders:
-- **CRITICAL**: Any new features or scope not present in the approved PRD introduced here.
-- **MAJOR**: Positioning statement does not follow the Geoffrey Moore template exactly.
-- **MAJOR**: Target segments table missing channel or rationale for any segment.
-- **MAJOR**: Launch timeline missing any of the three required phases (Pre-launch, Launch Week, Post-Launch).
-- **MAJOR**: GTM success metrics missing measurement method for any metric.
-- **MAJOR**: Any target segment that contradicts the PRD's defined personas.
-- **MINOR**: Specific budget figures included (out of scope for this document).
-- **MINOR**: A single phase has activities but no success signal.
-- PM Questions cover strategic tradeoffs only — not product scope or feature decisions.
-
-`;
-
-    case 'feature_marketing':
-      return `## Artifact Stage: Feature Marketing Content Pack (Milo)
-
-Apply the **Feature Marketing** stage-specific checks. Key enforcement reminders:
-- **CRITICAL**: Any copy referencing features or benefits not present in the approved PRD or GTM strategy.
-- **CRITICAL**: Any product change proposed or capability invented.
-- **MAJOR**: Value proposition sentence exceeds 20 words or is feature-descriptive rather than benefit-focused.
-- **MAJOR**: Generic superlatives (amazing, revolutionary, best-in-class) in the headline or value proposition sentence.
-- **MAJOR**: App Store / Play Store copy exceeds 170 characters.
-- **MAJOR**: Twitter / X post exceeds 280 characters.
-- **MAJOR**: Any channel block missing entirely — all six channel types are required (App Store, website hero, email, LinkedIn, X/Twitter, short-form social strategy with Instagram and TikTok coverage).
-- **MAJOR**: Fewer than 5 FAQ pairs in the Internal FAQ section.
-- **MAJOR**: More than 2 FAQ answers containing implementation detail.
-- **MINOR**: LinkedIn post exceeds 150 words.
-- **MINOR**: Any FAQ answer exceeds 3 sentences.
-- **MINOR**: Generic superlatives in supporting bullets only (not headline or VP sentence).
-- PM Questions cover brand or audience tradeoffs only — not product or feature decisions.
-
-`;
-
-    case 'qa_engineer':
-      return `## Artifact Stage: QA Test Suite (Vera)
-
-Apply the **QA Test Suite** stage-specific checks. Key enforcement reminders:
-- **CRITICAL**: Any test case referencing a feature or requirement not present in the PRD or backlog.
-- **CRITICAL**: \`coverage.by_fr\` is missing or does not list every FR from the PRD.
-- **MAJOR**: Any FR with no \`critical\`-priority happy path test case.
-- **MAJOR**: Any FR with no \`bad_path\` test case.
-- **MAJOR**: Any backlog story acceptance criterion with no corresponding test case.
-- **MAJOR**: Test case Given/When/Then steps using vague language ("valid input", "user does something", "system works correctly").
-- **MAJOR**: \`test_data\` field containing placeholder values rather than concrete values.
-- **MAJOR**: Coverage summary counts do not match the actual number of test cases in the array.
-- **MAJOR**: Fewer bad_path + edge_case tests than happy_path tests (ratio must be at least 2:1 in favour of bad paths).
-- **MINOR**: Missing \`@smoke\` tags on the minimal happy path test set.
-- **MINOR**: Missing \`@negative\` tags on bad_path tests.
-- **MINOR**: \`automation_notes\` field is missing where the scenario has a non-obvious implementation concern.
-- PM Questions cover ambiguous acceptance criteria or missing edge cases only — not test writing style.
 
 `;
 

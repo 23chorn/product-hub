@@ -1,5 +1,38 @@
 import { create } from 'zustand';
 
+const COORDINATOR_MESSAGES_KEY_PREFIX = 'workflow-coordinator-messages:';
+const LAST_EVENT_ID_KEY_PREFIX = 'workflow-last-event-id:';
+
+function loadStoredMessages(workflowId: string): CoordinatorMessage[] {
+  try {
+    const raw = localStorage.getItem(`${COORDINATOR_MESSAGES_KEY_PREFIX}${workflowId}`);
+    return raw ? JSON.parse(raw) as CoordinatorMessage[] : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveStoredMessages(workflowId: string, messages: CoordinatorMessage[]): void {
+  try {
+    localStorage.setItem(`${COORDINATOR_MESSAGES_KEY_PREFIX}${workflowId}`, JSON.stringify(messages));
+  } catch { /* ignore */ }
+}
+
+function loadStoredLastEventId(workflowId: string): number {
+  try {
+    const raw = localStorage.getItem(`${LAST_EVENT_ID_KEY_PREFIX}${workflowId}`);
+    return raw ? Number(raw) || 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveStoredLastEventId(workflowId: string, id: number): void {
+  try {
+    localStorage.setItem(`${LAST_EVENT_ID_KEY_PREFIX}${workflowId}`, String(id));
+  } catch { /* ignore */ }
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface WorkflowCheckpoint {
@@ -149,7 +182,12 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
 
   coordinatorMessages: [],
   addCoordinatorMessage: (msg) =>
-    set((state) => ({ coordinatorMessages: [...state.coordinatorMessages, msg] })),
+    set((state) => {
+      const coordinatorMessages = [...state.coordinatorMessages, msg];
+      const workflowId = state.activeWorkflow?.id;
+      if (workflowId) saveStoredMessages(workflowId, coordinatorMessages);
+      return { coordinatorMessages };
+    }),
   appendToLastCoordinatorMessage: (chunk) =>
     set((state) => {
       const msgs = [...state.coordinatorMessages];
@@ -158,6 +196,8 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
         ...msgs[msgs.length - 1],
         content: msgs[msgs.length - 1].content + chunk,
       };
+      const workflowId = state.activeWorkflow?.id;
+      if (workflowId) saveStoredMessages(workflowId, msgs);
       return { coordinatorMessages: msgs };
     }),
   replaceLastCoordinatorMessage: (content) =>
@@ -169,15 +209,27 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
       } else {
         msgs[msgs.length - 1] = content;
       }
+      const workflowId = state.activeWorkflow?.id;
+      if (workflowId) saveStoredMessages(workflowId, msgs);
       return { coordinatorMessages: msgs };
     }),
-  clearCoordinatorMessages: () => set({ coordinatorMessages: [] }),
+  clearCoordinatorMessages: () =>
+    set((state) => {
+      const workflowId = state.activeWorkflow?.id;
+      if (workflowId) saveStoredMessages(workflowId, []);
+      return { coordinatorMessages: [] };
+    }),
 
   isStreaming: false,
   setIsStreaming: (v) => set({ isStreaming: v }),
 
   lastEventId: 0,
-  setLastEventId: (id) => set({ lastEventId: id }),
+  setLastEventId: (id) =>
+    set((state) => {
+      const workflowId = state.activeWorkflow?.id;
+      if (workflowId) saveStoredLastEventId(workflowId, id);
+      return { lastEventId: id };
+    }),
 
   viewingArtifactId: null,
   setViewingArtifactId: (id) => set({ viewingArtifactId: id }),
@@ -211,6 +263,8 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
     }
     const stageSequence: string[] = JSON.parse(workflow.stage_sequence ?? '[]');
     localStorage.setItem('activeWorkflowId', workflow.id);
+    const cachedMessages = loadStoredMessages(workflow.id);
+    const cachedLastEventId = loadStoredLastEventId(workflow.id);
     set({
       activeWorkflow: workflow,
       currentStage,
@@ -219,6 +273,8 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
       completedStages,
       pendingStage,
       checkpoints: checkpoints ?? [],
+      coordinatorMessages: cachedMessages,
+      lastEventId: cachedLastEventId,
     });
   },
 
@@ -233,11 +289,9 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
       completedStages: [],
       pendingStage: null,
       checkpoints: [],
-      coordinatorMessages: [],
       isStreaming: false,
       planningPhase: 'idle',
       planningSessionId: null,
-      lastEventId: 0,
       viewingArtifactId: null,
       activeCR: null,
     });

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { HomeScreen } from './components/HomeScreen';
 import { DecisionLogPanel } from './components/decision-log';
@@ -15,11 +15,8 @@ import { useSkillManagerStore } from './stores/skillManagerStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { useConfigStore } from './stores/configStore';
 import { useWorkflowStore } from './stores/workflowStore';
-import { useSessionStore } from './stores/sessionStore';
 import { useAuthStore, ROLE_LABELS } from './stores/authStore';
-import { useToast } from './hooks/useToast';
 import { api } from './services/api';
-import type { AirtableItem } from '@pap/shared';
 
 function DemoToast({ title, onDismiss }: { title: string; onDismiss: () => void }) {
   useEffect(() => {
@@ -41,17 +38,14 @@ function DemoToast({ title, onDismiss }: { title: string; onDismiss: () => void 
 
 function App() {
   const { setAvailableModels, setAgentModels } = useModelStore();
-  const { isOpen: isDLOpen, openDecisionLog } = useDecisionLogStore();
+  const { isOpen: isDLOpen } = useDecisionLogStore();
   const { isOpen: isSMOpen, openSkillManager } = useSkillManagerStore();
-  const { isOpen: isSettingsOpen, isDemoMode, openSettings, closeSettings, setDemoMode } = useSettingsStore();
+  const { isOpen: isSettingsOpen, openSettings, closeSettings, setDemoMode } = useSettingsStore();
   const { setConfig } = useConfigStore();
-  const { activeWorkflow, viewingArtifactId, resetWorkflow, applyWorkflowStatus, addCoordinatorMessage } = useWorkflowStore();
-  const { setSelectedItem, clearSession } = useSessionStore();
+  const { activeWorkflow, viewingArtifactId } = useWorkflowStore();
   const { user, realUser, noAuth, loading: authLoading, setUser, setNoAuth, setLoading: setAuthLoading, logout: authLogout, impersonating, impersonate, stopImpersonating } = useAuthStore();
-  const toast = useToast();
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
   const [isQTOpen, setIsQTOpen] = useState(false);
-  const [isDemoFiring, setIsDemoFiring] = useState(false);
   const [demoToast, setDemoToast] = useState<string | null>(null);
   const [showLogin, setShowLogin] = useState(false);
   const [allUsers, setAllUsers] = useState<import('./stores/authStore').CurrentUser[]>([]);
@@ -120,6 +114,15 @@ function App() {
     }
   }, []);
 
+  useEffect(() => {
+    const onDemoStarted = (event: Event) => {
+      const detail = (event as CustomEvent<{ title?: string }>).detail;
+      if (detail?.title) setDemoToast(detail.title);
+    };
+    window.addEventListener('demo-run-started', onDemoStarted);
+    return () => window.removeEventListener('demo-run-started', onDemoStarted);
+  }, []);
+
   // Health check polling
   useEffect(() => {
     const checkHealth = async () => {
@@ -131,44 +134,6 @@ function App() {
     const interval = setInterval(checkHealth, 30000);
     return () => clearInterval(interval);
   }, []);
-
-
-  const handleFullDemo = useCallback(async () => {
-    if (isDemoFiring) return;
-    setIsDemoFiring(true);
-    try {
-      const result = await api.triggerDemoWebhook(0);
-      window.dispatchEvent(new CustomEvent('refresh-initiatives'));
-      try {
-        const status = await api.getWorkflowStatus(result.workflowId);
-        const newItem = {
-          id: result.itemId,
-          initiative: result.initiative,
-          description: '',
-          status: 'In Progress' as const,
-          businessValue: 0,
-          priorityScore: 0,
-          estimate: 'M' as const,
-          confidence: 0,
-          workflow: { id: result.workflowId, status: status.workflow.status, currentStage: status.currentStage, summary: null },
-        } as AirtableItem & { workflow: any };
-        setSelectedItem(newItem);
-        clearSession();
-        resetWorkflow();
-        applyWorkflowStatus(status);
-        addCoordinatorMessage({
-          role: 'coordinator',
-          content: `Full demo pipeline started for **${result.initiative}**. Running all stages — research, PRD, architecture, backlog, prototype, QA, and tech refinement. Code generation follows automatically.`,
-          timestamp: Date.now(),
-        });
-      } catch { /* navigation failed — toast still shows */ }
-      setDemoToast(result.initiative);
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || err.message || 'Demo trigger failed');
-    } finally {
-      setIsDemoFiring(false);
-    }
-  }, [isDemoFiring, setSelectedItem, clearSession, resetWorkflow, applyWorkflowStatus, addCoordinatorMessage, toast]);
 
   async function handleLogout() {
     try { await api.logout(); } catch { /* */ }
@@ -219,24 +184,6 @@ function App() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {/* Full Demo Button — only shown when demo mode is enabled */}
-            {isDemoMode && (
-              <button
-                onClick={handleFullDemo}
-                disabled={isDemoFiring}
-                title="Full demo: runs the complete AI pipeline"
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300 bg-white dark:bg-slate-800/50 hover:bg-violet-50 dark:hover:bg-violet-900/20 hover:border-violet-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
-              >
-                {isDemoFiring ? (
-                  <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                  </svg>
-                ) : <span>⚡</span>}
-                Demo
-              </button>
-            )}
-
             {/* Agent Studio Button */}
             <button
               onClick={openSkillManager}
@@ -355,12 +302,26 @@ function App() {
       </header>
 
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden relative">
+      <div className="flex-1 flex flex-col overflow-hidden relative">
         <main className="flex-1 overflow-hidden min-w-0 relative">
           {activeWorkflow
             ? <CoordinatorChat />
             : <HomeScreen />}
         </main>
+
+        <div className="shrink-0 flex justify-end px-4 py-2 border-t border-slate-200 dark:border-slate-800/60 bg-white/80 dark:bg-slate-950/80 backdrop-blur-sm">
+          <div
+            className="inline-flex items-center gap-2 text-[11px] font-mono text-slate-500 dark:text-slate-400"
+            title={isConnected === null ? 'Checking connection...' : isConnected ? 'Connected' : 'Disconnected'}
+          >
+            <span className={`block w-2 h-2 rounded-full ${
+              isConnected === null ? 'bg-slate-400' : isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'
+            }`} />
+            <span>
+              {isConnected === null ? 'checking' : isConnected ? 'connected' : 'disconnected'}
+            </span>
+          </div>
+        </div>
 
         {/* Decision Log Modal Overlay */}
         {isDLOpen && (
@@ -401,16 +362,6 @@ function App() {
 
       {/* Demo toast */}
       {demoToast && <DemoToast title={demoToast} onDismiss={() => setDemoToast(null)} />}
-
-      {/* Connection status dot — fixed bottom-right */}
-      <div
-        className="fixed bottom-4 right-4 z-50"
-        title={isConnected === null ? 'Checking connection...' : isConnected ? 'Connected' : 'Disconnected'}
-      >
-        <span className={`block w-2.5 h-2.5 rounded-full ${
-          isConnected === null ? 'bg-slate-400' : isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'
-        }`} />
-      </div>
     </div>
   );
 }

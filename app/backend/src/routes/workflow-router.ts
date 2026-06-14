@@ -29,7 +29,7 @@ workflowRouter.post('/', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'itemId and goal are required' });
   }
 
-  const sequence = stageSequence ?? ['analyst', 'pm_prd', 'pm_backlog', 'critic', 'curator'];
+  const sequence = stageSequence ?? ['analyst', 'pm_prd', 'epic_feature_planner', 'story_decomposition', 'critic', 'curator'];
 
   try {
     const workflow = createWorkflow(itemId, goal, sequence, policyOverrides);

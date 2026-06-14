@@ -3,6 +3,7 @@ import {
   getActiveSkill, getSkill, listSkills, listSkillVersions,
   publishSkill, deprecateSkill,
 } from '../agents/skill-registry';
+import { syncPersonaMarkdownFromSkill } from '../utils/persona-file-sync';
 
 export const skillRoutes = Router();
 
@@ -39,6 +40,9 @@ skillRoutes.post('/', (req, res) => {
   }
 
   try {
+    if (resolvedDiscipline === 'agent') {
+      syncPersonaMarkdownFromSkill(skill_name, agent_type ?? 'general', resolvedPersona);
+    }
     const id = publishSkill({
       skill_name,
       agent_type: agent_type ?? 'general',

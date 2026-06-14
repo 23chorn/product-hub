@@ -471,7 +471,7 @@ async function runDemoSequence(ws: WebSocket) {
     label: 'Coordinator analysing requirements',
     timestamp: now(),
     payload: {
-      stages: ['analyst', 'pm_prd', 'solution_architect', 'pm_backlog'],
+      stages: ['analyst', 'pm_prd', 'solution_architect', 'story_decomposition'],
       message: 'Selecting pipeline stages based on scope and constraints…',
     },
   });

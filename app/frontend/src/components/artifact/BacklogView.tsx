@@ -164,11 +164,11 @@ export function BacklogView({ data }: { data: BacklogData }) {
             {(story.benefit || story.so_that) && (
               <div><span className="text-xs font-medium text-slate-500 dark:text-slate-400">So that: </span><span className="text-xs text-slate-700 dark:text-slate-300">{story.so_that || story.benefit}</span></div>
             )}
-            {((story.acceptanceCriteria || story.acceptance_criteria) && (story.acceptanceCriteria || story.acceptance_criteria).length > 0) && (
+            {(() => { const acs = story.acceptanceCriteria ?? story.acceptance_criteria; return acs && acs.length > 0 && (
               <div>
                 <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Acceptance Criteria:</p>
                 <ul className="space-y-1">
-                  {(story.acceptanceCriteria || story.acceptance_criteria).map((ac, ai) => (
+                  {acs.map((ac, ai) => (
                     <li key={ai} className="text-xs text-slate-700 dark:text-slate-300 flex items-start gap-1.5">
                       <span className="text-green-500 mt-px flex-shrink-0">✓</span>
                       <span>{ac.split(/\b(Given|When|Then|And|But)\b/gi).map((part, pi) =>
@@ -180,7 +180,7 @@ export function BacklogView({ data }: { data: BacklogData }) {
                   ))}
                 </ul>
               </div>
-            )}
+            ); })()}
 
             {/* Technical Acceptance Criteria (new multi-agent format) */}
             {story.technical_acceptance_criteria && story.technical_acceptance_criteria.length > 0 && (
@@ -332,11 +332,11 @@ export function BacklogView({ data }: { data: BacklogData }) {
                       <span className="text-xs text-slate-700 dark:text-slate-300">{story.so_that || story.benefit}</span>
                     </div>
                   )}
-                  {((story.acceptanceCriteria || story.acceptance_criteria) && (story.acceptanceCriteria || story.acceptance_criteria).length > 0) && (
+                  {(() => { const acs = story.acceptanceCriteria ?? story.acceptance_criteria; return acs && acs.length > 0 && (
                     <div>
                       <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Acceptance Criteria:</p>
                       <ul className="space-y-1">
-                        {(story.acceptanceCriteria || story.acceptance_criteria).map((ac, ai) => (
+                        {acs.map((ac, ai) => (
                           <li key={ai} className="text-xs text-slate-700 dark:text-slate-300 flex items-start gap-1.5">
                             <span className="text-green-500 mt-px flex-shrink-0">✓</span>
                             <span>{ac.split(/\b(Given|When|Then|And|But)\b/gi).map((part, pi) =>
@@ -348,7 +348,7 @@ export function BacklogView({ data }: { data: BacklogData }) {
                         ))}
                       </ul>
                     </div>
-                  )}
+                  ); })()}
 
                   {/* Technical Acceptance Criteria (new multi-agent format) */}
                   {story.technical_acceptance_criteria && story.technical_acceptance_criteria.length > 0 && (

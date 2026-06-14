@@ -1,5 +1,7 @@
 Produce a single valid JSON object wrapped in a ```json code block with this exact structure. No prose before or after — just the JSON block.
 
+This stage is owned by Shard - Product Owner for ticket creation. The output should make the ticket acceptance criteria explicit and testable.
+
 Right-size the output based on scope. Use the **minimum structure** that fits the work:
 
 **Tier 1 — Single story** (trivial scope, 1 deliverable):

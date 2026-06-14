@@ -11,7 +11,7 @@ const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
 const AGENTS_ROOT = path.join(PROJECT_ROOT, 'agents');
 
 /** All known specialist stages — defaults to true if not specified in config. */
-const ALL_STAGES = ['analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'gtm_strategy', 'feature_marketing'];
+const ALL_STAGES = ['analyst', 'pm_prd', 'solution_architect', 'epic_feature_planner', 'prototype'];
 
 /** Load enabled_stages from agents/config.yaml. Missing stages default to true. */
 function loadEnabledStages(): Record<string, boolean> {

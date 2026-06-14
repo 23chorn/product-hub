@@ -5,6 +5,7 @@ import remarkBreaks from 'remark-breaks';
 import { api, type SkillVersion } from '../services/api';
 import { useSkillManagerStore } from '../stores/skillManagerStore';
 import { useThemeStore } from '../stores/themeStore';
+import { getAgentDisplayName } from '../utils/agent-display-names';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,6 +22,7 @@ interface PersonaFile {
   name: string;
   displayName: string;
   agentType: string;
+  skillName: string;
   content: string;
   frontmatter: string;
 }
@@ -39,7 +41,6 @@ type ContentTab = 'persona' | 'dev_context' | 'tools' | 'template';
 type PanelSelection =
   | { type: 'context'; index: number }
   | { type: 'skill'; skill: SkillVersion }
-  | { type: 'persona'; persona: PersonaFile }
   | { type: 'tool'; tool: ExtractedTool }
   | { type: 'new_context' }
   | { type: 'new_skill' }
@@ -174,8 +175,8 @@ export function SkillManagerPanel() {
   const { isDark } = useThemeStore();
 
   const [contextFiles, setContextFiles] = useState<ContextFile[]>([]);
-  const [allSkills, setAllSkills] = useState<SkillVersion[]>([]);
   const [personas, setPersonas] = useState<PersonaFile[]>([]);
+  const [allSkills, setAllSkills] = useState<SkillVersion[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filterDiscipline, setFilterDiscipline] = useState<Discipline>('all');
   const [selection, setSelection] = useState<PanelSelection>(null);
@@ -192,12 +193,6 @@ export function SkillManagerPanel() {
   const [ctxIsSaving, setCtxIsSaving] = useState(false);
   const [ctxVersions, setCtxVersions] = useState<Array<{ id: number; file_name: string; content: string; created_at: number }>>([]);
   const [ctxVersionsLoading, setCtxVersionsLoading] = useState(false);
-
-  // Persona editing state
-  const [personaEditContent, setPersonaEditContent] = useState('');
-  const [personaSavedContent, setPersonaSavedContent] = useState('');
-  const [personaIsSaving, setPersonaIsSaving] = useState(false);
-  const [personaIsPublishing, setPersonaIsPublishing] = useState(false);
 
   // Skill view state
   const [versionHistory, setVersionHistory] = useState<SkillVersion[]>([]);
@@ -230,6 +225,37 @@ export function SkillManagerPanel() {
     () => allSkills.filter((s) => s.discipline === 'agent'),
     [allSkills],
   );
+  const agentItems = useMemo(() => {
+    const personaItems = personas.map((persona) => {
+      const publishedSkill = agentSkills.find((skill) =>
+        skill.skill_name === persona.skillName ||
+        skill.agent_type === persona.agentType ||
+        getAgentDisplayName(skill) === persona.displayName
+      ) ?? null;
+      return {
+        type: 'persona' as const,
+        key: persona.name,
+        persona,
+        publishedSkill,
+        displayName: persona.displayName,
+      };
+    });
+
+    const personaDisplayNames = new Set(personaItems.map((item) => item.displayName));
+    const personaSkillNames = new Set(personaItems.map((item) => item.publishedSkill?.skill_name ?? item.persona.skillName));
+
+    const customSkills = agentSkills.filter((skill) =>
+      !personaDisplayNames.has(getAgentDisplayName(skill)) &&
+      !personaSkillNames.has(skill.skill_name)
+    ).map((skill) => ({
+      type: 'skill' as const,
+      key: skill.skill_name,
+      skill,
+      displayName: getAgentDisplayName(skill),
+    }));
+
+    return [...personaItems, ...customSkills];
+  }, [agentSkills, personas]);
   const domainSkills = useMemo(
     () => allSkills.filter((s) => s.discipline !== 'agent'),
     [allSkills],
@@ -335,52 +361,6 @@ export function SkillManagerPanel() {
       case 'dev_context': return skill.development_context ?? '';
       case 'tools':       return skill.tool_definitions ?? '';
       case 'template':    return skill.output_format_template ?? '';
-    }
-  };
-
-  const selectPersona = (persona: PersonaFile) => {
-    setSelection({ type: 'persona', persona });
-    setPersonaEditContent(persona.content);
-    setPersonaSavedContent(persona.content);
-  };
-
-  const handlePersonaSave = async () => {
-    if (selection?.type !== 'persona') return;
-    const { persona } = selection;
-    setPersonaIsSaving(true);
-    try {
-      await api.savePersona(persona.name, personaEditContent);
-      setPersonaSavedContent(personaEditContent);
-      setPersonas((prev) => prev.map((p) => p.name === persona.name ? { ...p, content: personaEditContent } : p));
-      setSelection({ type: 'persona', persona: { ...persona, content: personaEditContent } });
-      showToast('Saved to file');
-    } catch {
-      showToast('Save failed', false);
-    } finally {
-      setPersonaIsSaving(false);
-    }
-  };
-
-  const handlePersonaPublish = async (version: string) => {
-    if (selection?.type !== 'persona') return;
-    const { persona } = selection;
-    setPersonaIsPublishing(true);
-    try {
-      await api.publishSkill({
-        skill_name: persona.name,
-        agent_type: persona.agentType,
-        version: version.trim(),
-        owner_team: 'core',
-        discipline: 'agent',
-        persona_prompt: personaEditContent,
-      });
-      showToast(`Published ${persona.name} v${version.trim()}`);
-      const skillList = await api.getSkills();
-      setAllSkills(skillList);
-    } catch (err: any) {
-      showToast(err?.response?.data?.error ?? 'Publish failed', false);
-    } finally {
-      setPersonaIsPublishing(false);
     }
   };
 
@@ -501,14 +481,27 @@ export function SkillManagerPanel() {
     }
   };
 
+  const openPersonaForCreation = (persona: PersonaFile) => {
+    setCreateForm({
+      skill_name: persona.skillName,
+      discipline: 'agent',
+      owner_team: 'core',
+      agent_type: persona.agentType,
+      version: '1.0.0',
+      persona_prompt: persona.content,
+      development_context: '',
+      tool_definitions: '',
+      output_format_template: '',
+    });
+    setSelection({ type: 'new_agent' });
+    setExpanded((p) => ({ ...p, agents: true }));
+  };
+
   const selectedSkillName = selection?.type === 'skill' ? selection.skill.skill_name : null;
-  const selectedPersonaName = selection?.type === 'persona' ? selection.persona.name : null;
   const selectedCtxIndex = selection?.type === 'context' ? selection.index : null;
   const selectedToolName = selection?.type === 'tool' ? selection.tool.name : null;
-
-  // Personas that don't yet have a corresponding published skill
-  const unpublishedPersonas = personas.filter((p) => !agentSkills.some((s) => s.skill_name === p.name));
-  const totalAgentCount = agentSkills.length + unpublishedPersonas.length;
+  const selectedAgentName = selection?.type === 'new_agent' ? createForm.skill_name : null;
+  const totalAgentCount = agentItems.length;
 
   return (
     <div className={`h-full flex flex-col rounded-2xl overflow-hidden shadow-2xl ring-1 ring-slate-900/10 dark:ring-slate-100/10 ${isDark ? 'bg-slate-900' : 'bg-slate-100'}`}>
@@ -591,7 +584,17 @@ export function SkillManagerPanel() {
                   action={
                     <button
                       onClick={() => {
-                        setCreateForm((p) => ({ ...p, discipline: 'agent', agent_type: 'analyst' }));
+                        setCreateForm({
+                          skill_name: '',
+                          discipline: 'agent',
+                          owner_team: 'core',
+                          agent_type: 'analyst',
+                          version: '1.0.0',
+                          persona_prompt: '',
+                          development_context: '',
+                          tool_definitions: '',
+                          output_format_template: '',
+                        });
                         setSelection({ type: 'new_agent' });
                         setExpanded((p) => ({ ...p, agents: true }));
                       }}
@@ -606,46 +609,39 @@ export function SkillManagerPanel() {
                 />
                 {expanded.agents && (
                   <>
-                    {/* Core persona files */}
-                    {personas.map((persona) => {
-                      const publishedSkill = agentSkills.find((s) => s.skill_name === persona.name);
-                      const isSelected = selectedPersonaName === persona.name || selectedSkillName === persona.name;
+                    {agentItems.map((item) => {
+                      const isSelected =
+                        (item.type === 'skill' && selectedSkillName === item.skill.skill_name) ||
+                        (item.type === 'persona' && selectedAgentName === item.persona.skillName);
                       return (
                         <button
-                          key={persona.name}
-                          onClick={() => publishedSkill ? selectSkill(publishedSkill) : selectPersona(persona)}
+                          key={item.key}
+                          onClick={() => {
+                            if (item.type === 'skill') {
+                              selectSkill(item.skill);
+                            } else if (item.publishedSkill) {
+                              selectSkill(item.publishedSkill);
+                            } else {
+                              openPersonaForCreation(item.persona);
+                            }
+                          }}
                           className={`w-full text-left px-4 py-2 border-b border-slate-100 dark:border-slate-700/40 transition-colors ${
                             isSelected
                               ? 'bg-teal-50 dark:bg-teal-900/20 border-l-2 border-l-teal-500'
                               : 'hover:bg-slate-50 dark:hover:bg-slate-700/30 border-l-2 border-l-transparent'
                           }`}
                         >
-                          <div className="text-sm text-slate-800 dark:text-slate-200 truncate">{persona.displayName}</div>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            {publishedSkill ? (
-                              <span className="text-xs text-slate-400">v{publishedSkill.version} · published</span>
-                            ) : (
-                              <span className="text-xs px-1 py-0 rounded bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400">file only</span>
-                            )}
-                          </div>
+                          <div className="text-sm text-slate-800 dark:text-slate-200 truncate">{item.displayName}</div>
+                          {item.type === 'skill' ? (
+                            <div className="text-xs text-slate-400 mt-0.5">v{item.skill.version} · {item.skill.owner_team}</div>
+                          ) : item.publishedSkill ? (
+                            <div className="text-xs text-slate-400 mt-0.5">v{item.publishedSkill.version} · {item.publishedSkill.owner_team}</div>
+                          ) : (
+                            <div className="text-xs px-1 py-0 rounded bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 mt-0.5 inline-block">not published</div>
+                          )}
                         </button>
                       );
                     })}
-                    {/* Custom published agents not from persona files */}
-                    {agentSkills.filter((s) => !personas.some((p) => p.name === s.skill_name)).map((skill) => (
-                      <button
-                        key={skill.skill_name}
-                        onClick={() => selectSkill(skill)}
-                        className={`w-full text-left px-4 py-2 border-b border-slate-100 dark:border-slate-700/40 transition-colors ${
-                          selectedSkillName === skill.skill_name
-                            ? 'bg-teal-50 dark:bg-teal-900/20 border-l-2 border-l-teal-500'
-                            : 'hover:bg-slate-50 dark:hover:bg-slate-700/30 border-l-2 border-l-transparent'
-                        }`}
-                      >
-                        <div className="text-sm text-slate-800 dark:text-slate-200 truncate">{skill.skill_name}</div>
-                        <div className="text-xs text-slate-400 mt-0.5">v{skill.version} · {skill.owner_team}</div>
-                      </button>
-                    ))}
                   </>
                 )}
               </>
@@ -708,13 +704,15 @@ export function SkillManagerPanel() {
                                   ? 'bg-teal-50 dark:bg-teal-900/20 border-l-2 border-l-teal-500'
                                   : 'hover:bg-slate-50 dark:hover:bg-slate-700/30 border-l-2 border-l-transparent'
                               }`}
-                            >
-                              <div className="flex items-center space-x-1.5">
-                                <span className={`px-1.5 py-0 rounded text-xs font-medium ${DISCIPLINE_COLORS[disc]}`}>
-                                  {DISCIPLINE_LABELS[disc]}
+                              >
+                                <div className="flex items-center space-x-1.5">
+                                  <span className={`px-1.5 py-0 rounded text-xs font-medium ${DISCIPLINE_COLORS[disc]}`}>
+                                    {DISCIPLINE_LABELS[disc]}
+                                  </span>
+                                <span className="text-sm text-slate-800 dark:text-slate-200 truncate">
+                                  {skill.discipline === 'agent' ? getAgentDisplayName(skill) : skill.skill_name}
                                 </span>
-                                <span className="text-sm text-slate-800 dark:text-slate-200 truncate">{skill.skill_name}</span>
-                              </div>
+                                </div>
                               <div className="text-xs text-slate-400 mt-0.5 pl-0.5">v{skill.version} · {skill.owner_team}</div>
                             </button>
                           ))}
@@ -775,22 +773,10 @@ export function SkillManagerPanel() {
                 if (f?.templateContent) setCtxEditContent(f.templateContent);
               }}
             />
-          ) : selection?.type === 'persona' ? (
-            <PersonaEditor
-              persona={selection.persona}
-              editContent={personaEditContent}
-              savedContent={personaSavedContent}
-              isSaving={personaIsSaving}
-              isPublishing={personaIsPublishing}
-              publishedSkill={agentSkills.find((s) => s.skill_name === selection.persona.name) ?? null}
-              onChange={setPersonaEditContent}
-              onSave={handlePersonaSave}
-              onRevert={() => setPersonaEditContent(personaSavedContent)}
-              onPublish={handlePersonaPublish}
-            />
           ) : selection?.type === 'skill' ? (
             <SkillViewer
               skill={selection.skill}
+              displayName={selection.skill.discipline === 'agent' ? getAgentDisplayName(selection.skill) : selection.skill.skill_name}
               activeTab={activeTab}
               editContent={skillEditContent}
               setEditContent={setSkillEditContent}
@@ -1108,6 +1094,7 @@ interface SkillMeta { owner_team: string; agent_type: string; }
 
 interface SkillViewerProps {
   skill: SkillVersion;
+  displayName: string;
   activeTab: ContentTab;
   editContent: string;
   setEditContent: (v: string) => void;
@@ -1120,7 +1107,7 @@ interface SkillViewerProps {
 }
 
 function SkillViewer({
-  skill, activeTab, editContent, setEditContent,
+  skill, displayName, activeTab, editContent, setEditContent,
   newVersion, setNewVersion, versionHistory, isPublishing,
   onTabChange, onPublish,
 }: SkillViewerProps) {
@@ -1156,7 +1143,7 @@ function SkillViewer({
       {/* Header with editable metadata */}
       <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/30 flex-shrink-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 font-mono">{skill.skill_name}</h3>
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{displayName}</h3>
           <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${DISCIPLINE_COLORS[skill.discipline] ?? DISCIPLINE_COLORS.general}`}>
             {skill.discipline}
           </span>
@@ -1530,116 +1517,5 @@ function NewContextForm({ form, setForm, onSubmit, onCancel, isCreating }: NewCo
         </button>
       </div>
     </div>
-  );
-}
-
-// ─── Persona file editor ──────────────────────────────────────────────────────
-
-interface PersonaEditorProps {
-  persona: PersonaFile;
-  editContent: string;
-  savedContent: string;
-  isSaving: boolean;
-  isPublishing: boolean;
-  publishedSkill: SkillVersion | null;
-  onChange: (v: string) => void;
-  onSave: () => void;
-  onRevert: () => void;
-  onPublish: (version: string) => void;
-}
-
-function PersonaEditor({
-  persona, editContent, savedContent, isSaving, isPublishing,
-  publishedSkill, onChange, onSave, onRevert, onPublish,
-}: PersonaEditorProps) {
-  const isDirty = editContent !== savedContent;
-  const [publishVersion, setPublishVersion] = useState(
-    publishedSkill ? bumpPatch(publishedSkill.version) : '1.0.0'
-  );
-
-  useEffect(() => {
-    setPublishVersion(publishedSkill ? bumpPatch(publishedSkill.version) : '1.0.0');
-  }, [publishedSkill?.version]);
-
-  return (
-    <>
-      <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/30 flex-shrink-0">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{persona.displayName}</h3>
-              <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300">
-                agent
-              </span>
-              {publishedSkill ? (
-                <span className="text-xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-mono">
-                  v{publishedSkill.version} published
-                </span>
-              ) : (
-                <span className="text-xs px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400">
-                  file only — not published
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono">{persona.name}.md</p>
-          </div>
-          <span className="text-xs text-slate-400">Edit · Preview</span>
-        </div>
-      </div>
-
-      <div className="flex-1 p-4 overflow-hidden">
-        <MarkdownEditor
-          value={editContent}
-          onChange={onChange}
-          placeholder="Enter persona prompt…"
-        />
-      </div>
-
-      <div className="px-5 py-3 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/30 flex-shrink-0 space-y-2">
-        <div className="flex items-center justify-between">
-          <span className={`text-xs ${isDirty ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-slate-400'}`}>
-            {isDirty ? 'Unsaved changes' : 'No changes'}
-          </span>
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={onRevert}
-              disabled={!isDirty}
-              className="text-xs px-3 py-1.5 rounded-md border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              Revert
-            </button>
-            <button
-              onClick={onSave}
-              disabled={!isDirty || isSaving}
-              className="text-xs px-4 py-1.5 rounded-md bg-slate-600 dark:bg-slate-500 text-white hover:bg-slate-700 dark:hover:bg-slate-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-medium"
-            >
-              {isSaving ? 'Saving…' : 'Save to file'}
-            </button>
-          </div>
-        </div>
-        <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-700/50">
-          <span className="text-xs text-slate-400 dark:text-slate-500">
-            {publishedSkill ? 'Publish new version to Studio' : 'Publish to Agent Studio'}
-          </span>
-          <div className="flex items-center space-x-2">
-            <label className="text-xs text-slate-500 dark:text-slate-400">Version:</label>
-            <input
-              type="text"
-              value={publishVersion}
-              onChange={(e) => setPublishVersion(e.target.value)}
-              className="w-20 px-2 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono focus:outline-none focus:ring-2 focus:ring-teal-500"
-              placeholder="1.0.0"
-            />
-            <button
-              onClick={() => onPublish(publishVersion)}
-              disabled={!publishVersion.trim() || isPublishing}
-              className="text-xs px-4 py-1.5 rounded-md bg-teal-600 text-white hover:bg-teal-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-medium"
-            >
-              {isPublishing ? 'Publishing…' : 'Publish Version'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </>
   );
 }

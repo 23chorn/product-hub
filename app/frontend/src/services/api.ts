@@ -7,6 +7,13 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 // Always send cookies (httpOnly auth cookie)
 axios.defaults.withCredentials = true;
 
+function apiError(body: unknown, status: number): Error {
+  const msg = body && typeof body === 'object' && 'error' in body
+    ? String((body as Record<string, unknown>).error)
+    : `HTTP ${status}`;
+  return new Error(msg);
+}
+
 export interface SkillVersion {
   id: number;
   skill_name: string;
@@ -63,7 +70,7 @@ class APIClient {
   // Local Initiatives (roadmap=none mode)
   // ============================================
 
-  async getInitiatives(): Promise<(AirtableItem & { workflow?: { id: string; status: string; currentStage: string | null; summary: string | null } })[]> {
+  async getInitiatives(): Promise<(AirtableItem & { workflow?: { id: string; status: string; currentStage: string | null; summary: string | null; pendingStage?: string | null; isDemo?: boolean } })[]> {
     const response = await axios.get(`${this.baseURL}/api/initiatives`);
     return response.data;
   }
@@ -149,8 +156,7 @@ class APIClient {
       body: JSON.stringify({ goal, model }),
     });
     if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error((err as any).error ?? `HTTP ${response.status}`);
+      throw apiError(await response.json().catch(() => ({})), response.status);
     }
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();
@@ -196,8 +202,7 @@ class APIClient {
       body: JSON.stringify({ sessionId, message, model }),
     });
     if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error((err as any).error ?? `HTTP ${response.status}`);
+      throw apiError(await response.json().catch(() => ({})), response.status);
     }
     await this.readSSEStream(response, onChunk, (content) => onComplete(content ?? ''), onError, onReplace);
   }
@@ -275,15 +280,9 @@ class APIClient {
       body: JSON.stringify({ message, model }),
     });
     if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error((err as any).error ?? `HTTP ${response.status}`);
+      throw apiError(await response.json().catch(() => ({})), response.status);
     }
     await this.readSSEStream(response, onChunk, (content) => onComplete(content ?? ''), onError);
-  }
-
-  async extendWorkflow(workflowId: string, stages: string[]) {
-    const response = await axios.post(`${this.baseURL}/api/workflow/${workflowId}/extend`, { stages });
-    return response.data;
   }
 
   async retryWorkflowStage(workflowId: string) {
@@ -367,8 +366,7 @@ class APIClient {
       headers: { 'Content-Type': 'application/json' },
     });
     if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error((err as any).error ?? `HTTP ${response.status}`);
+      throw apiError(await response.json().catch(() => ({})), response.status);
     }
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();
@@ -490,6 +488,18 @@ class APIClient {
   }
 
   // ============================================
+  // Agent Catalog
+  // ============================================
+
+  async getPersonas(): Promise<Array<{
+    name: string; displayName: string; agentType: string; skillName: string;
+    content: string; frontmatter: string;
+  }>> {
+    const response = await axios.get(`${this.baseURL}/api/agents/personas`);
+    return response.data;
+  }
+
+  // ============================================
   // Skill Registry
   // ============================================
 
@@ -526,23 +536,6 @@ class APIClient {
 
   async deprecateSkill(name: string, version: string): Promise<void> {
     await axios.delete(`${this.baseURL}/api/skills/${encodeURIComponent(name)}/versions/${encodeURIComponent(version)}`);
-  }
-
-  // ============================================
-  // Agent Personas (file-based)
-  // ============================================
-
-  async getPersonas(): Promise<Array<{
-    name: string; displayName: string; agentType: string;
-    content: string; frontmatter: string;
-  }>> {
-    const response = await axios.get(`${this.baseURL}/api/agents/personas`);
-    return response.data;
-  }
-
-  async savePersona(name: string, content: string): Promise<{ ok: boolean }> {
-    const response = await axios.put(`${this.baseURL}/api/agents/personas/${encodeURIComponent(name)}`, { content });
-    return response.data;
   }
 
   // ============================================
@@ -643,74 +636,6 @@ class APIClient {
   }
 
   /**
-   * Generate a prototype via SSE stream.
-   * Accumulates raw text and attempts client-side recovery if server parsing fails.
-   */
-  async generatePrototype(
-    workflowId: string,
-    scope: string | undefined,
-    callbacks: {
-      onContent: (text: string) => void;
-      onPrototype: (prototype: any) => void;
-      onError: (error: string) => void;
-      onDone: () => void;
-    }
-  ): Promise<void> {
-    const response = await fetch(`${this.baseURL}/api/workflow/${workflowId}/prototype/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scope }),
-    });
-
-    if (!response.ok || !response.body) {
-      callbacks.onError('Failed to start prototype generation');
-      return;
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let rawAccumulator = '';
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          try {
-            const event = JSON.parse(line.slice(6));
-            if (event.type === 'content') {
-              rawAccumulator += event.content;
-              callbacks.onContent(event.content);
-            } else if (event.type === 'prototype') {
-              callbacks.onPrototype(event.prototype);
-            } else if (event.type === 'prototype_multi') {
-              // Both web + mobile generated — prefer web for preview
-              const proto = event.web ?? event.mobile;
-              if (proto) callbacks.onPrototype(proto);
-            } else if (event.type === 'parse_failed') {
-              try {
-                const repaired = await this.parsePrototypeRaw(workflowId, rawAccumulator);
-                if (repaired) callbacks.onPrototype(repaired);
-              } catch { /* repair failed */ }
-            } else if (event.type === 'error') {
-              callbacks.onError(event.error);
-            } else if (event.type === 'done') {
-              callbacks.onDone();
-            }
-          } catch { /* skip */ }
-        }
-      }
-    } finally {
-      reader.releaseLock();
-    }
-  }
-
-  /**
    * Revise a prototype with feedback. Same SSE pattern as generatePrototype.
    */
   async revisePrototype(
@@ -802,8 +727,7 @@ class APIClient {
     });
 
     if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error((err as any).error || `HTTP ${response.status}`);
+      throw apiError(await response.json().catch(() => ({})), response.status);
     }
 
     const reader = response.body?.getReader();

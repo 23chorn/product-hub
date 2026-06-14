@@ -63,11 +63,6 @@ const DEMO_FIXTURE_FILES: Record<string, string> = {
   epic_feature_planner:  'epic-features.json',
   solution_architect:    'architecture.json',
   story_decomposition:   'backlog.json',
-  pm_backlog:            'backlog.json',
-  tech_refinement:       'tech-backlog.json',
-  qa_engineer:           'qa-tests.json',
-  gtm_strategy:          'gtm-strategy.json',
-  feature_marketing:     'feature-marketing.json',
   prototype:             'prototype.json',
 };
 
@@ -104,22 +99,19 @@ export function getDemoFixtureForTheme(theme: string, stage: string): string | n
 
 /**
  * Returns demo fixture content for the given stage, or null if no fixture exists.
- * JSON stages (backlog, qa_engineer) return the raw JSON string.
  * For feature-specific stages (story_decomposition_F1, F2, etc.), returns a backlog with
  * stories ONLY for that specific feature (other features have empty stories arrays).
  *
  * Falls back to base fixtures directory if theme-specific fixture not found.
  */
 export function getDemoFixture(stage: string): string | null {
-  // Handle feature-specific story decomposition and tech refinement stages
-  const featureMatch = stage.match(/^(story_decomposition|tech_refinement)_F(\d+)$/);
+  // Handle feature-specific story decomposition stages
+  const featureMatch = stage.match(/^story_decomposition_F(\d+)$/);
   if (featureMatch) {
-    const featureIndex = parseInt(featureMatch[2], 10) - 1; // Convert to 0-based
-    const isTechRefinement = featureMatch[1] === 'tech_refinement';
-    const fixturePath = path.join(getFixturesDir(), isTechRefinement ? 'tech-backlog.json' : 'backlog.json');
+    const featureIndex = parseInt(featureMatch[1], 10) - 1; // Convert to 0-based
+    const fixturePath = path.join(getFixturesDir(), 'backlog.json');
     try {
       const fullBacklogContent = fs.readFileSync(fixturePath, 'utf-8').replace(/^﻿/, '');
-      // Parse and extract only the target feature's stories
       const fullBacklog = JSON.parse(fullBacklogContent);
 
       if (!fullBacklog.features || !Array.isArray(fullBacklog.features)) {
@@ -127,76 +119,15 @@ export function getDemoFixture(stage: string): string | null {
         return null;
       }
 
-      // Return ONLY the target feature (not all features with empty stories)
       const targetFeature = fullBacklog.features[featureIndex];
       if (!targetFeature) {
         console.error(`[DEMO FIXTURE ERROR] Feature ${featureIndex + 1} not found in backlog`);
         return null;
       }
 
-      const featureSpecificBacklog = {
-        epic: fullBacklog.epic,
-        features: [targetFeature]  // Only include the target feature
-      };
-
-      return JSON.stringify(featureSpecificBacklog, null, 2);
+      return JSON.stringify({ epic: fullBacklog.epic, features: [targetFeature] }, null, 2);
     } catch (err: any) {
       console.error(`[DEMO FIXTURE ERROR] Failed to process feature-specific backlog for ${stage}:`, err.message);
-      return null;
-    }
-  }
-
-  // Handle feature-specific QA engineer stages
-  const qaFeatureMatch = stage.match(/^qa_engineer_F(\d+)$/);
-  if (qaFeatureMatch) {
-    const featureNum = parseInt(qaFeatureMatch[1], 10); // 1-based feature number
-    const fixturePath = path.join(getFixturesDir(), 'qa-tests.json');
-    try {
-      const fullQaContent = fs.readFileSync(fixturePath, 'utf-8');
-      const fullQa = JSON.parse(fullQaContent);
-
-      if (!fullQa.test_cases || !Array.isArray(fullQa.test_cases)) {
-        console.error(`[DEMO FIXTURE ERROR] Invalid QA structure in ${fixturePath} - expected test_cases array`);
-        return null;
-      }
-
-      // Filter test cases to only include those for the target feature (story_ref starts with "F{num}.")
-      const featurePrefix = `F${featureNum}.`;
-      const featureTestCases = fullQa.test_cases.filter((tc: any) =>
-        tc.story_ref && typeof tc.story_ref === 'string' && tc.story_ref.startsWith(featurePrefix)
-      );
-
-      // Recalculate coverage for this subset
-      const coverage = {
-        total: featureTestCases.length,
-        happy_paths: featureTestCases.filter((tc: any) => tc.type === 'happy_path').length,
-        bad_paths: featureTestCases.filter((tc: any) => tc.type === 'bad_path').length,
-        edge_cases: featureTestCases.filter((tc: any) => tc.type === 'edge_case').length,
-        by_priority: {
-          critical: featureTestCases.filter((tc: any) => tc.priority === 'critical').length,
-          high: featureTestCases.filter((tc: any) => tc.priority === 'high').length,
-          medium: featureTestCases.filter((tc: any) => tc.priority === 'medium').length,
-          low: featureTestCases.filter((tc: any) => tc.priority === 'low').length,
-        },
-        by_fr: {} as Record<string, number>
-      };
-
-      // Build by_fr coverage map
-      featureTestCases.forEach((tc: any) => {
-        if (tc.prd_ref) {
-          coverage.by_fr[tc.prd_ref] = (coverage.by_fr[tc.prd_ref] || 0) + 1;
-        }
-      });
-
-      const featureSpecificQa = {
-        ...fullQa,
-        test_cases: featureTestCases,
-        coverage
-      };
-
-      return JSON.stringify(featureSpecificQa, null, 2);
-    } catch (err: any) {
-      console.error(`[DEMO FIXTURE ERROR] Failed to process feature-specific QA for ${stage}:`, err.message);
       return null;
     }
   }
@@ -247,11 +178,6 @@ export const DEMO_STAGE_DELAY_MS: Record<string, number> = {
   epic_feature_planner:  2_000,
   solution_architect:    2_500,
   story_decomposition:   2_000,
-  pm_backlog:            2_000,
-  tech_refinement:       2_500,
-  qa_engineer:           2_000,
-  gtm_strategy:          2_000,
-  feature_marketing:     2_000,
   prototype:             3_000,
   curator:               1_500,
 };

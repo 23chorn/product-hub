@@ -552,13 +552,10 @@ When all four exit criteria are met, end your response with exactly:
 COORDINATOR_READY
 {"enriched_context": "<structured summary covering: (1) problem and evidence, (2) target user and their context, (3) explicit scope boundary — what is MVP vs deferred, (4) hard constraints the specialists must honour>", "recommended_stages": ["<stage_key>", "..."], "stage_rationale": "<one sentence, max 20 words>"${this.hasKnowledgeBase() ? ', "kb_queries": ["<search term 1>", "<search term 2>"]' : ''}}
 
-**recommended_stages rules** — always include "pm_backlog" and "curator"; add others only when genuinely needed:
+**recommended_stages rules** — always include "solution_architect", "epic_feature_planner", "story_decomposition", and "curator"; add others only when genuinely needed:
 - "analyst": add when market research, competitive analysis, or user research would materially improve the output
 - "pm_prd": add for any new feature or capability; omit only for bug fixes, copy changes, or minor config tweaks
-- "solution_architect": add when the work involves new infrastructure, new services, new third-party integrations, significant data model changes, or security/compliance decisions
 - "prototype": add when stakeholder alignment on UX flows would accelerate decisions before engineering starts
-- "gtm_strategy": add when the feature is user-facing and requires a launch strategy alongside engineering
-- "feature_marketing": add when copy, positioning, or marketing assets for the feature are needed alongside engineering
 ${this.hasKnowledgeBase() ? `
 **kb_queries rules:**
 - Include 1–3 short, specific search queries that would find relevant existing documentation (PRDs, architecture docs, research) to give specialists useful background.
@@ -604,11 +601,12 @@ Nothing may follow the JSON line. By your 3rd message you must include COORDINAT
       `- analyst              — Sage, research & problem space analysis\n` +
       `- pm_prd               — Rex, Product Requirements Document\n` +
       `- solution_architect   — Atlas, system architecture, tech decisions, data model, API design\n` +
-      `- pm_backlog           — Pip, backlog of epics/stories\n` +
-      `- critic               — Flint, adversarial review of the above artifacts\n` +
+      `- epic_feature_planner — Apex, epic and feature breakdown with phase labels\n` +
+      `- story_decomposition  — Shard - Product Owner, multi-agent backlog of epics/stories\n` +
+      `- prototype            — Nova, interactive React prototype of key user journeys\n` +
       `- curator              — Ivy, update project context files with learnings\n\n` +
       `Explain your reasoning briefly, then output the chosen stage sequence as a JSON array in a \`\`\`stages code block.\n\n` +
-      `Example:\n\`\`\`stages\n["analyst", "pm_prd", "pm_backlog"]\n\`\`\``;
+      `Example:\n\`\`\`stages\n["analyst", "pm_prd", "solution_architect", "epic_feature_planner", "story_decomposition", "curator"]\n\`\`\``;
 
     logger.info(`Coordinator decomposing goal: "${goal.slice(0, 80)}…"`);
 

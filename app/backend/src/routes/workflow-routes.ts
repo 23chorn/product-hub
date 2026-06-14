@@ -14,7 +14,6 @@ import {
   reiterateFromStage,
   retryCurrentStage,
   restartWorkflow,
-  extendWorkflow,
   deleteWorkflow,
   costTracker,
 } from '../agents/workflow-router';
@@ -128,7 +127,7 @@ function cleanCoordinatorResponse(text: string): string {
   return cleaned;
 }
 
-const KNOWN_STAGES = new Set(['analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'gtm_strategy', 'feature_marketing', 'critic', 'curator']);
+const KNOWN_STAGES = new Set(['analyst', 'pm_prd', 'epic_feature_planner', 'solution_architect', 'story_decomposition', 'prototype', 'critic', 'curator']);
 
 /**
  * Validate a candidate stage sequence.
@@ -425,10 +424,6 @@ workflowRoutes.post('/start', async (req: Request, res: Response) => {
       ? stageSequence
       : DEFAULT_STAGES;
 
-    // tech_refinement is now embedded inside multi-agent refinement (story_decomposition_F*).
-    // Remove it if somehow still present in a supplied stage sequence.
-    stages = stages.filter(s => s !== 'tech_refinement');
-
     // Fold coordinator-gathered context into the goal so all stage briefs benefit from it
     const fullGoal = enrichedContext
       ? `${goal}\n\n[Coordinator context]\n\n${enrichedContext}`
@@ -565,7 +560,7 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
 
       resolveCheckpoint(cpId, 'approved', feedback);
 
-      // Fetch itemId once — needed by pm_backlog and qa_engineer pushes
+      // Fetch itemId once — needed by story_decomposition and qa_engineer pushes
       const wfRow = db.prepare<[string], { item_id: string }>(
         'SELECT item_id FROM workflows WHERE id = ?'
       ).get(workflowId);
@@ -608,20 +603,20 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
         }
       }
 
-      // ── pm_backlog: push full backlog to ADO Boards ────────────────────────────
-      if (cpDetail && cpDetail.stage === 'pm_backlog') {
+      // ── story_decomposition: push full backlog to ADO Boards ───────────────────
+      if (cpDetail && cpDetail.stage === 'story_decomposition') {
         try {
           const { pushBacklogToAdo } = await import('../agents/ado-stage-push');
           const epicUrl = await pushBacklogToAdo(workflowId, itemId);
           if (epicUrl) {
             stampArtifactUrl(epicUrl);
-            insertEvent(workflowId, 'ado_pushed', 'pm_backlog',
+            insertEvent(workflowId, 'ado_pushed', 'story_decomposition',
               'Backlog pushed to Azure DevOps',
               { ado_url: epicUrl });
-            logger.info(`[CHECKPOINT] pm_backlog → pushed backlog to ADO: ${epicUrl}`);
+            logger.info(`[CHECKPOINT] story_decomposition → pushed backlog to ADO: ${epicUrl}`);
           }
         } catch (err: any) {
-          logger.error(`[CHECKPOINT] pm_backlog ADO push failed: ${err.message}`);
+          logger.error(`[CHECKPOINT] story_decomposition ADO push failed: ${err.message}`);
         }
       }
 
@@ -673,9 +668,7 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
       // ── Wiki-backed stages: sync artifact to Azure Wiki on first approval ────
       const isAdoHandledStage =
         cpDetail?.stage === 'epic_feature_planner' ||
-        cpDetail?.stage === 'pm_backlog' ||
-        cpDetail?.stage === 'qa_engineer' ||
-        /^(qa_engineer|story_decomposition)_F\d+$/.test(cpDetail?.stage ?? '');
+        /^story_decomposition_F\d+$/.test(cpDetail?.stage ?? '');
 
       if (cpDetail && cpDetail.artifact_id && !isAdoHandledStage) {
         try {
@@ -802,37 +795,6 @@ workflowRoutes.post('/:id/reiterate', async (req: Request, res: Response) => {
   } catch (err: any) {
     if (err.message.includes('not found')) return res.status(404).json({ error: err.message });
     logger.error('Failed to reiterate workflow', err);
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// ── POST /api/workflow/:id/extend ─────────────────────────────────────────────
-
-/**
- * POST /api/workflow/:id/extend
- * Appends new stages to a completed workflow and re-activates it.
- * Body: { stages: string[] }  — ordered list of stage keys to add.
- * Stages are inserted before 'curator' (if present) so curator re-runs last.
- */
-workflowRoutes.post('/:id/extend', async (req: Request, res: Response) => {
-  const { stages } = req.body as { stages?: unknown };
-  if (!Array.isArray(stages) || stages.length === 0) {
-    return res.status(400).json({ error: 'stages must be a non-empty array' });
-  }
-  const unknownStages = (stages as unknown[]).filter(
-    (s): s is string => typeof s !== 'string' || !KNOWN_STAGES.has(s)
-  );
-  if (unknownStages.length) {
-    return res.status(400).json({ error: `Unknown stage(s): ${unknownStages.join(', ')}` });
-  }
-
-  try {
-    await extendWorkflow(req.params.id, stages as string[]);
-    const status = getWorkflowStatus(req.params.id);
-    res.json(status);
-  } catch (err: any) {
-    if (err.message.includes('not found')) return res.status(404).json({ error: err.message });
-    logger.error('Failed to extend workflow', err);
     res.status(400).json({ error: err.message });
   }
 });
@@ -1165,7 +1127,7 @@ workflowRoutes.post('/:id/push-to-test-plans', async (req: Request, res: Respons
       now
     );
 
-    insertEvent(workflowId, 'stage_progress', 'qa_engineer',
+    insertEvent(workflowId, 'stage_progress', 'curator',
       `QA Test Plan synced to ADO — ${result.created} created, ${result.updated} updated\n→ ${result.planUrl}`,
       { plan_id: result.planId, plan_url: result.planUrl, created: result.created, updated: result.updated }
     );
@@ -1225,13 +1187,13 @@ workflowRoutes.post('/:id/sync-to-wiki', async (req: Request, res: Response) => 
 
     const results: Array<{ stage: string; pageName: string; url: string }> = [];
 
-    const stageArtifactMap: Record<string, { type: string; pageName: string }> = {
-      analyst:            { type: 'analyst',      pageName: 'Research Brief' },
-      pm_prd:             { type: 'prd',           pageName: 'PRD' },
-      solution_architect: { type: 'architecture',  pageName: 'Architecture' },
-      pm_backlog:         { type: 'backlog',        pageName: 'Backlog' },
-      qa_engineer:        { type: 'qa_tests',       pageName: 'QA Test Plan' },
-    };
+      const stageArtifactMap: Record<string, { type: string; pageName: string }> = {
+        analyst:            { type: 'analyst',      pageName: 'Research Brief' },
+        pm_prd:             { type: 'prd',           pageName: 'PRD' },
+        solution_architect: { type: 'architecture',  pageName: 'Architecture' },
+        story_decomposition:{ type: 'backlog',        pageName: 'Backlog' },
+        qa_engineer:        { type: 'qa_tests',       pageName: 'QA Test Plan' },
+      };
 
     const featureName = itemRow.title.replace(/[/\\:*?"<>|#]/g, '').trim();
 
@@ -1703,7 +1665,7 @@ workflowRoutes.get('/my-pending-count', (req: AuthRequest, res: Response) => {
     let count: number;
     if (req.user.is_admin) {
       const row = db.prepare<[], { count: number }>(
-        `SELECT COUNT(*) as count FROM checkpoints WHERE status = 'pending'`
+        `SELECT COUNT(DISTINCT workflow_id) as count FROM checkpoints WHERE status = 'pending'`
       ).get();
       count = row?.count ?? 0;
     } else {
@@ -1711,7 +1673,7 @@ workflowRoutes.get('/my-pending-count', (req: AuthRequest, res: Response) => {
       if (!roles.length) return res.json({ count: 0 });
       const placeholders = roles.map(() => '?').join(',');
       const row = db.prepare<string[], { count: number }>(
-        `SELECT COUNT(*) as count FROM checkpoints
+        `SELECT COUNT(DISTINCT workflow_id) as count FROM checkpoints
          WHERE status = 'pending' AND (required_role IS NULL OR required_role IN (${placeholders}))`
       ).get(...roles);
       count = row?.count ?? 0;

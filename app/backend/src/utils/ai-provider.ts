@@ -77,7 +77,7 @@ export function modelShortLabel(modelId: string): string {
 
 /** Returns short model labels per agent — used by the frontend to show which model each stage uses. */
 export function getAgentModelLabels(): Record<string, string> {
-  const agents = ['coordinator', 'analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'critic', 'curator'];
+  const agents = ['coordinator', 'analyst', 'pm_prd', 'solution_architect', 'story_decomposition', 'critic', 'curator'];
   return Object.fromEntries(agents.map(a => [a, modelShortLabel(resolveAgentModel(a))]));
 }
 

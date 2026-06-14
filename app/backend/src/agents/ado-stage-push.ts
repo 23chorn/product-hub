@@ -1,9 +1,9 @@
 /**
  * ADO auto-push helpers for stage completion.
  *
- * Called directly after pm_backlog, tech_refinement, and qa_engineer stages
+ * Called directly after story_decomposition, tech_refinement, and qa_engineer stages
  * save their artifacts. Pushes content to the appropriate ADO destination:
- *   pm_backlog / tech_refinement → Azure Boards (Epic + Features + Stories)
+ *   story_decomposition / tech_refinement → Azure Boards (Epic + Features + Stories)
  *   qa_engineer                  → Azure Test Plans
  *
  * Returns the top-level ADO URL on success, null if ADO is not configured or
@@ -30,7 +30,7 @@ function isAdoConfigured(): boolean {
 
 /**
  * Push the latest backlog artifact for itemId to Azure Boards.
- * Used for both pm_backlog (first push) and tech_refinement (sync/update).
+ * Used for both story_decomposition (first push) and tech_refinement (sync/update).
  * Returns the epic URL or null.
  */
 export async function pushBacklogToAdo(workflowId: string, itemId: string): Promise<string | null> {
@@ -161,7 +161,7 @@ export async function pushBacklogToAdo(workflowId: string, itemId: string): Prom
     return topUrl;
   } catch (err: any) {
     logger.error(`Board push failed for workflow ${workflowId}: ${err.message}`);
-    insertEvent(workflowId, 'error', 'pm_backlog', `Board sync failed: ${err.message}`, { error: err.message });
+    insertEvent(workflowId, 'error', 'story_decomposition', `Board sync failed: ${err.message}`, { error: err.message });
     return null;
   }
 }

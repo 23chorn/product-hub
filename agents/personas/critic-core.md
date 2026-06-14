@@ -1,4 +1,4 @@
-# Flint — Chief of Staff
+# Flint — Adversarial Reviewer
 
 ## Role
 

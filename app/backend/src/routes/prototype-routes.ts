@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import * as fs from 'fs';
 import * as path from 'path';
-import { generatePrototype, revisePrototype, loadLatestPrototype, repairTruncatedJson, type PrototypeResult, type GeneratePrototypeOutput } from '../agents/prototype-agent';
+import { revisePrototype, loadLatestPrototype, repairTruncatedJson, type PrototypeResult } from '../agents/prototype-agent';
 import { costTracker } from '../agents/workflow-router';
 import Logger from '../utils/logger';
 
@@ -9,49 +9,6 @@ const PROTOTYPE_DIR = path.resolve(__dirname, '../../../../agents/templates/prot
 const logger = new Logger('PROTOTYPE-ROUTES');
 
 export const prototypeRoutes = Router();
-
-/**
- * POST /api/workflow/:id/prototype/generate
- * Generate a new prototype from workflow artifacts. Returns SSE stream.
- * Body: { scope?: string }
- */
-prototypeRoutes.post('/workflow/:id/prototype/generate', async (req: Request, res: Response) => {
-  const workflowId = req.params.id;
-  const { scope } = req.body as { scope?: string };
-
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-
-  try {
-    const onTokens = costTracker(workflowId);
-    const generator = generatePrototype(workflowId, scope, onTokens);
-    let output: GeneratePrototypeOutput | null = null;
-
-    while (true) {
-      const next = await generator.next();
-      if (next.done) { output = next.value; break; }
-      res.write(`data: ${JSON.stringify({ type: 'content', content: next.value })}\n\n`);
-    }
-
-    if (output) {
-      if (output.platform === 'both') {
-        res.write(`data: ${JSON.stringify({ type: 'prototype_multi', platform: 'both', web: output.web, mobile: output.mobile })}\n\n`);
-      } else {
-        res.write(`data: ${JSON.stringify({ type: 'prototype', platform: output.platform, prototype: output.result })}\n\n`);
-      }
-    } else {
-      res.write(`data: ${JSON.stringify({ type: 'parse_failed' })}\n\n`);
-    }
-    res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    logger.error('Failed to generate prototype', err);
-    res.write(`data: ${JSON.stringify({ type: 'error', error: msg })}\n\n`);
-  } finally {
-    res.end();
-  }
-});
 
 /**
  * POST /api/workflow/:id/prototype/revise

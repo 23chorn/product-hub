@@ -21,15 +21,10 @@ const STAGE_LABELS: Record<string, string> = {
   analyst: 'Research Analyst',
   pm_prd: 'Product Manager — PRD',
   solution_architect: 'Solution Architect',
-  pm_backlog: 'Product Manager — Backlog',
-  qa_engineer: 'QA Engineer',
-  tech_refinement: 'Tech Refinement',
-  gtm_strategy: 'Go-to-Market Strategy',
-  feature_marketing: 'Feature Marketing',
-  curator: 'Context Curator',
+  story_decomposition: 'Shard - Product Owner',
 };
 
-const STAGE_ORDER = ['analyst', 'pm_prd', 'solution_architect', 'pm_backlog', 'qa_engineer', 'tech_refinement', 'gtm_strategy', 'feature_marketing'];
+const STAGE_ORDER = ['analyst', 'pm_prd', 'solution_architect', 'epic_feature_planner', 'prototype'];
 const ALWAYS_ON = new Set(['curator']);
 
 type Tab = 'general' | 'pipeline' | 'quality' | 'access';
@@ -81,7 +76,7 @@ function FieldRow({ label, hint, children }: { label: string; hint?: string; chi
 export function SettingsPanel() {
   const { closeSettings, setDemoMode } = useSettingsStore();
   const { isDark, toggleTheme } = useThemeStore();
-  const { user } = useAuthStore();
+  const { user, noAuth, loading: authLoading } = useAuthStore();
   const toast = useToast();
   const [tab, setTab] = useState<Tab>('general');
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -122,13 +117,19 @@ export function SettingsPanel() {
     }
   };
 
+  const canAccessAdminTabs = noAuth || !!user?.is_admin;
+
   const ALL_TABS: Array<{ key: Tab; label: string; adminOnly?: boolean }> = [
     { key: 'general',      label: 'General' },
-    { key: 'pipeline',     label: 'Pipeline' },
-    { key: 'quality',      label: 'Quality gates' },
+    { key: 'pipeline',     label: 'Pipeline', adminOnly: true },
+    { key: 'quality',      label: 'Quality gates', adminOnly: true },
     { key: 'access',       label: 'Access', adminOnly: true },
   ];
-  const TABS = ALL_TABS.filter(t => !t.adminOnly || !user || user.is_admin);
+  const TABS = ALL_TABS.filter(t => !t.adminOnly || canAccessAdminTabs);
+
+  useEffect(() => {
+    if (!canAccessAdminTabs && tab !== 'general') setTab('general');
+  }, [canAccessAdminTabs, tab]);
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
@@ -168,7 +169,7 @@ export function SettingsPanel() {
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-5 py-5">
-        {loading && (
+        {(loading || authLoading) && (
           <div className="flex items-center justify-center h-32">
             <svg className="w-5 h-5 animate-spin text-slate-400" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -185,6 +186,23 @@ export function SettingsPanel() {
                 <Toggle checked={isDark} onChange={toggleTheme} />
               </FieldRow>
             </div>
+
+            {canAccessAdminTabs && !loading && draft && (
+              <div className="mt-5">
+                <SectionHeader
+                  title="Demo mode"
+                  description="When enabled, workflows use static fixture data instead of live LLM calls — useful for testing the pipeline UI and approval flow without API costs."
+                />
+                <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+                  <FieldRow label="Demo mode enabled" hint="Overrides the DEMO_MODE environment variable. Takes effect on the next workflow run.">
+                    <Toggle
+                      checked={draft.demo.enabled}
+                      onChange={v => patch('demo', { enabled: v })}
+                    />
+                  </FieldRow>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -216,18 +234,6 @@ export function SettingsPanel() {
                   </div>
                 );
               })}
-            </div>
-
-            <div className="mt-5">
-              <SectionHeader title="Demo mode" description="When enabled, workflows use static fixture data instead of live LLM calls — useful for testing the pipeline UI and approval flow without API costs." />
-              <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
-                <FieldRow label="Demo mode enabled" hint="Overrides the DEMO_MODE environment variable. Takes effect on the next workflow run.">
-                  <Toggle
-                    checked={draft.demo.enabled}
-                    onChange={v => patch('demo', { enabled: v })}
-                  />
-                </FieldRow>
-              </div>
             </div>
           </div>
         )}

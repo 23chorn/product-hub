@@ -82,10 +82,10 @@ router.get('/', (_req: Request, res: Response) => {
     const rows = stmts.list.all() as InitiativeRow[];
 
     // Batch-fetch latest workflow per item
-    const workflowMap = new Map<string, { id: string; status: string; current_stage: string | null; summary: string | null }>();
-    const wfRows: { item_id: string; id: string; status: string; current_stage: string | null; summary: string | null }[] = rows.length > 0
+    const workflowMap = new Map<string, { id: string; status: string; current_stage: string | null; summary: string | null; policy_overrides: string }>();
+    const wfRows: { item_id: string; id: string; status: string; current_stage: string | null; summary: string | null; policy_overrides: string }[] = rows.length > 0
       ? db.prepare(`
-          SELECT w.item_id, w.id, w.status, w.current_stage, w.summary
+          SELECT w.item_id, w.id, w.status, w.current_stage, w.summary, w.policy_overrides
           FROM workflows w
           INNER JOIN (
             SELECT item_id, MAX(created_at) as max_created
@@ -95,6 +95,21 @@ router.get('/', (_req: Request, res: Response) => {
         `).all(...rows.map(r => r.id)) as typeof wfRows
       : [];
     for (const wf of wfRows) workflowMap.set(wf.item_id, wf);
+
+    const pendingStageMap = new Map<string, string>();
+    if (wfRows.length > 0) {
+      const pendingRows = db.prepare(`
+        SELECT workflow_id, stage
+        FROM checkpoints
+        WHERE status = 'pending' AND workflow_id IN (${wfRows.map(() => '?').join(',')})
+        ORDER BY created_at DESC
+      `).all(...wfRows.map(w => w.id)) as { workflow_id: string; stage: string }[];
+      for (const cp of pendingRows) {
+        if (!pendingStageMap.has(cp.workflow_id)) {
+          pendingStageMap.set(cp.workflow_id, cp.stage);
+        }
+      }
+    }
 
     // Batch-fetch latest pipeline run status per workflow
     const workflowIds = wfRows.map(w => w.id);
@@ -125,10 +140,20 @@ router.get('/', (_req: Request, res: Response) => {
       const wf = workflowMap.get(r.id);
       const pipelineStatus = wf ? pipelineMap.get(wf.id) : undefined;
       const isCancelled = wf ? cancelledSet.has(wf.id) : false;
+      const pendingStage = wf ? pendingStageMap.get(wf.id) ?? null : null;
+      const isDemo = (() => {
+        if (!wf) return false;
+        try {
+          const policies = JSON.parse(wf.policy_overrides ?? '{}') as Record<string, string>;
+          return policies.demo_mode === 'true' || policies.demo_auto_approve === 'true';
+        } catch {
+          return false;
+        }
+      })();
       return {
         ...toAirtableItem(r),
         source: r.source,
-        workflow: wf ? { id: wf.id, status: wf.status, currentStage: wf.current_stage, summary: wf.summary, pipelineStatus, isCancelled } : undefined,
+        workflow: wf ? { id: wf.id, status: wf.status, currentStage: wf.current_stage, summary: wf.summary, pipelineStatus, isCancelled, isDemo, pendingStage } : undefined,
       };
     });
 
@@ -310,6 +335,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
     // ── Delete local DB rows in FK-safe order ──────────────────────────────
     // Tables that CASCADE from workflows (workflow_events, coordinator_sessions,
     // workflow_skill_assignments, pipeline_runs) are deleted automatically.
+    // checkpoint_audit points at checkpoints and must be removed before them.
     // Tables that CASCADE from sessions (messages, artifacts) are also deleted automatically.
     // Everything else must be deleted explicitly in dependency order.
     db.transaction(() => {
@@ -322,6 +348,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
       db.prepare(`DELETE FROM change_requests WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?)`).run(id);
       // context_diffs → workflows
       db.prepare(`DELETE FROM context_diffs WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?)`).run(id);
+      // checkpoint_audit → checkpoints
+      db.prepare(`DELETE FROM checkpoint_audit WHERE checkpoint_id IN (SELECT id FROM checkpoints WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?))`).run(id);
       // checkpoints → workflows + artifacts
       db.prepare(`DELETE FROM checkpoints WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?)`).run(id);
       // workflows (CASCADE: workflow_events, coordinator_sessions, workflow_skill_assignments, pipeline_runs)

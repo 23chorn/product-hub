@@ -2,6 +2,7 @@ import { useRef, useEffect, useState } from 'react';
 import { useWorkflowStore } from '../../stores/workflowStore';
 import { useModelStore } from '../../stores/modelStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useAuthStore } from '../../stores/authStore';
 import { api } from '../../services/api';
 import { deriveStageStatus } from '../../utils/stage-tracker-helpers';
 import { StageRow } from './StageRow';
@@ -217,12 +218,10 @@ function EventRow({ msg }: { msg: CoordinatorMessage }) {
   const externalUrl = urlLine?.includes('https://')
     ? urlLine.substring(urlLine.indexOf('https://'))
     : urlLine;
-  const adoStages = new Set(['pm_backlog', 'tech_refinement', 'qa_engineer', 'epic_feature_planner']);
+  const adoStages = new Set(['epic_feature_planner']);
   const isFeatureStage = msg.stage?.startsWith('story_decomposition_F') ?? false;
-  const isQaFeatureStage = msg.stage?.startsWith('qa_engineer_F') ?? false;
-  const isTechFeatureStage = msg.stage?.startsWith('tech_refinement_F') ?? false;
-  const isWikiLink = (msg.eventType === 'stage_completed' || msg.eventType === 'wiki_synced') && !!externalUrl && !adoStages.has(msg.stage ?? '') && !isFeatureStage && !isQaFeatureStage && !isTechFeatureStage;
-  const isAdoStageLink = (msg.eventType === 'stage_completed' || msg.eventType === 'ado_pushed') && !!externalUrl && (adoStages.has(msg.stage ?? '') || isFeatureStage || isQaFeatureStage || isTechFeatureStage);
+  const isWikiLink = (msg.eventType === 'stage_completed' || msg.eventType === 'wiki_synced') && !!externalUrl && !adoStages.has(msg.stage ?? '') && !isFeatureStage;
+  const isAdoStageLink = (msg.eventType === 'stage_completed' || msg.eventType === 'ado_pushed') && !!externalUrl && (adoStages.has(msg.stage ?? '') || isFeatureStage);
   const isAdoLink = msg.eventType === 'board_synced' && !!externalUrl;
 
   return (
@@ -262,8 +261,6 @@ function EventRow({ msg }: { msg: CoordinatorMessage }) {
               ? 'Open in Azure Boards ↗'
               : isFeatureStage
               ? 'View Feature in Azure Boards ↗'
-              : (msg.stage === 'qa_engineer' || isQaFeatureStage)
-              ? 'View Test Plan in Azure Test Plans ↗'
               : 'Open in Azure DevOps ↗'}
           </a>
         )}
@@ -343,17 +340,20 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
     pendingStage,
     checkpoints,
     applyWorkflowStatus,
+    clearCoordinatorMessages,
+    setLastEventId,
     setViewingArtifactId,
   } = useWorkflowStore();
   const { agentModels } = useModelStore();
   const { isDemoMode: demoModeEnabled } = useSettingsStore();
+  const { realUser } = useAuthStore();
   const bottomRef = useRef<HTMLDivElement>(null);
   const [stopping, setStopping] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [demoConfigured, setDemoConfigured] = useState<boolean>(false);
   const [generalExpanded, setGeneralExpanded] = useState(false);
   const [crExpanded, setCrExpanded] = useState(false);
-  const [artifacts, setArtifacts] = useState<Array<{ id: number; type: string; stage: string; created_at: number }>>([]);
+  const [artifacts, setArtifacts] = useState<Array<{ id: number; type: string; stage: string | null; created_at: number }>>([]);
 
   // Demo sections only show when demo mode is enabled in settings AND DEMO_PROJECT_PATH is configured
   const isDemoMode = demoModeEnabled && demoConfigured;
@@ -365,6 +365,10 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
       .then(s => setDemoConfigured(s.configured))
       .catch(() => {});
   }, [activeWorkflow?.id]);
+
+  useEffect(() => {
+    setStopping(false);
+  }, [activeWorkflow?.id, activeWorkflow?.status]);
 
   // Fetch artifacts for the workflow
   useEffect(() => {
@@ -407,6 +411,16 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   if (!activeWorkflow) return null;
 
   const isComplete = activeWorkflow.status === 'complete';
+  const isWorkflowActive = activeWorkflow.status === 'active';
+  const isDemoWorkflow = (() => {
+    try {
+      const policies = JSON.parse(activeWorkflow.policy_overrides ?? '{}') as Record<string, string>;
+      return policies.demo_mode === 'true' || policies.demo_auto_approve === 'true';
+    } catch {
+      return false;
+    }
+  })();
+  const canRestartDemo = !!realUser?.is_admin && isDemoWorkflow;
   const lastTerminalEvent = [...coordinatorMessages]
     .reverse()
     .find(m => m.eventType === 'workflow_cancelled' || m.eventType === 'workflow_complete');
@@ -418,6 +432,8 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
     try {
       await api.cancelWorkflow(activeWorkflow.id);
     } catch {
+      // Ignore transient failures; restore the button state immediately.
+    } finally {
       setStopping(false);
     }
   };
@@ -427,7 +443,11 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
     setRestarting(true);
     try {
       const status = await api.restartWorkflow(activeWorkflow.id);
+      clearCoordinatorMessages();
+      setLastEventId(0);
+      setArtifacts([]);
       applyWorkflowStatus(status);
+      setRestarting(false);
     } catch {
       setRestarting(false);
     }
@@ -576,24 +596,20 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
             {showCost && (
               <span className="text-[11px] font-mono text-slate-500">{costStr}</span>
             )}
-            {isRunning && !isComplete && (
+            {isWorkflowActive && (
               <button
                 onClick={handleStop}
                 disabled={stopping}
                 title="Stop workflow"
                 className="flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-1 rounded border border-red-300 dark:border-red-700/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {stopping ? (
-                  <>
-                    <svg className="w-2.5 h-2.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    stopping…
-                  </>
-                ) : (
-                  <>■ stop</>
+                {stopping && (
+                  <svg className="w-2.5 h-2.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
                 )}
+                <>■ stop</>
               </button>
             )}
           </div>
@@ -700,7 +716,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                   {isCancelled ? 'workflow stopped' : 'workflow complete'}
                 </div>
                 <div className="flex items-center gap-2">
-                  {isCancelled && (
+                  {(isCancelled || (isComplete && canRestartDemo)) && (
                     <button
                       onClick={handleRestart}
                       disabled={restarting}
@@ -714,7 +730,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                           </svg>
                           restarting…
                         </>
-                      ) : '↺ restart from beginning'}
+                      ) : (isComplete && canRestartDemo ? '↺ restart demo' : '↺ restart from beginning')}
                     </button>
                   )}
                 </div>

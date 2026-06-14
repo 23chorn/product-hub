@@ -68,11 +68,11 @@ export async function injectFeatureDecompositionStages(workflowId: string): Prom
     featureStages.push(`story_decomposition_F${i + 1}`);
   }
 
-  // Build new sequence: replace story_decomposition, remove standalone qa_engineer and tech_refinement
+  // Build new sequence: replace story_decomposition with per-feature F* stages
   const newSequence = [
     ...sequence.slice(0, storyDecompIndex),
     ...featureStages,
-    ...sequence.slice(storyDecompIndex + 1).filter(s => s !== 'qa_engineer' && s !== 'tech_refinement')
+    ...sequence.slice(storyDecompIndex + 1)
   ];
 
   // Update the workflow's stage_sequence

@@ -5,12 +5,13 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useConfigStore } from '../stores/configStore';
 import { useWorkflowStore } from '../stores/workflowStore';
 import { useAuthStore } from '../stores/authStore';
+import { useSettingsStore } from '../stores/settingsStore';
 import { useToast } from '../hooks/useToast';
-import { TOGGLEABLE_STAGES } from '../constants/stage-labels';
+import { STAGE_SHORT_LABELS, TOGGLEABLE_STAGES } from '../constants/stage-labels';
 import { extractReadyPayload } from '../utils/coordinator-helpers';
 
 
-type WorkflowInfo = { id: string; status: string; currentStage: string | null; summary: string | null; pipelineStatus?: string; isCancelled?: boolean };
+type WorkflowInfo = { id: string; status: string; currentStage: string | null; summary: string | null; pipelineStatus?: string; isCancelled?: boolean; isDemo?: boolean; pendingStage?: string | null };
 type EnrichedItem = AirtableItem & { source?: string; workflow?: WorkflowInfo };
 type LaunchPhase = 'analyzing' | 'confirming' | 'launching';
 type StatusFilter = 'all' | 'active' | 'review' | 'done' | 'new' | 'mine';
@@ -55,9 +56,12 @@ function effectiveStatus(wf: WorkflowInfo): string {
 function StatusBadge({ wf }: { wf?: WorkflowInfo }) {
   if (!wf) return null;
   const eff = effectiveStatus(wf);
+  const pendingStageLabel = wf.pendingStage
+    ? STAGE_SHORT_LABELS[wf.pendingStage] ?? wf.pendingStage.replace(/_/g, ' ')
+    : null;
   const label = eff === 'complete' ? 'Done'
     : eff === 'cancelled' ? 'Stopped'
-    : eff === 'paused_at_checkpoint' ? 'Review'
+    : eff === 'paused_at_checkpoint' ? (pendingStageLabel ? `Review · ${pendingStageLabel}` : 'Review')
     : eff === 'active' ? 'Running'
     : eff;
   const color = eff === 'complete'
@@ -85,7 +89,9 @@ export function HomeScreen() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [myPendingCount, setMyPendingCount] = useState(0);
   const [mineWorkflowIds, setMineWorkflowIds] = useState<Set<string>>(new Set());
+  const [itemsLoaded, setItemsLoaded] = useState(false);
   const { user, noAuth } = useAuthStore();
+  const { isDemoMode } = useSettingsStore();
 
   const [showForm, setShowForm] = useState(false);
   const [formTitle, setFormTitle] = useState('');
@@ -109,6 +115,7 @@ export function HomeScreen() {
   const { applyWorkflowStatus, resetWorkflow, addCoordinatorMessage, setPlanningSessionId } = useWorkflowStore();
   const { config } = useConfigStore();
   const toast = useToast();
+  const demoTriggerInFlightRef = useRef(false);
 
   const configEnabledStages = config?.stages?.enabledStages;
   const availableStages = TOGGLEABLE_STAGES.filter(
@@ -123,6 +130,7 @@ export function HomeScreen() {
       setLocalItems(data);
     } catch { /* silent */ } finally {
       setLoading(false);
+      setItemsLoaded(true);
     }
   }, []);
 
@@ -142,6 +150,25 @@ export function HomeScreen() {
   }, [user, noAuth]);
 
   useEffect(() => { loadMyPending(); }, [loadMyPending]);
+
+  useEffect(() => {
+    const hasDemoItem = localItems.some(item => item.workflow?.isDemo);
+    if (!isDemoMode || !itemsLoaded || hasDemoItem || demoTriggerInFlightRef.current) return;
+
+    demoTriggerInFlightRef.current = true;
+    api.triggerDemoWebhook(0)
+      .then(result => {
+        window.dispatchEvent(new CustomEvent('demo-run-started', { detail: { title: result.initiative } }));
+        window.dispatchEvent(new CustomEvent('refresh-initiatives'));
+        return loadLocalItems();
+      })
+      .catch(err => {
+        toast.error(err.response?.data?.error || err.message || 'Failed to start demo run');
+      })
+      .finally(() => {
+        demoTriggerInFlightRef.current = false;
+      });
+  }, [isDemoMode, itemsLoaded, localItems, loadLocalItems, toast]);
 
   // Listen for refresh signal from App.tsx (e.g. after Full Demo triggers)
   useEffect(() => {
@@ -195,6 +222,7 @@ export function HomeScreen() {
   };
 
   const handleDeleteInitiative = async (item: AirtableItem) => {
+    if ((item as EnrichedItem).workflow?.isDemo) return;
     if (deletingId) return;
     setConfirmDeleteId(null);
     try {
@@ -300,9 +328,14 @@ export function HomeScreen() {
 
   const enabledCount = Object.values(enabledStages).filter(Boolean).length;
 
+  const visibleItems = useMemo(
+    () => isDemoMode ? localItems : localItems.filter(item => !item.workflow?.isDemo),
+    [localItems, isDemoMode]
+  );
+
   const statusCounts = useMemo<Record<StatusFilter, number>>(() => {
-    const c: Record<StatusFilter, number> = { all: localItems.length, active: 0, review: 0, done: 0, new: 0, mine: myPendingCount };
-    localItems.forEach(item => {
+    const c: Record<StatusFilter, number> = { all: visibleItems.length, active: 0, review: 0, done: 0, new: 0, mine: myPendingCount };
+    visibleItems.forEach(item => {
       const s = item.workflow ? effectiveStatus(item.workflow) : undefined;
       if (s === 'active') c.active++;
       else if (s === 'paused_at_checkpoint') c.review++;
@@ -310,11 +343,11 @@ export function HomeScreen() {
       else c.new++;
     });
     return c;
-  }, [localItems, myPendingCount]);
+  }, [visibleItems, myPendingCount]);
 
   const filteredLocalItems = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    return localItems.filter(item => {
+    return visibleItems.filter(item => {
       const s = item.workflow ? effectiveStatus(item.workflow) : undefined;
       if (statusFilter === 'mine' && (!item.workflow || !mineWorkflowIds.has(item.workflow.id))) return false;
       if (statusFilter === 'active' && s !== 'active') return false;
@@ -324,7 +357,7 @@ export function HomeScreen() {
       if (!q) return true;
       return item.initiative.toLowerCase().includes(q) || (item.description?.toLowerCase().includes(q) ?? false);
     });
-  }, [localItems, statusFilter, searchQuery, mineWorkflowIds]);
+  }, [visibleItems, statusFilter, searchQuery, mineWorkflowIds]);
 
   const openForm = () => {
     setShowForm(true);
@@ -337,8 +370,8 @@ export function HomeScreen() {
     <div className="flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-slate-950">
 
       {/* Sticky page header with search + filters */}
-      <div className="flex-shrink-0 bg-white/90 dark:bg-slate-900/80 backdrop-blur-sm border-b border-slate-200 dark:border-slate-700 px-6 py-4">
-        <div className="max-w-4xl mx-auto space-y-3">
+      <div className="flex-shrink-0 bg-white/90 dark:bg-slate-900/80 backdrop-blur-sm border-b border-slate-200 dark:border-slate-700 py-4">
+        <div className="max-w-4xl mx-auto px-6 space-y-3">
 
           {/* Title row */}
           <div className="flex items-start justify-between gap-4">
@@ -514,7 +547,7 @@ export function HomeScreen() {
           )}
 
           {/* Empty state (no initiatives at all) */}
-          {!loading && localItems.length === 0 && !showForm && (
+          {!loading && visibleItems.length === 0 && !showForm && (
             <div className="py-16 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 text-center">
               <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">No initiatives yet</p>
               <p className="text-xs text-slate-400 dark:text-slate-500 mb-4 max-w-xs mx-auto">
@@ -684,6 +717,7 @@ function InitiativeCard({
   const isActive = eff === 'active' || eff === 'paused_at_checkpoint';
   const isComplete = eff === 'complete';
   const isCancelled = eff === 'cancelled';
+  const isDemo = !!wf?.isDemo;
 
   return (
     <div
@@ -696,6 +730,11 @@ function InitiativeCard({
             <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 leading-snug break-words min-w-0">
               {wf?.summary || item.initiative}
             </h3>
+            {wf?.isDemo && (
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-700">
+                Demo
+              </span>
+            )}
             <StatusBadge wf={wf} />
           </div>
           {wf?.currentStage && (wf.status === 'active' || wf.status === 'paused_at_checkpoint') ? (
@@ -756,7 +795,7 @@ function InitiativeCard({
           )}
 
           {/* Delete controls (local items only) */}
-          {item.source !== 'airtable' && (
+          {item.source !== 'airtable' && !isDemo && (
             isConfirmingDelete ? (
               <div className="flex items-center gap-1.5">
                 <button onClick={onConfirmDelete} disabled={isDeleting}
@@ -782,5 +821,3 @@ function InitiativeCard({
     </div>
   );
 }
-
-

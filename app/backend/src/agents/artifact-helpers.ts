@@ -78,8 +78,7 @@ async function readArtifactRow(row: ArtifactRow): Promise<string | null> {
  * Saves a main document artifact to the Azure Wiki and inserts an artifact row
  * with the external reference. Returns the artifact row ID.
  *
- * Used for all human-facing document types: research, PRD, architecture, backlog,
- * GTM strategy, feature marketing, QA tests, tech refinement, and prototype.
+ * Used for all human-facing document types: research, PRD, architecture, backlog, and prototype.
  */
 export async function saveMainArtifact(
   sessionId: string,
@@ -217,11 +216,10 @@ export async function saveLocalArtifact(
   return result.lastInsertRowid as number;
 }
 
-// ── Critic artifact save (local disk) ────────────────────────────────────────
+// ── Critic artifact save ──────────────────────────────────────────────────────
 
 /**
- * Saves the critic's full markdown review to disk and inserts an artifact row.
- * Critic reviews are internal workflow plumbing — they stay local.
+ * Saves the critic's full markdown review. MongoDB-first, disk fallback.
  * Returns the artifact row ID.
  */
 export async function saveCriticArtifact(
@@ -230,6 +228,28 @@ export async function saveCriticArtifact(
   fullText: string,
   sessionId?: string | null
 ): Promise<number> {
+  const mongoId = await insertArtifactDoc({
+    item_id:       itemId,
+    session_id:    sessionId ?? '',
+    stage:         `critic_${stage}`,
+    artifact_type: 'critic_review',
+    content:       fullText,
+    created_at:    new Date(),
+    updated_at:    new Date(),
+  });
+
+  if (mongoId) {
+    const result = db.prepare(`
+      INSERT INTO artifacts (session_id, type, file_path, external_system, external_path, created_at)
+      VALUES (?, ?, '', 'mongodb', ?, ?)
+    `).run(sessionId ?? null, 'critic_review', mongoId, Date.now());
+    const artifactId = result.lastInsertRowid as number;
+    await updateArtifactDocId(mongoId, artifactId);
+    logger.info(`Critic review for stage "${stage}" saved to MongoDB (mongo_id=${mongoId})`);
+    return artifactId;
+  }
+
+  // Disk fallback
   const artifactDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, 'critic', 'artifacts');
   await fsAsync.mkdir(artifactDir, { recursive: true });
   const artifactPath = path.join(artifactDir, `${Date.now()}-critic-${stage}.md`);
@@ -240,8 +260,62 @@ export async function saveCriticArtifact(
     VALUES (?, ?, ?, ?)
   `).run(sessionId ?? null, 'critic_review', artifactPath, Date.now());
 
-  logger.info(`Saved critic review artifact for stage "${stage}" → ${artifactPath}`);
+  logger.info(`Critic review for stage "${stage}" saved to disk (fallback): ${artifactPath}`);
   return result.lastInsertRowid as number;
+}
+
+// ── Revision diff save ────────────────────────────────────────────────────────
+
+/**
+ * Saves a revision diff document. MongoDB-first, disk fallback.
+ * Returns the artifact row ID, or null on failure.
+ */
+export async function saveDiffArtifact(
+  itemId: string,
+  stage: string,
+  diffText: string,
+  sessionId: string,
+  mode: string
+): Promise<number | null> {
+  const artifactType = `${stage}_diff`;
+
+  const mongoId = await insertArtifactDoc({
+    item_id:       itemId,
+    session_id:    sessionId,
+    stage:         `${stage}_diff`,
+    artifact_type: artifactType,
+    content:       diffText,
+    created_at:    new Date(),
+    updated_at:    new Date(),
+  });
+
+  if (mongoId) {
+    const result = db.prepare(`
+      INSERT INTO artifacts (session_id, type, file_path, external_system, external_path, created_at)
+      VALUES (?, ?, '', 'mongodb', ?, ?)
+    `).run(sessionId, artifactType, mongoId, Date.now());
+    const artifactId = result.lastInsertRowid as number;
+    await updateArtifactDocId(mongoId, artifactId);
+    logger.info(`Revision diff for stage "${stage}" saved to MongoDB (mongo_id=${mongoId})`);
+    return artifactId;
+  }
+
+  // Disk fallback
+  try {
+    const diffDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, mode, 'artifacts');
+    await fsAsync.mkdir(diffDir, { recursive: true });
+    const diffPath = path.join(diffDir, `${Date.now()}-${stage}-diff.md`);
+    await fsAsync.writeFile(diffPath, diffText, 'utf-8');
+    const result = db.prepare(`
+      INSERT INTO artifacts (session_id, type, file_path, created_at)
+      VALUES (?, ?, ?, ?)
+    `).run(sessionId, artifactType, diffPath, Date.now());
+    logger.info(`Revision diff for stage "${stage}" saved to disk (fallback): ${diffPath}`);
+    return result.lastInsertRowid as number;
+  } catch (err: any) {
+    logger.warn(`Failed to save revision diff for "${stage}": ${err.message}`);
+    return null;
+  }
 }
 
 // ── Content loaders (async — fetches from wiki or disk) ───────────────────────

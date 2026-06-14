@@ -6,6 +6,8 @@ import db from '../data/database';
 import { DATA_DIR } from '../data/database';
 import { createWorkflow, advanceStage } from '../agents/workflow-router';
 import { runDemoScript, getDemoProjectPath } from '../demo/demo-runner';
+import { getArtifactCollection } from '../data/mongo-client';
+import { ObjectId } from 'mongodb';
 import Logger from '../utils/logger';
 
 const logger = new Logger('DEMO-WEBHOOK');
@@ -95,6 +97,22 @@ Constraints:
 ];
 
 let sampleIndex = 0;
+let demoTriggerLock = Promise.resolve();
+
+async function withDemoTriggerLock<T>(fn: () => Promise<T>): Promise<T> {
+  let release!: () => void;
+  const previous = demoTriggerLock;
+  demoTriggerLock = new Promise<void>(resolve => {
+    release = resolve;
+  });
+
+  await previous;
+  try {
+    return await fn();
+  } finally {
+    release();
+  }
+}
 
 // ── Demo run cleanup ──────────────────────────────────────────────────────────
 
@@ -133,6 +151,13 @@ async function cleanupPreviousDemoRuns(): Promise<void> {
         `SELECT DISTINCT a.external_path
          FROM artifacts a JOIN sessions s ON a.session_id = s.id
          WHERE s.item_id = ? AND a.external_system = 'azure_wiki' AND a.external_path IS NOT NULL`
+      ).all(itemId).map(r => r.external_path);
+
+      // MongoDB artifact IDs — collected before SQLite rows are deleted
+      const mongoIds = db.prepare<[string], { external_path: string }>(
+        `SELECT DISTINCT a.external_path
+         FROM artifacts a JOIN sessions s ON a.session_id = s.id
+         WHERE s.item_id = ? AND a.external_system = 'mongodb' AND a.external_path IS NOT NULL`
       ).all(itemId).map(r => r.external_path);
 
       // ADO work item IDs — delete children before parents (stories → features → epic)
@@ -190,6 +215,19 @@ async function cleanupPreviousDemoRuns(): Promise<void> {
         }
       }
 
+      // ── Delete MongoDB artifact documents ─────────────────────────────────
+      if (mongoIds.length > 0) {
+        try {
+          const col = await getArtifactCollection();
+          if (col) {
+            await col.deleteMany({ _id: { $in: mongoIds.map(id => new ObjectId(id)) } });
+            logger.info(`[DEMO CLEANUP] Deleted ${mongoIds.length} MongoDB artifact(s) for item ${itemId}`);
+          }
+        } catch (mongoErr: any) {
+          logger.warn(`[DEMO CLEANUP] MongoDB cleanup failed for item ${itemId}: ${mongoErr.message}`);
+        }
+      }
+
       // ── Delete local disk files ────────────────────────────────────────────
       const sessionDir = path.join(DATA_DIR, 'sessions', itemId);
       if (fs.existsSync(sessionDir)) {
@@ -203,9 +241,11 @@ async function cleanupPreviousDemoRuns(): Promise<void> {
         db.prepare(`DELETE FROM ado_work_item_map WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?)`).run(itemId);
         db.prepare(`DELETE FROM change_requests WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?)`).run(itemId);
         db.prepare(`DELETE FROM context_diffs WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?)`).run(itemId);
+        db.prepare(`DELETE FROM checkpoint_audit WHERE checkpoint_id IN (SELECT id FROM checkpoints WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?))`).run(itemId);
         db.prepare(`DELETE FROM checkpoints WHERE workflow_id IN (SELECT id FROM workflows WHERE item_id = ?)`).run(itemId);
         db.prepare(`DELETE FROM workflows WHERE item_id = ?`).run(itemId);
         db.prepare(`DELETE FROM context_change_proposals WHERE session_id IN (SELECT id FROM sessions WHERE item_id = ?)`).run(itemId);
+        db.prepare(`DELETE FROM artifacts WHERE session_id IN (SELECT id FROM sessions WHERE item_id = ?)`).run(itemId);
         db.prepare(`DELETE FROM sessions WHERE item_id = ?`).run(itemId);
         db.prepare(`DELETE FROM items WHERE id = ?`).run(itemId);
       })();
@@ -219,11 +259,9 @@ async function cleanupPreviousDemoRuns(): Promise<void> {
   logger.info('[DEMO CLEANUP] Complete');
 }
 
-// Demo webhook stage sequence (matches TOGGLEABLE_STAGES order in frontend)
-// NOTE: 'qa_engineer' and 'tech_refinement' are NOT included here — they are now embedded in story_decomposition_F* stages
-// as a multi-agent collaborative refinement session with platform-filtered participants per feature.
-// epic_feature_planner injects story_decomposition_F1, F2, F3 (each runs the multi-agent workflow internally).
-const CORE_STAGES = ['analyst', 'pm_prd', 'prototype', 'solution_architect', 'epic_feature_planner', 'story_decomposition'];
+// Demo webhook stage sequence. story_decomposition_F1/F2/F3 run multi-agent refinement per feature;
+// they are injected at workflow execution time based on the epic_feature_planner output feature count.
+const CORE_STAGES = ['analyst', 'pm_prd', 'solution_architect', 'epic_feature_planner', 'story_decomposition_F1', 'story_decomposition_F2', 'story_decomposition_F3'];
 
 function buildDemoStages(): string[] {
   return [...CORE_STAGES, 'curator'];
@@ -239,62 +277,65 @@ function buildDemoStages(): string[] {
  */
 demoWebhookRoutes.post('/demo/webhook/trigger', async (req: Request, res: Response) => {
   try {
-    // Clean up all resources from previous demo runs before starting a new one
-    await cleanupPreviousDemoRuns();
+    return await withDemoTriggerLock(async () => {
+      // Clean up all resources from previous demo runs before starting a new one.
+      // The lock prevents two trigger requests from creating overlapping demo runs.
+      await cleanupPreviousDemoRuns();
 
-    // If forceIndex is provided, use that sample; otherwise cycle through all four
-    const forceIndex = req.body?.forceIndex;
-    const sample = typeof forceIndex === 'number'
-      ? WEBHOOK_SAMPLES[forceIndex % WEBHOOK_SAMPLES.length]
-      : WEBHOOK_SAMPLES[sampleIndex % WEBHOOK_SAMPLES.length];
-    if (typeof forceIndex !== 'number') sampleIndex++;
+      // If forceIndex is provided, use that sample; otherwise cycle through all four
+      const forceIndex = req.body?.forceIndex;
+      const sample = typeof forceIndex === 'number'
+        ? WEBHOOK_SAMPLES[forceIndex % WEBHOOK_SAMPLES.length]
+        : WEBHOOK_SAMPLES[sampleIndex % WEBHOOK_SAMPLES.length];
+      if (typeof forceIndex !== 'number') sampleIndex++;
 
-    const itemId = `item-${uuidv4()}`;
-    const now = Date.now();
+      const itemId = `item-${uuidv4()}`;
+      const now = Date.now();
 
-    // Create the initiative in the items table
-    db.prepare(
-      `INSERT INTO items (id, type, title, description, status, source, airtable_id, created_at, updated_at)
-       VALUES (?, 'initiative', ?, ?, 'active', 'local', NULL, ?, ?)`
-    ).run(itemId, sample.title, sample.description, now, now);
+      // Create the initiative in the items table
+      db.prepare(
+        `INSERT INTO items (id, type, title, description, status, source, airtable_id, created_at, updated_at)
+         VALUES (?, 'initiative', ?, ?, 'active', 'local', NULL, ?, ?)`
+      ).run(itemId, sample.title, sample.description, now, now);
 
-    // Build goal string (same format as manual launch path)
-    const goal = `${sample.title}\n\n${sample.description}`;
+      // Build goal string (same format as manual launch path)
+      const goal = `${sample.title}\n\n${sample.description}`;
 
-    // Create workflow and kick off first stage
-    // NOTE: demo_mode flag identifies demo workflows for cleanup, but does NOT auto-approve checkpoints
-    // Human review stages are enabled — user must manually approve each checkpoint
-    const stages = buildDemoStages();
-    const workflow = createWorkflow(itemId, goal, stages, { demo_mode: 'true' });
+      // Create workflow and kick off first stage
+      // NOTE: demo_mode flag identifies demo workflows for cleanup, but does NOT auto-approve checkpoints
+      // Human review stages are enabled — user must manually approve each checkpoint
+      const stages = buildDemoStages();
+      const workflow = createWorkflow(itemId, goal, stages, { demo_mode: 'true' });
 
-    // When the workflow completes, run Claude Code CLI on the tradeeasy-demo repo
-    // to implement the feature on a fresh branch and run Playwright tests.
-    // Gated by DEMO_CODE_PIPELINE_ENABLED=true so core-flow testing skips this.
-    if (process.env.DEMO_CODE_PIPELINE_ENABLED === 'true' && getDemoProjectPath()) {
-      const pollAndRun = () => {
-        const wf = db.prepare('SELECT status FROM workflows WHERE id = ?').get(workflow.id) as any;
-        if (wf?.status === 'complete') {
-          runDemoScript(workflow.id).catch((err: Error) =>
-            logger.error(`Demo runner failed for ${workflow.id}: ${err.message}`)
-          );
-        } else if (wf?.status !== 'failed') {
-          setTimeout(pollAndRun, 10_000);
-        }
-      };
-      setTimeout(pollAndRun, 30_000);
-    }
+      // When the workflow completes, run Claude Code CLI on the tradeeasy-demo repo
+      // to implement the feature on a fresh branch and run Playwright tests.
+      // Gated by DEMO_CODE_PIPELINE_ENABLED=true so core-flow testing skips this.
+      if (process.env.DEMO_CODE_PIPELINE_ENABLED === 'true' && getDemoProjectPath()) {
+        const pollAndRun = () => {
+          const wf = db.prepare('SELECT status FROM workflows WHERE id = ?').get(workflow.id) as any;
+          if (wf?.status === 'complete') {
+            runDemoScript(workflow.id).catch((err: Error) =>
+              logger.error(`Demo runner failed for ${workflow.id}: ${err.message}`)
+            );
+          } else if (wf?.status !== 'failed') {
+            setTimeout(pollAndRun, 10_000);
+          }
+        };
+        setTimeout(pollAndRun, 30_000);
+      }
 
-    advanceStage(workflow.id).catch((err: Error) =>
-      logger.error(`advanceStage failed for demo webhook workflow ${workflow.id}`, err)
-    );
+      advanceStage(workflow.id).catch((err: Error) =>
+        logger.error(`advanceStage failed for demo webhook workflow ${workflow.id}`, err)
+      );
 
-    logger.info(`Demo webhook: created initiative "${sample.title}" → workflow ${workflow.id} [stages: ${stages.join(', ')}]`);
+      logger.info(`Demo webhook: created initiative "${sample.title}" → workflow ${workflow.id} [stages: ${stages.join(', ')}]`);
 
-    return res.json({
-      workflowId: workflow.id,
-      itemId,
-      initiative: sample.title,
-      stages,
+      return res.json({
+        workflowId: workflow.id,
+        itemId,
+        initiative: sample.title,
+        stages,
+      });
     });
   } catch (err: any) {
     logger.error('Demo webhook trigger failed', err);

@@ -3,15 +3,10 @@ const STAGE_LABELS_BASE: Record<string, string> = {
   pm_prd:               'Product Requirements — Rex',
   epic_feature_planner: 'Epic & Feature Planning — Apex',
   solution_architect:   'Architect — Atlas',
-  story_decomposition:  'Collaborative Refinement — Shard, Vera, Finn, Remi & Cole',
+  story_decomposition:  'Shard - Product Owner — Vera, Finn, Remi & Cole',
   prototype:            'Prototype — Nova',
-  pm_backlog:           'Backlog — Pip',
-  gtm_strategy:         'GTM Strategy — Quinn',
-  feature_marketing:    'Feature Marketing — Milo',
-  qa_engineer:          'QA Engineer — Vera',
   critic:               'Critic — Flint',
   curator:              'Curator — Ivy',
-  tech_refinement:      'Tech Refinement — Finn, Remi & Cole',
 };
 
 // Proxy to handle dynamic feature stages (story_decomposition_F1, F2, etc.)
@@ -31,16 +26,13 @@ export const STAGE_LABELS: Record<string, string> = new Proxy(STAGE_LABELS_BASE,
 });
 
 // Stages available for user toggle at workflow start (order matters)
-// gtm_strategy and feature_marketing are hidden — not yet ready for general use
-// pm_backlog hidden — replaced by epic_feature_planner + story_decomposition
 export const TOGGLEABLE_STAGES: Array<{ key: string; label: string; short: string }> = [
   { key: 'analyst',              label: 'Analyst — Sage',               short: 'Sage · Analyst' },
   { key: 'pm_prd',               label: 'Requirements — Rex',           short: 'Rex · PM' },
   { key: 'prototype',            label: 'Prototype — Nova',             short: 'Nova · Prototype' },
   { key: 'solution_architect',   label: 'Architect — Atlas',            short: 'Atlas · Architect' },
   { key: 'epic_feature_planner', label: 'Epic & Features — Apex',       short: 'Apex · Features' },
-  { key: 'story_decomposition',  label: 'Collaborative Refinement',             short: 'Multi-Agent · Refinement' },
-  { key: 'qa_engineer',          label: 'QA Engineer — Vera',           short: 'Vera · QA' },
+  { key: 'story_decomposition',  label: 'Shard - Product Owner',              short: 'Multi-Agent · Refinement' },
   { key: 'curator',              label: 'Curator — Ivy',                short: 'Ivy · Curator' },
 ];
 
@@ -51,11 +43,6 @@ const STAGE_SHORT_LABELS_BASE: Record<string, string> = {
   solution_architect: 'Arch',
   story_decomposition: 'Stories',
   prototype: 'Prototype',
-  pm_backlog: 'Backlog',
-  gtm_strategy: 'GTM',
-  feature_marketing: 'Marketing',
-  qa_engineer: 'QA Tests',
-  tech_refinement: 'Tech Review',
   // Session mode aliases — artifact.stage = s.mode, not the workflow stage name
   prd: 'PRD',
   architecture: 'Arch',
@@ -71,9 +58,6 @@ export const STAGE_SHORT_LABELS: Record<string, string> = new Proxy(STAGE_SHORT_
         return `F${match[1]}`;
       }
       return target.story_decomposition;
-    }
-    if (prop.startsWith('qa_engineer_F')) {
-      return target.qa_engineer;
     }
     return target[prop];
   }

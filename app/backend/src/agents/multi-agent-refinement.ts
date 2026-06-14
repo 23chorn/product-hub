@@ -3,7 +3,7 @@
  *
  * Replaces the sequential story_decomposition → qa_engineer → tech_refinement flow
  * with a single collaborative session. The participant set is resolved from the
- * initiative's productArea: Product (Shard), QA (Vera), and Backend (Finn) are always
+ * initiative's productArea: Shard - Product Owner (story_decomposition), QA (Vera), and Backend (Finn) are always
  * present; Web (Remi), iOS, and Android engineers are included only when their platform
  * is in scope. This reduces token cost for single-platform features.
  *
@@ -24,16 +24,17 @@ interface RefinementParticipant {
 }
 
 const PARTICIPANTS: RefinementParticipant[] = [
-  { name: 'Shard', agentType: 'story-decomposition', role: 'Product Lead — Facilitator' },
+  { name: 'Shard - Product Owner', agentType: 'story-decomposition', role: 'Product Lead — Facilitator' },
   { name: 'Vera', agentType: 'qa-engineer', role: 'QA Engineer — Testability & Quality' },
   { name: 'Finn', agentType: 'backend-engineer', role: 'Backend Engineer — APIs & Data' },
   { name: 'Remi', agentType: 'web-engineer', role: 'Web Engineer — Frontend & UX' },
-  { name: 'Cole', agentType: 'ios-engineer', role: 'Mobile Engineer — iOS & Android Native' },
+  { name: 'Cole', agentType: 'ios-engineer', role: 'iOS Engineer — Swift & Apple Platforms' },
+  { name: 'Dex', agentType: 'android-engineer', role: 'Android Engineer — Kotlin & Android Platforms' },
 ];
 
 /**
  * Filter the participant list based on the productArea stored in items.metadata.
- * - Shard (Product) and Vera (QA) are always included.
+ * - Shard - Product Owner (Product) and Vera (QA) are always included.
  * - Finn (Backend) is always included.
  * - Remi (Web) only when productArea includes web/browser/desktop.
  * - iOS Cole only when productArea includes mobile/ios/app.
@@ -58,15 +59,17 @@ function resolveRefinementParticipants(itemId: string): RefinementParticipant[] 
     if (!area) return PARTICIPANTS;
 
     const hasWeb = /web|browser|desktop/.test(area);
-    const hasMobile = /\bmobile\b|\bios\b|\bandroid\b/.test(area);
+    const hasIOS = /\bmobile\b|\bios\b/.test(area);
+    const hasAndroid = /\bmobile\b|\bandroid\b/.test(area);
 
-    // If neither signal is present default to all platforms
-    if (!hasWeb && !hasMobile) return PARTICIPANTS;
+    // If no platform signal is present default to all participants
+    if (!hasWeb && !hasIOS && !hasAndroid) return PARTICIPANTS;
 
     return PARTICIPANTS.filter(p => {
-      if (p.name === 'Shard' || p.name === 'Vera' || p.name === 'Finn') return true;
+      if (p.name === 'Shard - Product Owner' || p.name === 'Vera' || p.name === 'Finn') return true;
       if (p.name === 'Remi') return hasWeb;
-      if (p.name === 'Cole') return hasMobile;
+      if (p.name === 'Cole') return hasIOS;
+      if (p.name === 'Dex') return hasAndroid;
       return true;
     });
   } catch {
@@ -185,7 +188,7 @@ ${archContent ? '(See architecture document below)' : '(No architecture availabl
 
   // ── Phase 3: Synthesize ────────────────────────────────────────────────────
   insertEvent(workflowId, 'stage_progress', stage,
-    `Phase 3: Synthesize — Shard (facilitator) merging all contributions into final backlog...`);
+    `Phase 3: Synthesize — Shard - Product Owner (facilitator) merging all contributions into final backlog...`);
 
   const finalArtifact = await synthesizeFinalArtifact(workflowId, stage, featureBrief, refined2);
 
@@ -256,7 +259,7 @@ function buildDraftPrompts(
   return participants.map(participant => {
     let prompt = `${featureBrief}\n\n`;
 
-    if (participant.name === 'Shard') {
+    if (participant.name === 'Shard - Product Owner') {
       // Product Lead: Draft initial stories
       prompt += `
 **Your Role:** You are the **Product Lead and Facilitator** of this refinement session.
@@ -308,8 +311,8 @@ Plain text list of concerns and recommendations. Example:
       // Engineers: Technical needs
       const platformFocus = participant.name === 'Finn' ? 'Backend APIs, data models, authentication'
         : participant.name === 'Remi' ? 'Frontend components, state management, forms'
-        : participant.name === 'iOS Cole' ? 'iOS native implementation, offline support, push notifications'
-        : 'Android native implementation, platform-specific UI, background services';
+        : participant.name === 'Cole' ? 'iOS native implementation (Swift/SwiftUI), offline support, APNs push notifications, Apple platform patterns'
+        : 'Android native implementation (Kotlin/Jetpack Compose), offline support, FCM push notifications, Material Design patterns';
 
       prompt += `
 **Your Role:** You are the **${participant.role}** in this refinement session.
@@ -356,10 +359,10 @@ function buildRefineRound1Prompts(
   return participants.map(participant => {
     let prompt = `${featureBrief}\n\n**All Drafts from Phase 1:**\n\n${allDrafts}\n\n`;
 
-    if (participant.name === 'Shard') {
+    if (participant.name === 'Shard - Product Owner') {
       prompt += `
 **Phase 2.1 Task — Incorporate Feedback:**
-1. Review the technical concerns from Finn, Remi, iOS Cole, Android Cole
+1. Review the technical concerns from Finn, Remi, Cole (iOS), and Dex (Android)
 2. Review the testability concerns from Vera
 3. Adjust your story breakdown if needed (split oversized stories, adjust ACs)
 4. Add technical acceptance criteria to each story based on engineer input
@@ -370,7 +373,7 @@ function buildRefineRound1Prompts(
     } else if (participant.name === 'Vera') {
       prompt += `
 **Phase 2.1 Task — Testability Review:**
-1. Review Shard's story breakdown and each story's acceptance criteria
+1. Review Shard - Product Owner's story breakdown and each story's acceptance criteria
 2. Flag any stories whose ACs are too vague to verify (missing observable outcome, no failure condition, untestable state)
 3. Suggest specific AC improvements for clarity — do not write test cases, just sharpen the criteria language
 4. Note any missing bad-path or edge-case scenarios that should be in the ACs
@@ -384,7 +387,7 @@ Plain text per-story feedback. Example:
     } else {
       prompt += `
 **Phase 2.1 Task — Add Technical Details:**
-1. Review Shard's story breakdown
+1. Review Shard - Product Owner's story breakdown
 2. For stories that touch your platform, add specific technical acceptance criteria
 3. Propose story splits if needed (e.g., "Backend API" + "Frontend UI" as separate stories)
 4. Flag dependencies (e.g., "Frontend story depends on Backend API story")
@@ -416,7 +419,7 @@ function buildRefineRound2Prompts(
   return participants.map(participant => {
     let prompt = `${featureBrief}\n\n**All Round 1 Outputs:**\n\n${allRefined1}\n\n`;
 
-    if (participant.name === 'Shard') {
+    if (participant.name === 'Shard - Product Owner') {
       prompt += `
 **Phase 2.2 Task — Final Polish & Conflict Resolution:**
 1. Review all Round 1 feedback
@@ -432,7 +435,7 @@ function buildRefineRound2Prompts(
     } else {
       prompt += `
 **Phase 2.2 Task — Final Confirmation:**
-1. Review Shard's latest story breakdown
+1. Review Shard - Product Owner's latest story breakdown
 2. Confirm your technical ACs are correctly captured
 3. Flag any remaining concerns or suggest minor tweaks
 
@@ -447,7 +450,7 @@ function buildRefineRound2Prompts(
 }
 
 /**
- * Phase 3: Shard (facilitator) synthesizes all contributions into final backlog artifact.
+ * Phase 3: Shard - Product Owner (facilitator) synthesizes all contributions into final backlog artifact.
  */
 async function synthesizeFinalArtifact(
   workflowId: string,

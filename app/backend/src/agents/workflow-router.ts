@@ -2,7 +2,7 @@
  * Workflow Router — stage machine core.
  *
  * Manages state transitions for coordinator-driven workflows.
- * A workflow has a stage_sequence JSON array (e.g. ["analyst","pm_prd","pm_backlog","curator"]).
+ * A workflow has a stage_sequence JSON array (e.g. ["analyst","pm_prd","epic_feature_planner","story_decomposition","curator"]).
  * The router advances through the sequence, creating specialist sessions and checkpoints.
  *
  * Sub-modules:
@@ -19,7 +19,7 @@ import { streamAI, resolveModelId, resolveAgentModel, type TokenUsage } from '..
 import type { AppMode, AgentType } from '@pap/shared';
 import {
   STAGE_SESSION_MAP, STAGE_MAX_OUTPUT_TOKENS, STAGE_ARTIFACT_TYPE,
-  STAGE_ARTIFACT_LABEL, STAGE_LABELS_INTERNAL,
+  STAGE_ARTIFACT_LABEL, STAGE_LABELS_INTERNAL, stageProgressBriefing, stageProgressBriefReceived,
 } from './stage-metadata';
 import {
   saveCriticArtifact, loadLatestArtifactForItem,
@@ -29,13 +29,12 @@ import { isDemoMode, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
 import { notifyWorkflowComplete } from '../utils/slack-notifier';
 import { WorkflowRow, CheckpointRow, WorkflowStatus, WorkflowEvent, StageTokenData } from './workflow-types';
 export type { WorkflowRow, CheckpointRow, WorkflowStatus, WorkflowEvent, StageTokenData } from './workflow-types';
-export { propagateFeedback, reiterateFromStage, extendWorkflow, retryCurrentStage, restartWorkflow } from './workflow-mutations';
+export { propagateFeedback, reiterateFromStage, retryCurrentStage, restartWorkflow } from './workflow-mutations';
 export { deleteWorkflow } from './workflow-lifecycle';
 import Logger from '../utils/logger';
 import { CoordinatorAgent } from './coordinator-agent';
 import { CriticAgent } from './critic-agent';
 import { ContextCuratorAgent } from './curator-agent';
-import { runTechRefinementStage } from './tech-refinement-agent';
 import { workflowOps } from './workflow-db';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
@@ -274,7 +273,7 @@ async function generateWorkflowSummary(workflowId: string, goal: string): Promis
 /**
  * Advance a workflow to the next stage in its sequence.
  *
- * - For regular stages (analyst, pm_prd, pm_backlog): creates a specialist session
+ * - For regular stages (analyst, pm_prd, epic_feature_planner, story_decomposition): creates a specialist session
  *   and pauses at a checkpoint for human review (unless auto-approve policy is set).
  * - For 'critic' stage: runs CriticAgent automatically; stores verdict in checkpoint;
  *   returns sessionId = null (no interactive session needed).
@@ -331,7 +330,7 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
 
   // ── Critic stage: automated single-shot review ────────────────────────────
   if (nextStage === 'critic') {
-    insertEvent(workflowId, 'stage_started', 'critic', 'Running quality review...');
+    insertEvent(workflowId, 'stage_started', 'critic', 'Running quality review on the current stage output...');
 
     const { content: artifactContent, type: artifactType } = loadLatestArtifactForItem(workflow.item_id);
     const review = await getCritic().review(artifactContent, artifactType, resolveAgentModel('critic'), costTracker(workflowId), workflow.current_stage ?? undefined);
@@ -503,52 +502,34 @@ No changes needed to tech-stack.md or process.md — those remain accurate as wr
     throw new Error(`WORKFLOW_COMPLETE:${workflowId}`);
   }
 
-  // Compute auto-approve once — used by tech_refinement and regular stages below.
+  // Compute auto-approve once — used by regular stages below.
   const _wfPolicyOverrides: Record<string, string> = workflow.policy_overrides
     ? JSON.parse(workflow.policy_overrides)
     : {};
   const _isDemoAutoApprove = _wfPolicyOverrides['demo_auto_approve'] === 'true';
 
-  // ── Tech Refinement stage: parallel engineering stream review ────────────
-  if (nextStage === 'tech_refinement') {
-    const techAutoApprove = SILENT_STAGES.has('tech_refinement') || _isDemoAutoApprove;
-    insertEvent(workflowId, 'stage_started', 'tech_refinement',
-      'Finn (iOS), Remi (Android), and Cole (Backend) are reviewing the backlog in parallel. Each engineer will annotate every story with platform-specific implementation notes.');
-
-    runTechRefinementStage(workflowId, workflow.item_id, techAutoApprove).catch((err: Error) => {
-      logger.error(`Tech refinement background task failed: ${err.message}`);
-    });
-
-    return { stage: nextStage, sessionId: null };
-  }
-
   // ── Regular specialist stage: run autonomously in the background ─────────
   const STAGE_NARRATION: Record<string, string> = {
-    analyst:            'Sage is starting market research. This stage uses web search and typically takes 2–4 minutes.',
-    pm_prd:             'Rex is writing the Product Requirements Document based on the research brief.',
-    solution_architect: 'Atlas is designing the solution architecture based on the PRD.',
-    prototype:          'Nova is generating an interactive prototype from the workflow artifacts. This typically takes 2–3 minutes.',
-    pm_backlog:         'Pip is creating the backlog with epics, features, and stories.',
-    gtm_strategy:       'Quinn is developing the Go-to-Market strategy based on the approved PRD.',
-    feature_marketing:  'Milo is writing the feature marketing content pack based on the GTM strategy and PRD.',
+    analyst:            'Sage is writing the Research Brief from market evidence and source notes.',
+    pm_prd:             'Rex is writing the PRD sections, success metrics, and open questions.',
+    epic_feature_planner:'Apex is writing the epic and feature breakdown from the PRD.',
+    solution_architect: 'Atlas is writing the architecture sections, API surface, and data model.',
+    prototype:          'Nova is generating the prototype screens and file map from the workflow artifacts.',
   };
   insertEvent(workflowId, 'stage_started', nextStage,
     STAGE_NARRATION[nextStage] ?? `Starting ${nextStage}...`);
 
   let stageMap = STAGE_SESSION_MAP[nextStage];
-  if (!stageMap && nextStage.match(/^story_decomposition_F\d+$/)) stageMap = STAGE_SESSION_MAP['story_decomposition'];
-  if (!stageMap && nextStage.match(/^qa_engineer_F\d+$/)) stageMap = STAGE_SESSION_MAP['qa_engineer'];
-  if (!stageMap && nextStage.match(/^tech_refinement_F\d+$/)) stageMap = STAGE_SESSION_MAP['tech_refinement'];
   if (!stageMap) stageMap = { mode: 'analyst' as AppMode, agentType: 'analyst' as AgentType };
   const session = sessionManager.createSpecialistSession(workflow.item_id, stageMap.mode, stageMap.agentType);
   logger.info(`Created ${stageMap.mode} session ${session.id} for stage "${nextStage}"`);
 
-  insertEvent(workflowId, 'stage_progress', nextStage, 'Coordinator is briefing the specialist...');
+  insertEvent(workflowId, 'stage_progress', nextStage, stageProgressBriefing(nextStage));
   const brief = isDemoMode() || _wfPolicyOverrides.demo_mode === 'true' || _isDemoAutoApprove
     ? `## Goal\nDemo mode — running with fixture data.\n\n## Output required\nSee fixture.`
     : await getCoordinator().generateStageBrief(workflowId, nextStage);
   sessionManager.updateWorkflow(session.id, workflowId, brief);
-  insertEvent(workflowId, 'stage_progress', nextStage, 'Brief received. Specialist is working...');
+  insertEvent(workflowId, 'stage_progress', nextStage, stageProgressBriefReceived(nextStage));
 
   const shouldAutoApprove = SILENT_STAGES.has(nextStage) || _isDemoAutoApprove;
 
