@@ -14,6 +14,8 @@
     "test:bedrock": "tsx ../../tests/integration/test-bedrock.ts",
     "validate-env": "tsx src/utils/validate-env.ts",
     "verify-schema": "tsx ../../scripts/verify-schema.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:studio": "drizzle-kit studio",
     "test": "vitest run"
   },
   "keywords": [
@@ -34,6 +36,7 @@
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
+    "drizzle-orm": "^0.45.2",
     "express": "^4.18.2",
     "express-rate-limit": "^7.1.5",
     "helmet": "^7.1.0",
@@ -52,6 +55,7 @@
     "@types/node": "^20.11.0",
     "@types/uuid": "^9.0.8",
     "@types/ws": "^8.18.1",
+    "drizzle-kit": "^0.31.10",
     "figma-mcp": "^0.1.4",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3",
