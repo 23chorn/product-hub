@@ -3,15 +3,13 @@ import { api, type SkillVersion } from '../services/api';
 import { useSkillManagerStore } from '../stores/skillManagerStore';
 import { useThemeStore } from '../stores/themeStore';
 import { getAgentDisplayName } from '../utils/agent-display-names';
-import { SectionHeader } from './skill/SectionHeader';
 import { ContextFileEditor } from './skill/ContextFileEditor';
 import { SkillViewer } from './skill/SkillViewer';
 import { ToolViewer } from './skill/ToolViewer';
 import { SkillCreateForm } from './skill/SkillCreateForm';
 import { NewContextForm } from './skill/NewContextForm';
+import { SkillManagerSidebar } from './skill/SkillManagerSidebar';
 import {
-  DISCIPLINE_LABELS,
-  DISCIPLINE_COLORS,
   bumpPatch,
   type PanelSelection,
   type ExtractedTool,
@@ -19,6 +17,7 @@ import {
   type Discipline,
   type ContextFile,
   type PersonaFile,
+  type AgentItem,
 } from './skill/types';
 
 // ─── Main panel ───────────────────────────────────────────────────────────────
@@ -78,7 +77,7 @@ export function SkillManagerPanel() {
     () => allSkills.filter((s) => s.discipline === 'agent'),
     [allSkills],
   );
-  const agentItems = useMemo(() => {
+  const agentItems = useMemo<AgentItem[]>(() => {
     const personaItems = personas.map((persona) => {
       const publishedSkill = agentSkills.find((skill) =>
         skill.skill_name === persona.skillName ||
@@ -354,7 +353,6 @@ export function SkillManagerPanel() {
   const selectedCtxIndex = selection?.type === 'context' ? selection.index : null;
   const selectedToolName = selection?.type === 'tool' ? selection.tool.name : null;
   const selectedAgentName = selection?.type === 'new_agent' ? createForm.skill_name : null;
-  const totalAgentCount = agentItems.length;
 
   return (
     <div className={`h-full flex flex-col rounded-2xl overflow-hidden shadow-2xl ring-1 ring-slate-900/10 dark:ring-slate-100/10 ${isDark ? 'bg-slate-900' : 'bg-slate-100'}`}>
@@ -385,226 +383,37 @@ export function SkillManagerPanel() {
       {/* Body */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left nav */}
-        <nav className="w-60 border-r border-slate-200 dark:border-slate-700 flex flex-col flex-shrink-0 bg-white dark:bg-slate-800/50 overflow-y-auto">
-          {isLoading ? (
-            <div className="p-4 text-xs text-slate-400">Loading…</div>
-          ) : (
-            <>
-              {/* ── Context ─────────────────────────────── */}
-              <>
-                <SectionHeader
-                  label="Context"
-                  count={contextFiles.length}
-                  isOpen={expanded.context}
-                  onToggle={() => toggle('context')}
-                  action={
-                    <button
-                      onClick={() => { setSelection({ type: 'new_context' }); setExpanded((p) => ({ ...p, context: true })); }}
-                      className="p-0.5 rounded text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
-                      title="New context file"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-                      </svg>
-                    </button>
-                  }
-                />
-                {expanded.context && contextFiles.map((file, i) => (
-                  <button
-                    key={file.fileName}
-                    onClick={() => selectContextFile(i, file)}
-                    className={`w-full text-left px-4 py-2 border-b border-slate-100 dark:border-slate-700/40 transition-colors ${
-                      selectedCtxIndex === i
-                        ? 'bg-teal-50 dark:bg-teal-900/20 border-l-2 border-l-teal-500'
-                        : 'hover:bg-slate-50 dark:hover:bg-slate-700/30 border-l-2 border-l-transparent'
-                    }`}
-                  >
-                    <div className="flex items-center space-x-2">
-                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${file.content ? 'bg-green-500' : 'bg-slate-300 dark:bg-slate-600'}`} />
-                      <span className="text-sm text-slate-800 dark:text-slate-200 truncate">{file.label}</span>
-                    </div>
-                  </button>
-                ))}
-              </>
-
-              {/* ── Agents ──────────────────────────────── */}
-              <>
-                <SectionHeader
-                  label="Agents"
-                  count={totalAgentCount}
-                  isOpen={expanded.agents}
-                  onToggle={() => toggle('agents')}
-                  action={
-                    <button
-                      onClick={() => {
-                        setCreateForm({
-                          skill_name: '',
-                          discipline: 'agent',
-                          owner_team: 'core',
-                          agent_type: 'analyst',
-                          version: '1.0.0',
-                          persona_prompt: '',
-                          development_context: '',
-                          tool_definitions: '',
-                          output_format_template: '',
-                        });
-                        setSelection({ type: 'new_agent' });
-                        setExpanded((p) => ({ ...p, agents: true }));
-                      }}
-                      className="p-0.5 rounded text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
-                      title="New agent"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-                      </svg>
-                    </button>
-                  }
-                />
-                {expanded.agents && (
-                  <>
-                    {agentItems.map((item) => {
-                      const isSelected =
-                        (item.type === 'skill' && selectedSkillName === item.skill.skill_name) ||
-                        (item.type === 'persona' && selectedAgentName === item.persona.skillName);
-                      return (
-                        <button
-                          key={item.key}
-                          onClick={() => {
-                            if (item.type === 'skill') {
-                              selectSkill(item.skill);
-                            } else if (item.publishedSkill) {
-                              selectSkill(item.publishedSkill);
-                            } else {
-                              openPersonaForCreation(item.persona);
-                            }
-                          }}
-                          className={`w-full text-left px-4 py-2 border-b border-slate-100 dark:border-slate-700/40 transition-colors ${
-                            isSelected
-                              ? 'bg-teal-50 dark:bg-teal-900/20 border-l-2 border-l-teal-500'
-                              : 'hover:bg-slate-50 dark:hover:bg-slate-700/30 border-l-2 border-l-transparent'
-                          }`}
-                        >
-                          <div className="text-sm text-slate-800 dark:text-slate-200 truncate">{item.displayName}</div>
-                          {item.type === 'skill' ? (
-                            <div className="text-xs text-slate-400 mt-0.5">v{item.skill.version} · {item.skill.owner_team}</div>
-                          ) : item.publishedSkill ? (
-                            <div className="text-xs text-slate-400 mt-0.5">v{item.publishedSkill.version} · {item.publishedSkill.owner_team}</div>
-                          ) : (
-                            <div className="text-xs px-1 py-0 rounded bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 mt-0.5 inline-block">not published</div>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </>
-                )}
-              </>
-
-              {/* ── Skills ──────────────────────────────────── */}
-              <SectionHeader
-                label="Skills"
-                count={domainSkills.length}
-                isOpen={expanded.skills}
-                onToggle={() => toggle('skills')}
-                action={
-                  <button
-                    onClick={() => { setSelection({ type: 'new_skill' }); setExpanded((p) => ({ ...p, skills: true })); }}
-                    className="p-0.5 rounded text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
-                    title="New skill"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-                    </svg>
-                  </button>
-                }
-              />
-              {expanded.skills && (
-                <>
-                  {/* Discipline filter chips */}
-                  <div className="px-3 pb-2 flex flex-wrap gap-1">
-                    {(['all', 'dev', 'qa', 'design', 'general'] as ('all' | Discipline)[]).map((d) => (
-                      <button
-                        key={d}
-                        onClick={() => setFilterDiscipline(d as Discipline)}
-                        className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
-                          filterDiscipline === d
-                            ? 'bg-teal-600 text-white'
-                            : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700'
-                        }`}
-                      >
-                        {d === 'all' ? 'All' : DISCIPLINE_LABELS[d]}
-                      </button>
-                    ))}
-                  </div>
-                  {/* Skill items grouped by discipline */}
-                  {filteredDomainSkills.length === 0 ? (
-                    <div className="px-4 pb-2 text-xs text-slate-400">No skills found</div>
-                  ) : (
-                    (['dev', 'qa', 'design', 'general'] as const)
-                      .filter((d) => filteredDomainSkills.some((s) => s.discipline === d))
-                      .map((disc) => (
-                        <div key={disc}>
-                          {filterDiscipline === 'all' && (
-                            <div className="px-4 pt-1 pb-0.5 text-xs font-medium text-slate-400 dark:text-slate-500">
-                              {DISCIPLINE_LABELS[disc]}
-                            </div>
-                          )}
-                          {filteredDomainSkills.filter((s) => s.discipline === disc).map((skill) => (
-                            <button
-                              key={skill.skill_name}
-                              onClick={() => selectSkill(skill)}
-                              className={`w-full text-left px-4 py-2 border-b border-slate-100 dark:border-slate-700/40 transition-colors ${
-                                selectedSkillName === skill.skill_name
-                                  ? 'bg-teal-50 dark:bg-teal-900/20 border-l-2 border-l-teal-500'
-                                  : 'hover:bg-slate-50 dark:hover:bg-slate-700/30 border-l-2 border-l-transparent'
-                              }`}
-                              >
-                                <div className="flex items-center space-x-1.5">
-                                  <span className={`px-1.5 py-0 rounded text-xs font-medium ${DISCIPLINE_COLORS[disc]}`}>
-                                    {DISCIPLINE_LABELS[disc]}
-                                  </span>
-                                <span className="text-sm text-slate-800 dark:text-slate-200 truncate">
-                                  {skill.discipline === 'agent' ? getAgentDisplayName(skill) : skill.skill_name}
-                                </span>
-                                </div>
-                              <div className="text-xs text-slate-400 mt-0.5 pl-0.5">v{skill.version} · {skill.owner_team}</div>
-                            </button>
-                          ))}
-                        </div>
-                      ))
-                  )}
-                </>
-              )}
-
-              {/* ── Tools ───────────────────────────────────── */}
-              <SectionHeader
-                label="Tools"
-                count={allTools.length}
-                isOpen={expanded.tools}
-                onToggle={() => toggle('tools')}
-              />
-              {expanded.tools && (
-                allTools.length === 0 ? (
-                  <div className="px-4 pb-2 text-xs text-slate-400">No tools registered</div>
-                ) : (
-                  allTools.map((tool) => (
-                    <button
-                      key={`${tool.sourceSkillName}:${tool.name}`}
-                      onClick={() => setSelection({ type: 'tool', tool })}
-                      className={`w-full text-left px-4 py-2 border-b border-slate-100 dark:border-slate-700/40 transition-colors ${
-                        selectedToolName === tool.name
-                          ? 'bg-teal-50 dark:bg-teal-900/20 border-l-2 border-l-teal-500'
-                          : 'hover:bg-slate-50 dark:hover:bg-slate-700/30 border-l-2 border-l-transparent'
-                      }`}
-                    >
-                      <div className="text-sm font-mono text-slate-800 dark:text-slate-200 truncate">{tool.name}</div>
-                      <div className="text-xs text-slate-400 mt-0.5 truncate">from {tool.sourceSkillName}</div>
-                    </button>
-                  ))
-                )
-              )}
-            </>
-          )}
-        </nav>
+        <SkillManagerSidebar
+          isLoading={isLoading}
+          expanded={expanded}
+          onToggle={toggle}
+          contextFiles={contextFiles}
+          selectedCtxIndex={selectedCtxIndex}
+          onSelectContext={selectContextFile}
+          onNewContext={() => { setSelection({ type: 'new_context' }); setExpanded((p) => ({ ...p, context: true })); }}
+          agentItems={agentItems}
+          selectedSkillName={selectedSkillName}
+          selectedAgentName={selectedAgentName}
+          onSelectSkill={selectSkill}
+          onCreatePersona={openPersonaForCreation}
+          onNewAgent={() => {
+            setCreateForm({
+              skill_name: '', discipline: 'agent', owner_team: 'core', agent_type: 'analyst',
+              version: '1.0.0', persona_prompt: '', development_context: '',
+              tool_definitions: '', output_format_template: '',
+            });
+            setSelection({ type: 'new_agent' });
+            setExpanded((p) => ({ ...p, agents: true }));
+          }}
+          domainSkills={domainSkills}
+          filteredDomainSkills={filteredDomainSkills}
+          filterDiscipline={filterDiscipline}
+          onFilterDisciplineChange={setFilterDiscipline}
+          onNewSkill={() => { setSelection({ type: 'new_skill' }); setExpanded((p) => ({ ...p, skills: true })); }}
+          allTools={allTools}
+          selectedToolName={selectedToolName}
+          onSelectTool={(tool) => setSelection({ type: 'tool', tool })}
+        />
 
         {/* Right panel */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">

@@ -37,6 +37,11 @@ export interface ContextFileVersion {
 export type Discipline = 'all' | 'dev' | 'qa' | 'design' | 'general';
 export type ContentTab = 'persona' | 'dev_context' | 'tools' | 'template';
 
+/** An entry in the Agents section: either a persona file (optionally backed by a published skill) or a custom agent skill. */
+export type AgentItem =
+  | { type: 'persona'; key: string; persona: PersonaFile; publishedSkill: SkillVersion | null; displayName: string }
+  | { type: 'skill'; key: string; skill: SkillVersion; displayName: string };
+
 export type PanelSelection =
   | { type: 'context'; index: number }
   | { type: 'skill'; skill: SkillVersion }
