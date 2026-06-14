@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
@@ -16,6 +16,9 @@ import { ChatInputArea } from './ChatInputArea';
 import { PrototypeActions } from './PrototypeActions';
 import { ChangeRequestSection } from './ChangeRequestSection';
 import { PipelineTerminalView } from '../workflow/PipelineTerminalView';
+import { ConversationMessageList } from './ConversationMessageList';
+import { StageConfirmationCard } from './StageConfirmationCard';
+import { MidWorkflowMessageInput } from './MidWorkflowMessageInput';
 
 export function CoordinatorChat() {
   const {
@@ -56,7 +59,6 @@ export function CoordinatorChat() {
   // Prototype state
   const [prototypeData, setPrototypeData] = useState<PrototypeData | null>(null);
   const [showPrototype, setShowPrototype] = useState(false);
-  const [showMsgInput, setShowMsgInput] = useState(false);
   const [animFrame, setAnimFrame] = useState(0);
   const [criticActiveStage, setCriticActiveStage] = useState<string | null>(null);
   const [revisingStage, setRevisingStage] = useState<string | null>(null);
@@ -397,27 +399,6 @@ export function CoordinatorChat() {
     return cp?.artifact_id ?? null;
   }
 
-  // ── Pre-process messages: insert stage dividers before each new stage ────
-  type RenderItem =
-    | { kind: 'divider'; stage: string; key: string }
-    | { kind: 'msg'; msg: CoordinatorMessage; idx: number };
-
-  const renderItems = useMemo<RenderItem[]>(() => {
-    const items: RenderItem[] = [];
-    let lastProgressStage: string | null = null;
-    coordinatorMessages.forEach((msg, idx) => {
-      if (msg.isProgress && msg.stage && msg.stage !== lastProgressStage) {
-        items.push({ kind: 'divider', stage: msg.stage, key: `divider-${msg.stage}-${idx}` });
-        lastProgressStage = msg.stage;
-      }
-      items.push({ kind: 'msg', msg, idx });
-    });
-    return items;
-  }, [coordinatorMessages]);
-
-
-
-
   // ── Render ────────────────────────────────────────────────────────────────
 
   // ── Conversation view (planning, active workflow, or complete) ──────────
@@ -596,157 +577,24 @@ export function CoordinatorChat() {
       {(!hasWorkflow || planningPhase !== 'idle') && (
       <div className="flex-1 overflow-y-auto min-h-0">
         <div className="max-w-3xl mx-auto px-4 py-4 space-y-2">
-        {(isGathering || isConfirming || isLaunching) && renderItems.map(item => {
-          // Stage divider
-          if (item.kind === 'divider') {
-            return (
-              <div key={item.key} className="flex items-center gap-3 py-2">
-                <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
-                <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500 px-1">
-                  {STAGE_LABELS[item.stage] ?? item.stage}
-                </span>
-                <div className="flex-1 h-px bg-slate-200 dark:bg-slate-700" />
-              </div>
-            );
-          }
-
-          const { msg, idx } = item;
-          const isCoordinator = msg.role === 'coordinator';
-          const displayContent = isCoordinator ? stripReadyMarker(msg.content) : msg.content;
-          const isLast = idx === coordinatorMessages.length - 1;
-          const isEmptyStreaming = isCoordinator && displayContent === '' && isStreaming && isLast;
-
-          // Progress — compact live ticker
-          if (msg.isProgress) {
-            return (
-              <div key={idx} className="flex items-center gap-2 py-0.5 text-xs text-slate-500 dark:text-slate-400">
-                <span className="w-1.5 h-1.5 rounded-full bg-teal-400 dark:bg-teal-500 animate-pulse flex-shrink-0" />
-                {displayContent}
-              </div>
-            );
-          }
-
-          // Stage completed — milestone row
-          if (msg.eventType === 'stage_completed') {
-            const artifactId = msg.stage ? getArtifactForStage(msg.stage) : null;
-            return (
-              <div key={idx} className="flex items-center gap-2.5 py-1">
-                <div className="w-5 h-5 rounded-full bg-green-100 dark:bg-green-900/40 flex items-center justify-center flex-shrink-0">
-                  <svg className="w-2.5 h-2.5 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-                <span className="text-sm font-medium text-slate-700 dark:text-slate-300 flex-1">
-                  {STAGE_LABELS[msg.stage ?? ''] ?? msg.stage ?? 'Stage'} complete
-                </span>
-                {artifactId && (
-                  <button
-                    onClick={() => setViewingArtifactId(artifactId)}
-                    className="text-xs px-2 py-0.5 rounded border border-slate-200 dark:border-slate-600 text-slate-500 dark:text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 hover:border-teal-300 dark:hover:border-teal-600 transition-colors flex-shrink-0"
-                  >
-                    View →
-                  </button>
-                )}
-              </div>
-            );
-          }
-
-          // Critic verdict — colored left-border card
-          if (msg.eventType === 'critic_verdict') {
-            const isPass = displayContent.includes('✓');
-            return (
-              <div key={idx} className={`rounded-r-lg border-l-[3px] px-3 py-2 text-sm ${
-                isPass
-                  ? 'border-green-400 dark:border-green-600 bg-green-50/70 dark:bg-green-900/10'
-                  : 'border-amber-400 dark:border-amber-600 bg-amber-50/70 dark:bg-amber-900/10'
-              }`}>
-                <div className="prose prose-sm dark:prose-invert max-w-none [&_p]:my-0.5 [&_ul]:my-0.5 [&_li]:my-0">
-                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{displayContent}</ReactMarkdown>
-                </div>
-              </div>
-            );
-          }
-
-          // Curator context updates — muted info card
-          if (msg.eventType === 'curator_reasoning') {
-            return (
-              <div key={idx} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 px-3 py-2.5">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1.5">
-                  Context updates
-                </p>
-                <div className="prose prose-xs dark:prose-invert max-w-none text-xs">
-                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{displayContent}</ReactMarkdown>
-                </div>
-              </div>
-            );
-          }
-
-          // Human message
-          if (!isCoordinator) {
-            return (
-              <div key={idx} className="flex justify-end">
-                <div className="max-w-[85%] bg-teal-600 text-white rounded-2xl rounded-tr-sm px-3.5 py-2.5 text-sm leading-relaxed">
-                  <p className="whitespace-pre-wrap">{displayContent}</p>
-                </div>
-              </div>
-            );
-          }
-
-          // Default coordinator message
-          return (
-            <div key={idx} className="flex justify-start">
-              <div className="max-w-[85%] rounded-2xl rounded-tl-sm px-3.5 py-2.5 text-sm bg-white border border-slate-200 dark:bg-slate-800/60 dark:border-transparent text-slate-900 dark:text-slate-100">
-                {isEmptyStreaming ? (
-                  <span className="text-slate-400 dark:text-slate-500 animate-pulse text-xs">thinking…</span>
-                ) : (
-                  <div className="prose prose-sm dark:prose-invert max-w-none [&_p]:my-1 [&_ul]:my-1">
-                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{displayContent}</ReactMarkdown>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
+        {(isGathering || isConfirming || isLaunching) && (
+          <ConversationMessageList
+            coordinatorMessages={coordinatorMessages}
+            isStreaming={isStreaming}
+            getArtifactForStage={getArtifactForStage}
+            onViewArtifact={setViewingArtifactId}
+          />
+        )}
 
         {/* Stage confirmation card — shown after coordinator signals ready */}
         {isConfirming && pendingLaunchData && (
-          <div className="rounded-lg border border-teal-200 dark:border-teal-800 bg-teal-50/60 dark:bg-teal-900/20 p-4 space-y-3">
-            <div>
-              <p className="text-xs font-semibold text-teal-700 dark:text-teal-300 uppercase tracking-wide mb-1">Suggested pipeline</p>
-              {stageRationale && (
-                <p className="text-xs text-slate-600 dark:text-slate-400">{stageRationale}</p>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {availableStages.map(stage => {
-                const enabled = enabledStages[stage.key];
-                const enabledCount = Object.values(enabledStages).filter(Boolean).length;
-                const isLastEnabled = enabled && enabledCount === 1;
-                return (
-                  <button
-                    key={stage.key}
-                    type="button"
-                    disabled={isLastEnabled}
-                    onClick={() => setEnabledStages(prev => ({ ...prev, [stage.key]: !prev[stage.key] }))}
-                    title={isLastEnabled ? 'At least one stage required' : `${enabled ? 'Remove' : 'Add'} ${stage.label}`}
-                    className={`px-2 py-0.5 text-xs rounded-md border transition-colors ${
-                      enabled
-                        ? 'bg-teal-100 dark:bg-teal-900/50 border-teal-400 dark:border-teal-600 text-teal-800 dark:text-teal-200 font-medium'
-                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-600 line-through'
-                    } ${isLastEnabled ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-80 cursor-pointer'}`}
-                  >
-                    {stage.short}
-                  </button>
-                );
-              })}
-            </div>
-            <button
-              onClick={() => handleLaunchWorkflow(plannedGoal, pendingLaunchData.enrichedContext, pendingLaunchData.kbQueries)}
-              className="w-full py-2 px-4 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              Launch workflow →
-            </button>
-          </div>
+          <StageConfirmationCard
+            availableStages={availableStages}
+            enabledStages={enabledStages}
+            onToggleStage={(key) => setEnabledStages(prev => ({ ...prev, [key]: !prev[key] }))}
+            stageRationale={stageRationale}
+            onLaunch={() => handleLaunchWorkflow(plannedGoal, pendingLaunchData.enrichedContext, pendingLaunchData.kbQueries)}
+          />
         )}
 
 
@@ -898,37 +746,16 @@ export function CoordinatorChat() {
 
       {/* Mid-workflow: collapsed "Message coordinator" toggle */}
       {showMidWorkflowToggle && (
-        <div className="border-t border-slate-200 dark:border-slate-700 flex-shrink-0">
-          {showMsgInput ? (
-            <form onSubmit={(e) => { handleSendReply(e); setShowMsgInput(false); }} className="p-3 space-y-2">
-              <textarea
-                ref={replyRef}
-                value={reply}
-                onChange={(e) => { setReply(e.target.value); autoResize(); }}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendReply(e as any); setShowMsgInput(false); } if (e.key === 'Escape') { setShowMsgInput(false); setReply(''); } }}
-                placeholder="Message the coordinator…"
-                rows={2}
-                className="w-full resize-none rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500"
-              />
-              <div className="flex gap-2">
-                <button type="submit" disabled={!reply.trim() || isStreaming} className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 dark:disabled:bg-slate-600 text-white text-xs font-medium rounded-md transition-colors">
-                  Send
-                </button>
-                <button type="button" onClick={() => { setShowMsgInput(false); setReply(''); }} className="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
-                  Cancel
-                </button>
-              </div>
-              {error && <p className="text-xs text-red-600 dark:text-red-400">{error} <button onClick={() => setError(null)} className="underline">dismiss</button></p>}
-            </form>
-          ) : (
-            <button
-              onClick={() => setShowMsgInput(true)}
-              className="w-full py-2 text-xs text-slate-400 dark:text-slate-500 hover:text-teal-500 dark:hover:text-teal-400 transition-colors"
-            >
-              + Message coordinator
-            </button>
-          )}
-        </div>
+        <MidWorkflowMessageInput
+          reply={reply}
+          onReplyChange={setReply}
+          isStreaming={isStreaming}
+          error={error}
+          onClearError={() => setError(null)}
+          onSubmit={handleSendReply}
+          textareaRef={replyRef}
+          onAutoResize={autoResize}
+        />
       )}
 
       {/* Error display when no input is visible */}
