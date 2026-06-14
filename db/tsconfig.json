@@ -1,0 +1,18 @@
+{
+  "//": "Standalone project for the Drizzle schema. db/ lives outside the backend workspace, so schema.ts has no other governing tsconfig and drizzle-orm is installed in app/backend/node_modules. This config gives editors module resolution + types for schema.ts (drizzle-kit reads it directly; it is never part of a tsc build).",
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "types": [],
+    "baseUrl": ".",
+    "paths": {
+      "drizzle-orm": ["../app/backend/node_modules/drizzle-orm"],
+      "drizzle-orm/*": ["../app/backend/node_modules/drizzle-orm/*"]
+    }
+  },
+  "include": ["schema.ts"]
+}
