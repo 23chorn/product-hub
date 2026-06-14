@@ -1,6 +1,7 @@
 import type { AxiosInstance } from 'axios';
 import Logger from '../utils/logger';
 import {
+  adoErrorMessage,
   SUITE_TYPE_LABELS,
   TC_PRIORITY_MAP,
   buildTestCaseDescription,
@@ -36,7 +37,7 @@ async function createTestPlan(
       planUrl: `https://dev.azure.com/${ctx.organization}/${ctx.project}/_testPlans/define?planId=${planId}`,
     };
   } catch (error: any) {
-    throw new Error(`Failed to create test plan: ${error.response?.data?.message || error.message}`);
+    throw new Error(`Failed to create test plan: ${adoErrorMessage(error)}`);
   }
 }
 
@@ -57,7 +58,7 @@ async function createTestSuite(
     });
     return { suiteId: response.data.id as number };
   } catch (error: any) {
-    throw new Error(`Failed to create test suite "${name}": ${error.response?.data?.message || error.message}`);
+    throw new Error(`Failed to create test suite "${name}": ${adoErrorMessage(error)}`);
   }
 }
 
@@ -99,7 +100,7 @@ async function createTestCaseWorkItem(ctx: TestPlanContext, params: {
     const response = await ctx.client.post('/wit/workitems/$Test%20Case', operations);
     return { testCaseId: response.data.id as number };
   } catch (error: any) {
-    throw new Error(`Failed to create test case "${params.title}": ${error.response?.data?.message || error.message}`);
+    throw new Error(`Failed to create test case "${params.title}": ${adoErrorMessage(error)}`);
   }
 }
 
@@ -152,7 +153,7 @@ async function updateTestCaseWorkItem(ctx: TestPlanContext, testCaseId: number, 
   try {
     await ctx.client.patch(`/wit/workitems/${testCaseId}`, operations);
   } catch (error: any) {
-    throw new Error(`Failed to update test case #${testCaseId}: ${error.response?.data?.message || error.message}`);
+    throw new Error(`Failed to update test case #${testCaseId}: ${adoErrorMessage(error)}`);
   }
 }
 
@@ -174,7 +175,7 @@ async function addTestCasesToSuite(
       { headers: { 'Content-Type': 'application/json' } }
     );
   } catch (error: any) {
-    throw new Error(`Failed to add test cases to suite: ${error.response?.data?.message || error.message}`);
+    throw new Error(`Failed to add test cases to suite: ${adoErrorMessage(error)}`);
   }
 }
 

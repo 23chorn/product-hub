@@ -5,6 +5,11 @@
  * unit-testable in isolation. Consumed by integrations/azure-devops.ts.
  */
 
+/** Extract the most useful message from a failed Azure DevOps API call. */
+export function adoErrorMessage(error: any): string {
+  return error?.response?.data?.message || error?.message || 'Unknown error';
+}
+
 /** Round a number to the nearest value in the Fibonacci sequence (1–144). */
 export function toNearestFibonacci(n: number): number {
   const fibs = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144];

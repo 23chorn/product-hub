@@ -2,6 +2,7 @@ import axios, { AxiosInstance } from 'axios';
 import Logger from '../utils/logger';
 import { BacklogStructure } from '@pap/shared';
 import {
+  adoErrorMessage,
   toNearestFibonacci,
   stripStoryPrefix,
   escapeHtml,
@@ -258,7 +259,7 @@ export class AzureDevOpsClient {
         logger.error('Request URL:', error.config?.url);
       }
       throw new Error(
-        `Azure DevOps API error: ${error.response?.data?.message || error.message}`
+        `Azure DevOps API error: ${adoErrorMessage(error)}`
       );
     }
   }
@@ -460,7 +461,7 @@ export class AzureDevOpsClient {
     } catch (error: any) {
       logger.error(`Failed to add feature to epic #${epicId}`, error);
       throw new Error(
-        `Azure DevOps API error: ${error.response?.data?.message || error.message}`
+        `Azure DevOps API error: ${adoErrorMessage(error)}`
       );
     }
   }
@@ -511,7 +512,7 @@ export class AzureDevOpsClient {
     } catch (error: any) {
       logger.error(`Failed to update work item #${id}`, error);
       throw new Error(
-        `Azure DevOps API error: ${error.response?.data?.message || error.message}`
+        `Azure DevOps API error: ${adoErrorMessage(error)}`
       );
     }
   }
@@ -664,7 +665,7 @@ export class AzureDevOpsClient {
       ]);
     } catch (error: any) {
       logger.error(`Failed to add comment to work item #${id}`, error);
-      throw new Error(`Azure DevOps API error: ${error.response?.data?.message || error.message}`);
+      throw new Error(`Azure DevOps API error: ${adoErrorMessage(error)}`);
     }
   }
 
@@ -678,7 +679,7 @@ export class AzureDevOpsClient {
     } catch (error: any) {
       logger.error(`Failed to get work item ${id}`, error);
       throw new Error(
-        `Azure DevOps API error: ${error.response?.data?.message || error.message}`
+        `Azure DevOps API error: ${adoErrorMessage(error)}`
       );
     }
   }
@@ -729,7 +730,7 @@ export class AzureDevOpsClient {
       });
       return (response.data as any).content ?? '';
     } catch (error: any) {
-      throw new Error(`Wiki page not found: ${path} — ${error.response?.data?.message || error.message}`);
+      throw new Error(`Wiki page not found: ${path} — ${adoErrorMessage(error)}`);
     }
   }
 
@@ -779,7 +780,7 @@ export class AzureDevOpsClient {
       return { eTag, url: pageUrl };
     } catch (error: any) {
       logger.error(`Failed to upsert wiki page ${path}`, error?.response?.data ?? error.message);
-      throw new Error(`Wiki API error: ${error.response?.data?.message || error.message}`);
+      throw new Error(`Wiki API error: ${adoErrorMessage(error)}`);
     }
   }
 
