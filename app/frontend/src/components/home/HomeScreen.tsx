@@ -1,19 +1,19 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import type { AirtableItem } from '@pap/shared';
-import { api } from '../services/api';
-import { useSessionStore } from '../stores/sessionStore';
-import { useConfigStore } from '../stores/configStore';
-import { useWorkflowStore } from '../stores/workflowStore';
-import { useAuthStore } from '../stores/authStore';
-import { useSettingsStore } from '../stores/settingsStore';
-import { useToast } from '../hooks/useToast';
-import { TOGGLEABLE_STAGES } from '../constants/stage-labels';
-import { extractReadyPayload } from '../utils/coordinator-helpers';
-import { InitiativeCard } from './home/InitiativeCard';
-import { HomeHeader } from './home/HomeHeader';
-import { NewInitiativeForm } from './home/NewInitiativeForm';
-import { LaunchPipelineModal } from './home/LaunchPipelineModal';
-import { effectiveStatus, STATUS_FILTERS, type EnrichedItem, type LaunchPhase, type StatusFilter } from './home/types';
+import { api } from '../../services/api';
+import { useSessionStore } from '../../stores/sessionStore';
+import { useConfigStore } from '../../stores/configStore';
+import { useWorkflowStore } from '../../stores/workflowStore';
+import { useAuthStore } from '../../stores/authStore';
+import { useSettingsStore } from '../../stores/settingsStore';
+import { useToast } from '../../hooks/useToast';
+import { TOGGLEABLE_STAGES } from '../../constants/stage-labels';
+import { extractReadyPayload } from '../../utils/coordinator-helpers';
+import { InitiativeCard } from './InitiativeCard';
+import { HomeHeader } from './HomeHeader';
+import { NewInitiativeForm } from './NewInitiativeForm';
+import { LaunchPipelineModal } from './LaunchPipelineModal';
+import { effectiveStatus, STATUS_FILTERS, type EnrichedItem, type LaunchPhase, type StatusFilter } from './types';
 
 let _cachedLocalItems: EnrichedItem[] = [];
 

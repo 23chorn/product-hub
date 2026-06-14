@@ -1,14 +1,14 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { api, type SkillVersion } from '../services/api';
-import { useSkillManagerStore } from '../stores/skillManagerStore';
-import { useThemeStore } from '../stores/themeStore';
-import { getAgentDisplayName } from '../utils/agent-display-names';
-import { ContextFileEditor } from './skill/ContextFileEditor';
-import { SkillViewer } from './skill/SkillViewer';
-import { ToolViewer } from './skill/ToolViewer';
-import { SkillCreateForm } from './skill/SkillCreateForm';
-import { NewContextForm } from './skill/NewContextForm';
-import { SkillManagerSidebar } from './skill/SkillManagerSidebar';
+import { api, type SkillVersion } from '../../services/api';
+import { useSkillManagerStore } from '../../stores/skillManagerStore';
+import { useThemeStore } from '../../stores/themeStore';
+import { getAgentDisplayName } from '../../utils/agent-display-names';
+import { ContextFileEditor } from './ContextFileEditor';
+import { SkillViewer } from './SkillViewer';
+import { ToolViewer } from './ToolViewer';
+import { SkillCreateForm } from './SkillCreateForm';
+import { NewContextForm } from './NewContextForm';
+import { SkillManagerSidebar } from './SkillManagerSidebar';
 import {
   bumpPatch,
   type PanelSelection,
@@ -18,7 +18,7 @@ import {
   type ContextFile,
   type PersonaFile,
   type AgentItem,
-} from './skill/types';
+} from './types';
 
 // ─── Main panel ───────────────────────────────────────────────────────────────
 

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { api } from '../services/api';
-import { useToast } from '../hooks/useToast';
-import { ROLE_LABELS } from '../stores/authStore';
-import type { CurrentUser } from '../stores/authStore';
+import { api } from '../../services/api';
+import { useToast } from '../../hooks/useToast';
+import { ROLE_LABELS } from '../../stores/authStore';
+import type { CurrentUser } from '../../stores/authStore';
 
 const ALL_ROLES = Object.keys(ROLE_LABELS) as (keyof typeof ROLE_LABELS)[];
 

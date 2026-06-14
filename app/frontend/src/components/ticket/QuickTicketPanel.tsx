@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { api } from '../services/api';
-import { useConfigStore } from '../stores/configStore';
-import { useModelStore } from '../stores/modelStore';
+import { api } from '../../services/api';
+import { useConfigStore } from '../../stores/configStore';
+import { useModelStore } from '../../stores/modelStore';
 
 interface FormattedStory {
   title: string;

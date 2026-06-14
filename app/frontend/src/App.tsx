@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { HomeScreen } from './components/HomeScreen';
+import { HomeScreen } from './components/home/HomeScreen';
 import { DecisionLogPanel } from './components/decision-log';
-import { ToastContainer } from './components/ToastContainer';
+import { ToastContainer } from './components/toast/ToastContainer';
 import { CoordinatorChat } from './components/coordinator';
 import { ArtifactViewer } from './components/artifact';
-import { SkillManagerPanel } from './components/SkillManagerPanel';
-import { SettingsPanel } from './components/SettingsPanel';
-import { QuickTicketPanel } from './components/QuickTicketPanel';
+import { SkillManagerPanel } from './components/skill/SkillManagerPanel';
+import { SettingsPanel } from './components/settings/SettingsPanel';
+import { QuickTicketPanel } from './components/ticket/QuickTicketPanel';
 import { LoginPage } from './pages/LoginPage';
 import { useModelStore } from './stores/modelStore';
 import { useDecisionLogStore } from './stores/decisionLogStore';

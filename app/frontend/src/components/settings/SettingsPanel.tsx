@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
-import { api } from '../services/api';
-import { useSettingsStore } from '../stores/settingsStore';
-import { useThemeStore } from '../stores/themeStore';
-import { useToast } from '../hooks/useToast';
-import { useAuthStore } from '../stores/authStore';
+import { api } from '../../services/api';
+import { useSettingsStore } from '../../stores/settingsStore';
+import { useThemeStore } from '../../stores/themeStore';
+import { useToast } from '../../hooks/useToast';
+import { useAuthStore } from '../../stores/authStore';
 import { UserManagementPanel } from './UserManagementPanel';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
