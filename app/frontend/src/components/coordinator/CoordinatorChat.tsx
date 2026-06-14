@@ -426,6 +426,10 @@ export function CoordinatorChat() {
     : activeWorkflow?.goal;
   const displayGoal = activeWorkflow?.summary || rawGoal;
 
+  // The user's original goal is the first human message in the planning
+  // conversation — used to launch the workflow from the confirm screen.
+  const plannedGoal = coordinatorMessages.find((m) => m.role === 'human')?.content ?? '';
+
   // Input only shown during coordinator planning Q&A
   const showInput = !isLaunching && !isConfirming && isGathering;
   // Mid-workflow message is available but collapsed by default
@@ -737,7 +741,7 @@ export function CoordinatorChat() {
               })}
             </div>
             <button
-              onClick={() => handleLaunchWorkflow(pendingGoal, pendingLaunchData.enrichedContext, pendingLaunchData.kbQueries)}
+              onClick={() => handleLaunchWorkflow(plannedGoal, pendingLaunchData.enrichedContext, pendingLaunchData.kbQueries)}
               className="w-full py-2 px-4 bg-teal-600 hover:bg-teal-700 text-white text-sm font-medium rounded-lg transition-colors"
             >
               Launch workflow →
