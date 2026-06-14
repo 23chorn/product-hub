@@ -36,65 +36,19 @@ import {
 import { isDemoMode, getDemoFixture, getDemoFixtureForTheme, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
 import { notifyCheckpointPending } from '../utils/slack-notifier';
 
-/**
- * Stages that run silently with no human review gate.
- * Currently empty — every stage pauses for human approval.
- * To skip human review on a stage, add it here (e.g. new Set(['pm_prd'])).
- */
-export const SILENT_STAGES = new Set<string>([]);
-
-// ── User-initiated cancel registry ───────────────────────────────────────────
-
-const _cancelControllers = new Map<string, AbortController>();
-const _cancelledWorkflows = new Set<string>();
-
-/**
- * Request cancellation of an active workflow.
- * Aborts any in-flight LLM stream, emits a `workflow_cancelled` event,
- * and marks the workflow complete so no further stages start.
- */
-export function requestCancel(workflowId: string): void {
-  _cancelledWorkflows.add(workflowId);
-  const controller = _cancelControllers.get(workflowId);
-  if (controller && !controller.signal.aborted) {
-    controller.abort();
-  }
-  const now = Date.now();
-  try { stmts.updateWorkflowStatus.run('complete', now, workflowId); } catch { /* ignore */ }
-  insertEvent(workflowId, 'workflow_cancelled', null, 'Workflow stopped by user.');
-  logger.info(`Workflow ${workflowId} cancelled by user`);
-}
-
-/** Returns true if the user has requested cancellation for this workflow. */
-export function isCancelRequested(workflowId: string): boolean {
-  return _cancelledWorkflows.has(workflowId);
-}
-
-/** Clears the cancel flag so a restarted workflow can run again. */
-export function clearCancelFlag(workflowId: string): void {
-  _cancelledWorkflows.delete(workflowId);
-  _cancelControllers.delete(workflowId);
-}
-
-// ── Lazy singletons — avoids reading persona files at import time ─────────────
-
-let _coordinator: CoordinatorAgent | null = null;
-export function getCoordinator(): CoordinatorAgent {
-  if (!_coordinator) _coordinator = new CoordinatorAgent();
-  return _coordinator;
-}
-
-let _critic: CriticAgent | null = null;
-export function getCritic(): CriticAgent {
-  if (!_critic) _critic = new CriticAgent();
-  return _critic;
-}
-
-let _curator: ContextCuratorAgent | null = null;
-export function getCurator(): ContextCuratorAgent {
-  if (!_curator) _curator = new ContextCuratorAgent();
-  return _curator;
-}
+// Cancel registry, silent-stage set, and agent singletons live in dedicated
+// modules; re-exported here so existing importers of workflow-stage-runner are
+// unaffected.
+export {
+  SILENT_STAGES,
+  requestCancel,
+  isCancelRequested,
+  clearCancelFlag,
+} from './workflow-cancel';
+import { setCancelController, clearCancelController, isCancelRequested } from './workflow-cancel';
+export { getCoordinator, getCritic, getCurator } from './workflow-agents';
+import { getCoordinator, getCritic } from './workflow-agents';
+import { runMultiAgentFeatureStage } from './feature-stage-runner';
 
 // ── Autonomous stage execution ────────────────────────────────────────────────
 
@@ -123,49 +77,8 @@ export async function runAutonomousStage(
   const featureMatch = stage.match(/^story_decomposition_F(\d+)$/);
   if (featureMatch) {
     const featureIndex = parseInt(featureMatch[1], 10) - 1; // Convert to 0-based
-    const { runMultiAgentRefinement } = await import('./multi-agent-refinement');
-
-    try {
-      const artifactContent = await runMultiAgentRefinement(workflowId, itemId, stage, featureIndex);
-      const strippedArtifact = artifactContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-      const newFeature = JSON.parse(strippedArtifact);
-
-      // Load accumulated backlog (if any previous features completed)
-      let accumulatedBacklog: any;
-      const { loadLatestArtifactContent } = await import('./artifact-helpers');
-      const priorBacklogContent = await loadLatestArtifactContent(itemId, 'backlog');
-
-      if (priorBacklogContent) {
-        // Append new feature to existing backlog
-        const cleaned = priorBacklogContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-        accumulatedBacklog = JSON.parse(cleaned);
-        accumulatedBacklog.features.push(...newFeature.features);
-      } else {
-        // First feature — initialize backlog structure
-        accumulatedBacklog = newFeature;
-      }
-
-      // Save the accumulated backlog artifact (epic + all features so far).
-      // Type is always 'backlog' so loadLatestArtifactContent(itemId, 'backlog') finds it for accumulation.
-      const { saveLocalArtifact } = await import('./artifact-helpers');
-      const artifactId = await saveLocalArtifact(sessionId, 'backlog', JSON.stringify(accumulatedBacklog, null, 2), itemId, null);
-
-      // Create checkpoint for human review — ADO push happens at checkpoint approval
-      const { pauseAtCheckpoint } = await import('./workflow-router');
-      await pauseAtCheckpoint(workflowId, stage, artifactId, undefined);
-
-      logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} refinement complete — checkpoint created`);
-
-      insertEvent(workflowId, 'stage_completed', stage,
-        `Multi-agent collaborative refinement complete for Feature ${featureIndex + 1} — ready for human review`,
-        { artifact_id: artifactId });
-
-      return;
-    } catch (err: any) {
-      logger.error(`[MULTI-AGENT] Feature ${featureIndex + 1} refinement failed: ${err.message}`);
-      insertEvent(workflowId, 'error', stage, `Multi-agent refinement failed: ${err.message}`);
-      throw err;
-    }
+    await runMultiAgentFeatureStage(sessionId, workflowId, stage, itemId, featureIndex);
+    return;
   }
 
   const stageMap = STAGE_SESSION_MAP[stage];
@@ -251,7 +164,7 @@ export async function runAutonomousStage(
 
   // AbortController lets the user kill the in-flight LLM stream
   const abortController = new AbortController();
-  _cancelControllers.set(workflowId, abortController);
+  setCancelController(workflowId, abortController);
 
   try {
     // ── Demo fixture lookup ────────────────────────────────────────────────────
@@ -933,7 +846,7 @@ export async function runAutonomousStage(
       stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
     }
   } finally {
-    _cancelControllers.delete(workflowId);
+    clearCancelController(workflowId);
   }
 }
 
