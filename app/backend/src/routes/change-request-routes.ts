@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { initSSE, sseSend } from '../utils/sse';
 import {
   createChangeRequest,
   getChangeRequest,
@@ -74,9 +75,7 @@ changeRequestRoutes.post('/change-request/:crId/assess', async (req: Request, re
   const cr = getChangeRequest(crId);
   if (!cr) return res.status(404).json({ error: 'Change request not found' });
 
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
+  initSSE(res);
 
   try {
     const generator = assessImpact(crId, costTracker(cr.workflow_id));
@@ -88,21 +87,21 @@ changeRequestRoutes.post('/change-request/:crId/assess', async (req: Request, re
         assessment = result.value;
         break;
       }
-      res.write(`data: ${JSON.stringify({ type: 'content', content: result.value })}\n\n`);
+      sseSend(res, { type: 'content', content: result.value });
     }
 
     // Replace the streamed content with the cleaned version (JSON stripped)
     if (assessment?.cleanedText) {
-      res.write(`data: ${JSON.stringify({ type: 'replace', content: assessment.cleanedText })}\n\n`);
+      sseSend(res, { type: 'replace', content: assessment.cleanedText });
     }
 
     // Send the parsed assessment as a final structured event
     const { cleanedText: _, ...assessmentData } = assessment ?? { affected_stages: [], summary: '' };
-    res.write(`data: ${JSON.stringify({ type: 'assessment', assessment: assessmentData })}\n\n`);
-    res.write(`data: ${JSON.stringify({ type: 'done', content: '' })}\n\n`);
+    sseSend(res, { type: 'assessment', assessment: assessmentData });
+    sseSend(res, { type: 'done', content: '' });
   } catch (err: any) {
     logger.error('Failed to assess impact', err);
-    res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
+    sseSend(res, { type: 'error', error: err.message });
   } finally {
     res.end();
   }

@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { initSSE, sseSend } from '../utils/sse';
 import * as fs from 'fs';
 import * as path from 'path';
 import { revisePrototype, loadLatestPrototype, repairTruncatedJson, type PrototypeResult } from '../agents/prototype-agent';
@@ -23,9 +24,7 @@ prototypeRoutes.post('/workflow/:id/prototype/revise', async (req: Request, res:
     return res.status(400).json({ error: 'prototype and feedback are required' });
   }
 
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
+  initSSE(res);
 
   try {
     const onTokens = costTracker(workflowId);
@@ -35,19 +34,19 @@ prototypeRoutes.post('/workflow/:id/prototype/revise', async (req: Request, res:
     while (true) {
       const next = await generator.next();
       if (next.done) { result = next.value; break; }
-      res.write(`data: ${JSON.stringify({ type: 'content', content: next.value })}\n\n`);
+      sseSend(res, { type: 'content', content: next.value });
     }
 
     if (result) {
-      res.write(`data: ${JSON.stringify({ type: 'prototype', prototype: result })}\n\n`);
+      sseSend(res, { type: 'prototype', prototype: result });
     } else {
-      res.write(`data: ${JSON.stringify({ type: 'parse_failed' })}\n\n`);
+      sseSend(res, { type: 'parse_failed' });
     }
-    res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+    sseSend(res, { type: 'done' });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.error('Failed to revise prototype', err);
-    res.write(`data: ${JSON.stringify({ type: 'error', error: msg })}\n\n`);
+    sseSend(res, { type: 'error', error: msg });
   } finally {
     res.end();
   }

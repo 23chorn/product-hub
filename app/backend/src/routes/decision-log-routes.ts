@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { initSSE, sseSend } from '../utils/sse';
 import * as fs from 'fs';
 import * as path from 'path';
 import { SpecialistAgent } from '../agents/specialist-agent';
@@ -182,10 +183,7 @@ router.post('/message', async (req: Request, res: Response) => {
     sessionStore.addMessage(sessionId, 'user', message);
 
     // Set SSE headers
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
+    initSSE(res);
 
     // Stream response
     let fullResponse = '';
@@ -196,16 +194,16 @@ router.post('/message', async (req: Request, res: Response) => {
         model
       )) {
         fullResponse += chunk;
-        res.write(`data: ${JSON.stringify({ type: 'content', content: chunk })}\n\n`);
+        sseSend(res, { type: 'content', content: chunk });
       }
 
       // Save assistant response
       sessionStore.addMessage(sessionId, 'assistant', fullResponse);
 
-      res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+      sseSend(res, { type: 'done' });
     } catch (streamErr: any) {
       logger.error('DL streaming error', streamErr);
-      res.write(`data: ${JSON.stringify({ type: 'error', error: streamErr.message })}\n\n`);
+      sseSend(res, { type: 'error', error: streamErr.message });
     }
 
     res.end();

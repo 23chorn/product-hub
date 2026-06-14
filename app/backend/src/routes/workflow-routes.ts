@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { initSSE, sseSend } from '../utils/sse';
 import { randomUUID } from 'crypto';
 import { canApproveCheckpoint } from '../middleware/auth';
 import type { AuthRequest } from '../middleware/auth';
@@ -605,9 +606,7 @@ workflowRoutes.post('/:id/message', async (req: Request, res: Response) => {
     `).run(workflowId, status.currentStage, message, Date.now());
 
     // Stream CoS response
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
+    initSSE(res);
 
     const coordinator = getPlanningCoordinator();
     const systemPrompt = coordinator.buildSystemPrompt(workflowId);
@@ -623,7 +622,7 @@ workflowRoutes.post('/:id/message', async (req: Request, res: Response) => {
     try {
       for await (const chunk of coordinator.streamResponse(workflowId, contextMessage, model, costTracker(workflowId))) {
         fullContent += chunk;
-        res.write(`data: ${JSON.stringify({ type: 'content', content: chunk })}\n\n`);
+        sseSend(res, { type: 'content', content: chunk });
       }
 
       // Store CoS response as event
@@ -632,9 +631,9 @@ workflowRoutes.post('/:id/message', async (req: Request, res: Response) => {
         VALUES (?, 'cos_response', ?, ?, NULL, ?)
       `).run(workflowId, status.currentStage, fullContent.slice(0, 500), Date.now());
 
-      res.write(`data: ${JSON.stringify({ type: 'done', content: fullContent })}\n\n`);
+      sseSend(res, { type: 'done', content: fullContent });
     } catch (err: any) {
-      res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
+      sseSend(res, { type: 'error', error: err.message });
     } finally {
       res.end();
     }

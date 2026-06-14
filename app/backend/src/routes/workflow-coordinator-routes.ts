@@ -5,6 +5,7 @@
  * and helpers live in workflow-planning.ts.
  */
 import { Router, Request, Response } from 'express';
+import { initSSE, sseSend } from '../utils/sse';
 import { randomUUID } from 'crypto';
 import Logger from '../utils/logger';
 import {
@@ -38,16 +39,14 @@ workflowCoordinatorRoutes.post('/coordinator/open', async (req: Request, res: Re
   ];
   saveCoordinatorSession(sessionId, null, 'pre_workflow', null, messages);
 
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.write(`data: ${JSON.stringify({ type: 'session', sessionId })}\n\n`);
+  initSSE(res);
+  sseSend(res, { type: 'session', sessionId });
 
   let fullContent = '';
   try {
     for await (const chunk of getPlanningCoordinator().streamPlanningResponse(messages, model, (u) => accumulatePlanningCost(sessionId, u.estimatedCost))) {
       fullContent += chunk;
-      res.write(`data: ${JSON.stringify({ type: 'content', content: chunk })}\n\n`);
+      sseSend(res, { type: 'content', content: chunk });
     }
 
     // Clean leaked system prompt content from the response
@@ -64,15 +63,15 @@ workflowCoordinatorRoutes.post('/coordinator/open', async (req: Request, res: Re
     // If content was cleaned, send a replace event so the frontend overwrites
     // the raw streamed text with the cleaned version.
     if (fullContent !== rawContent) {
-      res.write(`data: ${JSON.stringify({ type: 'replace', content: fullContent })}\n\n`);
+      sseSend(res, { type: 'replace', content: fullContent });
       logger.info('Cleaned leaked system prompt content from coordinator response');
     }
 
     messages.push({ role: 'assistant', content: fullContent });
     saveCoordinatorSession(sessionId, null, 'pre_workflow', null, messages);
-    res.write(`data: ${JSON.stringify({ type: 'done', content: fullContent })}\n\n`);
+    sseSend(res, { type: 'done', content: fullContent });
   } catch (err: any) {
-    res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
+    sseSend(res, { type: 'error', error: err.message });
   } finally {
     res.end();
   }
@@ -118,13 +117,11 @@ workflowCoordinatorRoutes.post('/coordinator/reply', async (req: Request, res: R
 
   let fullContent = '';
   try {
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
+    initSSE(res);
 
     for await (const chunk of getPlanningCoordinator().streamPlanningResponse(session.messages, model, (u) => accumulatePlanningCost(sessionId, u.estimatedCost))) {
       fullContent += chunk;
-      res.write(`data: ${JSON.stringify({ type: 'content', content: chunk })}\n\n`);
+      sseSend(res, { type: 'content', content: chunk });
     }
 
     // Clean leaked system prompt content
@@ -138,13 +135,13 @@ workflowCoordinatorRoutes.post('/coordinator/reply', async (req: Request, res: R
       const goalText = goalMsg?.content.replace(/\[SYSTEM:.*\]/, '').trim() ?? 'the stated goal';
       const synthetic = `\n\nCOORDINATOR_READY\n{"enriched_context": "${goalText.slice(0, 300).replace(/"/g, "'")}"}`;
       fullContent += synthetic;
-      res.write(`data: ${JSON.stringify({ type: 'content', content: synthetic })}\n\n`);
+      sseSend(res, { type: 'content', content: synthetic });
       logger.info('Force-injected COORDINATOR_READY after max rounds exceeded');
     }
 
     // If content was cleaned, send a replace event
     if (fullContent !== rawReplyContent) {
-      res.write(`data: ${JSON.stringify({ type: 'replace', content: fullContent })}\n\n`);
+      sseSend(res, { type: 'replace', content: fullContent });
       logger.info('Cleaned leaked system prompt content from coordinator reply');
     }
 
@@ -157,9 +154,9 @@ workflowCoordinatorRoutes.post('/coordinator/reply', async (req: Request, res: R
 
     session.messages.push({ role: 'assistant', content: fullContent });
     saveCoordinatorSession(sessionId, session.workflowId, session.type, session.nextStage, session.messages);
-    res.write(`data: ${JSON.stringify({ type: 'done', content: fullContent })}\n\n`);
+    sseSend(res, { type: 'done', content: fullContent });
   } catch (err: any) {
-    res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
+    sseSend(res, { type: 'error', error: err.message });
   } finally {
     res.end();
   }

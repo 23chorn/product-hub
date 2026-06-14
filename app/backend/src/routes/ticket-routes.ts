@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { initSSE, sseSend } from '../utils/sse';
 import { streamAI, resolveAgentModel } from '../utils/ai-provider';
 import Logger from '../utils/logger';
 
@@ -85,9 +86,7 @@ ticketRoutes.post('/tickets/format-and-estimate', async (req: Request, res: Resp
 
   const resolvedModel = model || resolveAgentModel('coordinator');
 
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
+  initSSE(res);
 
   let fullContent = '';
 
@@ -99,7 +98,7 @@ ticketRoutes.post('/tickets/format-and-estimate', async (req: Request, res: Resp
       1024
     )) {
       fullContent += chunk;
-      res.write(`data: ${JSON.stringify({ type: 'content', content: chunk })}\n\n`);
+      sseSend(res, { type: 'content', content: chunk });
     }
 
     const jsonMatch = fullContent.match(/```json\s*([\s\S]*?)```/);
@@ -117,10 +116,10 @@ ticketRoutes.post('/tickets/format-and-estimate', async (req: Request, res: Resp
       }
     }
 
-    res.write(`data: ${JSON.stringify({ type: 'done', story, aiEstimateDevHours })}\n\n`);
+    sseSend(res, { type: 'done', story, aiEstimateDevHours });
   } catch (err: any) {
     logger.error('Failed to format/estimate ticket', err);
-    res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
+    sseSend(res, { type: 'error', error: err.message });
   } finally {
     res.end();
   }
