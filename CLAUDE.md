@@ -41,7 +41,7 @@ agents/
   templates/ Output templates (research, prd, backlog, architecture, prototype)
   config.yaml  User identity and preferences (gitignored)
 context/     Project context files loaded into every agent system prompt
-db/          SQLite database (product-ops.db) + schema.sql — db file is gitignored
+db/          SQLite database (product-ops.db, gitignored) + schema.ts (Drizzle schema) + migrations/
 ```
 
 Frontend proxies `/api/*` to the backend via Vite config. The shared package must be built (`npm run build` in `app/shared`) before type changes are visible to the backend.
@@ -56,7 +56,7 @@ Model config (pricing, token limits, per-agent assignments) is centralised in `u
 **Retry**: Both providers retry up to 3× with 15 s linear back-off on HTTP 429 / `ThrottlingException`.
 
 ### Database
-Single SQLite file at `db/product-ops.db` via `better-sqlite3` (synchronous). Schema defined in `db/schema.sql` and mirrored in `app/backend/src/data/database.ts` — keep both in sync on schema changes.
+Single SQLite file at `db/product-ops.db` via `better-sqlite3` (synchronous). Schema is defined in `db/schema.ts` (Drizzle) — the single source of truth. On startup, `app/backend/src/data/database.ts` runs `migrate()` against `db/migrations/` (tracked in the `__drizzle_migrations` table). To change the schema: edit `db/schema.ts`, then generate a migration with `npm run db:generate` from `app/backend/` (config in `app/backend/drizzle.config.ts`). The rest of the codebase uses the raw `better-sqlite3` instance exported as the default from `database.ts`.
 
 | Table | Purpose |
 |-------|---------|

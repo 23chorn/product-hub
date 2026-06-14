@@ -16,8 +16,8 @@ import configRoutes from './routes/config-routes';
 import decisionLogRoutes from './routes/decision-log-routes';
 import contextRoutes from './routes/context-routes';
 import initiativesRoutes from './routes/initiatives-routes';
-import { workflowRouter } from './routes/workflow-router';
 import { workflowRoutes } from './routes/workflow-routes';
+import { workflowExportRoutes } from './routes/workflow-export-routes';
 import { changeRequestRoutes } from './routes/change-request-routes';
 import { contextDiffRouter } from './routes/context-diff-routes';
 import { contextFileRouter } from './routes/context-file-routes';
@@ -97,10 +97,10 @@ app.use('/api/context', contextRoutes);
 app.use('/api/initiatives', initiativesRoutes);
 // Workflow routes — gated by ENABLE_WORKFLOW_MODE flag (default: enabled)
 if (appConfig.features.workflowModeEnabled) {
-  app.use('/api/workflows', workflowRouter);
   app.use('/api/workflow', workflowRoutes);
+  app.use('/api/workflow', workflowExportRoutes);
 } else {
-  app.use(['/api/workflows', '/api/workflow'], (_req, res) => {
+  app.use('/api/workflow', (_req, res) => {
     res.status(404).json({ error: 'Workflow mode is not enabled' });
   });
 }
