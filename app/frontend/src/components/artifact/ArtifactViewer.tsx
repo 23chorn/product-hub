@@ -14,6 +14,9 @@ import { TechRefinementView, tryParseTechRefinement } from './TechRefinementView
 import { extractPersonas, PersonaPanel } from './PersonaPanel';
 import { PrototypePreview, type PrototypeData } from '../coordinator/PrototypePreview';
 import { convertArtifactToMarkdown, isDocumentArtifact } from '../../utils/artifact-to-markdown';
+import { ArtifactSyncActions } from './ArtifactSyncActions';
+import { CriticReviewFlyout } from './CriticReviewFlyout';
+import { RejectConfirmModal } from './RejectConfirmModal';
 
 export function ArtifactViewer() {
   const { viewingArtifactId, setViewingArtifactId, checkpoints, activeWorkflow, applyWorkflowStatus, addCoordinatorMessage } = useWorkflowStore();
@@ -26,18 +29,10 @@ export function ArtifactViewer() {
   const [showRejectConfirm, setShowRejectConfirm] = useState(false);
   const [showIssuesPanel, setShowIssuesPanel] = useState(false);
   const [resolveLoading, setResolveLoading] = useState(false);
-  const [pushLoading, setPushLoading] = useState(false);
-  const [pushResult, setPushResult] = useState<{ epicUrl: string; featureCount?: number; storyCount?: number; created?: number; updated?: number; synced?: boolean } | null>(null);
-  const [testPlanPushLoading, setTestPlanPushLoading] = useState(false);
-  const [testPlanResult, setTestPlanResult] = useState<{ planUrl: string; created: number; updated: number } | null>(null);
-  const [hasTestPlanMappings, setHasTestPlanMappings] = useState(false);
-  const [wikiSyncLoading, setWikiSyncLoading] = useState(false);
-  const [wikiSyncResult, setWikiSyncResult] = useState<{ synced: number; results: Array<{ stage: string; pageName: string; url: string }> } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showCriticFlyout, setShowCriticFlyout] = useState(false);
   const [versionInfo, setVersionInfo] = useState<{ change_request_id: number; version: number } | null>(null);
-  const [hasAdoMappings, setHasAdoMappings] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -78,16 +73,6 @@ export function ArtifactViewer() {
       .then((info) => { if (!stale) setVersionInfo(info); })
       .catch(() => {});
 
-    // Check ADO mappings for sync button label
-    if (activeWorkflow) {
-      api.getAdoMappings(activeWorkflow.id)
-        .then(({ hasMappings }) => { if (!stale) setHasAdoMappings(hasMappings); })
-        .catch(() => {});
-      api.getQATestPlanMappings(activeWorkflow.id)
-        .then(({ hasMappings }) => { if (!stale) setHasTestPlanMappings(hasMappings); })
-        .catch(() => {});
-    }
-
     return () => { stale = true; };
   }, [viewingArtifactId]);
 
@@ -121,7 +106,7 @@ export function ArtifactViewer() {
     }
   }
 
-  const workItemsEnabled = config?.integrations?.workItems && config.integrations.workItems !== 'none';
+  const workItemsEnabled = !!(config?.integrations?.workItems && config.integrations.workItems !== 'none');
   const isBacklog = artifactType === 'backlog' || artifactType === 'epic_features';
   // Show push button only when workflow is complete and backlog was approved
   const backlogApproved = isBacklog && checkpoints.some(c => c.stage === 'story_decomposition' && c.status === 'approved');
@@ -136,71 +121,8 @@ export function ArtifactViewer() {
   const isWikiDocument = ['analyst', 'research', 'prd', 'architecture'].includes(artifactType);
   const showWikiSyncButton = isWikiDocument && workItemsEnabled && workflowComplete;
 
-  async function pushToBoard() {
-    if (!activeWorkflow) return;
-    setPushLoading(true);
-    setError(null);
-    try {
-      const result = await api.pushToBoard(activeWorkflow.id);
-      setPushResult(result);
-      const msg = result.synced
-        ? `Backlog synced to board: **${result.updated ?? 0} updated**, **${result.created ?? 0} created**. [View in Azure DevOps](${result.epicUrl})`
-        : `Backlog pushed to board: **Epic #${result.epicId}** with ${result.featureCount} features and ${result.storyCount} stories. [View in Azure DevOps](${result.epicUrl})`;
-      addCoordinatorMessage({
-        role: 'coordinator',
-        content: msg,
-        timestamp: Date.now(),
-      });
-    } catch (err: any) {
-      setError(err.response?.data?.error ?? err.message ?? 'Failed to push to board');
-    } finally {
-      setPushLoading(false);
-    }
-  }
-
-  async function pushToTestPlans() {
-    if (!activeWorkflow) return;
-    setTestPlanPushLoading(true);
-    setError(null);
-    try {
-      const result = await api.pushToTestPlans(activeWorkflow.id);
-      setTestPlanResult(result);
-      setHasTestPlanMappings(true);
-      const msg = hasTestPlanMappings
-        ? `Test plan synced: **${result.updated} updated**, **${result.created} created**. [View in ADO](${result.planUrl})`
-        : `Test plan created with **${result.testCaseCount} test cases**. [View in ADO](${result.planUrl})`;
-      addCoordinatorMessage({ role: 'coordinator', content: msg, timestamp: Date.now() });
-    } catch (err: any) {
-      setError(err.response?.data?.error ?? err.message ?? 'Failed to push test plan');
-    } finally {
-      setTestPlanPushLoading(false);
-    }
-  }
-
-  async function syncToWiki() {
-    if (!activeWorkflow) return;
-    setWikiSyncLoading(true);
-    setError(null);
-    try {
-      // Determine which stage to sync based on artifact type
-      const stageMap: Record<string, string> = {
-        research: 'analyst',
-        prd: 'pm_prd',
-        architecture: 'solution_architect',
-      };
-      const stage = stageMap[artifactType];
-      const result = await api.syncToWiki(activeWorkflow.id, stage ? [stage] : undefined);
-      setWikiSyncResult(result);
-      const msg = result.results.length > 0
-        ? `Wiki synced: ${result.results.map(r => `[${r.pageName}](${r.url})`).join(', ')}`
-        : 'Wiki sync completed';
-      addCoordinatorMessage({ role: 'coordinator', content: msg, timestamp: Date.now() });
-    } catch (err: any) {
-      setError(err.response?.data?.error ?? err.message ?? 'Failed to sync to wiki');
-    } finally {
-      setWikiSyncLoading(false);
-    }
-  }
+  const emitMessage = (content: string) =>
+    addCoordinatorMessage({ role: 'coordinator', content, timestamp: Date.now() });
 
   const isDirty = isEditing && editContent !== content;
 
@@ -358,115 +280,15 @@ export function ArtifactViewer() {
               )}
             </div>
             <div className="flex items-center gap-2">
-              {showPushButton && !pushResult && (
-                <button
-                  onClick={pushToBoard}
-                  disabled={pushLoading}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white transition-colors"
-                >
-                  {pushLoading ? (
-                    <>
-                      <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                      Pushing...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                      </svg>
-                      {hasAdoMappings ? 'Sync to Board' : 'Push to Board'}
-                    </>
-                  )}
-                </button>
-              )}
-              {pushResult && (
-                <a
-                  href={pushResult.epicUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  {pushResult.synced
-                    ? `Synced (${pushResult.updated ?? 0} updated, ${pushResult.created ?? 0} new)`
-                    : `View in Board (${pushResult.featureCount}F / ${pushResult.storyCount}S)`
-                  }
-                </a>
-              )}
-              {showTestPlanButton && !testPlanResult && (
-                <button
-                  onClick={pushToTestPlans}
-                  disabled={testPlanPushLoading}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white transition-colors"
-                >
-                  {testPlanPushLoading ? (
-                    <>
-                      <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                      Pushing...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                      </svg>
-                      {hasTestPlanMappings ? 'Sync Test Plan' : 'Push to Test Plans'}
-                    </>
-                  )}
-                </button>
-              )}
-              {testPlanResult && (
-                <a
-                  href={testPlanResult.planUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  View Test Plan ↗
-                </a>
-              )}
-              {showWikiSyncButton && !wikiSyncResult && (
-                <button
-                  onClick={syncToWiki}
-                  disabled={wikiSyncLoading}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white transition-colors"
-                >
-                  {wikiSyncLoading ? (
-                    <>
-                      <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                      Syncing...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                      </svg>
-                      Sync to Wiki
-                    </>
-                  )}
-                </button>
-              )}
-              {wikiSyncResult && (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  Synced to Wiki
-                </div>
-              )}
+              <ArtifactSyncActions
+                artifactType={artifactType}
+                activeWorkflow={activeWorkflow}
+                showPushButton={showPushButton}
+                showTestPlanButton={showTestPlanButton}
+                showWikiSyncButton={showWikiSyncButton}
+                onMessage={emitMessage}
+                onError={setError}
+              />
               {hasCriticData && !showSidePanel && (
                 <button
                   onClick={() => setShowCriticFlyout(f => !f)}
@@ -618,49 +440,11 @@ export function ArtifactViewer() {
                 </div>
                 {/* Critic flyout — positioned absolutely on the left */}
                 {showCriticFlyout && hasCriticData && !showSidePanel && (
-                  <div className="absolute top-0 left-0 w-[380px] h-full overflow-y-auto border-r border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg flex flex-col z-10">
-                    <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex-shrink-0 flex items-center justify-between">
-                      <div>
-                        <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Flint's Review</h2>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                          {hasIssues && <>{criticData.issues.length} issue{criticData.issues.length !== 1 ? 's' : ''}</>}
-                          {hasIssues && hasQuestions && ' · '}
-                          {hasQuestions && <>{criticData.questions.length} question{criticData.questions.length !== 1 ? 's' : ''}</>}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => setShowCriticFlyout(false)}
-                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
-                      >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </div>
-                    <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-                      {hasIssues && (
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">Issues</p>
-                          <CriticIssuesPanel issues={criticData.issues} />
-                        </div>
-                      )}
-                      {hasQuestions && (
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-2">Questions</p>
-                          <div className="space-y-2">
-                            {criticData.questions.map((q: string, i: number) => (
-                              <div key={i} className="text-sm rounded-lg border border-slate-200 dark:border-slate-700 p-3">
-                                <span className="text-xs font-medium text-slate-400 dark:text-slate-500 mr-1">Q{i + 1}:</span>
-                                <div className="mt-1 text-slate-800 dark:text-slate-200 prose prose-sm dark:prose-invert max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0">
-                                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{q}</ReactMarkdown>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                  <CriticReviewFlyout
+                    issues={criticData.issues ?? []}
+                    questions={criticData.questions ?? []}
+                    onClose={() => setShowCriticFlyout(false)}
+                  />
                 )}
                 {/* Persona panel — positioned absolutely so it doesn't affect content centering */}
                 {showPersonaPanel && (
@@ -787,41 +571,11 @@ export function ArtifactViewer() {
 
       {/* Reject confirmation modal */}
       {showRejectConfirm && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowRejectConfirm(false)} />
-          <div className="relative bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-sm w-full mx-4 p-6">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                <svg className="w-5 h-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">End this workflow?</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">This action cannot be undone</p>
-              </div>
-            </div>
-            <p className="text-sm text-slate-600 dark:text-slate-300 mb-5">
-              Rejecting will permanently end this workflow. All completed stages are preserved, but no further stages will run. You can start a new workflow with a fresh goal afterward.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowRejectConfirm(false)}
-                disabled={resolveLoading}
-                className="flex-1 py-2 px-3 text-sm font-medium rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-              >
-                Go Back
-              </button>
-              <button
-                onClick={() => resolve('rejected')}
-                disabled={resolveLoading}
-                className="flex-1 py-2 px-3 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white text-sm font-medium rounded-lg transition-colors"
-              >
-                {resolveLoading ? 'Rejecting...' : 'Yes, Reject'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <RejectConfirmModal
+          loading={resolveLoading}
+          onCancel={() => setShowRejectConfirm(false)}
+          onConfirm={() => resolve('rejected')}
+        />
       )}
     </div>
   );
