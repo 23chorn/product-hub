@@ -10,42 +10,12 @@ import { useToast } from '../hooks/useToast';
 import { TOGGLEABLE_STAGES } from '../constants/stage-labels';
 import { extractReadyPayload } from '../utils/coordinator-helpers';
 import { InitiativeCard } from './home/InitiativeCard';
-import { effectiveStatus, type EnrichedItem } from './home/types';
-
-
-type LaunchPhase = 'analyzing' | 'confirming' | 'launching';
-type StatusFilter = 'all' | 'active' | 'review' | 'done' | 'new' | 'mine';
+import { HomeHeader } from './home/HomeHeader';
+import { NewInitiativeForm } from './home/NewInitiativeForm';
+import { LaunchPipelineModal } from './home/LaunchPipelineModal';
+import { effectiveStatus, STATUS_FILTERS, type EnrichedItem, type LaunchPhase, type StatusFilter } from './home/types';
 
 let _cachedLocalItems: EnrichedItem[] = [];
-
-const SAMPLE_TITLE = 'Price Alerts & Watchlist — TradeEasy';
-const SAMPLE_DESCRIPTION = `Build a price alert and notification system for retail investors on the TradeEasy mobile trading app.
-
-Who it's for: Retail investors (ages 25–45) who actively monitor 5–20 positions and miss entry/exit opportunities because they can't watch prices throughout the day.
-
-Core problem: Users currently set limit orders as a price-watching workaround, but those orders execute unintentionally. There is no way to be notified when a price threshold is crossed without committing to a trade.
-
-Key outcomes:
-- Users can set price alerts (above/below threshold) on any tradable instrument
-- Push notifications delivered within 30 seconds of the trigger price being hit
-- Reduce unintended limit order executions by 25%
-
-Scope: MVP — iOS and Android push notifications for equities and ETFs only. No options, no recurring alerts. Alert history retained for 30 days.
-
-Constraints:
-- Notification copy must not imply investment advice (regulatory requirement)
-- Real-time price feed available via internal WebSocket market data service
-- Max 30-second delivery latency from trigger to device
-- Team: 2 iOS, 2 Android, 2 backend engineers`;
-
-const STATUS_FILTERS: Array<{ key: StatusFilter; label: string }> = [
-  { key: 'all',    label: 'All' },
-  { key: 'mine',   label: 'Needs my approval' },
-  { key: 'active', label: 'Running' },
-  { key: 'review', label: 'Needs review' },
-  { key: 'done',   label: 'Done' },
-  { key: 'new',    label: 'Not started' },
-];
 
 export function HomeScreen() {
   const [localItems, setLocalItemsRaw] = useState<EnrichedItem[]>(_cachedLocalItems);
@@ -336,108 +306,19 @@ export function HomeScreen() {
     <div className="flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-slate-950">
 
       {/* Sticky page header with search + filters */}
-      <div className="flex-shrink-0 bg-white/90 dark:bg-slate-900/80 backdrop-blur-sm border-b border-slate-200 dark:border-slate-700 py-4">
-        <div className="max-w-4xl mx-auto px-6 space-y-3">
-
-          {/* Title row */}
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Welcome to Product Hub</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-xl leading-relaxed">
-                Describe a new product initiative and a team of AI agents runs the full pipeline — research, PRD, architecture, backlog, and QA — ready for engineering.
-              </p>
-            </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <button
-                onClick={handleSyncAirtable}
-                disabled={syncing}
-                title="Sync Pipeline Ready initiatives from Airtable"
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-700/70 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
-              >
-                <svg className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                {syncing ? 'Syncing…' : 'Sync Airtable'}
-              </button>
-              <button
-                onClick={openForm}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-teal-600 hover:bg-teal-700 text-white transition-colors shadow-sm"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                New Initiative
-              </button>
-            </div>
-          </div>
-
-          {/* Search + status filters */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="relative flex-1 min-w-[160px] max-w-xs">
-              <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Escape') setSearchQuery(''); }}
-                placeholder="Search initiatives…"
-                className="w-full pl-8 pr-7 py-1.5 text-sm border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              )}
-            </div>
-
-            <div className="flex items-center gap-1 flex-wrap">
-              {STATUS_FILTERS.filter(f => f.key !== 'mine' || (!noAuth && user)).map(f => {
-                const count = statusCounts[f.key];
-                const isActive = statusFilter === f.key;
-                const isReview = f.key === 'review';
-                const isMine = f.key === 'mine';
-                return (
-                  <button
-                    key={f.key}
-                    onClick={() => setStatusFilter(f.key)}
-                    className={`px-2.5 py-1 text-xs rounded-lg border transition-colors ${
-                      isActive
-                        ? isMine
-                          ? 'bg-violet-100 dark:bg-violet-900/40 border-violet-300 dark:border-violet-600 text-violet-800 dark:text-violet-200 font-medium'
-                          : isReview
-                            ? 'bg-amber-100 dark:bg-amber-900/40 border-amber-300 dark:border-amber-600 text-amber-800 dark:text-amber-200 font-medium'
-                            : 'bg-teal-50 dark:bg-teal-900/40 border-teal-300 dark:border-teal-600 text-teal-800 dark:text-teal-200 font-medium'
-                        : isMine && myPendingCount > 0
-                          ? 'bg-violet-50 dark:bg-violet-900/20 border-violet-200 dark:border-violet-700 text-violet-600 dark:text-violet-400 hover:border-violet-300'
-                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-600 text-slate-500 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-500'
-                    }`}
-                  >
-                    {f.label}
-                    {count > 0 && f.key !== 'all' && (
-                      <span className={`ml-1 ${isActive ? 'opacity-80' : 'opacity-60'}`}>
-                        {count}
-                      </span>
-                    )}
-                    {f.key === 'all' && (
-                      <span className={`ml-1 ${isActive ? 'opacity-80' : 'opacity-60'}`}>
-                        {count}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      </div>
+      <HomeHeader
+        syncing={syncing}
+        onSync={handleSyncAirtable}
+        onNewInitiative={openForm}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchInputRef={searchInputRef}
+        statusFilter={statusFilter}
+        onStatusFilterChange={setStatusFilter}
+        statusCounts={statusCounts}
+        myPendingCount={myPendingCount}
+        showMineFilter={!noAuth && !!user}
+      />
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto">
@@ -445,54 +326,16 @@ export function HomeScreen() {
 
           {/* Creation form */}
           {showForm && (
-            <div className="p-4 rounded-xl border border-teal-200 dark:border-teal-800 bg-teal-50/60 dark:bg-teal-900/20 space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-teal-700 dark:text-teal-300">New Initiative</p>
-                <button onClick={cancelForm} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              <input
-                ref={titleInputRef}
-                type="text"
-                value={formTitle}
-                onChange={e => setFormTitle(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Escape') cancelForm(); }}
-                placeholder="Initiative name"
-                className="w-full px-3 py-2 text-sm border border-teal-300 dark:border-teal-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400"
-              />
-              <textarea
-                value={formDesc}
-                onChange={e => setFormDesc(e.target.value)}
-                placeholder={`Describe the initiative in detail — who it's for, the core problem, key outcomes, scope, and constraints.\n\nThe richer the description, the less the coordinator needs to ask.`}
-                rows={6}
-                className="w-full px-3 py-2 text-sm border border-teal-300 dark:border-teal-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 resize-none"
-              />
-              <button
-                type="button"
-                onClick={() => { setFormTitle(SAMPLE_TITLE); setFormDesc(SAMPLE_DESCRIPTION); }}
-                className="text-[10px] text-teal-600 dark:text-teal-400 hover:underline"
-              >
-                Load demo sample
-              </button>
-              <div className="flex gap-2">
-                <button
-                  onClick={handleCreateInitiative}
-                  disabled={!formTitle.trim() || savingForm}
-                  className="flex-1 py-2 text-xs font-medium bg-teal-600 hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
-                >
-                  {savingForm ? 'Creating…' : 'Create'}
-                </button>
-                <button
-                  onClick={cancelForm}
-                  className="px-4 py-2 text-xs font-medium bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
+            <NewInitiativeForm
+              title={formTitle}
+              description={formDesc}
+              onTitleChange={setFormTitle}
+              onDescriptionChange={setFormDesc}
+              saving={savingForm}
+              onCreate={handleCreateInitiative}
+              onCancel={cancelForm}
+              titleInputRef={titleInputRef}
+            />
           )}
 
           {/* No results state */}
@@ -566,98 +409,18 @@ export function HomeScreen() {
 
       {/* Launch confirmation modal */}
       {launchItem && launchPhase && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 dark:bg-black/50 px-4">
-          <div className="w-full max-w-md bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-700">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-1">
-                {launchPhase === 'analyzing' ? 'Analysing Brief' : launchPhase === 'launching' ? 'Launching' : 'Configure Pipeline'}
-              </p>
-              <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                {launchItem.initiative}
-              </p>
-            </div>
-
-            <div className="px-5 py-4 space-y-4">
-              {launchPhase === 'analyzing' && (
-                <div className="flex items-center gap-3 py-3">
-                  <svg className="w-4 h-4 text-teal-500 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                  </svg>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">
-                    Analysing brief and selecting stages…
-                  </p>
-                </div>
-              )}
-
-              {(launchPhase === 'confirming' || launchPhase === 'launching') && (
-                <>
-                  {stageRationale && (
-                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                      {stageRationale}
-                    </p>
-                  )}
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-2">
-                      Stages
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {availableStages.map(stage => {
-                        const enabled = enabledStages[stage.key];
-                        const isLastEnabled = enabled && enabledCount === 1;
-                        return (
-                          <button
-                            key={stage.key}
-                            type="button"
-                            disabled={isLastEnabled || launchPhase === 'launching'}
-                            onClick={() => setEnabledStages(prev => ({ ...prev, [stage.key]: !prev[stage.key] }))}
-                            title={isLastEnabled ? 'At least one stage required' : `${enabled ? 'Remove' : 'Add'} ${stage.label}`}
-                            className={`px-2.5 py-1 text-xs rounded-lg border transition-colors ${
-                              enabled
-                                ? 'bg-teal-50 dark:bg-teal-900/40 border-teal-300 dark:border-teal-600 text-teal-800 dark:text-teal-200 font-medium'
-                                : 'bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-400 dark:text-slate-500 line-through'
-                            } ${isLastEnabled || launchPhase === 'launching' ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-80 cursor-pointer'}`}
-                          >
-                            {stage.short}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {launchError && (
-                    <p className="text-xs text-red-600 dark:text-red-400">{launchError}</p>
-                  )}
-
-                  <div className="flex gap-2 pt-1">
-                    <button
-                      onClick={handleConfirmLaunch}
-                      disabled={launchPhase === 'launching' || enabledCount === 0}
-                      className="flex-1 py-2.5 text-sm font-medium bg-teal-600 hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl transition-colors"
-                    >
-                      {launchPhase === 'launching' ? (
-                        <span className="flex items-center justify-center gap-2">
-                          <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                          </svg>
-                          Launching…
-                        </span>
-                      ) : 'Launch pipeline →'}
-                    </button>
-                    <button
-                      onClick={handleCancelLaunch}
-                      disabled={launchPhase === 'launching'}
-                      className="px-4 py-2.5 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors disabled:opacity-50"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
+        <LaunchPipelineModal
+          item={launchItem}
+          phase={launchPhase}
+          stageRationale={stageRationale}
+          availableStages={availableStages}
+          enabledStages={enabledStages}
+          enabledCount={enabledCount}
+          error={launchError}
+          onToggleStage={(key) => setEnabledStages(prev => ({ ...prev, [key]: !prev[key] }))}
+          onConfirm={handleConfirmLaunch}
+          onCancel={handleCancelLaunch}
+        />
       )}
     </div>
   );
