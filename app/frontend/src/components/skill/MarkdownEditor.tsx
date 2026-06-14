@@ -1,0 +1,69 @@
+import { useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
+
+/** Markdown editor with a 50/50 source + live preview split and synced scrolling. */
+export function MarkdownEditor({
+  value, onChange, placeholder, textareaRef: externalRef,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  textareaRef?: React.RefObject<HTMLTextAreaElement>;
+}) {
+  const internalRef = useRef<HTMLTextAreaElement>(null);
+  const taRef = externalRef ?? internalRef;
+  const previewRef = useRef<HTMLDivElement>(null);
+  const isSyncingFromEditor = useRef(false);
+  const isSyncingFromPreview = useRef(false);
+
+  const syncFromEditor = () => {
+    if (isSyncingFromPreview.current || !taRef.current || !previewRef.current) return;
+    const ta = taRef.current;
+    const ratio = ta.scrollTop / (ta.scrollHeight - ta.clientHeight || 1);
+    isSyncingFromEditor.current = true;
+    const preview = previewRef.current;
+    preview.scrollTop = ratio * (preview.scrollHeight - preview.clientHeight);
+    requestAnimationFrame(() => { isSyncingFromEditor.current = false; });
+  };
+
+  const syncFromPreview = () => {
+    if (isSyncingFromEditor.current || !taRef.current || !previewRef.current) return;
+    const preview = previewRef.current;
+    const ratio = preview.scrollTop / (preview.scrollHeight - preview.clientHeight || 1);
+    isSyncingFromPreview.current = true;
+    const ta = taRef.current;
+    ta.scrollTop = ratio * (ta.scrollHeight - ta.clientHeight);
+    requestAnimationFrame(() => { isSyncingFromPreview.current = false; });
+  };
+
+  return (
+    <div className="flex h-full gap-2">
+      <textarea
+        ref={taRef}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onScroll={syncFromEditor}
+        placeholder={placeholder}
+        spellCheck={false}
+        className="w-1/2 h-full resize-none rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono text-sm p-4 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+      />
+      <div
+        ref={previewRef}
+        onScroll={syncFromPreview}
+        className="w-1/2 h-full overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 p-4"
+      >
+        {value.trim() ? (
+          <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:font-semibold prose-headings:text-slate-800 dark:prose-headings:text-slate-100 prose-p:text-slate-700 dark:prose-p:text-slate-300 prose-li:text-slate-700 dark:prose-li:text-slate-300 prose-code:text-teal-600 dark:prose-code:text-teal-400 prose-pre:bg-slate-100 dark:prose-pre:bg-slate-900">
+            <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+              {value}
+            </ReactMarkdown>
+          </div>
+        ) : (
+          <p className="text-xs text-slate-400 dark:text-slate-500 italic">Preview will appear here…</p>
+        )}
+      </div>
+    </div>
+  );
+}
