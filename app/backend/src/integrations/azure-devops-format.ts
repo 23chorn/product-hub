@@ -244,7 +244,8 @@ export function buildTestStepsXml(tc: TestCaseInput): string {
     stepItems.push({ type: 'ValidateStep', action: expected, expected });
   } else {
     const expected = tc.expectedResult ?? 'Verify expected behaviour';
-    stepItems.push({ type: 'ActionStep', action: `Execute: ${escapeHtml(tc.title)}`, expected: '' });
+    // `action` is escaped by the step renderer below — don't pre-escape here or the title double-escapes.
+    stepItems.push({ type: 'ActionStep', action: `Execute: ${tc.title}`, expected: '' });
     stepItems.push({ type: 'ValidateStep', action: expected, expected });
   }
 

@@ -1,0 +1,172 @@
+import { describe, it, expect } from 'vitest';
+import {
+  adoErrorMessage,
+  toNearestFibonacci,
+  stripStoryPrefix,
+  escapeHtml,
+  formatGivenWhenThen,
+  buildTechnicalSuggestions,
+  buildPlatformNotes,
+  deriveTeamTags,
+  buildTestCaseDescription,
+  buildTestStepsXml,
+  SUITE_TYPE_LABELS,
+  TC_PRIORITY_MAP,
+} from '../../app/backend/src/integrations/azure-devops-format';
+
+describe('adoErrorMessage', () => {
+  it('prefers the ADO response message', () => {
+    expect(adoErrorMessage({ response: { data: { message: 'boom' } }, message: 'other' })).toBe('boom');
+  });
+  it('falls back to error.message', () => {
+    expect(adoErrorMessage({ message: 'network down' })).toBe('network down');
+  });
+  it('falls back to a default for empty errors', () => {
+    expect(adoErrorMessage({})).toBe('Unknown error');
+    expect(adoErrorMessage(null)).toBe('Unknown error');
+  });
+});
+
+describe('toNearestFibonacci', () => {
+  it('snaps to the nearest allowed point', () => {
+    expect(toNearestFibonacci(4)).toBe(3); // 3 and 5 are equidistant — reduce keeps the first (3)
+    expect(toNearestFibonacci(6)).toBe(5);
+    expect(toNearestFibonacci(7)).toBe(8);
+    expect(toNearestFibonacci(100)).toBe(89);
+  });
+  it('clamps non-positive input to 1', () => {
+    expect(toNearestFibonacci(0)).toBe(1);
+    expect(toNearestFibonacci(-5)).toBe(1);
+  });
+  it('returns exact Fibonacci values unchanged', () => {
+    for (const n of [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144]) {
+      expect(toNearestFibonacci(n)).toBe(n);
+    }
+  });
+});
+
+describe('stripStoryPrefix', () => {
+  it('removes the matched prefix and trims', () => {
+    expect(stripStoryPrefix('As a user I want X', /^As a user\s*/i)).toBe('I want X');
+  });
+  it('leaves unmatched text intact (trimmed)', () => {
+    expect(stripStoryPrefix('  hello  ', /^Story:\s*/)).toBe('hello');
+  });
+});
+
+describe('escapeHtml', () => {
+  it('escapes the five sensitive characters', () => {
+    expect(escapeHtml('<a href="x">Tom & Jerry</a>'))
+      .toBe('&lt;a href=&quot;x&quot;&gt;Tom &amp; Jerry&lt;/a&gt;');
+  });
+  it('escapes ampersands before other entities (no double-escaping)', () => {
+    expect(escapeHtml('a < b')).toBe('a &lt; b');
+    expect(escapeHtml('&amp;')).toBe('&amp;amp;');
+  });
+});
+
+describe('formatGivenWhenThen', () => {
+  it('bolds keywords and joins with <br>', () => {
+    expect(formatGivenWhenThen('Given X When Y Then Z'))
+      .toBe('<b>Given</b> X<br><b>When</b> Y<br><b>Then</b> Z');
+  });
+  it('handles And/But clauses', () => {
+    expect(formatGivenWhenThen('Given A And B Then C'))
+      .toBe('<b>Given</b> A<br><b>And</b> B<br><b>Then</b> C');
+  });
+});
+
+describe('buildTechnicalSuggestions', () => {
+  it('returns empty string when no technical data', () => {
+    expect(buildTechnicalSuggestions(undefined)).toBe('');
+    expect(buildTechnicalSuggestions({})).toBe('');
+  });
+  it('renders components, constraints, and changes, escaping content', () => {
+    const html = buildTechnicalSuggestions({
+      affectedComponents: ['Auth & API'],
+      constraints: ['must be <fast>'],
+      dataChanges: 'add column',
+      apiChanges: 'null', // treated as absent
+    });
+    expect(html).toContain('<b>Affected Components:</b> Auth &amp; API');
+    expect(html).toContain('<li>must be &lt;fast&gt;</li>');
+    expect(html).toContain('<b>Data Changes:</b> add column');
+    expect(html).not.toContain('API Changes');
+    expect(html.startsWith('<hr>')).toBe(true);
+  });
+});
+
+describe('buildPlatformNotes / deriveTeamTags', () => {
+  const notes = { ios: 'use SwiftUI', android: 'n/a', backend: '  ' };
+
+  it('includes only meaningful platforms', () => {
+    const html = buildPlatformNotes(notes);
+    expect(html).toContain('<b>iOS:</b> use SwiftUI');
+    expect(html).not.toContain('Android');
+    expect(html).not.toContain('Backend');
+  });
+  it('returns empty string when nothing meaningful', () => {
+    expect(buildPlatformNotes({ ios: 'null', android: '', backend: undefined })).toBe('');
+  });
+  it('derives tags in a stable order (Backend, iOS, Android)', () => {
+    expect(deriveTeamTags({ ios: 'x', android: 'y', backend: 'z' })).toBe('Backend; iOS; Android');
+    expect(deriveTeamTags(notes)).toBe('iOS');
+    expect(deriveTeamTags(undefined)).toBeUndefined();
+    expect(deriveTeamTags({ ios: 'n/a' })).toBeUndefined();
+  });
+});
+
+describe('Test Plans constants', () => {
+  it('maps suite labels and priorities', () => {
+    expect(SUITE_TYPE_LABELS.happy_path).toBe('Happy Path');
+    expect(TC_PRIORITY_MAP.critical).toBe(1);
+    expect(TC_PRIORITY_MAP.low).toBe(4);
+  });
+});
+
+describe('buildTestCaseDescription', () => {
+  it('returns empty string for a bare test case', () => {
+    expect(buildTestCaseDescription({ title: 'x' })).toBe('');
+  });
+  it('renders type, linked story, preconditions, and scenario', () => {
+    const html = buildTestCaseDescription({
+      title: 'Login',
+      type: 'happy_path',
+      story_ref: 'F1.S1',
+      preconditions: ['user exists'],
+      scenario: { given: ['on login'], when: ['submit'], then: ['see home'] },
+    });
+    expect(html).toContain('<b>Type:</b> Happy Path');
+    expect(html).toContain('<b>Linked Story:</b> F1.S1');
+    expect(html).toContain('<li>user exists</li>');
+    expect(html).toContain('<b>Given</b> on login');
+    expect(html).toContain('<b>Then</b> see home');
+  });
+  it('uses expectedResult only for procedural (non-scenario) cases', () => {
+    expect(buildTestCaseDescription({ title: 'x', expectedResult: 'works' }))
+      .toContain('<b>Expected Result:</b> works');
+    expect(buildTestCaseDescription({ title: 'x', expectedResult: 'works', scenario: { given: ['a'], then: ['b'] } }))
+      .not.toContain('Expected Result');
+  });
+});
+
+describe('buildTestStepsXml', () => {
+  it('maps Gherkin given/when to ActionStep and then to ValidateStep', () => {
+    const xml = buildTestStepsXml({ title: 'x', scenario: { given: ['g'], when: ['w'], then: ['t'] } });
+    expect(xml).toContain('<steps id="0" last="3">');
+    expect(xml).toContain('type="ActionStep"');
+    expect(xml).toContain('type="ValidateStep"');
+    // exactly 3 steps
+    expect((xml.match(/<step /g) || []).length).toBe(3);
+  });
+  it('maps procedural steps + a trailing validate step', () => {
+    const xml = buildTestStepsXml({ title: 'x', steps: ['a', 'b'], expectedResult: 'done' });
+    expect((xml.match(/<step /g) || []).length).toBe(3);
+    expect(xml).toContain('<steps id="0" last="3">');
+  });
+  it('synthesises steps when neither scenario nor steps provided', () => {
+    const xml = buildTestStepsXml({ title: 'Run <it>' });
+    expect((xml.match(/<step /g) || []).length).toBe(2);
+    expect(xml).toContain('Execute: Run &lt;it&gt;');
+  });
+});

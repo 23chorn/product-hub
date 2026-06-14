@@ -22,7 +22,7 @@ cd app/backend && npx tsc --noEmit
 
 ### Tests
 ```bash
-npm run test:unit        # Vitest unit tests (from app/backend/)
+npm test                 # Vitest unit tests (from app/backend/; specs in tests/unit/)
 npm run test:airtable    # Integration — hits real Airtable API
 npm run test:bedrock     # Integration — hits real Bedrock API
 npm run test:ado         # Integration — hits real ADO API
