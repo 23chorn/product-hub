@@ -87,9 +87,11 @@ export function ArtifactViewer() {
       applyWorkflowStatus(result.workflow);
 
       const statusLabel = status === 'approved' ? 'approved' : status === 'rejected' ? 'rejected' : 'sent for revision';
+      const actor = user?.name ?? user?.username;
+      const byNote = actor ? ` by **${actor}**` : '';
       addCoordinatorMessage({
         role: 'coordinator',
-        content: `Checkpoint **${STAGE_LABELS[pendingCheckpoint.stage] ?? pendingCheckpoint.stage}** ${statusLabel}.${
+        content: `Checkpoint **${STAGE_LABELS[pendingCheckpoint.stage] ?? pendingCheckpoint.stage}** ${statusLabel}${byNote}.${
           result.complete ? ' Workflow complete.' : ''
         }`,
         timestamp: Date.now(),

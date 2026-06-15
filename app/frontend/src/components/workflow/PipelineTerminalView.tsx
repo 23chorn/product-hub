@@ -14,6 +14,7 @@ import { DancingCreature } from './pipeline-terminal/DancingCreature';
 import { StageGroupHeader } from './pipeline-terminal/StageGroupHeader';
 import { EventRow } from './pipeline-terminal/EventRow';
 import { CheckpointRow, isStaleRecoveryCheckpoint } from './pipeline-terminal/CheckpointRow';
+import { AuditTrailPanel } from './AuditTrailPanel';
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -46,6 +47,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   const [demoConfigured, setDemoConfigured] = useState<boolean>(false);
   const [generalExpanded, setGeneralExpanded] = useState(false);
   const [crExpanded, setCrExpanded] = useState(false);
+  const [showAudit, setShowAudit] = useState(false);
   const [artifacts, setArtifacts] = useState<Array<{ id: number; type: string; stage: string | null; created_at: number }>>([]);
 
   // Demo sections only show when demo mode is enabled in settings AND DEMO_PROJECT_PATH is configured
@@ -289,6 +291,16 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
             {showCost && (
               <span className="text-[11px] font-mono text-slate-500">{costStr}</span>
             )}
+            <button
+              onClick={() => setShowAudit(true)}
+              title="Activity — who reviewed each stage"
+              className="flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-1 rounded border border-slate-300 dark:border-slate-700/50 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              activity
+            </button>
             {isWorkflowActive && (
               <button
                 onClick={handleStop}
@@ -516,6 +528,10 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
           );
         })()}
       </div>
+
+      {showAudit && (
+        <AuditTrailPanel workflowId={activeWorkflow.id} onClose={() => setShowAudit(false)} />
+      )}
     </div>
   );
 }
