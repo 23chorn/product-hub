@@ -144,13 +144,16 @@ export async function runMultiAgentRefinement(
     loadLatestArtifactContent(itemId, 'epic_features'), // Epic + features from epic_feature_planner
   ]);
 
-  // Extract the target feature from the epic_features artifact
+  // Extract the target feature from the epic_features artifact.
+  // flattenFeatures handles both new phases[] and legacy features[] formats.
   let targetFeature: any = null;
   if (epicFeaturesContent) {
     try {
       const epicFeatures = JSON.parse(epicFeaturesContent);
-      if (epicFeatures.features && epicFeatures.features[featureIndex]) {
-        targetFeature = epicFeatures.features[featureIndex];
+      const { flattenFeatures } = await import('./feature-decomposition');
+      const allFeatures = flattenFeatures(epicFeatures);
+      if (allFeatures[featureIndex]) {
+        targetFeature = allFeatures[featureIndex];
       }
     } catch (err: any) {
       logger.warn(`[MULTI-AGENT] Failed to parse epic_features: ${err.message}`);
@@ -287,11 +290,12 @@ function buildDraftPrompts(
 **Your Role:** You are the **Product Lead and Facilitator** of this refinement session.
 
 **Phase 1 Task — Draft Stories:**
-1. Break this feature into 2-12 user stories (format: "As a [persona], I want [capability], so that [benefit]")
-2. Each story should be independently deliverable and testable
-3. Add product acceptance criteria (Given/When/Then format) to each story
-4. Estimate story points (1-2-3-5-8 scale) based on scope
-5. Don't add technical details yet — that's what the engineers will contribute in the next round
+1. Break this feature into **6-8 user stories maximum** (format: "As a [persona], I want [capability], so that [benefit]")
+   - Target 6-8. Never exceed 8. If you think you need more, the feature scope is too wide — scope down to the most valuable 8.
+   - Each story must be independently deliverable and testable in isolation
+2. Add product acceptance criteria (Given/When/Then format) to each story
+3. Estimate story points (1-2-3-5 scale) based on scope — prefer smaller estimates for atomic tasks
+4. Don't add technical details yet — that's what the engineers will contribute in the next round
 
 **Output Format:**
 Return a JSON structure (use F${featureNum} for all story IDs):
@@ -508,7 +512,7 @@ Merge all contributions into a single JSON artifact following the backlog templa
       "key": "F?",
       "title": "...",
       "description": "...",
-      "phase": "MVP | Phase 2 | Phase 3",
+      "phase": "MVP | Phase 1 | Phase 2 | Phase 3",
       "acceptance_criteria": [
         "Feature-level condition 1 — what must be true when this feature is complete",
         "Feature-level condition 2",

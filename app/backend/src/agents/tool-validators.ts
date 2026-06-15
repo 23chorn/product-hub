@@ -573,8 +573,55 @@ export function validateBacklogJson(input: Record<string, unknown>): string {
 
 // ── validate_epic_features_json ───────────────────────────────────────────────
 
-const VALID_PHASES = new Set(['MVP', 'Phase 2', 'Phase 3']);
+const VALID_PHASES = new Set(['MVP', 'Phase 1', 'Phase 2', 'Phase 3']);
 const FR_ID_RE = /^FR-\d+$/;
+const MAX_FEATURES_PER_PHASE = 5;
+const MAX_PHASES = 4;
+
+function validateFeature(f: any, lp: string, issues: string[]): void {
+  req(f, 'title', lp, issues);
+  req(f, 'description', lp, issues);
+
+  // Acceptance criteria — feature level, 3–5
+  const ac = f.acceptanceCriteria ?? f.acceptance_criteria;
+  if (!Array.isArray(ac) || ac.length === 0) {
+    issues.push(`${lp}: "acceptanceCriteria" must be a non-empty array`);
+  } else {
+    if (ac.length < 3) issues.push(`${lp}: only ${ac.length} acceptance criteria — minimum 3 feature-level ACs required`);
+    if (ac.length > 5) issues.push(`${lp}: ${ac.length} acceptance criteria exceeds maximum of 5`);
+    ac.forEach((c: any, j: number) => {
+      if (typeof c === 'string' && (c.includes('As a user') || c.toLowerCase().startsWith('as a'))) {
+        issues.push(`${lp}.acceptanceCriteria[${j}]: looks like a user story, not a feature-level AC — write testable outcome conditions`);
+      }
+    });
+  }
+
+  // prdRef with functional requirement IDs
+  if (!f.prdRef || typeof f.prdRef !== 'object') {
+    issues.push(`${lp}: "prdRef" object is required for PRD traceability`);
+  } else {
+    if (!Array.isArray(f.prdRef.functionalRequirements) || f.prdRef.functionalRequirements.length === 0) {
+      issues.push(`${lp}: prdRef.functionalRequirements must reference at least one FR-XX from the PRD`);
+    } else {
+      f.prdRef.functionalRequirements.forEach((fr: any, j: number) => {
+        if (typeof fr !== 'string' || !FR_ID_RE.test(fr)) {
+          issues.push(`${lp}.prdRef.functionalRequirements[${j}]: "${fr}" must match FR-XX format`);
+        }
+      });
+    }
+  }
+
+  // stories must be explicitly empty
+  if (!Array.isArray(f.stories)) {
+    issues.push(`${lp}: "stories" must be an empty array [] — user stories are added by the story decomposition agent`);
+  } else if (f.stories.length > 0) {
+    issues.push(`${lp}: "stories" must be empty [] at this stage — found ${f.stories.length} item(s). Story decomposition is a separate stage.`);
+  }
+
+  if (hasTBD(f)) {
+    issues.push(`${lp}: contains unresolved "TBD" — every field must be a definitive decision`);
+  }
+}
 
 export function validateEpicFeaturesJson(input: Record<string, unknown>): string {
   const { parsed, issues } = parseJson(input);
@@ -582,11 +629,11 @@ export function validateEpicFeaturesJson(input: Record<string, unknown>): string
 
   const p = parsed;
 
-  // Epic
+  // Epic header
   if (!p.epic || typeof p.epic !== 'object') {
     issues.push('root: "epic" object is required');
   } else {
-    ['title', 'description', 'businessValue', 'prdLink', 'definitionOfDone'].forEach(f =>
+    ['title', 'description', 'businessValue', 'prdLink'].forEach(f =>
       req(p.epic, f, 'epic', issues)
     );
     if (typeof p.epic.title === 'string' && p.epic.title.split(/\s+/).length > 6) {
@@ -594,75 +641,52 @@ export function validateEpicFeaturesJson(input: Record<string, unknown>): string
     }
   }
 
-  // Features
-  const features = reqArray(p, 'features', 'root', issues, 2);
-  if (features) {
-    if (features.length > 8) {
-      issues.push(`features: ${features.length} features exceeds the 8-feature limit — defer lower-priority features to a later phase`);
+  // New phases[] structure (required)
+  if (!Array.isArray(p.phases) || p.phases.length === 0) {
+    issues.push('root: "phases" array is required — features must be nested under phases (MVP, Phase 1, Phase 2, Phase 3)');
+  } else {
+    if (p.phases.length > MAX_PHASES) {
+      issues.push(`phases: ${p.phases.length} phases exceeds the maximum of ${MAX_PHASES} — consolidate or defer to outOfScope`);
     }
 
-    let mvpCount = 0;
-    features.forEach((f: any, i: number) => {
-      const lp = `features[${i}]`;
-      req(f, 'title', lp, issues);
-      req(f, 'description', lp, issues);
+    const hasMvp = p.phases.some((ph: any) => ph.label === 'MVP');
+    if (!hasMvp) {
+      issues.push('phases: no MVP phase found — the first phase must be labeled "MVP"');
+    }
 
-      // Phase validation
-      if (!f.phase) {
-        issues.push(`${lp}: "phase" is required — must be MVP, Phase 2, or Phase 3`);
-      } else if (!VALID_PHASES.has(f.phase)) {
-        issues.push(`${lp}: "phase" must be exactly "MVP", "Phase 2", or "Phase 3" (got "${f.phase}")`);
-      } else if (f.phase === 'MVP') {
-        mvpCount++;
+    let totalFeatures = 0;
+    let allMvp = true;
+
+    p.phases.forEach((phase: any, i: number) => {
+      const pp = `phases[${i}]`;
+      req(phase, 'label', pp, issues);
+      req(phase, 'epicTitle', pp, issues);
+      req(phase, 'deliverable', pp, issues);
+
+      if (phase.label && !VALID_PHASES.has(phase.label)) {
+        issues.push(`${pp}: "label" must be exactly "MVP", "Phase 1", "Phase 2", or "Phase 3" (got "${phase.label}")`);
       }
+      if (phase.label !== 'MVP') allMvp = false;
 
-      // Acceptance criteria — feature level, 3–5
-      const ac = f.acceptanceCriteria ?? f.acceptance_criteria;
-      if (!Array.isArray(ac) || ac.length === 0) {
-        issues.push(`${lp}: "acceptanceCriteria" must be a non-empty array`);
+      if (!Array.isArray(phase.features) || phase.features.length === 0) {
+        issues.push(`${pp}: "features" must be a non-empty array — each phase must have at least 1 feature`);
       } else {
-        if (ac.length < 3) issues.push(`${lp}: only ${ac.length} acceptance criteria — minimum 3 feature-level ACs required`);
-        if (ac.length > 5) issues.push(`${lp}: ${ac.length} acceptance criteria exceeds maximum of 5`);
-        ac.forEach((c: any, j: number) => {
-          if (typeof c === 'string' && (c.includes('As a user') || c.toLowerCase().startsWith('as a'))) {
-            issues.push(`${lp}.acceptanceCriteria[${j}]: looks like a user story, not a feature-level AC — write testable conditions, not user stories`);
-          }
+        if (phase.features.length > MAX_FEATURES_PER_PHASE) {
+          issues.push(`${pp}: ${phase.features.length} features exceeds the ${MAX_FEATURES_PER_PHASE}-per-phase limit — split into an additional phase or defer to outOfScope`);
+        }
+        totalFeatures += phase.features.length;
+        phase.features.forEach((f: any, j: number) => {
+          validateFeature(f, `${pp}.features[${j}]`, issues);
         });
       }
 
-      // prdRef with functional requirement IDs
-      if (!f.prdRef || typeof f.prdRef !== 'object') {
-        issues.push(`${lp}: "prdRef" object is required for PRD traceability`);
-      } else {
-        if (!Array.isArray(f.prdRef.functionalRequirements) || f.prdRef.functionalRequirements.length === 0) {
-          issues.push(`${lp}: prdRef.functionalRequirements must reference at least one FR-XX from the PRD`);
-        } else {
-          f.prdRef.functionalRequirements.forEach((fr: any, j: number) => {
-            if (typeof fr !== 'string' || !FR_ID_RE.test(fr)) {
-              issues.push(`${lp}.prdRef.functionalRequirements[${j}]: "${fr}" must match FR-XX format`);
-            }
-          });
-        }
-      }
-
-      // stories must be explicitly empty
-      if (!Array.isArray(f.stories)) {
-        issues.push(`${lp}: "stories" must be an empty array [] — user stories are added by the story decomposition agent, not here`);
-      } else if (f.stories.length > 0) {
-        issues.push(`${lp}: "stories" must be empty [] at this stage — found ${f.stories.length} item(s). Story decomposition is a separate stage.`);
-      }
-
-      // No TBD in any field
-      if (hasTBD(f)) {
-        issues.push(`${lp}: contains unresolved "TBD" — every field must be a definitive decision`);
+      if (hasTBD(phase)) {
+        issues.push(`${pp}: contains unresolved "TBD" — every field must be a definitive decision`);
       }
     });
 
-    if (mvpCount === 0) {
-      issues.push('features: no MVP features found — at least one feature must be marked as MVP');
-    }
-    if (mvpCount === features.length && features.length > 3) {
-      issues.push(`features: all ${features.length} features are MVP — apply phase discipline. Most features should be Phase 2 or Phase 3.`);
+    if (allMvp && p.phases.length === 1 && totalFeatures > MAX_FEATURES_PER_PHASE) {
+      issues.push(`phases: all ${totalFeatures} features are in MVP — apply phase discipline. Split post-MVP work into Phase 1.`);
     }
   }
 

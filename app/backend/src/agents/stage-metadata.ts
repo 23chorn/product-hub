@@ -89,9 +89,13 @@ The output template defines the exact JSON schema. Fill every field. Aim for dep
     format: `Produce a single valid JSON object wrapped in a \`\`\`json code block following the epic-features output template injected into your system prompt. No prose before or after the JSON block.
 
 Key requirements:
-- **Feature count**: 2-8 features based on scope (small: 2-3, medium: 4-6, large: 6-8)
-- **Phase labels required**: Every feature must have \`phase: "MVP" | "Phase 2" | "Phase 3"\`
-- **Feature-level acceptance criteria**: 3-5 testable conditions per feature
+- **Phases structure**: Output \`phases[]\` — one entry per deliverable phase (MVP, Phase 1, Phase 2, Phase 3). Features are nested under each phase, not in a top-level features array.
+- **Max 5 features per phase**: If a phase needs more, create a new phase instead.
+- **Max 4 phases**: MVP + up to 3 post-MVP phases. Defer anything beyond to outOfScope.
+- **Feature scope discipline**: Every feature must be decomposable into ≤8 user stories. Wide features must be split before output.
+- **Phase deliverable**: Each phase must have a \`deliverable\` field — one sentence on what ships independently in that phase.
+- **Phase labels**: Exactly \`"MVP"\`, \`"Phase 1"\`, \`"Phase 2"\`, \`"Phase 3"\` — no variations.
+- **Feature-level acceptance criteria**: 3-5 testable conditions per feature (outcome-focused, not story-level)
 - **PRD traceability**: Each feature must reference which FRs and user journeys it satisfies
 - **Out of scope section**: Explicitly list what's NOT being built or is deferred
 - **NO user stories**: You are forbidden from writing "As a user, I want..." stories
@@ -122,7 +126,7 @@ Key requirements:
 - **system_diagram**: ASCII service diagram showing all components and data flow.
 - **data_flows**: 2–3 walkthroughs for primary user journeys.
 - **infrastructure**: hosting topology with per-component cost estimates, deployment steps, and failure modes.
-- **epic_features_enriched**: take the epic/features from the prior stage and enrich each feature with target_repos, data_contracts, cross_repo_boundaries, technical_notes, and risks. This field is consumed by the story decomposition agent.
+- **epic_features_enriched**: take the epic/phases/features from the prior stage and enrich each feature with target_repos, data_contracts, cross_repo_boundaries, technical_notes, and risks. Preserve the \`phases[]\` structure exactly — do not flatten. This field is consumed by the story decomposition agent.
 
 If a context/tech-stack.md file was provided, align all choices with the existing stack and explain deviations. If no tech stack was provided, recommend specific technologies with tradeoffs.`,
   },

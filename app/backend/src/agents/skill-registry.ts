@@ -149,7 +149,7 @@ const SEED_TOOL_DEFINITIONS: Record<string, string> = {
   epic_feature_planner: JSON.stringify([
     {
       name: 'validate_epic_features_json',
-      description: 'Validate your epic and feature plan JSON before returning it. Checks epic fields (title ≤6 words, description, businessValue, prdLink, definitionOfDone), feature count (2–8), phase labels (MVP / Phase 2 / Phase 3), acceptance criteria (3–5 per feature, no user-story format), prdRef.functionalRequirements (FR-XX format), that stories arrays are empty [], outOfScope list, and flags any TBD values. Call after completing the full JSON object.',
+      description: 'Validate your epic and feature plan JSON before returning it. Checks: epic header fields (title ≤6 words, description, businessValue, prdLink); phases[] structure (required — features must be nested under phases, not at root level); phase labels (exactly "MVP", "Phase 1", "Phase 2", "Phase 3"); max 5 features per phase; max 4 phases; each phase has a deliverable; per-feature checks: acceptance criteria (3–5, no user-story format), prdRef.functionalRequirements (FR-XX format), stories must be empty []; outOfScope list; TBD flags. Call after completing the full JSON object.',
       input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete epic & features JSON string (may be wrapped in a ```json code block)' } }, required: ['json'] },
     },
   ]),

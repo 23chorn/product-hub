@@ -12,6 +12,30 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
+ * Flatten features from the epic_features artifact into a single ordered array.
+ *
+ * Handles both formats:
+ *   - New: { phases: [{ label, features: [] }] }  — features nested under phases
+ *   - Legacy: { features: [] }                     — flat features array on root
+ *
+ * Features extracted from the new format are annotated with `phase` from their
+ * parent phase label, so downstream agents can see the phase for each feature.
+ */
+export function flattenFeatures(epicJson: any): any[] {
+  if (Array.isArray(epicJson.phases)) {
+    return epicJson.phases.flatMap((phase: any) =>
+      Array.isArray(phase.features)
+        ? phase.features.map((f: any) => ({
+            ...f,
+            phase: f.phase ?? phase.label,
+          }))
+        : []
+    );
+  }
+  return Array.isArray(epicJson.features) ? epicJson.features : [];
+}
+
+/**
  * After epic_feature_planner completes and is approved, store feature metadata
  * for the story_decomposition stage to process iteratively.
  *
@@ -44,12 +68,13 @@ export async function injectFeatureDecompositionStages(workflowId: string): Prom
     return 0;
   }
 
-  if (!parsed.features || !Array.isArray(parsed.features) || parsed.features.length === 0) {
+  const allFeatures = flattenFeatures(parsed);
+  if (allFeatures.length === 0) {
     logger.warn(`No features found in epic_features artifact for workflow ${workflowId}`);
     return 0;
   }
 
-  const featureCount = parsed.features.length;
+  const featureCount = allFeatures.length;
 
   // Replace 'story_decomposition' in stage_sequence with feature-specific stages
   const sequence: string[] = JSON.parse(workflow.stage_sequence);
@@ -172,12 +197,11 @@ export async function buildFeatureCheckpointMetadata(
     const jsonContent = jsonStart > 0 ? cleaned.slice(jsonStart) : cleaned;
     const parsed = JSON.parse(jsonContent);
 
-    if (!parsed.features || !Array.isArray(parsed.features)) {
-      return null;
-    }
+    const allFeatures = flattenFeatures(parsed);
+    if (allFeatures.length === 0) return null;
 
-    const totalFeatures = parsed.features.length;
-    const featureTitle = parsed.features[featureIndex]?.title ?? `Feature ${featureIndex + 1}`;
+    const totalFeatures = allFeatures.length;
+    const featureTitle = allFeatures[featureIndex]?.title ?? `Feature ${featureIndex + 1}`;
 
     return { featureIndex, totalFeatures, featureTitle };
   } catch (err: any) {
@@ -231,55 +255,93 @@ export async function pushEpicAndFeaturesToADO(
   const jsonContent = jsonStart > 0 ? cleaned.slice(jsonStart) : cleaned;
   const epicFeatures = JSON.parse(jsonContent);
 
-  if (!epicFeatures.epic || !epicFeatures.features || epicFeatures.features.length === 0) {
-    throw new Error('Invalid epic_features structure');
+  const allFeatures = flattenFeatures(epicFeatures);
+  if (!epicFeatures.epic || allFeatures.length === 0) {
+    throw new Error('Invalid epic_features structure — missing epic header or no features found');
   }
 
   const { AzureDevOpsClient } = await import('../integrations/azure-devops');
   const client = new AzureDevOpsClient();
-
-  // Create epic
-  const epic = await client.createWorkItem({
-    type: client['workItemTypes'].epic as any,
-    title: epicFeatures.epic.title,
-    description: epicFeatures.epic.description,
-  });
-  const epicId = epic.id!;
-
-  logger.info(`[EPIC PUSH] Created epic #${epicId}: ${epicFeatures.epic.title}`);
-
-  // Save epic mapping
-  const epicUrl = client.getEpicUrl(epicId);
   const now = Date.now();
-  db.prepare(`
-    INSERT INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, title, created_at)
-    VALUES (?, NULL, ?, 'epic', ?, 'epic', ?, ?)
-  `).run(workflowId, epicId, epicUrl, epicFeatures.epic.title, now);
 
-  // Create all features under the epic (no stories yet)
+  // New phases[] format: create one ADO epic per phase, features nested under it.
+  // Legacy format: create a single ADO epic for the whole initiative.
   const featureIds: number[] = [];
-  for (let i = 0; i < epicFeatures.features.length; i++) {
-    const featureData = epicFeatures.features[i];
-    const feature = await client.createWorkItem({
-      type: client['workItemTypes'].feature as any,
-      title: featureData.title,
-      description: featureData.description,
-      parentId: epicId,
-    });
-    featureIds.push(feature.id!);
+  let firstEpicId: number | null = null;
 
-    // Save feature mapping
-    const featureUrl = `https://dev.azure.com/${client['organization']}/${client['project']}/_workitems/edit/${feature.id}`;
+  if (Array.isArray(epicFeatures.phases) && epicFeatures.phases.length > 0) {
+    let globalFeatureIdx = 0;
+    for (const phase of epicFeatures.phases) {
+      const phaseEpicTitle = phase.epicTitle ?? `${phase.label} — ${epicFeatures.epic.title}`;
+      const phaseEpic = await client.createWorkItem({
+        type: client['workItemTypes'].epic as any,
+        title: phaseEpicTitle,
+        description: `${phase.deliverable ?? ''} (${phase.label})`.trim(),
+      });
+      const phaseEpicId = phaseEpic.id!;
+      if (firstEpicId === null) firstEpicId = phaseEpicId;
+
+      const phaseKey = `epic_${phase.label.toLowerCase().replace(/\s+/g, '_')}`;
+      const phaseEpicUrl = client.getEpicUrl(phaseEpicId);
+      db.prepare(`
+        INSERT INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, title, created_at)
+        VALUES (?, NULL, ?, 'epic', ?, ?, ?, ?)
+      `).run(workflowId, phaseEpicId, phaseEpicUrl, phaseKey, phaseEpicTitle, now);
+      logger.info(`[EPIC PUSH] Created phase epic #${phaseEpicId}: ${phaseEpicTitle}`);
+
+      for (const featureData of (phase.features ?? [])) {
+        const feature = await client.createWorkItem({
+          type: client['workItemTypes'].feature as any,
+          title: featureData.title,
+          description: featureData.description,
+          parentId: phaseEpicId,
+        });
+        featureIds.push(feature.id!);
+        const featureUrl = `https://dev.azure.com/${client['organization']}/${client['project']}/_workitems/edit/${feature.id}`;
+        db.prepare(`
+          INSERT INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, title, created_at)
+          VALUES (?, NULL, ?, 'feature', ?, ?, ?, ?)
+        `).run(workflowId, feature.id, featureUrl, `F${globalFeatureIdx + 1}`, featureData.title, now);
+        logger.info(`[EPIC PUSH] Created feature #${feature.id} (F${globalFeatureIdx + 1}): ${featureData.title}`);
+        globalFeatureIdx++;
+      }
+    }
+  } else {
+    // Legacy single-epic format
+    const epic = await client.createWorkItem({
+      type: client['workItemTypes'].epic as any,
+      title: epicFeatures.epic.title,
+      description: epicFeatures.epic.description,
+    });
+    firstEpicId = epic.id!;
+    const epicUrl = client.getEpicUrl(firstEpicId);
     db.prepare(`
       INSERT INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, title, created_at)
-      VALUES (?, NULL, ?, 'feature', ?, ?, ?, ?)
-    `).run(workflowId, feature.id, featureUrl, `F${i + 1}`, featureData.title, now);
+      VALUES (?, NULL, ?, 'epic', ?, 'epic', ?, ?)
+    `).run(workflowId, firstEpicId, epicUrl, epicFeatures.epic.title, now);
+    logger.info(`[EPIC PUSH] Created epic #${firstEpicId}: ${epicFeatures.epic.title}`);
 
-    logger.info(`[EPIC PUSH] Created feature #${feature.id}: ${featureData.title}`);
+    for (let i = 0; i < allFeatures.length; i++) {
+      const featureData = allFeatures[i];
+      const feature = await client.createWorkItem({
+        type: client['workItemTypes'].feature as any,
+        title: featureData.title,
+        description: featureData.description,
+        parentId: firstEpicId,
+      });
+      featureIds.push(feature.id!);
+      const featureUrl = `https://dev.azure.com/${client['organization']}/${client['project']}/_workitems/edit/${feature.id}`;
+      db.prepare(`
+        INSERT INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, title, created_at)
+        VALUES (?, NULL, ?, 'feature', ?, ?, ?, ?)
+      `).run(workflowId, feature.id, featureUrl, `F${i + 1}`, featureData.title, now);
+      logger.info(`[EPIC PUSH] Created feature #${feature.id}: ${featureData.title}`);
+    }
   }
 
+  const epicId = firstEpicId!;
   insertEvent(workflowId, 'ado_push', 'epic_feature_planner',
-    `Pushed epic + ${featureIds.length} features to Azure DevOps. Stories will be added as each feature is decomposed.`);
+    `Pushed ${Array.isArray(epicFeatures.phases) ? epicFeatures.phases.length + ' phase epic(s)' : 'epic'} + ${featureIds.length} features to Azure DevOps. Stories will be added as each feature is decomposed.`);
 
   return { epicId, featureIds };
 }
@@ -311,16 +373,18 @@ export async function pushFeatureToADO(
   const jsonContent = jsonStart > 0 ? cleaned.slice(jsonStart) : cleaned;
   const backlog = JSON.parse(jsonContent);
 
-  if (!backlog.epic || !backlog.features || featureIndex >= backlog.features.length) {
+  const allBacklogFeatures = flattenFeatures(backlog);
+  if (!backlog.epic || allBacklogFeatures.length === 0 || featureIndex >= allBacklogFeatures.length) {
     throw new Error(`Feature index ${featureIndex} out of range`);
   }
 
-  const targetFeature = backlog.features[featureIndex];
+  const targetFeature = allBacklogFeatures[featureIndex];
 
-  // Fetch epic mapping (should exist from pushEpicAndFeaturesToADO)
+  // Fetch epic mapping — phase epics use 'epic_mvp', 'epic_phase_1', etc.; legacy uses 'epic'
   const epicMapping = db.prepare<[string], { ado_id: number }>(
     `SELECT ado_id FROM ado_work_item_map
-     WHERE workflow_id = ? AND ado_type = 'epic' AND local_key = 'epic'
+     WHERE workflow_id = ? AND ado_type = 'epic'
+     ORDER BY created_at ASC
      LIMIT 1`
   ).get(workflowId);
 

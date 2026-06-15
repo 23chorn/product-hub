@@ -11,10 +11,10 @@ import db from '../data/database';
 import { sessionManager } from '../session/session-manager';
 import type { AppMode, AgentType } from '@pap/shared';
 import {
-  STAGE_SESSION_MAP, STAGE_LABELS_INTERNAL,
+  STAGE_SESSION_MAP, STAGE_LABELS_INTERNAL, STAGE_ARTIFACT_TYPE,
   stageProgressWorking,
 } from './stage-metadata';
-import { loadFullArtifact, loadLatestArtifactForStage, resolveArtifactPath } from './artifact-helpers';
+import { loadArtifactContentById, loadLatestArtifactContent, resolveArtifactPath } from './artifact-helpers';
 import {
   logger, stmts, insertEvent, workflowOps,
 } from './workflow-db';
@@ -38,9 +38,10 @@ export async function propagateFeedback(checkpointId: number, feedback: string):
   const workflow = stmts.getWorkflow.get(checkpoint.workflow_id);
   if (!workflow) throw new Error(`Workflow not found: ${checkpoint.workflow_id}`);
 
-  // Load the full prior artifact — passed as the assistant turn in the conversation thread
+  // Load the full prior artifact — passed as the assistant turn in the conversation thread.
+  // Use the async loader so MongoDB-backed artifacts are fetched correctly.
   const priorDraft = checkpoint.artifact_id
-    ? loadFullArtifact(checkpoint.artifact_id)
+    ? (await loadArtifactContentById(checkpoint.artifact_id)) ?? undefined
     : undefined;
 
   // Build the revision brief (instructions only — prior draft goes into the message thread)
@@ -125,8 +126,13 @@ export async function reiterateFromStage(
   const now = Date.now();
   stmts.updateWorkflowStageAndStatus.run(fromStage, 'active', now, workflowId);
 
-  // Load the prior artifact so the specialist can revise in-place
-  const priorDraft = loadLatestArtifactForStage(workflow.item_id, fromStage);
+  // Load the prior artifact so the specialist can revise in-place.
+  // story_decomposition_F* stages save as 'backlog' type (not keyed to stage name).
+  const isFeatureDecompStage = /^story_decomposition_F\d+$/.test(fromStage);
+  const artifactTypeForLoad = isFeatureDecompStage ? 'backlog' : STAGE_ARTIFACT_TYPE[fromStage];
+  const priorDraft = artifactTypeForLoad
+    ? (await loadLatestArtifactContent(workflow.item_id, artifactTypeForLoad)) ?? undefined
+    : undefined;
   const brief = briefOverride
     ? briefOverride
     : priorDraft

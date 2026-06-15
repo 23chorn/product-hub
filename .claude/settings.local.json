@@ -5,7 +5,10 @@
       "Bash(node *)",
       "Bash(sqlite3 *)",
       "Bash(cat)",
-      "Bash(bash /tmp/comprehensive_check.sh)"
+      "Bash(bash /tmp/comprehensive_check.sh)",
+      "Bash(sed -i '' '1092,1291d' workflow-routes.ts)",
+      "Bash(sed -i '' '33,360d' workflow-routes.ts)",
+      "Bash(awk 'NR<=12 {printf \"%d: %s\\\\n\", NR, $0}' workflow-routes.ts)"
     ]
   }
 }

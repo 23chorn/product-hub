@@ -3,7 +3,12 @@
  * multi-agent collaborative refinement session per feature instead of the normal
  * single-specialist flow. Split out of runAutonomousStage, which dispatches here
  * when the stage name matches story_decomposition_F<n>.
+ *
+ * Exports two functions:
+ *   runMultiAgentFeatureStage  — full 3-phase pipeline for initial runs
+ *   runMultiAgentFeatureRevision — surgical single-agent edit for human/critic revisions
  */
+import type { AgentType } from '@pap/shared';
 import { logger, insertEvent } from './workflow-db';
 import { validateBacklogJson, validateQaTestsJson } from './tool-validators';
 
@@ -87,4 +92,107 @@ export async function runMultiAgentFeatureStage(
     insertEvent(workflowId, 'error', stage, `Multi-agent refinement failed: ${err.message}`);
     throw err;
   }
+}
+
+/**
+ * Targeted single-agent revision for story_decomposition_F* stages.
+ *
+ * Called when a human reviewer (or the critic) requests changes after the multi-agent
+ * pipeline has already completed. Instead of re-running the full 3-phase pipeline,
+ * Shard (Product Owner) applies a SURGICAL EDIT — only the stories mentioned in the
+ * revision brief are modified; all other features are copied exactly as-is.
+ */
+export async function runMultiAgentFeatureRevision(
+  sessionId: string,
+  workflowId: string,
+  stage: string,
+  itemId: string,
+  featureIndex: number,
+  priorDraft: string,
+  brief: string
+): Promise<void> {
+  const featureNum = featureIndex + 1;
+  logger.info(`[MULTI-AGENT REVISION] Targeted revision for Feature ${featureNum} (stage: ${stage})`);
+
+  insertEvent(workflowId, 'stage_progress', stage,
+    `Revision mode: applying targeted changes to Feature ${featureNum} stories only…`);
+
+  // Shard (Product Owner) applies the targeted edit — no full multi-agent pipeline needed
+  const { SpecialistAgent } = await import('./specialist-agent');
+  const agent = new SpecialistAgent('story-decomposition' as AgentType);
+  const persona = await agent.loadPersona(stage);
+  const systemPrompt = await agent.buildSystemPrompt(persona, undefined, undefined, true, stage);
+
+  const revisionDirective =
+    `You are performing a SURGICAL EDIT of the backlog JSON above. Apply ONLY the targeted changes described in the revision brief at the top of this conversation.\n\n` +
+    `Rules — apply strictly:\n` +
+    `- Modify ONLY the stories for Feature ${featureNum} (story IDs F${featureNum}.S*) that are explicitly mentioned in the feedback.\n` +
+    `- Copy all stories for every other feature EXACTLY as-is — no changes whatsoever.\n` +
+    `- Do NOT add new stories unless the feedback explicitly requests it.\n` +
+    `- Do NOT restructure, reorder, rename, or rewrite any field not mentioned in the feedback.\n` +
+    `- Preserve the exact JSON schema: every story must have story_id, title, as_a, i_want, so_that, acceptance_criteria, technical_acceptance_criteria, platform, estimated_points, depends_on.\n` +
+    `- Return the complete backlog JSON (epic + all features + all stories) — only the flagged stories will differ from the prior draft.`;
+
+  const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
+    { role: 'user', content: brief },
+    { role: 'assistant', content: '```json\n' + priorDraft + '\n```' },
+    { role: 'user', content: revisionDirective },
+  ];
+
+  let fullResponse = '';
+  for await (const chunk of agent.streamResponse(systemPrompt, messages, undefined, undefined, 8_000)) {
+    fullResponse += chunk;
+  }
+
+  // Parse revised backlog JSON
+  const stripped = fullResponse.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+  const jsonStart = stripped.indexOf('{');
+  const jsonContent = jsonStart > 0 ? stripped.slice(jsonStart) : stripped;
+
+  let revisedBacklog: any;
+  try {
+    revisedBacklog = JSON.parse(jsonContent);
+  } catch (err: any) {
+    logger.error(`[MULTI-AGENT REVISION] Invalid JSON from revision: ${err.message}`);
+    throw new Error(`Revision produced invalid JSON: ${err.message}`);
+  }
+
+  // Validate only the revised feature's stories
+  const singleFeatureForValidation = {
+    features: revisedBacklog.features
+      ? [revisedBacklog.features[featureIndex]].filter(Boolean)
+      : [],
+  };
+  const backlogValidation = JSON.parse(validateBacklogJson({ json: JSON.stringify(singleFeatureForValidation) }));
+  if (!backlogValidation.valid && Array.isArray(backlogValidation.issues) && backlogValidation.issues.length > 0) {
+    logger.warn(`[MULTI-AGENT REVISION] Validation issues for Feature ${featureNum}: ${backlogValidation.issues.join(' | ')}`);
+    insertEvent(workflowId, 'validation_warning', stage,
+      `Revised backlog quality check flagged ${backlogValidation.issues.length} issue(s) for Feature ${featureNum}`,
+      { issues: backlogValidation.issues });
+  }
+
+  // Save revised backlog artifact
+  const { saveLocalArtifact, saveDiffArtifact } = await import('./artifact-helpers');
+  const { computeRevisionDiff } = await import('../utils/revision-diff');
+  const artifactContent = JSON.stringify(revisedBacklog, null, 2);
+  const artifactId = await saveLocalArtifact(sessionId, 'backlog', artifactContent, itemId, null);
+
+  // Compute and save diff so the reviewer can see exactly what changed
+  try {
+    const diffText = computeRevisionDiff(priorDraft, artifactContent, `Feature ${featureNum} Backlog`);
+    const diffArtifactId = await saveDiffArtifact(itemId, stage, diffText, sessionId, 'story-decomposition');
+    if (diffArtifactId) logger.info(`[MULTI-AGENT REVISION] Diff artifact saved (id: ${diffArtifactId})`);
+  } catch (err: any) {
+    logger.warn(`[MULTI-AGENT REVISION] Failed to save diff: ${err.message}`);
+  }
+
+  // Create checkpoint for human review
+  const { pauseAtCheckpoint } = await import('./workflow-router');
+  pauseAtCheckpoint(workflowId, stage, artifactId, sessionId, { revision_mode: true, feature: featureNum });
+
+  insertEvent(workflowId, 'stage_completed', stage,
+    `Targeted revision applied for Feature ${featureNum} — only affected stories modified. Ready for review.`,
+    { artifact_id: artifactId });
+
+  logger.info(`[MULTI-AGENT REVISION] Feature ${featureNum} targeted revision complete (artifact ${artifactId})`);
 }

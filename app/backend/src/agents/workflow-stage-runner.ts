@@ -48,7 +48,7 @@ export {
 import { setCancelController, clearCancelController, isCancelRequested } from './workflow-cancel';
 export { getCoordinator, getCritic, getCurator } from './workflow-agents';
 import { getCoordinator, getCritic } from './workflow-agents';
-import { runMultiAgentFeatureStage } from './feature-stage-runner';
+import { runMultiAgentFeatureStage, runMultiAgentFeatureRevision } from './feature-stage-runner';
 
 // ── Autonomous stage execution ────────────────────────────────────────────────
 
@@ -73,11 +73,17 @@ export async function runAutonomousStage(
   skipCritic?: boolean
 ): Promise<void> {
   // ── Multi-Agent Refinement for story_decomposition_F* stages ────────────────
-  // Each feature runs a multi-agent collaborative session (platform-filtered participants)
+  // Each feature runs a multi-agent collaborative session (platform-filtered participants).
+  // When priorDraftContent is set (human revision or critic revision), use the targeted
+  // single-agent revision path instead of re-running the full 3-phase pipeline.
   const featureMatch = stage.match(/^story_decomposition_F(\d+)$/);
   if (featureMatch) {
-    const featureIndex = parseInt(featureMatch[1], 10) - 1; // Convert to 0-based
-    await runMultiAgentFeatureStage(sessionId, workflowId, stage, itemId, featureIndex);
+    const featureIndex = parseInt(featureMatch[1], 10) - 1;
+    if (priorDraftContent) {
+      await runMultiAgentFeatureRevision(sessionId, workflowId, stage, itemId, featureIndex, priorDraftContent, brief);
+    } else {
+      await runMultiAgentFeatureStage(sessionId, workflowId, stage, itemId, featureIndex);
+    }
     return;
   }
 
@@ -247,17 +253,19 @@ export async function runAutonomousStage(
         throw new Error(`No epic_features artifact found for feature-specific stage ${stage}`);
       }
 
-      // Parse to get the target feature
+      // Parse to get the target feature — flattenFeatures handles both phases[] and legacy features[]
       const cleaned = epicFeaturesContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
       const jsonStart = cleaned.indexOf('{');
       const jsonContent = jsonStart > 0 ? cleaned.slice(jsonStart) : cleaned;
       const epicFeatures = JSON.parse(jsonContent);
 
-      if (!epicFeatures.features || featureIndex >= epicFeatures.features.length) {
-        throw new Error(`Feature index ${featureIndex} out of range for ${stage}`);
+      const { flattenFeatures } = await import('./feature-decomposition');
+      const allEpicFeatures = flattenFeatures(epicFeatures);
+      if (featureIndex >= allEpicFeatures.length) {
+        throw new Error(`Feature index ${featureIndex} out of range for ${stage} (${allEpicFeatures.length} features total)`);
       }
 
-      const targetFeature = epicFeatures.features[featureIndex];
+      const targetFeature = allEpicFeatures[featureIndex];
 
       // Load prior partial backlog (if exists)
       const priorBacklog = await loadPartialBacklog(itemId);
@@ -321,10 +329,14 @@ export async function runAutonomousStage(
             ? `\n\nThe specific issues to address:\n${priorCriticIssues.map((issue, i) => `${i + 1}. ${issue}`).join('\n')}`
             : '';
           const revisionDirective =
-            `Please revise the ${artifactLabel} above based on the issues listed in the revision instructions.${issueLines}\n\n` +
-            `Make targeted changes only — locate and fix the flagged sections directly. ` +
-            `Do not rewrite, restructure, or modify any section that was not flagged. ` +
-            `Return the complete revised ${artifactLabel} with all sections included.`;
+            `You are performing a SURGICAL EDIT of the ${artifactLabel} above.${issueLines}\n\n` +
+            `Rules — apply strictly:\n` +
+            `- Identify the exact field, sentence, or JSON value that each issue refers to.\n` +
+            `- Fix ONLY that specific location — leave everything else byte-for-byte identical to your prior draft.\n` +
+            `- Do NOT rewrite, reorganise, or "improve" any section adjacent to the problem.\n` +
+            `- Do NOT add new sections, remove existing sections, or change headings.\n` +
+            `- Do NOT reorder array items or object keys that were not mentioned in the issues.\n` +
+            `- Return the complete ${artifactLabel} with every section present — only the flagged locations will differ.`;
           // Wrap JSON artifacts in code fences for the assistant turn
           const formattedDraft = stage === 'prototype'
             ? '```json\n' + priorDraftContent + '\n```'
