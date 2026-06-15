@@ -77,7 +77,8 @@ COORDINATOR_READY
 **recommended_stages rules** — always include "solution_architect", "epic_feature_planner", "story_decomposition", and "curator"; add others only when genuinely needed:
 - "analyst": add when market research, competitive analysis, or user research would materially improve the output
 - "pm_prd": add for any new feature or capability; omit only for bug fixes, copy changes, or minor config tweaks
-- "prototype": add when stakeholder alignment on UX flows would accelerate decisions before engineering starts
+- "prototype": add when stakeholder alignment on UX flows would accelerate decisions before engineering starts; always comes after pm_prd
+- "figma_design": add when a design exists in Figma that a designer should review and finalise before engineering; always comes directly after prototype (or after pm_prd if prototype is omitted); never after solution_architect
 ${hasKnowledgeBase ? `
 **kb_queries rules:**
 - Include 1–3 short, specific search queries that would find relevant existing documentation (PRDs, architecture docs, research) to give specialists useful background.

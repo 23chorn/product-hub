@@ -17,6 +17,7 @@ Right-size the output based on scope. Use the **minimum structure** that fits th
     ],
     "prdRef": {
       "functionalRequirements": ["FR-01"],
+      "nonFunctionalRequirements": ["NFR1"],
       "userJourney": "Journey · Step"
     },
     "technical": {

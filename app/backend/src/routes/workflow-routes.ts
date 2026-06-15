@@ -452,6 +452,89 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
   }
 });
 
+// ── POST /api/workflow/checkpoint/figma-complete ──────────────────────────────
+
+/**
+ * POST /api/workflow/checkpoint/figma-complete
+ * Body: { checkpointId: number }
+ *
+ * Signals that the designer has finished their Figma edits. The backend fetches
+ * the current state of FIGMA_MOCKUP_FILE, patches the artifact with
+ * designer_reviewed: true + a snapshot timestamp, then resolves the checkpoint
+ * as approved and advances the workflow.
+ */
+workflowRoutes.post('/checkpoint/figma-complete', async (req: AuthRequest, res: Response) => {
+  const { checkpointId } = req.body as { checkpointId?: number };
+  const cpId = typeof checkpointId === 'number' ? checkpointId : parseInt(String(checkpointId), 10);
+  if (isNaN(cpId)) return res.status(400).json({ error: 'checkpointId must be a number' });
+
+  try {
+    const cp = db.prepare<[number], { workflow_id: string; stage: string; artifact_id: number | null; status: string; required_role: string | null }>(
+      'SELECT workflow_id, stage, artifact_id, status, required_role FROM checkpoints WHERE id = ?'
+    ).get(cpId);
+    if (!cp) return res.status(404).json({ error: 'Checkpoint not found' });
+    if (cp.stage !== 'figma_design') return res.status(400).json({ error: 'This endpoint is only for figma_design checkpoints' });
+    if (cp.status !== 'pending') return res.status(400).json({ error: 'Checkpoint is not pending' });
+
+    const requiredRoles = parseRoles(cp.required_role);
+    if (!canApproveCheckpoint(req.user, requiredRoles)) {
+      return res.status(403).json({ error: 'Insufficient permissions to resolve this checkpoint' });
+    }
+
+    // Fetch latest Figma mockup file state
+    const { loadFigmaMockupFileData } = await import('../agents/prototype-agent');
+    const figmaSnapshot = await loadFigmaMockupFileData();
+
+    // Patch the artifact with designer_reviewed flag + snapshot
+    if (cp.artifact_id) {
+      const rawContent = await loadArtifactContentById(cp.artifact_id);
+      if (rawContent) {
+        try {
+          const parsed = JSON.parse(rawContent);
+          parsed.designer_reviewed = true;
+          parsed.designer_reviewed_at = new Date().toISOString();
+          if (figmaSnapshot) parsed.figma_snapshot = figmaSnapshot.slice(0, 8000);
+          parsed.figma_write_status = 'reviewed';
+          await updateArtifactContent(cp.artifact_id, JSON.stringify(parsed, null, 2));
+        } catch {
+          // Non-JSON artifact — skip patch, still advance
+        }
+      }
+    }
+
+    // Audit + resolve
+    const auditor = req.user
+      ? { id: req.user.id, name: req.user.name, username: req.user.username }
+      : { id: null, name: 'System', username: 'system' };
+
+    db.prepare(`
+      INSERT INTO checkpoint_audit (checkpoint_id, user_id, user_name, user_email, action, notes, created_at)
+      VALUES (?, ?, ?, ?, 'approved', 'Figma design marked complete by designer', ?)
+    `).run(cpId, auditor.id, auditor.name, auditor.username, Date.now());
+
+    if (req.user) {
+      db.prepare('UPDATE checkpoints SET resolved_by_user_id = ? WHERE id = ?').run(req.user.id, cpId);
+    }
+    resolveCheckpoint(cpId, 'approved', 'Figma design marked complete by designer');
+
+    insertEvent(cp.workflow_id, 'stage_complete', 'figma_design', 'Designer marked Figma mockups as complete');
+
+    advanceStage(cp.workflow_id)
+      .then(result => { logger.info(`Stage advanced to "${result.stage}" after figma-complete`); })
+      .catch(err => {
+        if (!err.message?.startsWith('WORKFLOW_COMPLETE:')) {
+          logger.error(`advanceStage failed after figma-complete: ${err.message}`);
+        }
+      });
+
+    const workflowStatus = getWorkflowStatus(cp.workflow_id);
+    return res.json({ workflow: workflowStatus });
+  } catch (err: any) {
+    logger.error('Failed to complete figma checkpoint', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── POST /api/workflow/:id/reiterate ───────────────────────────────────────────
 
 /**

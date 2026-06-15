@@ -1,7 +1,7 @@
 {
   "title": "Figma Mockups: In-App Messaging & Trade Chat — xCube",
-  "figma_file_url": "https://www.figma.com/file/xcube-messaging-mockups/In-App-Messaging",
-  "figma_write_status": "planned",
+  "figma_file_url": "https://www.figma.com/file/aBcD1234xCubeMsgMock/In-App-Messaging",
+  "figma_write_status": "created",
   "source_design_system": "xcube-design-system",
 
   "design_tokens_extracted": {
@@ -51,8 +51,8 @@
   "screens_created": [
     {
       "name": "Chat Tab — Channel List",
-      "frame_id": "",
-      "frame_url": "",
+      "frame_id": "501:1",
+      "frame_url": "https://www.figma.com/file/aBcD1234xCubeMsgMock/In-App-Messaging?node-id=501-1",
       "size": { "width": 390, "height": 844 },
       "prd_journeys": ["Discover and join a channel", "See unread message activity"],
       "description": "The primary chat entry point showing all public channels, ordered by recent activity. Unread counts and last message preview help users prioritise.",
@@ -65,8 +65,8 @@
     },
     {
       "name": "Channel Detail — Message Thread",
-      "frame_id": "",
-      "frame_url": "",
+      "frame_id": "501:2",
+      "frame_url": "https://www.figma.com/file/aBcD1234xCubeMsgMock/In-App-Messaging?node-id=501-2",
       "size": { "width": 390, "height": 844 },
       "prd_journeys": ["Send a message in a channel", "Attach a ticker card to a message"],
       "description": "Real-time message thread for a single channel. Messages appear chronologically with sender avatar and timestamp. Ticker cards are inline with expandable price widget.",
@@ -81,8 +81,8 @@
     },
     {
       "name": "Ticker Search — Attach to Message",
-      "frame_id": "",
-      "frame_url": "",
+      "frame_id": "501:3",
+      "frame_url": "https://www.figma.com/file/aBcD1234xCubeMsgMock/In-App-Messaging?node-id=501-3",
       "size": { "width": 390, "height": 844 },
       "prd_journeys": ["Attach a ticker card to a message"],
       "description": "Bottom sheet triggered from the compose bar. User searches by ticker symbol or company name. Tapping a result attaches a TickerCard to the pending message.",
@@ -95,8 +95,8 @@
     },
     {
       "name": "Ticker Card Detail",
-      "frame_id": "",
-      "frame_url": "",
+      "frame_id": "501:4",
+      "frame_url": "https://www.figma.com/file/aBcD1234xCubeMsgMock/In-App-Messaging?node-id=501-4",
       "size": { "width": 390, "height": 844 },
       "prd_journeys": ["View live ticker data from a message"],
       "description": "Expanded view of a TickerCard tapped from a message. Shows live price, intraday chart, bid/ask, volume, and a Buy / Sell CTA linking to the existing order flow.",
@@ -109,8 +109,8 @@
     },
     {
       "name": "Create Channel",
-      "frame_id": "",
-      "frame_url": "",
+      "frame_id": "501:5",
+      "frame_url": "https://www.figma.com/file/aBcD1234xCubeMsgMock/In-App-Messaging?node-id=501-5",
       "size": { "width": 390, "height": 844 },
       "prd_journeys": ["Create a new public channel"],
       "description": "Simple form to create a new public channel. Name (required, unique), optional topic, and a Create button. Inline validation on name uniqueness.",
@@ -125,5 +125,5 @@
 
   "navigation_flow": "BottomNav (Chat Tab) → Channel List\nChannel List → Channel Detail (tap row)\nChannel List → Create Channel (tap +)\nChannel Detail → Ticker Search (tap chart icon)\nChannel Detail → Ticker Card Detail (tap ticker card)\nTicker Search → Channel Detail (select ticker)\nCreate Channel → Channel Detail (on success)",
 
-  "notes": "Figma write is deferred (FIGMA_MOCKUP_FILE not configured in this demo run). All frame_id and frame_url fields are empty placeholders. Design gaps identified: ModeratedMessagePlaceholder and ChannelEmptyState components need to be added to the design system before production handoff. Ticker Card Detail reuses existing QuoteChart and TickerCard components — confirm node IDs with the design system owner before writing frames."
+  "notes": "5 frames written to Figma file aBcD1234xCubeMsgMock. Design gaps identified: ModeratedMessagePlaceholder and ChannelEmptyState components need to be created in the design system before production handoff — both flagged for the designer to add during review. Ticker Card Detail reuses existing QuoteChart and TickerCard components — node IDs confirmed against the design system. Awaiting designer review: open the Figma file, refine spacing and copy, then mark complete in Product Hub to advance the workflow."
 }

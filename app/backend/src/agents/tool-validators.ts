@@ -485,6 +485,33 @@ export function validateBacklogJson(input: Record<string, unknown>): string {
       issues.push(`${p}: missing technical_acceptance_criteria`);
     }
 
+    // PRD traceability — FR and NFR references
+    const prdRef = story.prd_ref ?? story.prdRef;
+    if (!prdRef || typeof prdRef !== 'object') {
+      issues.push(`${p}: missing prd_ref — each story must reference at least one FR from the PRD (prd_ref.functional_requirements: ["FR-01"])`);
+    } else {
+      const frs = prdRef.functional_requirements ?? prdRef.functionalRequirements;
+      if (!Array.isArray(frs) || frs.length === 0) {
+        issues.push(`${p}: prd_ref.functional_requirements must reference at least one FR-XX from the PRD`);
+      } else {
+        frs.forEach((fr: any, j: number) => {
+          if (typeof fr !== 'string' || !FR_ID_RE.test(fr)) {
+            issues.push(`${p}.prd_ref.functional_requirements[${j}]: "${fr}" must match FR-XX format (e.g. FR-01)`);
+          }
+        });
+      }
+      const nfrs = prdRef.non_functional_requirements ?? prdRef.nonFunctionalRequirements;
+      if (!Array.isArray(nfrs)) {
+        issues.push(`${p}: prd_ref.non_functional_requirements is required — use [] if no NFRs constrain this story`);
+      } else {
+        nfrs.forEach((nfr: any, j: number) => {
+          if (typeof nfr !== 'string' || !NFR_ID_RE.test(nfr)) {
+            issues.push(`${p}.prd_ref.non_functional_requirements[${j}]: "${nfr}" must match NFRN format (e.g. NFR1)`);
+          }
+        });
+      }
+    }
+
     const platforms = story.platform;
     if (!Array.isArray(platforms) || platforms.length === 0) {
       issues.push(`${p}: missing platform array`);
@@ -575,12 +602,25 @@ export function validateBacklogJson(input: Record<string, unknown>): string {
 
 const VALID_PHASES = new Set(['MVP', 'Phase 1', 'Phase 2', 'Phase 3']);
 const FR_ID_RE = /^FR-\d+$/;
+const NFR_ID_RE = /^NFR\d+$/i;
 const MAX_FEATURES_PER_PHASE = 5;
 const MAX_PHASES = 4;
+const FEATURE_DESCRIPTION_MIN_CHARS = 120;
+const AC_MIN_CHARS = 30;
 
 function validateFeature(f: any, lp: string, issues: string[]): void {
   req(f, 'title', lp, issues);
   req(f, 'description', lp, issues);
+
+  // Description richness — must be substantive, not a one-liner
+  if (typeof f.description === 'string' && f.description.length < FEATURE_DESCRIPTION_MIN_CHARS) {
+    issues.push(`${lp}.description: too brief (${f.description.length} chars) — feature descriptions must be at least ${FEATURE_DESCRIPTION_MIN_CHARS} characters covering what the user gains, why it matters, and how it fits the phase`);
+  }
+
+  // Rationale — required to force deliberate phase placement
+  if (!f.rationale || typeof f.rationale !== 'string' || f.rationale.trim().length === 0) {
+    issues.push(`${lp}: "rationale" is required — explain why this feature belongs in this phase rather than earlier or later`);
+  }
 
   // Acceptance criteria — feature level, 3–5
   const ac = f.acceptanceCriteria ?? f.acceptance_criteria;
@@ -590,13 +630,18 @@ function validateFeature(f: any, lp: string, issues: string[]): void {
     if (ac.length < 3) issues.push(`${lp}: only ${ac.length} acceptance criteria — minimum 3 feature-level ACs required`);
     if (ac.length > 5) issues.push(`${lp}: ${ac.length} acceptance criteria exceeds maximum of 5`);
     ac.forEach((c: any, j: number) => {
-      if (typeof c === 'string' && (c.includes('As a user') || c.toLowerCase().startsWith('as a'))) {
-        issues.push(`${lp}.acceptanceCriteria[${j}]: looks like a user story, not a feature-level AC — write testable outcome conditions`);
+      if (typeof c === 'string') {
+        if (c.includes('As a user') || c.toLowerCase().startsWith('as a')) {
+          issues.push(`${lp}.acceptanceCriteria[${j}]: looks like a user story, not a feature-level AC — write testable outcome conditions`);
+        }
+        if (c.length < AC_MIN_CHARS) {
+          issues.push(`${lp}.acceptanceCriteria[${j}]: too vague (${c.length} chars) — ACs must be specific enough for a QA engineer to test without interpretation`);
+        }
       }
     });
   }
 
-  // prdRef with functional requirement IDs
+  // prdRef with functional and optional non-functional requirement IDs
   if (!f.prdRef || typeof f.prdRef !== 'object') {
     issues.push(`${lp}: "prdRef" object is required for PRD traceability`);
   } else {
@@ -606,6 +651,17 @@ function validateFeature(f: any, lp: string, issues: string[]): void {
       f.prdRef.functionalRequirements.forEach((fr: any, j: number) => {
         if (typeof fr !== 'string' || !FR_ID_RE.test(fr)) {
           issues.push(`${lp}.prdRef.functionalRequirements[${j}]: "${fr}" must match FR-XX format`);
+        }
+      });
+    }
+
+    // nonFunctionalRequirements — required field, may be empty array but must be present
+    if (!('nonFunctionalRequirements' in f.prdRef)) {
+      issues.push(`${lp}: prdRef.nonFunctionalRequirements is required — use an empty array [] only if no NFRs apply to this feature`);
+    } else if (Array.isArray(f.prdRef.nonFunctionalRequirements)) {
+      f.prdRef.nonFunctionalRequirements.forEach((nfr: any, j: number) => {
+        if (typeof nfr !== 'string' || !NFR_ID_RE.test(nfr)) {
+          issues.push(`${lp}.prdRef.nonFunctionalRequirements[${j}]: "${nfr}" must match NFRN format (e.g. NFR1, NFR3)`);
         }
       });
     }

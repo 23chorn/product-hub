@@ -105,6 +105,22 @@ Focus on:
 
 `;
 
+    case 'epic_feature_planner':
+      return `## Artifact Stage: Epic & Feature Plan (Apex)
+
+Structural validation (phase labels, feature count limits, AC count, FR ID format, prdRef presence) has already been performed by automated tools. Do not re-raise those checks.
+
+Focus on:
+- Are feature descriptions genuinely informative — or vague summaries a PM could have written without reading the PRD? A description like "Users can send messages" fails. It must state what the user gains, why it matters to the product hypothesis, and why it belongs in this phase.
+- Does each feature include a rationale that explains why it is in this phase rather than earlier or later? Absent rationale is a MAJOR issue — it signals the phase plan was not thought through.
+- Are acceptance criteria specific enough that a QA engineer can write a test plan from them? Vague ACs like "performs well" or "works correctly" are MAJOR issues. ACs covering a feature constrained by an NFR must cite the measurable threshold from that NFR.
+- Are the nonFunctionalRequirements in prdRef accurate — do the referenced NFR IDs actually exist in the PRD, and do they genuinely constrain this feature? A feature that touches latency, security, compliance, or availability should reference the relevant NFR. An empty nonFunctionalRequirements on a latency-sensitive or compliance-relevant feature is suspicious — flag it.
+- Does the phasing tell a coherent story? MVP should contain the minimum to validate the core hypothesis — nothing more. Features in Phase 1+ that could have been in MVP without scope risk are a MAJOR issue. Features in MVP that are clearly non-essential are also a MAJOR issue.
+- Is the out-of-scope list explicit and credible? It should make clear what is NOT being built and why, not just list vague deferrals.
+- PM Questions should cover scope decisions and phase sequencing that only the PM can confirm — not implementation details.
+
+`;
+
     case 'story_decomposition':
       return `## Artifact Stage: Backlog (Pip)
 

@@ -438,8 +438,20 @@ export async function pushFeatureToADO(
     const technicalNotes = storyData.technical_notes ?? storyData.agentContext ?? '';
     const testCases = storyData.test_cases ?? [];
 
-    // Build description with user story + technical notes (NO platform - that goes in tags)
+    // PRD traceability refs
+    const prdRef = storyData.prd_ref ?? storyData.prdRef;
+    const frRefs: string[] = prdRef?.functional_requirements ?? prdRef?.functionalRequirements ?? [];
+    const nfrRefs: string[] = prdRef?.non_functional_requirements ?? prdRef?.nonFunctionalRequirements ?? [];
+
+    // Build description with user story + PRD traceability + technical notes
     let description = `<strong>As a</strong> ${persona}<br><strong>I want</strong> ${goal}<br><strong>So that</strong> ${benefit}`;
+
+    // Add PRD traceability block
+    if (frRefs.length > 0 || nfrRefs.length > 0) {
+      description += `<br><br><strong>PRD Traceability:</strong><br>`;
+      if (frRefs.length > 0) description += `Functional: ${frRefs.join(', ')}<br>`;
+      if (nfrRefs.length > 0) description += `Non-Functional: ${nfrRefs.join(', ')}`;
+    }
 
     // Add technical notes if present
     if (technicalNotes) {

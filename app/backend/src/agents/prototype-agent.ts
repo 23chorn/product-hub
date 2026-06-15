@@ -176,6 +176,60 @@ export async function loadFigmaDesignSystem(statusCb: (msg: string) => void): Pr
   return '';
 }
 
+/**
+ * Fetch the current state of the Figma mockup file (FIGMA_MOCKUP_FILE).
+ * Used by the figma-complete endpoint to snapshot designer edits into the artifact.
+ * Returns raw content string from the MCP call, or empty string if unavailable.
+ */
+export async function loadFigmaMockupFileData(): Promise<string> {
+  const fileKey = process.env.FIGMA_MOCKUP_FILE;
+  const token = process.env.FIGMA_API_KEY ?? process.env.FIGMA_ACCESS_TOKEN;
+  if (!fileKey || !token) return '';
+
+  let Client: any;
+  let StdioClientTransport: any;
+  try {
+    ({ Client } = require('@modelcontextprotocol/sdk/client') as typeof import('@modelcontextprotocol/sdk/client/index.js'));
+    ({ StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js') as typeof import('@modelcontextprotocol/sdk/client/stdio.js'));
+  } catch {
+    logger.warn('MCP SDK not installed — Figma mockup file fetch unavailable');
+    return '';
+  }
+
+  const { command, args } = resolveFigmaDevMcpBin();
+  const transport = new StdioClientTransport({
+    command,
+    args,
+    env: { ...(process.env as Record<string, string>), FIGMA_API_KEY: token },
+  });
+
+  const client = new Client(
+    { name: 'product-hub', version: '1.0.0' },
+    { capabilities: {} },
+  );
+
+  try {
+    await client.connect(transport, { timeout: 8_000 });
+    const result = await client.callTool({
+      name: 'get_figma_data',
+      arguments: { fileKey },
+    }, undefined, { timeout: 30_000 });
+
+    const content = Array.isArray(result.content)
+      ? result.content.map((c: { type: string; text?: string }) => c.text ?? '').join('\n')
+      : String(result.content);
+
+    logger.info(`Fetched Figma mockup file ${fileKey} (${content.length} chars)`);
+    return content;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn(`Could not fetch Figma mockup file: ${msg}`);
+    return '';
+  } finally {
+    try { await transport.close(); } catch { /* ignore */ }
+  }
+}
+
 // ── JSON repair (for truncated model output) ───────────────────────────────────
 
 export function repairTruncatedJson(raw: string): string {

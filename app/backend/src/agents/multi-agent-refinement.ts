@@ -309,6 +309,10 @@ Return a JSON structure (use F${featureNum} for all story IDs):
       "i_want": "...",
       "so_that": "...",
       "acceptance_criteria": ["Given...", "When...", "Then..."],
+      "prd_ref": {
+        "functional_requirements": ["FR-01"],
+        "non_functional_requirements": ["NFR1"]
+      },
       "estimated_points": 3
     }
   ]
@@ -527,6 +531,10 @@ Merge all contributions into a single JSON artifact following the backlog templa
           "so_that": "...",
           "acceptance_criteria": ["Given...", "When...", "Then..."],
           "technical_acceptance_criteria": ["Backend: ...", "Web: ...", "Mobile: ..."],
+          "prd_ref": {
+            "functional_requirements": ["FR-01"],
+            "non_functional_requirements": ["NFR1"]
+          },
           "platform": ["backend", "web", "ios", "android"],
           "estimated_points": 5,
           "depends_on": [],
@@ -541,6 +549,7 @@ Merge all contributions into a single JSON artifact following the backlog templa
 **Important:**
 - Include ONLY the JSON artifact in your response (no explanatory text before or after)
 - Carry forward epic fields (business_value, definition_of_done, out_of_scope) and feature fields (phase, acceptance_criteria) from the Epic & Features artifact — do not drop them
+- Every story must include prd_ref with functional_requirements (the FR IDs from the PRD this story satisfies) and non_functional_requirements (the NFR IDs that constrain this story). Copy from the feature's prdRef where applicable and refine per story. Use [] for non_functional_requirements only if no NFR genuinely applies to this specific story.
 - Feature acceptance_criteria are high-level "done" conditions for the whole feature, not story-level Gherkin
 - Apply Vera's AC improvements — sharpen any vague acceptance criteria language she flagged
 - Ensure all story_id references are consistent (F?.S1, F?.S2, etc.)

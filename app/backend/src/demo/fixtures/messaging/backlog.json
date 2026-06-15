@@ -282,9 +282,9 @@
     },
     {
       "key": "F3",
-      "title": "Live Ticker Card Sharing",
-      "description": "Users can embed live-updating ticker price cards directly into any message.",
-      "phase": "MVP",
+      "title": "Live Ticker Card Sharing & Push Notifications",
+      "description": "Users can embed live-updating ticker price cards directly into any message, and receive push notifications for channel activity. Phase 1 engagement layer built on the MVP messaging foundation.",
+      "phase": "Phase 1",
       "stories": [
         {
           "story_id": "F3.S1",
@@ -356,6 +356,76 @@
               "type": "edge_case",
               "priority": "high",
               "story_ref": "F3.S1"
+            }
+          ]
+        },
+        {
+          "story_id": "F3.S2",
+          "title": "Receive push notifications for channel messages",
+          "as_a": "Jamie — Casual Community Investor",
+          "i_want": "get a push notification when someone posts in a channel I follow",
+          "so_that": "I can stay in the conversation without keeping the app open",
+          "acceptance_criteria": [
+            "Given I have joined a channel and push notifications are enabled, When a new message is posted, Then I receive a push notification within 5 seconds showing the sender name, channel, and message preview",
+            "Given I tap the push notification, When the app opens, Then I am taken directly to the relevant channel thread with the new message visible",
+            "Given I have muted a channel, When new messages are posted there, Then no push notification is sent for that channel",
+            "Given I have turned off all notifications for the app, When messages are posted, Then no push notifications are sent regardless of channel mute settings"
+          ],
+          "technical_acceptance_criteria": [
+            "Backend: POST /api/notifications/preferences stores per-user per-channel mute settings",
+            "Backend: Notification service fans out to APNs (iOS) and FCM (Android) within 3 seconds of message creation",
+            "Backend: Muted channels excluded from notification fan-out at query time, not client-side",
+            "iOS: APNs payload includes channel_id and message_id for deep link routing on tap",
+            "Android: FCM notification uses high-priority channel to ensure delivery in Doze mode"
+          ],
+          "platform": ["backend", "ios", "android"],
+          "estimated_points": 3,
+          "depends_on": ["F2.S1"],
+          "technical_notes": "Notification service must respect APNs rate limits (max 30 pushes/second per device); batch fan-out for large channels",
+          "test_cases": [
+            {
+              "id": "TC-F3.S2-001",
+              "scenario": {
+                "given": ["User Jamie has joined 'options-trading' channel", "Push notifications are enabled"],
+                "when": ["Alex posts a message to the channel"],
+                "then": ["Jamie receives push notification within 5 seconds", "Notification shows: 'Alex in #options-trading: Bullish on $AAPL'", "Notification badge increments on app icon"]
+              },
+              "type": "happy_path",
+              "priority": "critical",
+              "story_ref": "F3.S2"
+            },
+            {
+              "id": "TC-F3.S2-002",
+              "scenario": {
+                "given": ["Jamie receives a push notification for 'crypto-news' channel"],
+                "when": ["Jamie taps the notification"],
+                "then": ["App opens directly to 'crypto-news' channel thread", "New message is visible and highlighted", "Unread badge clears for that channel"]
+              },
+              "type": "happy_path",
+              "priority": "critical",
+              "story_ref": "F3.S2"
+            },
+            {
+              "id": "TC-F3.S2-003",
+              "scenario": {
+                "given": ["Jamie has muted the 'penny-stocks' channel"],
+                "when": ["A message is posted to 'penny-stocks'"],
+                "then": ["No push notification is sent to Jamie", "Message is still visible in channel when Jamie opens the app", "Muted badge displays on channel in list"]
+              },
+              "type": "happy_path",
+              "priority": "high",
+              "story_ref": "F3.S2"
+            },
+            {
+              "id": "TC-F3.S2-004",
+              "scenario": {
+                "given": ["Channel has 50,000 members", "A message is posted"],
+                "when": ["Notification service fans out to all eligible members"],
+                "then": ["Fan-out completes within 30 seconds", "APNs rate limits are not breached", "No duplicate notifications are sent"]
+              },
+              "type": "edge_case",
+              "priority": "medium",
+              "story_ref": "F3.S2"
             }
           ]
         }

@@ -73,7 +73,7 @@
     { "id": "NFR-03", "category": "Scalability", "requirement": "System supports 10,000 concurrent WebSocket connections", "priority": "Must" },
     { "id": "NFR-04", "category": "Compliance", "requirement": "All messages retained in cold storage for 7 years (MiFID II Article 16)", "priority": "Must" },
     { "id": "NFR-05", "category": "Safety", "requirement": "Moderation classifier achieves >92% precision on pump-and-dump detection", "priority": "Must" },
-    { "id": "NFR-06", "category": "Platform", "requirement": "Feature available on iOS and Android at launch; web in Phase 2", "priority": "Must" }
+    { "id": "NFR-06", "category": "Platform", "requirement": "MVP available on iOS and Android; Phase 1 adds push notifications (APNs + FCM); web platform in Phase 2", "priority": "Must" }
   ],
   "functional_requirements": [
     { "id": "FR-01", "requirement": "Users can browse a list of public channels sorted by activity." },
@@ -86,17 +86,20 @@
     { "id": "FR-08", "requirement": "All messages pass through content moderation before delivery." },
     { "id": "FR-09", "requirement": "Messages flagged by moderation are held pending human review and not delivered to channel members." },
     { "id": "FR-10", "requirement": "All messages are retained for 7 years (MiFID II compliance)." },
-    { "id": "FR-11", "requirement": "Users can create a new public channel with a name and topic description." }
+    { "id": "FR-11", "requirement": "Users can create a new public channel with a name and topic description." },
+    { "id": "FR-12", "requirement": "[Phase 1] Users receive push notifications (APNs on iOS, FCM on Android) for new messages in joined channels within 5 seconds of posting." },
+    { "id": "FR-13", "requirement": "[Phase 1] Users can mute push notifications per channel; muted channels suppress all push delivery for that user." }
   ],
   "out_of_scope": [
-    "Direct messages (peer-to-peer) — deferred to Phase 2",
-    "Voice or video channels",
-    "Message reactions or emoji responses",
-    "File or image attachments (non-ticker)",
-    "Private (invite-only) channels",
-    "Message threads or replies",
-    "Per-channel notification preferences",
-    "Web platform support (iOS and Android only at launch)"
+    "Live ticker card sharing and push notifications — Phase 1 (after MVP channel and messaging foundation is validated)",
+    "Direct messages (peer-to-peer) — Phase 2",
+    "Message threading or reply chains — Phase 2",
+    "Message reactions or emoji responses — Phase 2",
+    "Content moderation automation — Phase 2 (Phase 1 uses human review queue for flagged content)",
+    "Web platform support — Phase 2",
+    "Voice or video channels — not planned",
+    "File or image attachments (non-ticker) — not planned",
+    "Private (invite-only) channels — not planned for MVP or Phase 1"
   ],
   "open_questions": [
     { "id": 1, "type": "Risk", "description": "MiFID II Article 16 scope — does general channel discussion meet the 'related to a transaction' threshold requiring 7-year retention?", "impact": "High", "owner": "Legal", "status": "Open" },

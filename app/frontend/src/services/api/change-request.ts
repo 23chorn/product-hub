@@ -79,4 +79,11 @@ export const changeRequestApi = {
     });
     return response.data;
   },
+
+  async figmaComplete(checkpointId: number) {
+    const response = await axios.post(`${API_BASE_URL}/api/workflow/checkpoint/figma-complete`, {
+      checkpointId,
+    });
+    return response.data;
+  },
 };

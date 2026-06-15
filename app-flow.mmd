@@ -15,28 +15,28 @@ flowchart TD
     end
 
     %% ── COORDINATOR ────────────────────────────────────────────────────────
-    ITEM --> COORD[Coordinator Agent\n'Chief of Staff']
+    ITEM --> COORD[Coordinator Agent\nChief of Staff]
     CTX -->|all context files| COORD
-    COORD -->|COORDINATOR_READY +\nenriched context JSON| PLAN{PM reviews\nstage plan}
+    COORD -->|COORDINATOR_READY + enriched context| PLAN{PM reviews\nstage plan}
     PLAN -->|approve / toggle stages| WF[Workflow created\nstage_sequence locked]
 
     %% ── STAGE 1: ANALYST ───────────────────────────────────────────────────
     WF --> A1[Analyst — Sage\nresearch.template.md]
     CTX --> A1
     A1 -->|analyst JSON artifact| CR1[Inline Critic]
-    CR1 -->|auto-revise ×2 max| A1
+    CR1 -->|auto-revise x2 max| A1
     CR1 -->|approve| CP1{Human\nCheckpoint}
     CP1 -->|edit / save| A1
-    CP1 -->|approve →\nWiki sync| WIKI[(Azure Wiki)]
+    CP1 -->|approve + wiki sync| WIKI[(Azure Wiki)]
 
     %% ── STAGE 2: PM PRD ────────────────────────────────────────────────────
     CP1 --> A2[PM — Rex\nprd.template.md]
     CTX --> A2
     A1 -->|analyst artifact| A2
     A2 -->|prd JSON artifact| CR2[Inline Critic]
-    CR2 -->|auto-revise ×2 max| A2
+    CR2 -->|auto-revise x2 max| A2
     CR2 -->|approve| CP2{Human\nCheckpoint}
-    CP2 -->|approve →\nWiki sync| WIKI
+    CP2 -->|approve + wiki sync| WIKI
 
     %% ── STAGE 3: ARCHITECT (optional) ──────────────────────────────────────
     CP2 --> A3[Architect — Atlas\narchitecture.template.md]
@@ -44,14 +44,14 @@ flowchart TD
     A2 -->|prd artifact| A3
     A3 -->|architecture JSON artifact| CR3[Inline Critic]
     CR3 -->|approve| CP3{Human\nCheckpoint}
-    CP3 -->|approve →\nWiki sync| WIKI
+    CP3 -->|approve + wiki sync| WIKI
 
     %% ── STAGE 4: EPIC FEATURE PLANNER ──────────────────────────────────────
     CP2 --> A4[Epic Feature Planner — Apex\nepic-features.template.md]
-    CP3 -.->|arch artifact\n(if present)| A4
+    CP3 -.->|arch artifact if present| A4
     CTX --> A4
     A2 -->|prd artifact| A4
-    A4 -->|epic_features JSON\nF1 · F2 · F3 shells| CR4[Inline Critic]
+    A4 -->|epic_features JSON - F1 F2 F3 shells| CR4[Inline Critic]
     CR4 -->|approve| CP4{Human\nCheckpoint}
     CP4 -->|approve| ADO_EF[(ADO\nEpic + Feature shells\ncreated)]
 
@@ -64,7 +64,7 @@ flowchart TD
         FINN["Finn — Backend\n(always)"]
         REMI["Remi — Web\n(when web/desktop)"]
         IOS["Cole — iOS\n(when mobile/iOS)"]
-        AND["Cole — Android\n(when mobile/Android)"]
+        ANDCOLE["Cole — Android\n(when mobile/Android)"]
     end
 
     SD1[Story Decomposition F1] --> MAR
@@ -94,7 +94,7 @@ flowchart TD
     ADO_S1 --> IMPL
     ADO_S2 --> IMPL
     ADO_S3 --> IMPL
-    IMPL[(Azure DevOps\nEpic › Features › Stories\n+ Test Plans)]
+    IMPL[(Azure DevOps\nEpic - Features - Stories\n+ Test Plans)]
 
     %% ── STORAGE LAYER ───────────────────────────────────────────────────────
     subgraph STORE["Artifact Storage (transparent to agents)"]

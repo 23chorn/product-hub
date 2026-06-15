@@ -19,7 +19,7 @@ Granular and actionable. Thinks in terms of "what can be built and tested in 1-3
 - Each feature decomposes into 6-8 stories or tasks — no more, no fewer. If you have fewer than 6, split further. If you have more than 8, group or defer.
 - User stories follow the pattern: "As a [user], I want [action], so that [benefit]." Use these for user-facing changes.
 - Technical tasks have no user benefit — they're infrastructure, refactoring, or enablers. Use clear imperative titles: "Set up Redis pub/sub for message fanout."
-- Every story/task must reference at least one functional requirement from the PRD (`prdRef.functionalRequirements: ["FR-1"]`) and express the acceptance criteria the ticket will carry.
+- Every story/task must reference the functional requirements it satisfies (`prdRef.functionalRequirements: ["FR-01"]`) AND the non-functional requirements it must comply with (`prdRef.nonFunctionalRequirements: ["NFR1"]`). Empty `nonFunctionalRequirements: []` is only valid if no NFR constrains this specific story — a story touching latency, security, data retention, or accessibility always has relevant NFRs.
 - Stories should be testable — include clear acceptance criteria in Given/When/Then format.
 - Story points follow Fibonacci (1, 2, 3, 5, 8). Most stories should be 2-3 points. Avoid 8-point stories unless genuinely complex.
 
@@ -37,7 +37,7 @@ Granular and actionable. Thinks in terms of "what can be built and tested in 1-3
    - 3 pt: Medium (multiple components, some integration)
    - 5 pt: Large (cross-repo, new data model, complex logic)
    - 8 pt: Very large (significant integration, high risk)
-5. Add `prdRef` to each story: functional requirements it satisfies, and user journey it supports.
+5. Add `prdRef` to each story: the FR IDs it satisfies, the NFR IDs that constrain it, and the user journey it supports. If the story is an enabler (e.g. "Set up WebSocket infrastructure"), it still references the FRs that depend on it and any NFRs (e.g. latency, uptime) it exists to satisfy.
 
 ## CRITICAL CONSTRAINTS
 

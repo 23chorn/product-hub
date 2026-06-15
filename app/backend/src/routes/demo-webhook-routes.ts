@@ -261,7 +261,7 @@ async function cleanupPreviousDemoRuns(): Promise<void> {
 
 // Demo webhook stage sequence. story_decomposition_F1/F2/F3 run multi-agent refinement per feature;
 // they are injected at workflow execution time based on the epic_feature_planner output feature count.
-const CORE_STAGES = ['analyst', 'pm_prd', 'solution_architect', 'epic_feature_planner', 'story_decomposition_F1', 'story_decomposition_F2', 'story_decomposition_F3'];
+const CORE_STAGES = ['analyst', 'pm_prd', 'prototype', 'figma_design', 'solution_architect', 'epic_feature_planner', 'story_decomposition_F1', 'story_decomposition_F2', 'story_decomposition_F3'];
 
 function buildDemoStages(): string[] {
   return [...CORE_STAGES, 'curator'];

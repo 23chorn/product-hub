@@ -9,6 +9,7 @@ import { CriticQuestionForm, CriticIssuesPanel } from './CriticQuestionForm';
 import { STAGE_LABELS } from '../../constants/stage-labels';
 import { tryParseBacklog } from '../../utils/backlog-helpers';
 import { BacklogView } from './BacklogView';
+import { EpicFeaturesView, tryParseEpicFeatures } from './EpicFeaturesView';
 import { QATestsView, tryParseQATests } from './QATestsView';
 import { TechRefinementView, tryParseTechRefinement } from './TechRefinementView';
 import { extractPersonas, PersonaPanel } from './PersonaPanel';
@@ -77,6 +78,22 @@ export function ArtifactViewer() {
   }, [viewingArtifactId]);
 
   if (!viewingArtifactId) return null;
+
+  async function figmaComplete() {
+    if (!pendingCheckpoint || !activeWorkflow) return;
+    setResolveLoading(true);
+    setError(null);
+    try {
+      const result = await api.figmaComplete(pendingCheckpoint.id);
+      applyWorkflowStatus(result.workflow);
+      addCoordinatorMessage({ role: 'coordinator', content: 'Figma mockups marked complete. Syncing latest frame data and advancing to the next stage.', timestamp: Date.now() });
+      setViewingArtifactId(null);
+    } catch (err: any) {
+      setError(err.response?.data?.error ?? err.message ?? 'Failed to mark Figma complete');
+    } finally {
+      setResolveLoading(false);
+    }
+  }
 
   async function resolve(status: 'approved' | 'rejected' | 'revised', fb?: string) {
     if (!pendingCheckpoint || !activeWorkflow) return;
@@ -368,7 +385,8 @@ export function ArtifactViewer() {
 
           {/* Content */}
           {(() => {
-            const backlogData = content && (artifactType === 'backlog' || artifactType === 'epic_features') ? tryParseBacklog(content) : null;
+            const epicFeaturesData = content && artifactType === 'epic_features' ? tryParseEpicFeatures(content) : null;
+            const backlogData = content && artifactType === 'backlog' ? tryParseBacklog(content) : null;
             const techData = content && artifactType === 'backlog' && !backlogData ? tryParseTechRefinement(content) : null;
             const showPersonaPanel = isFullscreen && backlogData && extractPersonas(backlogData).length > 0;
 
@@ -387,12 +405,13 @@ export function ArtifactViewer() {
                         spellCheck={false}
                       />
                     ) : content ? (() => {
+                      if (epicFeaturesData) return <EpicFeaturesView data={epicFeaturesData} />;
                       if (backlogData) return <BacklogView data={backlogData} />;
                       if (techData) return <TechRefinementView data={techData} />;
                       const qaData = artifactType === 'qa_tests' ? tryParseQATests(content) : null;
                       if (qaData) return <QATestsView data={qaData} />;
                       // JSON artifact types that failed to parse — render as code block with warning
-                      if (artifactType === 'qa_tests' || artifactType === 'backlog' || artifactType === 'epic_features') {
+                      if (artifactType === 'qa_tests' || artifactType === 'backlog') {
                         return (
                           <div className="space-y-3">
                             <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
@@ -561,6 +580,28 @@ export function ArtifactViewer() {
                       className="py-2 px-3 text-sm text-slate-500 hover:text-slate-700 transition-colors"
                     >
                       Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : hasApprovePermission && pendingCheckpoint.stage === 'figma_design' && !showSidePanel ? (
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Review and edit the mockups in Figma, then mark complete to sync and advance the workflow.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={figmaComplete}
+                      disabled={resolveLoading}
+                      className="flex-1 py-2 px-3 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 text-white text-sm font-medium rounded-lg transition-colors"
+                    >
+                      {resolveLoading ? 'Syncing Figma...' : 'Mark Figma Complete'}
+                    </button>
+                    <button
+                      onClick={() => setShowRejectConfirm(true)}
+                      disabled={resolveLoading}
+                      className="py-2 px-3 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 text-red-700 dark:text-red-400 text-sm font-medium rounded-lg transition-colors"
+                    >
+                      Reject
                     </button>
                   </div>
                 </div>

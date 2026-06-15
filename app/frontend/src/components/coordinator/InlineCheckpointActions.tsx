@@ -39,6 +39,21 @@ export function InlineCheckpointActions({
     }
   }
 
+  async function figmaComplete() {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api.figmaComplete(checkpoint.id);
+      onResolved({ ...result, status: 'approved' });
+    } catch (err: any) {
+      setError(err.response?.data?.error ?? err.message ?? 'Failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const isFigmaDesign = checkpoint.stage === 'figma_design';
+
   if (!hasPermission) {
     const roleLabels = requiredRoles.map(r => ROLE_LABELS[r] ?? r);
     return (
@@ -97,6 +112,28 @@ export function InlineCheckpointActions({
             </div>
           </div>
         )
+      ) : isFigmaDesign ? (
+        <div className="space-y-2">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Review the Figma mockups, make your edits in Figma, then mark complete to advance the workflow.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={figmaComplete}
+              disabled={loading}
+              className="text-xs px-3 py-1.5 rounded-md bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white font-medium transition-colors"
+            >
+              {loading ? 'Syncing Figma...' : 'Mark Figma Complete'}
+            </button>
+            <button
+              onClick={() => setShowRejectConfirm(true)}
+              disabled={loading}
+              className="text-xs px-2.5 py-1 rounded-md border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+            >
+              Reject
+            </button>
+          </div>
+        </div>
       ) : (
         <div className="flex items-center gap-2">
           <span className="text-xs text-slate-400 dark:text-slate-500 mr-1">
