@@ -56,4 +56,12 @@ export const usersApi = {
   async setStageRole(stage: string, role_name: string): Promise<void> {
     await axios.put(`${API_BASE_URL}/api/users/stage-roles`, { stage, role_name });
   },
+
+  async addStageRole(stage: string, role_name: string): Promise<void> {
+    await axios.post(`${API_BASE_URL}/api/users/stage-roles`, { stage, role_name });
+  },
+
+  async removeStageRole(stage: string, role_name: string): Promise<void> {
+    await axios.delete(`${API_BASE_URL}/api/users/stage-roles`, { data: { stage, role_name } });
+  },
 };

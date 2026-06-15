@@ -41,6 +41,7 @@ export interface CheckpointRow {
   token_usage: string | null;       // JSON: StageTokenData
   required_role: string | null;     // role name required to approve
   resolved_by_user_id: number | null;
+  resolved_by_name: string | null;
   created_at: number;
   resolved_at: number | null;
 }
@@ -137,9 +138,13 @@ export const stmts = {
   updateCheckpoint: db.prepare(`
     UPDATE checkpoints SET status = ?, human_feedback = ?, coordinator_action = ?, resolved_at = ? WHERE id = ?
   `),
-  getCheckpointsByWorkflow: db.prepare<[string], CheckpointRow>(
-    'SELECT * FROM checkpoints WHERE workflow_id = ? ORDER BY created_at ASC'
-  ),
+  getCheckpointsByWorkflow: db.prepare<[string], CheckpointRow>(`
+    SELECT c.*, u.name AS resolved_by_name
+    FROM checkpoints c
+    LEFT JOIN users u ON u.id = c.resolved_by_user_id
+    WHERE c.workflow_id = ?
+    ORDER BY c.created_at ASC
+  `),
   getPendingCheckpointForStage: db.prepare<[string, string], { id: number }>(`
     SELECT id FROM checkpoints WHERE workflow_id = ? AND stage = ? AND status = 'pending'
     ORDER BY created_at DESC LIMIT 1
@@ -166,11 +171,27 @@ export const eventStmts = {
 
 // ── Helper functions ───────────────────────────────────────────────────────────
 
-export function getStageRole(stage: string): string | null {
-  const row = db.prepare<[string], { role_name: string }>(
-    'SELECT role_name FROM stage_roles WHERE stage = ? LIMIT 1'
-  ).get(stage);
-  return row?.role_name ?? null;
+export function getStageRoles(stage: string): string[] {
+  return db.prepare<[string], { role_name: string }>(
+    'SELECT role_name FROM stage_roles WHERE stage = ?'
+  ).all(stage).map(r => r.role_name);
+}
+
+/** Serialize stage roles to a JSON string for storage in checkpoints.required_role. Returns null if no roles configured. */
+export function rolesJson(stage: string): string | null {
+  const roles = getStageRoles(stage);
+  return roles.length > 0 ? JSON.stringify(roles) : null;
+}
+
+/** Parse required_role from a checkpoint row — handles both JSON arrays and legacy plain strings. */
+export function parseRoles(val: string | null | undefined): string[] {
+  if (!val) return [];
+  try {
+    const parsed = JSON.parse(val);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return [val];
+  }
 }
 
 export function insertEvent(

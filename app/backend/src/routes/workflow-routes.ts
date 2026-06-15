@@ -25,7 +25,7 @@ import {
   type ChangeRequestRow,
 } from '../agents/change-request';
 import db from '../data/database';
-import { insertEvent } from '../agents/workflow-db';
+import { insertEvent, parseRoles } from '../agents/workflow-db';
 import { resolveArtifactPath, loadArtifactContentById, updateArtifactContent, syncArtifactToWiki } from '../agents/artifact-helpers';
 import Logger from '../utils/logger';
 import { isDemoMode } from '../demo/demo-mode';
@@ -207,11 +207,14 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
     if (cpRow.status !== 'pending') return res.status(409).json({ error: 'Checkpoint is not pending' });
     const workflowId = cpRow.workflow_id;
 
+    // Parse required roles — stored as JSON array, with backward-compat for plain strings
+    const requiredRoles = parseRoles(cpRow.required_role);
+
     // Role-based permission check
-    if (!canApproveCheckpoint(req.user, cpRow.required_role)) {
+    if (!canApproveCheckpoint(req.user, requiredRoles)) {
       return res.status(403).json({
-        error: `This stage requires the "${cpRow.required_role}" role to approve`,
-        required_role: cpRow.required_role,
+        error: `This stage requires one of the following roles to approve: ${requiredRoles.join(', ')}`,
+        required_roles: requiredRoles,
         code: 'INSUFFICIENT_ROLE',
       });
     }

@@ -38,13 +38,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   stopImpersonating: () => set({ user: get().realUser, impersonating: false }),
 }));
 
-/** Returns true if the current user can approve a checkpoint with the given required_role. */
-export function canApprove(user: CurrentUser | null, noAuth: boolean, requiredRole: string | null): boolean {
+/** Parse required_role from a checkpoint — handles JSON arrays and legacy plain strings. */
+export function parseRequiredRoles(val: string | null | undefined): string[] {
+  if (!val) return [];
+  try {
+    const parsed = JSON.parse(val);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return [val];
+  }
+}
+
+/** Returns true if the current user can approve a checkpoint with the given required roles. */
+export function canApprove(user: CurrentUser | null, noAuth: boolean, requiredRoles: string[]): boolean {
   if (noAuth) return true;
   if (!user) return false;
   if (user.is_admin) return true;
-  if (!requiredRole) return true;
-  return user.roles.includes(requiredRole);
+  if (requiredRoles.length === 0) return true;
+  return requiredRoles.some(r => user.roles.includes(r));
 }
 
 export const ROLE_LABELS: Record<string, string> = {

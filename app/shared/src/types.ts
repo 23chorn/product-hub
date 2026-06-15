@@ -168,8 +168,8 @@ export interface QuickItem {
 // Specialist Agent Types
 // ============================================
 
-export type AppMode = 'prd' | 'backlog' | 'analyst' | 'epic_features' | 'architecture' | 'decision-log' | 'context' | 'prototype' | 'qa' | 'tech_refinement';
-export type AgentType = 'pm' | 'analyst' | 'epic-feature-planner' | 'architect' | 'story-decomposition' | 'decision-log' | 'context-keeper' | 'prototype-builder' | 'qa-engineer' | 'tech-refinement' | 'backend-engineer' | 'web-engineer' | 'ios-engineer' | 'android-engineer';
+export type AppMode = 'prd' | 'backlog' | 'analyst' | 'epic_features' | 'architecture' | 'decision-log' | 'context' | 'prototype' | 'qa' | 'tech_refinement' | 'figma_design';
+export type AgentType = 'pm' | 'analyst' | 'epic-feature-planner' | 'architect' | 'story-decomposition' | 'decision-log' | 'context-keeper' | 'prototype-builder' | 'qa-engineer' | 'tech-refinement' | 'backend-engineer' | 'web-engineer' | 'ios-engineer' | 'android-engineer' | 'figma-designer';
 
 
 // ============================================
@@ -365,6 +365,7 @@ export interface Checkpoint {
   status: CheckpointStatus;
   human_feedback: string | null;
   coordinator_action: string | null;  // JSON blob — parse with JSON.parse()
+  required_role: string | null;       // JSON array string e.g. '["product","tech_lead"]', or null
   created_at: number;
   resolved_at: number | null;
 }

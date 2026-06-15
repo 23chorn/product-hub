@@ -137,11 +137,11 @@ const stmts = {
   `),
 };
 
-function getStageRole(stage: string): string | null {
-  const row = db.prepare<[string], { role_name: string }>(
-    'SELECT role_name FROM stage_roles WHERE stage = ? LIMIT 1'
-  ).get(stage);
-  return row?.role_name ?? null;
+function rolesJson(stage: string): string | null {
+  const rows = db.prepare<[string], { role_name: string }>(
+    'SELECT role_name FROM stage_roles WHERE stage = ?'
+  ).all(stage);
+  return rows.length > 0 ? JSON.stringify(rows.map(r => r.role_name)) : null;
 }
 
 // ── Workflow event logging ────────────────────────────────────────────────────
@@ -397,7 +397,7 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
     }
 
     // Default: pause at checkpoint for human review
-    stmts.insertCheckpoint.run(workflowId, nextStage, null, 'pending', coordinatorAction, getStageRole(nextStage), now);
+    stmts.insertCheckpoint.run(workflowId, nextStage, null, 'pending', coordinatorAction, rolesJson(nextStage), now);
     stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
 
     if (review.verdict === 'approve') {
@@ -550,7 +550,7 @@ No changes needed to tech-stack.md or process.md — those remain accurate as wr
           stmts.insertCheckpoint.run(
             workflowId, nextStage, null, 'pending',
             JSON.stringify({ error: err.message, autonomous: true, safety_net: true }),
-            getStageRole(nextStage), now
+            rolesJson(nextStage), now
           );
           stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
           logger.info(`Safety net: created error checkpoint for stuck workflow ${workflowId}`);
@@ -604,7 +604,7 @@ export function completeStage(workflowId: string): void {
     artifactRow?.id ?? null,
     'pending',
     sessionId ? JSON.stringify({ session_id: sessionId }) : null,
-    getStageRole(workflow.current_stage),
+    rolesJson(workflow.current_stage),
     now
   );
   stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
@@ -647,7 +647,7 @@ export function pauseAtCheckpoint(
   const result = stmts.insertCheckpoint.run(
     workflowId, stage, artifactId ?? null, 'pending',
     Object.keys(coordinatorAction).length > 0 ? JSON.stringify(coordinatorAction) : null,
-    getStageRole(stage), now
+    rolesJson(stage), now
   );
 
   stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);

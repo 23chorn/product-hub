@@ -3,7 +3,7 @@ import { STAGE_LABELS } from '../../constants/stage-labels';
 import { parseCriticData } from '../../utils/coordinator-helpers';
 import { CriticQuestionForm } from '../artifact/CriticQuestionForm';
 import { api } from '../../services/api';
-import { useAuthStore, canApprove, ROLE_LABELS } from '../../stores/authStore';
+import { useAuthStore, canApprove, parseRequiredRoles, ROLE_LABELS } from '../../stores/authStore';
 
 // Inline approve/reject for checkpoints that have no artifact (e.g. stuck stages)
 export function InlineCheckpointActions({
@@ -13,6 +13,7 @@ export function InlineCheckpointActions({
   checkpoint: { id: number; stage: string; coordinator_action?: string | null; required_role?: string | null };
   onResolved: (result: any) => void;
 }) {
+  const requiredRoles = parseRequiredRoles(checkpoint.required_role);
   const [showRevise, setShowRevise] = useState(false);
   const [showRejectConfirm, setShowRejectConfirm] = useState(false);
   const [feedback, setFeedback] = useState('');
@@ -20,7 +21,7 @@ export function InlineCheckpointActions({
   const [error, setError] = useState<string | null>(null);
 
   const { user, noAuth } = useAuthStore();
-  const hasPermission = canApprove(user, noAuth, checkpoint.required_role ?? null);
+  const hasPermission = canApprove(user, noAuth, requiredRoles);
 
   const criticData = parseCriticData(checkpoint);
   const hasQuestions = (criticData?.questions?.length ?? 0) > 0;
@@ -39,14 +40,24 @@ export function InlineCheckpointActions({
   }
 
   if (!hasPermission) {
-    const roleLabel = checkpoint.required_role ? (ROLE_LABELS[checkpoint.required_role] ?? checkpoint.required_role) : null;
+    const roleLabels = requiredRoles.map(r => ROLE_LABELS[r] ?? r);
     return (
       <div className="pt-2">
         <div className="flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500">
           <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
           </svg>
-          <span>Approval requires {roleLabel ? <strong className="text-slate-300">{roleLabel}</strong> : 'a specific role'}</span>
+          <span>
+            Approval requires{' '}
+            {roleLabels.length > 0
+              ? roleLabels.map((label, i) => (
+                  <span key={label}>
+                    {i > 0 && <span className="text-slate-500"> or </span>}
+                    <strong className="text-slate-300">{label}</strong>
+                  </span>
+                ))
+              : 'a specific role'}
+          </span>
         </div>
       </div>
     );

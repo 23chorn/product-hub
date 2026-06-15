@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import {
   listUsers, createUser, updateUser, deleteUser,
-  getAvailableRoles, getStageRoles, setStageRole,
+  getAvailableRoles, getStageRoles, setStageRole, addStageRole, removeStageRole,
 } from '../data/users';
 import { authMiddleware, requireAdmin } from '../middleware/auth';
 import type { AuthRequest } from '../middleware/auth';
@@ -65,11 +65,27 @@ router.get('/stage-roles', (_req: AuthRequest, res: Response) => {
   res.json({ stageRoles: getStageRoles() });
 });
 
-/** PUT /api/users/stage-roles — update a stage → role mapping */
+/** PUT /api/users/stage-roles — add a role to a stage (alias for POST, kept for backward compat) */
 router.put('/stage-roles', (req: AuthRequest, res: Response) => {
   const { stage, role_name } = req.body as { stage?: string; role_name?: string };
   if (!stage || !role_name) return res.status(400).json({ error: 'stage and role_name are required' });
-  setStageRole(stage, role_name);
+  addStageRole(stage, role_name);
+  res.json({ ok: true });
+});
+
+/** POST /api/users/stage-roles — add a role to a stage */
+router.post('/stage-roles', (req: AuthRequest, res: Response) => {
+  const { stage, role_name } = req.body as { stage?: string; role_name?: string };
+  if (!stage || !role_name) return res.status(400).json({ error: 'stage and role_name are required' });
+  addStageRole(stage, role_name);
+  res.json({ ok: true });
+});
+
+/** DELETE /api/users/stage-roles — remove a role from a stage */
+router.delete('/stage-roles', (req: AuthRequest, res: Response) => {
+  const { stage, role_name } = req.body as { stage?: string; role_name?: string };
+  if (!stage || !role_name) return res.status(400).json({ error: 'stage and role_name are required' });
+  removeStageRole(stage, role_name);
   res.json({ ok: true });
 });
 

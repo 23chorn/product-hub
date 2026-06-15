@@ -79,15 +79,15 @@ export function requireAdmin(req: AuthRequest, res: Response, next: NextFunction
 }
 
 /**
- * Check whether the current user can approve a checkpoint with the given required_role.
- * Returns true if: no-auth mode, admin, no role required, or user has the required role.
+ * Check whether the current user can approve a checkpoint with the given required roles.
+ * Returns true if: no-auth mode, admin, no roles required, or user has any of the required roles.
  */
-export function canApproveCheckpoint(user: User | undefined, requiredRole: string | null): boolean {
-  if (!hasAnyUsers()) return true;       // no-auth mode
+export function canApproveCheckpoint(user: User | undefined, requiredRoles: string[]): boolean {
+  if (!hasAnyUsers()) return true;
   if (!user) return false;
-  if (user.is_admin) return true;        // admin can approve anything
-  if (!requiredRole) return true;        // no role required
-  return user.roles.includes(requiredRole);
+  if (user.is_admin) return true;
+  if (requiredRoles.length === 0) return true;
+  return requiredRoles.some(r => user.roles.includes(r));
 }
 
 export { JWT_SECRET, COOKIE_NAME };

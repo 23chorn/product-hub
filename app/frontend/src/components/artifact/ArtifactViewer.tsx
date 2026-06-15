@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useWorkflowStore } from '../../stores/workflowStore';
 import { useConfigStore } from '../../stores/configStore';
-import { useAuthStore, canApprove, ROLE_LABELS } from '../../stores/authStore';
+import { useAuthStore, canApprove, parseRequiredRoles, ROLE_LABELS } from '../../stores/authStore';
 import { api } from '../../services/api';
 import { CriticQuestionForm, CriticIssuesPanel } from './CriticQuestionForm';
 import { STAGE_LABELS } from '../../constants/stage-labels';
@@ -45,7 +45,7 @@ export function ArtifactViewer() {
     c => c.status === 'pending' && c.artifact_id === viewingArtifactId
   );
 
-  const hasApprovePermission = canApprove(user, noAuth, pendingCheckpoint?.required_role ?? null);
+  const hasApprovePermission = canApprove(user, noAuth, parseRequiredRoles(pendingCheckpoint?.required_role));
 
   useEffect(() => {
     if (!viewingArtifactId) { setContent(null); setError(null); setVersionInfo(null); return; }
@@ -170,6 +170,11 @@ export function ArtifactViewer() {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [isEditing, isDirty, isSaving, handleSave]);
+
+  // Find the approved checkpoint for this artifact (for the "Approved by" note)
+  const approvedCheckpoint = !pendingCheckpoint
+    ? checkpoints.find(c => c.artifact_id === viewingArtifactId && c.status === 'approved')
+    : null;
 
   // Parse critic data from the checkpoint associated with this artifact (pending or approved)
   const artifactCheckpoint = pendingCheckpoint
@@ -489,6 +494,24 @@ export function ArtifactViewer() {
                   Cancel
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* Approved-by note (shown when this artifact's checkpoint is already approved) */}
+          {approvedCheckpoint && !isEditing && (
+            <div className={`px-4 pb-3 pt-3 border-t border-slate-200 dark:border-slate-700 flex-shrink-0 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 ${isFullscreen ? 'mx-auto w-full max-w-4xl' : ''}`}>
+              <svg className="w-3.5 h-3.5 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              <span>
+                Approved
+                {approvedCheckpoint.resolved_by_name && (
+                  <> by <strong className="text-slate-700 dark:text-slate-300">{approvedCheckpoint.resolved_by_name}</strong></>
+                )}
+                {approvedCheckpoint.resolved_at && (
+                  <> · {new Date(approvedCheckpoint.resolved_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</>
+                )}
+              </span>
             </div>
           )}
 

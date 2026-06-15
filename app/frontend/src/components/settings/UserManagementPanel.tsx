@@ -30,7 +30,7 @@ export function UserManagementPanel() {
   const toast = useToast();
   const [tab, setTab] = useState<Tab>('users');
   const [users, setUsers] = useState<CurrentUser[]>([]);
-  const [stageRoles, setStageRoles] = useState<Record<string, string>>({});
+  const [stageRoles, setStageRoles] = useState<Record<string, string[]>>({});
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<UserFormData>(blankForm());
   const [showNewForm, setShowNewForm] = useState(false);
@@ -46,8 +46,11 @@ export function UserManagementPanel() {
   async function loadStageRoles() {
     try {
       const data = await api.getStageRoles();
-      const map: Record<string, string> = {};
-      for (const sr of data.stageRoles) map[sr.stage] = sr.role_name;
+      const map: Record<string, string[]> = {};
+      for (const sr of data.stageRoles) {
+        if (!map[sr.stage]) map[sr.stage] = [];
+        map[sr.stage].push(sr.role_name);
+      }
       setStageRoles(map);
     } catch { /* */ }
   }
@@ -106,13 +109,25 @@ export function UserManagementPanel() {
     }
   }
 
-  async function updateStageRole(stage: string, role: string) {
+  async function addStageRole(stage: string, role: string) {
+    if (!role) return;
+    if ((stageRoles[stage] ?? []).includes(role)) return;
     try {
-      await api.setStageRole(stage, role);
-      setStageRoles(prev => ({ ...prev, [stage]: role }));
-      toast.success(`${stage} → ${ROLE_LABELS[role] ?? role}`);
+      await api.addStageRole(stage, role);
+      setStageRoles(prev => ({ ...prev, [stage]: [...(prev[stage] ?? []), role] }));
+      toast.success(`Added ${ROLE_LABELS[role] ?? role} to ${STAGE_LABELS_MAP[stage] ?? stage}`);
     } catch (err: any) {
-      toast.error(err.response?.data?.error ?? 'Failed to update stage role');
+      toast.error(err.response?.data?.error ?? 'Failed to add role');
+    }
+  }
+
+  async function removeStageRole(stage: string, role: string) {
+    try {
+      await api.removeStageRole(stage, role);
+      setStageRoles(prev => ({ ...prev, [stage]: (prev[stage] ?? []).filter(r => r !== role) }));
+      toast.success(`Removed ${ROLE_LABELS[role] ?? role} from ${STAGE_LABELS_MAP[stage] ?? stage}`);
+    } catch (err: any) {
+      toast.error(err.response?.data?.error ?? 'Failed to remove role');
     }
   }
 
@@ -202,23 +217,51 @@ export function UserManagementPanel() {
       {tab === 'stage_roles' && (
         <div className="space-y-2">
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Assign which role must approve each stage. Users with that role will receive Slack notifications and can take approval actions.
+            Assign which roles can approve each stage. Any user with at least one of the assigned roles can approve. Users with those roles receive Slack notifications.
           </p>
-          {STAGE_ROLE_STAGES.map(stage => (
-            <div key={stage} className="flex items-center justify-between gap-3 py-2 border-b border-slate-200 dark:border-slate-700 last:border-0">
-              <span className="text-xs text-slate-700 dark:text-slate-300">{STAGE_LABELS_MAP[stage] ?? stage}</span>
-              <select
-                value={stageRoles[stage] ?? ''}
-                onChange={e => updateStageRole(stage, e.target.value)}
-                className="text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md px-2 py-1 text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-teal-500"
-              >
-                <option value="">— none —</option>
-                {ALL_ROLES.map(r => (
-                  <option key={r} value={r}>{ROLE_LABELS[r]}</option>
-                ))}
-              </select>
-            </div>
-          ))}
+          {STAGE_ROLE_STAGES.map(stage => {
+            const assigned = stageRoles[stage] ?? [];
+            const available = ALL_ROLES.filter(r => !assigned.includes(r));
+            return (
+              <div key={stage} className="py-2 border-b border-slate-200 dark:border-slate-700 last:border-0">
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <span className="text-xs text-slate-700 dark:text-slate-300">{STAGE_LABELS_MAP[stage] ?? stage}</span>
+                  {available.length > 0 && (
+                    <select
+                      value=""
+                      onChange={e => { if (e.target.value) addStageRole(stage, e.target.value); }}
+                      className="text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md px-2 py-1 text-slate-500 dark:text-slate-400 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                    >
+                      <option value="">+ add role</option>
+                      {available.map(r => (
+                        <option key={r} value={r}>{ROLE_LABELS[r]}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {assigned.length === 0 && (
+                    <span className="text-[11px] text-slate-400 dark:text-slate-600 italic">no roles — anyone can approve</span>
+                  )}
+                  {assigned.map(role => (
+                    <span
+                      key={role}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300"
+                    >
+                      {ROLE_LABELS[role] ?? role}
+                      <button
+                        onClick={() => removeStageRole(stage, role)}
+                        className="text-teal-500 hover:text-teal-700 dark:hover:text-teal-100 leading-none"
+                        title="Remove"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

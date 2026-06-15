@@ -8,6 +8,13 @@
       "when": 1749936000000,
       "tag": "0001_initial",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1750000000000,
+      "tag": "0002_multi_role_stages",
+      "breakpoints": true
     }
   ]
 }

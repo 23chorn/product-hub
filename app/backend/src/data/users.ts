@@ -171,7 +171,15 @@ export function getStageRoles(): Array<{ stage: string; role_name: string }> {
 }
 
 export function setStageRole(stage: string, roleName: string): void {
-  db.prepare('INSERT OR REPLACE INTO stage_roles (stage, role_name) VALUES (?, ?)').run(stage, roleName);
+  db.prepare('INSERT OR IGNORE INTO stage_roles (stage, role_name) VALUES (?, ?)').run(stage, roleName);
+}
+
+export function addStageRole(stage: string, roleName: string): void {
+  db.prepare('INSERT OR IGNORE INTO stage_roles (stage, role_name) VALUES (?, ?)').run(stage, roleName);
+}
+
+export function removeStageRole(stage: string, roleName: string): void {
+  db.prepare('DELETE FROM stage_roles WHERE stage = ? AND role_name = ?').run(stage, roleName);
 }
 
 export function getAvailableRoles(): Array<{ id: number; name: string; description: string | null }> {

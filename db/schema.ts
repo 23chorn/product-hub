@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey } from 'drizzle-orm/sqlite-core';
 
 // ── Core work items ───────────────────────────────────────────────────────────
 
@@ -118,9 +118,11 @@ export const userRoles = sqliteTable('user_roles', {
 ]);
 
 export const stageRoles = sqliteTable('stage_roles', {
-  stage:     text('stage').primaryKey(),
+  stage:     text('stage').notNull(),
   role_name: text('role_name').notNull(),
-});
+}, (t) => [
+  primaryKey({ columns: [t.stage, t.role_name] }),
+]);
 
 // ── Workflows ─────────────────────────────────────────────────────────────────
 

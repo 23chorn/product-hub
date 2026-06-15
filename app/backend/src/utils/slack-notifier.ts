@@ -57,17 +57,17 @@ function post(payload: object): void {
 function buildMentions(stage: string): string {
   if (!hasAnyUsers()) return '';
   try {
-    // Look up which role owns this stage
-    const stageRole = db.prepare<[string], { role_name: string }>(
-      'SELECT role_name FROM stage_roles WHERE stage = ? LIMIT 1'
-    ).get(stage);
+    const stageRoles = db.prepare<[string], { role_name: string }>(
+      'SELECT role_name FROM stage_roles WHERE stage = ?'
+    ).all(stage);
 
-    const users = stageRole?.role_name
-      ? getUsersByRole(stageRole.role_name)
+    const users = stageRoles.length > 0
+      ? stageRoles.flatMap(({ role_name }) => getUsersByRole(role_name))
       : getAdminUsers();
 
+    const seen = new Set<string>();
     const mentions = users
-      .filter(u => u.slack_user_id)
+      .filter(u => u.slack_user_id && !seen.has(u.slack_user_id) && seen.add(u.slack_user_id!))
       .map(u => `<@${u.slack_user_id}>`)
       .join(' ');
 

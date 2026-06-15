@@ -11,10 +11,12 @@
  */
 
 import { logger, insertEvent, touchWorkflow } from './workflow-db';
-import { getDemoFixture } from '../demo/demo-mode';
+import { getDemoFixture, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
 import { loadLatestArtifactContent } from './artifact-helpers';
 import { SpecialistAgent } from './specialist-agent';
 import type { AgentType } from '@pap/shared';
+import * as fs from 'fs';
+import * as path from 'path';
 import db from '../data/database';
 
 interface RefinementParticipant {
@@ -77,6 +79,13 @@ function resolveRefinementParticipants(itemId: string): RefinementParticipant[] 
   }
 }
 
+export interface RefinementResult {
+  /** Backlog JSON for this feature — accumulated with prior features and saved as the checkpoint artifact. */
+  backlog: string;
+  /** Standalone QA test suite JSON for this feature — saved as a separate artifact for the QA engineer. */
+  qaTests: string;
+}
+
 /**
  * Run a multi-agent collaborative story refinement session for a single feature.
  *
@@ -84,14 +93,14 @@ function resolveRefinementParticipants(itemId: string): RefinementParticipant[] 
  * @param itemId - The initiative ID
  * @param stage - The stage name (e.g., 'story_decomposition_F1')
  * @param featureIndex - 0-based feature index
- * @returns Combined artifact content (backlog JSON + embedded test cases)
+ * @returns RefinementResult with backlog JSON and standalone QA test suite JSON
  */
 export async function runMultiAgentRefinement(
   workflowId: string,
   itemId: string,
   stage: string,
   featureIndex: number
-): Promise<string> {
+): Promise<RefinementResult> {
   const featureNum = featureIndex + 1;
   logger.info(`[MULTI-AGENT] Starting collaborative refinement for Feature ${featureNum} (stage: ${stage})`);
 
@@ -109,9 +118,13 @@ export async function runMultiAgentRefinement(
 
     if (fixture) {
       logger.info(`[MULTI-AGENT] Demo fixture found for ${stage} (${fixture.length} chars) — skipping LLM calls`);
+      const demoParticipantNames = resolveRefinementParticipants(itemId).map(p => p.name).join(', ');
       insertEvent(workflowId, 'stage_progress', stage,
-        `Demo fixture loaded for Feature ${featureNum} — multi-agent refinement skipped in demo mode`);
-      return fixture;
+        `Demo fixture loaded for Feature ${featureNum} — simulating multi-agent refinement`);
+      const delay = DEMO_STAGE_DELAY_MS[stage] ?? 2_000;
+      await demoSleep(delay);
+      const demoQaTests = getDemoQaTestsForFeature(stage, featureNum);
+      return { backlog: fixture, qaTests: demoQaTests };
     }
 
     logger.warn(`[MULTI-AGENT] No demo fixture found for ${stage}, falling back to real workflow`);
@@ -188,12 +201,21 @@ ${archContent ? '(See architecture document below)' : '(No architecture availabl
 
   // ── Phase 3: Synthesize ────────────────────────────────────────────────────
   insertEvent(workflowId, 'stage_progress', stage,
-    `Phase 3: Synthesize — Shard - Product Owner (facilitator) merging all contributions into final backlog...`);
+    `Phase 3: Synthesize — merging backlog and extracting QA test suite in parallel...`);
 
-  const finalArtifact = await synthesizeFinalArtifact(workflowId, stage, featureBrief, refined2);
+  const veraOutputs = {
+    draft:   drafts.get('Vera') ?? '',
+    refine1: refined1.get('Vera') ?? '',
+    refine2: refined2.get('Vera') ?? '',
+  };
 
-  logger.info(`[MULTI-AGENT] Feature ${featureNum} refinement complete (${finalArtifact.length} chars)`);
-  return finalArtifact;
+  const [backlog, qaTests] = await Promise.all([
+    synthesizeFinalArtifact(workflowId, stage, featureBrief, refined2),
+    synthesizeQaArtifact(workflowId, stage, featureBrief, featureNum, veraOutputs, refined2),
+  ]);
+
+  logger.info(`[MULTI-AGENT] Feature ${featureNum} refinement complete — backlog: ${backlog.length} chars, QA tests: ${qaTests.length} chars`);
+  return { backlog, qaTests };
 }
 
 /**
@@ -556,4 +578,132 @@ Merge all contributions into a single JSON artifact following the backlog templa
   }
 
   return finalArtifact.trim();
+}
+
+/**
+ * Load the QA test suite demo fixture filtered to a specific feature number.
+ * Falls back to the full suite if filtering isn't possible.
+ */
+function getDemoQaTestsForFeature(stage: string, featureNum: number): string {
+  const featureKey = `F${featureNum}`;
+  try {
+    // Resolve fixtures dir the same way getDemoFixture does — walk up to find the messaging dir.
+    const fixturesDir = path.join(__dirname, '..', 'demo', 'fixtures', 'messaging');
+    const raw = fs.readFileSync(path.join(fixturesDir, 'qa-tests.json'), 'utf-8');
+    const suite = JSON.parse(raw);
+    const filtered = {
+      ...suite,
+      suite: `${suite.suite} — Feature ${featureNum}`,
+      metadata: { ...suite.metadata, feature: featureKey, stage },
+      test_cases: (suite.test_cases ?? []).filter(
+        (tc: { story_ref?: string; id?: string }) =>
+          (tc.story_ref ?? '').startsWith(featureKey) ||
+          (tc.id ?? '').includes(`-${featureKey}-`)
+      ),
+    };
+    return JSON.stringify(filtered, null, 2);
+  } catch (err: any) {
+    logger.warn(`[MULTI-AGENT] Could not load QA fixture for Feature ${featureNum}: ${err.message}`);
+    return JSON.stringify({ suite: `Feature ${featureNum} QA Tests`, test_cases: [] }, null, 2);
+  }
+}
+
+/**
+ * Phase 3 (parallel): Vera synthesizes her contributions from all refinement rounds
+ * into a standalone QA test suite JSON artifact.
+ */
+async function synthesizeQaArtifact(
+  workflowId: string,
+  stage: string,
+  featureBrief: string,
+  featureNum: number,
+  veraOutputs: { draft: string; refine1: string; refine2: string },
+  refined2: Map<string, string>
+): Promise<string> {
+  const shardFinalStories = refined2.get('Shard - Product Owner') ?? '';
+
+  const synthesisPrompt = `
+${featureBrief}
+
+**Your Contributions Across All Refinement Rounds:**
+
+**Phase 1 — Testability Concerns:**
+${veraOutputs.draft || '(none)'}
+
+---
+
+**Phase 2.1 — AC Review and Sharpening:**
+${veraOutputs.refine1 || '(none)'}
+
+---
+
+**Phase 2.2 — Final Confirmation:**
+${veraOutputs.refine2 || '(none)'}
+
+---
+
+**Shard - Product Owner's Final Story List (your test targets):**
+${shardFinalStories || '(none)'}
+
+---
+
+**Your Task — Produce a Standalone QA Test Suite:**
+Using your testability notes and the finalised story list above, produce a JSON test suite that a QA engineer can use directly to write automated tests.
+
+\`\`\`json
+{
+  "suite": "Feature ${featureNum} — <feature title>",
+  "version": "1.0",
+  "metadata": {
+    "feature_key": "F${featureNum}",
+    "source_stage": "${stage}",
+    "notes": "<summary of testability approach and key concerns>"
+  },
+  "test_cases": [
+    {
+      "id": "TC-F${featureNum}-001",
+      "title": "<what is being verified>",
+      "description": "<why this matters>",
+      "type": "happy_path | error_handling | edge_case | performance | accessibility",
+      "priority": "critical | high | medium | low",
+      "category": "<test category, e.g. Channel Membership>",
+      "story_ref": "F${featureNum}.S1",
+      "scenario": {
+        "given": ["<precondition>"],
+        "when": ["<action>"],
+        "then": ["<expected outcome>"]
+      },
+      "preconditions": ["<required system state before test>"],
+      "test_data": {},
+      "tags": ["@smoke", "@regression"],
+      "automation_notes": "<how to automate this — API mock, UI selector, data setup>"
+    }
+  ]
+}
+\`\`\`
+
+Requirements:
+- Minimum 3 test cases per story; cover at least happy path and one error/edge case
+- Each test_case id must use the pattern TC-F${featureNum}-NNN (three-digit counter)
+- story_ref must match a story_id from the final story list
+- automation_notes must be specific enough for a QA engineer to implement the test
+- Include ONLY the JSON artifact in your response (no explanatory text before or after)
+`;
+
+  const vera = new SpecialistAgent('qa-engineer');
+  const persona = await vera.loadPersona(stage);
+  const systemPrompt = await vera.buildSystemPrompt(persona, undefined, undefined, true, stage);
+
+  let output = '';
+  for await (const chunk of vera.streamResponse(
+    systemPrompt,
+    [{ role: 'user', content: synthesisPrompt }],
+    undefined,
+    undefined,
+    16_000
+  )) {
+    output += chunk;
+  }
+
+  return output.trim();
 }

@@ -30,10 +30,10 @@ import { type ToolDefinition, getRegisteredTools } from './tool-registry';
 import { loadWorkflowArtifacts, loadLocalDesignSystem, loadFigmaDesignSystem, repairTruncatedJson } from './prototype-agent';
 import {
   PROJECT_ROOT, logger, stmts, insertEvent, addWorkflowCost,
-  setCheckpointTokenUsage, loadGlobalPolicies, workflowOps, getStageRole,
+  setCheckpointTokenUsage, loadGlobalPolicies, workflowOps, rolesJson,
   type StageTokenData,
 } from './workflow-db';
-import { isDemoMode, getDemoFixture, getDemoFixtureForTheme, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
+import { isDemoMode, getDemoFixture, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
 import { notifyCheckpointPending } from '../utils/slack-notifier';
 
 // Cancel registry, silent-stage set, and agent singletons live in dedicated
@@ -288,6 +288,24 @@ export async function runAutonomousStage(
       if (designSystem) parts.push(`## Design System\n\n${designSystem}`);
       if (artifacts) parts.push(`## Workflow Artifacts\n\nUse these documents to understand what to prototype:\n\n${artifacts}`);
       if (parts.length > 0) itemContext = parts.join('\n\n---\n\n');
+    } else if (stage === 'figma_design') {
+      // Read design tokens from the Figma design system file via MCP
+      const figma = await loadFigmaDesignSystem((msg) => {
+        insertEvent(workflowId, 'stage_progress', stage, msg.trim());
+      });
+      const designSystem = figma || await loadLocalDesignSystem();
+      // Load PRD and prototype outputs as reference for screen planning
+      const [prdContent, protoContent] = await Promise.all([
+        loadLatestArtifactContent(itemId, 'prd'),
+        loadLatestArtifactContent(itemId, 'prototype'),
+      ]);
+      const parts: string[] = [];
+      if (designSystem) parts.push(`## Design System\n\n${designSystem}`);
+      if (prdContent) parts.push(`## PRD\n\nUse this to identify user journeys each screen must cover:\n\n${prdContent}`);
+      if (protoContent) parts.push(`## Prototype\n\nUse this as a reference for the screens and navigation flows to visualise:\n\n${protoContent}`);
+      const mockupFile = process.env.FIGMA_MOCKUP_FILE;
+      if (mockupFile) parts.push(`## Target Figma File\n\nCreate mockup frames in Figma file key: \`${mockupFile}\``);
+      if (parts.length > 0) itemContext = parts.join('\n\n---\n\n');
     }
 
     const systemPrompt = await agent.buildSystemPrompt(persona, undefined, itemContext, true, stage);
@@ -530,6 +548,7 @@ export async function runAutonomousStage(
     else if (stage === 'epic_feature_planner') stageLabel = 'Epic & Features';
     else if (stage === 'solution_architect') stageLabel = 'Architecture';
     else if (stage === 'prototype') stageLabel = 'Prototype';
+    else if (stage === 'figma_design') stageLabel = 'Figma Design';
     else if (stage.match(/^story_decomposition_F\d+$/)) stageLabel = 'Shard - Product Owner';
 
     // Wiki push is deferred to checkpoint approval — no wiki URL available at stage execution time
@@ -540,7 +559,7 @@ export async function runAutonomousStage(
     // After each specialist produces an artifact, the critic reviews it.
     // If issues are found, auto-revise once. If still unresolved,
     // pause and ask the human for input.
-    const specialistStages = new Set(['analyst', 'pm_prd', 'epic_feature_planner', 'solution_architect', 'prototype']);
+    const specialistStages = new Set(['analyst', 'pm_prd', 'epic_feature_planner', 'solution_architect', 'prototype', 'figma_design']);
     const isSpecialistStage = specialistStages.has(stage);
     const policies = loadGlobalPolicies();
     const criticEnabled = policies.get('require_critic_review') !== 'false' && policies.get('require_critic_review') !== (false as any);
@@ -619,7 +638,7 @@ export async function runAutonomousStage(
         const cpResult = stmts.insertCheckpoint.run(
           workflowId, stage, artifactId, checkpointStatusCritic,
           JSON.stringify({ session_id: sessionId, autonomous: true, critic: criticDetails, auto_approved: autoApprove, ...(diffArtifactId ? { diff_artifact_id: diffArtifactId } : {}) }),
-          checkpointStatusCritic === 'pending' ? getStageRole(stage) : null, now
+          checkpointStatusCritic === 'pending' ? rolesJson(stage) : null, now
         );
         if (specialistTokenData) {
           setCheckpointTokenUsage(cpResult.lastInsertRowid as number,
@@ -699,7 +718,7 @@ export async function runAutonomousStage(
       const cpResult2 = stmts.insertCheckpoint.run(
         workflowId, stage, artifactId, autoApprove ? 'approved' : 'pending',
         JSON.stringify({ session_id: sessionId, autonomous: true, critic: criticDetails, auto_approved: autoApprove, ...(diffArtifactId ? { diff_artifact_id: diffArtifactId } : {}) }),
-        autoApprove ? null : getStageRole(stage), now
+        autoApprove ? null : rolesJson(stage), now
       );
       if (specialistTokenData) {
         setCheckpointTokenUsage(cpResult2.lastInsertRowid as number,
@@ -768,7 +787,7 @@ export async function runAutonomousStage(
       stmts.insertCheckpoint.run(
         workflowId, stage, artifactId, checkpointStatusMock,
         JSON.stringify({ session_id: sessionId, autonomous: true, critic: approveDetails, auto_approved: autoApprove }),
-        checkpointStatusMock === 'pending' ? getStageRole(stage) : null, now
+        checkpointStatusMock === 'pending' ? rolesJson(stage) : null, now
       );
       insertEvent(workflowId, 'critic_verdict', stage,
         'Quality review passed — no issues found. Approve to proceed.', approveDetails);
@@ -798,7 +817,7 @@ export async function runAutonomousStage(
     const cpResult3 = stmts.insertCheckpoint.run(
       workflowId, stage, artifactId, checkpointStatus,
       JSON.stringify({ session_id: sessionId, autonomous: true, auto_approved: autoApprove, ...(diffArtifactId ? { diff_artifact_id: diffArtifactId } : {}) }),
-      checkpointStatus === 'pending' ? getStageRole(stage) : null, now
+      checkpointStatus === 'pending' ? rolesJson(stage) : null, now
     );
     if (specialistTokenData) {
       setCheckpointTokenUsage(cpResult3.lastInsertRowid as number,
@@ -818,7 +837,7 @@ export async function runAutonomousStage(
           stmts.insertCheckpoint.run(
             workflowId, stage, null, 'pending',
             JSON.stringify({ error: `Auto-advance failed: ${err.message}`, autonomous: true }),
-            getStageRole(stage), now2
+            rolesJson(stage), now2
           );
           stmts.updateWorkflowStatus.run('paused_at_checkpoint', now2, workflowId);
         }
@@ -841,7 +860,7 @@ export async function runAutonomousStage(
       stmts.insertCheckpoint.run(
         workflowId, stage, null, 'pending',
         JSON.stringify({ error: err.message, autonomous: true }),
-        getStageRole(stage), now
+        rolesJson(stage), now
       );
       stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
     }
