@@ -5,6 +5,8 @@ import Logger from '../utils/logger';
 import { invalidateContextCache } from '../agents/specialist-agent';
 import { clearAllContextCaches } from '../agents/agent-cache';
 import db from '../data/database';
+import { hasAnyUsers } from '../data/users';
+import type { AuthRequest } from '../middleware/auth';
 
 const logger = new Logger('CONTEXT-FILES');
 
@@ -16,6 +18,8 @@ interface CanonicalFile {
   label: string;
   description: string;
   hasTemplate: boolean;
+  /** Default edit roles when the file has no edit_roles frontmatter. null = anyone can edit. */
+  defaultEditRoles: string[] | null;
 }
 
 const CANONICAL_FILES: CanonicalFile[] = [
@@ -24,40 +28,47 @@ const CANONICAL_FILES: CanonicalFile[] = [
     label: 'Company Overview',
     description: 'Mission, products, target users, market position, business model',
     hasTemplate: true,
+    defaultEditRoles: ['product'],
   },
   {
     fileName: 'strategy.md',
     label: 'Product Strategy',
     description: 'North star goal, OKRs, roadmap themes, non-priorities, constraints',
     hasTemplate: true,
+    defaultEditRoles: ['product'],
   },
   {
     fileName: 'tech-stack.md',
     label: 'Tech Stack',
     description: 'Frontend, backend, infrastructure, key integrations',
     hasTemplate: true,
+    defaultEditRoles: ['tech_lead'],
   },
   {
     fileName: 'db-schema.md',
     label: 'Database Schema',
     description: 'Tables, columns, key relationships',
     hasTemplate: true,
+    defaultEditRoles: ['tech_lead'],
   },
   {
     fileName: 'process.md',
     label: 'Development Process',
     description: 'Sprint cadence, definition of ready/done, release process',
     hasTemplate: true,
+    defaultEditRoles: null,
   },
   {
     fileName: 'current-state.md',
     label: 'Current State',
     description: 'What is live, active work, known debt, recent decisions',
     hasTemplate: true,
+    defaultEditRoles: ['product'],
   },
 ];
 
 const CANONICAL_FILE_NAMES = new Set(CANONICAL_FILES.map((f) => f.fileName));
+const CANONICAL_DEFAULT_EDIT_ROLES = new Map(CANONICAL_FILES.map((f) => [f.fileName, f.defaultEditRoles]));
 const SAFE_FILENAME = /^[a-z0-9][a-z0-9-_]*\.md$/;
 
 function readFileOrEmpty(filePath: string): string {
@@ -66,6 +77,37 @@ function readFileOrEmpty(filePath: string): string {
   } catch {
     return '';
   }
+}
+
+/** Parse stages and edit_roles from YAML frontmatter, falling back to canonical defaults. */
+function parseFileFrontmatter(content: string, fileName?: string): { stages: string[] | null; editRoles: string[] | null } {
+  const m = content.match(/^---\s*\n([\s\S]*?)\n---/);
+  const fm = m?.[1] ?? null;
+
+  const stagesMatch = fm?.match(/^stages:\s*\[([^\]]*)\]/m);
+  const stages = stagesMatch ? stagesMatch[1].split(',').map(s => s.trim()).filter(Boolean) : null;
+
+  const editRolesMatch = fm?.match(/^edit_roles:\s*\[([^\]]*)\]/m);
+  const editRolesFromFrontmatter = editRolesMatch
+    ? editRolesMatch[1].split(',').map(s => s.trim()).filter(Boolean)
+    : undefined;
+
+  // Frontmatter value wins; fall back to the canonical default; then null (unrestricted)
+  const editRoles = editRolesFromFrontmatter !== undefined
+    ? editRolesFromFrontmatter
+    : (fileName ? (CANONICAL_DEFAULT_EDIT_ROLES.get(fileName) ?? null) : null);
+
+  return { stages, editRoles };
+}
+
+/** Returns true if the current user is allowed to edit a file with the given edit_roles. */
+function canEditFile(user: AuthRequest['user'], editRoles: string[] | null): boolean {
+  if (!hasAnyUsers()) return true;
+  if (!user) return false;
+  if (user.is_admin) return true;
+  if (editRoles === null) return true;          // no restriction declared
+  if (editRoles.length === 0) return false;     // explicitly locked to admins only
+  return editRoles.some(r => user.roles.includes(r));
 }
 
 function labelFromFileName(fileName: string): string {
@@ -86,7 +128,8 @@ contextFileRouter.get('/', (_req: Request, res: Response) => {
     const templateContent = cf.hasTemplate
       ? readFileOrEmpty(path.join(CONTEXT_DIR, cf.fileName.replace('.md', '.example.md')))
       : undefined;
-    return { fileName: cf.fileName, label: cf.label, description: cf.description, hasTemplate: cf.hasTemplate, content, templateContent };
+    const { stages, editRoles } = parseFileFrontmatter(content, cf.fileName);
+    return { fileName: cf.fileName, label: cf.label, description: cf.description, hasTemplate: cf.hasTemplate, content, templateContent, stages, editRoles };
   });
 
   // Append any custom (non-canonical) .md files
@@ -99,13 +142,17 @@ contextFileRouter.get('/', (_req: Request, res: Response) => {
         entry.toLowerCase() === 'readme.md' ||
         CANONICAL_FILE_NAMES.has(entry)
       ) continue;
+      const content = readFileOrEmpty(path.join(CONTEXT_DIR, entry));
+      const { stages, editRoles } = parseFileFrontmatter(content, entry);
       files.push({
         fileName: entry,
         label: labelFromFileName(entry),
         description: 'Custom context file',
         hasTemplate: false,
-        content: readFileOrEmpty(path.join(CONTEXT_DIR, entry)),
+        content,
         templateContent: undefined,
+        stages,
+        editRoles,
       });
     }
   } catch { /* context dir may not exist yet */ }
@@ -153,7 +200,7 @@ contextFileRouter.post('/', (req: Request, res: Response) => {
 /**
  * PUT /:fileName — save (or delete if empty) a context file
  */
-contextFileRouter.put('/:fileName', (req: Request, res: Response) => {
+contextFileRouter.put('/:fileName', (req: AuthRequest, res: Response) => {
   const { fileName } = req.params;
 
   // Allow canonical files and safe custom filenames
@@ -169,6 +216,14 @@ contextFileRouter.put('/:fileName', (req: Request, res: Response) => {
   }
 
   const filePath = path.join(CONTEXT_DIR, fileName);
+
+  // Check edit permission based on the current file's frontmatter
+  const existingContent = readFileOrEmpty(filePath);
+  const { editRoles } = parseFileFrontmatter(existingContent, fileName);
+  if (!canEditFile(req.user, editRoles)) {
+    res.status(403).json({ error: 'You do not have permission to edit this context file', code: 'INSUFFICIENT_ROLE' });
+    return;
+  }
 
   if (content.trim() === '') {
     try {

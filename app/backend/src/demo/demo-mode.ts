@@ -4,9 +4,7 @@
  * Enable via DEMO_MODE=true in .env. Useful for testing the workflow pipeline,
  * UI animations, and approval flow without incurring LLM costs.
  *
- * Two fixture themes are available:
- *   DEMO_FIXTURE_THEME=price-alerts  (default) — Price Alerts & Watchlist
- *   DEMO_FIXTURE_THEME=messaging               — In-App Messaging & Trade Chat
+ * Fixture theme: In-App Messaging & Trade Chat (xCube)
  */
 
 import * as fs from 'fs';
@@ -39,22 +37,12 @@ function findProjectRoot(): string {
 const PROJECT_ROOT = findProjectRoot();
 
 function getFixturesDir(): string {
-  const theme = process.env.DEMO_FIXTURE_THEME ?? 'price-alerts';
   const baseFixtures = path.join(PROJECT_ROOT, 'app/backend/src/demo/fixtures');
+  const messagingDir = path.join(baseFixtures, 'messaging');
   console.log(`[DEMO FIXTURE] PROJECT_ROOT: ${PROJECT_ROOT}`);
-  console.log(`[DEMO FIXTURE] Base fixtures dir: ${baseFixtures}`);
-  console.log(`[DEMO FIXTURE] Theme from env: ${theme}`);
-  if (theme === 'messaging') {
-    const messagingDir = path.join(baseFixtures, 'messaging');
-    console.log(`[DEMO FIXTURE] Using messaging theme dir: ${messagingDir}`);
-    return messagingDir;
-  }
-  console.log(`[DEMO FIXTURE] Using base fixtures dir for theme: ${theme}`);
-  return baseFixtures;
+  console.log(`[DEMO FIXTURE] Using fixtures dir: ${messagingDir}`);
+  return messagingDir;
 }
-
-// Alias for backwards-compatibility — always read at call time so theme changes take effect
-const FIXTURES_DIR = path.join(__dirname, 'fixtures');
 
 // Stage → fixture file mapping
 const DEMO_FIXTURE_FILES: Record<string, string> = {
@@ -64,6 +52,7 @@ const DEMO_FIXTURE_FILES: Record<string, string> = {
   solution_architect:    'architecture.json',
   story_decomposition:   'backlog.json',
   prototype:             'prototype.json',
+  figma_design:          'figma-design.json',
 };
 
 export function isDemoMode(): boolean {
@@ -84,25 +73,9 @@ export function isDemoMode(): boolean {
 }
 
 /**
- * Returns demo fixture content for the given theme and stage, or null if no fixture exists.
- */
-export function getDemoFixtureForTheme(theme: string, stage: string): string | null {
-  const filename = DEMO_FIXTURE_FILES[stage];
-  if (!filename) return null;
-  const fixturePath = path.join(__dirname, 'fixtures', theme, filename);
-  try {
-    return fs.readFileSync(fixturePath, 'utf-8');
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Returns demo fixture content for the given stage, or null if no fixture exists.
  * For feature-specific stages (story_decomposition_F1, F2, etc.), returns a backlog with
  * stories ONLY for that specific feature (other features have empty stories arrays).
- *
- * Falls back to base fixtures directory if theme-specific fixture not found.
  */
 export function getDemoFixture(stage: string): string | null {
   // Handle feature-specific story decomposition stages
@@ -138,27 +111,14 @@ export function getDemoFixture(stage: string): string | null {
     return null;
   }
 
-  // Try theme-specific fixture first
-  const themeFixturePath = path.join(getFixturesDir(), filename);
-  console.log(`[DEMO FIXTURE] Attempting to load: ${themeFixturePath}`);
+  const fixturePath = path.join(getFixturesDir(), filename);
+  console.log(`[DEMO FIXTURE] Attempting to load: ${fixturePath}`);
   try {
-    const content = fs.readFileSync(themeFixturePath, 'utf-8');
-    console.log(`[DEMO FIXTURE] Successfully loaded ${themeFixturePath} (${content.length} chars)`);
+    const content = fs.readFileSync(fixturePath, 'utf-8');
+    console.log(`[DEMO FIXTURE] Successfully loaded ${fixturePath} (${content.length} chars)`);
     return content;
   } catch (err) {
-    console.log(`[DEMO FIXTURE] Theme-specific fixture not found, trying base directory...`);
-  }
-
-  // Fallback to base fixtures directory
-  const baseFixtures = path.join(PROJECT_ROOT, 'app/backend/src/demo/fixtures');
-  const baseFixturePath = path.join(baseFixtures, filename);
-  console.log(`[DEMO FIXTURE] Attempting fallback: ${baseFixturePath}`);
-  try {
-    const content = fs.readFileSync(baseFixturePath, 'utf-8');
-    console.log(`[DEMO FIXTURE] Successfully loaded fallback ${baseFixturePath} (${content.length} chars)`);
-    return content;
-  } catch (err) {
-    console.error(`[DEMO FIXTURE ERROR] Failed to load both theme and base fixtures for "${stage}":`, err instanceof Error ? err.message : String(err));
+    console.error(`[DEMO FIXTURE ERROR] Failed to load fixture for "${stage}": ${fixturePath}`, err instanceof Error ? err.message : String(err));
     return null;
   }
 }
@@ -173,11 +133,15 @@ export function demoSleep(ms: number): Promise<void> {
 
 // How long each stage "works" before producing output in demo mode
 export const DEMO_STAGE_DELAY_MS: Record<string, number> = {
-  analyst:               3_000,
-  pm_prd:                2_500,
-  epic_feature_planner:  2_000,
-  solution_architect:    2_500,
-  story_decomposition:   2_000,
-  prototype:             3_000,
-  curator:               1_500,
+  analyst:                  3_000,
+  pm_prd:                   2_500,
+  epic_feature_planner:     2_000,
+  solution_architect:       2_500,
+  story_decomposition:      2_000,
+  story_decomposition_F1:   8_000,  // extra time so the multi-agent animation is visible
+  story_decomposition_F2:   2_000,
+  story_decomposition_F3:   2_000,
+  prototype:                3_000,
+  figma_design:             2_500,
+  curator:                  1_500,
 };

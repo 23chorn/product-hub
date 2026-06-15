@@ -40,6 +40,7 @@ export const contextApi = {
   async getContextFiles(): Promise<{ files: Array<{
     fileName: string; label: string; description: string;
     hasTemplate: boolean; content: string; templateContent?: string;
+    stages: string[] | null; editRoles: string[] | null;
   }> }> {
     const response = await axios.get(`${API_BASE_URL}/api/context-files`);
     return response.data;

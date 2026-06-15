@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { api, type SkillVersion } from '../../services/api';
 import { useSkillManagerStore } from '../../stores/skillManagerStore';
 import { useThemeStore } from '../../stores/themeStore';
+import { useAuthStore } from '../../stores/authStore';
 import { getAgentDisplayName } from '../../utils/agent-display-names';
 import { ContextFileEditor } from './ContextFileEditor';
 import { SkillViewer } from './SkillViewer';
@@ -25,6 +26,15 @@ import {
 export function SkillManagerPanel() {
   const { closeSkillManager } = useSkillManagerStore();
   const { isDark } = useThemeStore();
+  const { user, noAuth } = useAuthStore();
+
+  function canEdit(editRoles: string[] | null): boolean {
+    if (noAuth || !user) return true;
+    if (user.is_admin) return true;
+    if (editRoles === null) return true;
+    if (editRoles.length === 0) return false;
+    return editRoles.some(r => user.roles.includes(r));
+  }
 
   const [contextFiles, setContextFiles] = useState<ContextFile[]>([]);
   const [personas, setPersonas] = useState<PersonaFile[]>([]);
@@ -426,6 +436,7 @@ export function SkillManagerPanel() {
               versions={ctxVersions}
               versionsLoading={ctxVersionsLoading}
               textareaRef={textareaRef}
+              canEdit={canEdit(contextFiles[selection.index].editRoles)}
               onChange={setCtxEditContent}
               onSave={handleContextSave}
               onRevert={() => setCtxEditContent(ctxSavedContent)}
@@ -446,6 +457,7 @@ export function SkillManagerPanel() {
               setNewVersion={setNewVersion}
               versionHistory={versionHistory}
               isPublishing={isPublishing}
+              canEdit={canEdit(selection.skill.editRoles ?? null)}
               onTabChange={handleSkillTabChange}
               onPublish={handlePublish}
             />

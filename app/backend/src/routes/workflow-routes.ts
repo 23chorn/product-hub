@@ -682,7 +682,7 @@ workflowRoutes.get('/artifact/:id/content', async (req: Request, res: Response) 
  *
  * Body: { content: string, checkpointId?: number }
  */
-workflowRoutes.put('/artifact/:id/content', async (req: Request, res: Response) => {
+workflowRoutes.put('/artifact/:id/content', async (req: AuthRequest, res: Response) => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) return res.status(400).json({ error: 'Invalid artifact id' });
 
@@ -719,10 +719,25 @@ workflowRoutes.put('/artifact/:id/content', async (req: Request, res: Response) 
   let stage: string | null = null;
 
   if (checkpointId) {
-    const cp = db.prepare<[number], { workflow_id: string; stage: string }>(
-      'SELECT workflow_id, stage FROM checkpoints WHERE id = ?'
+    const cp = db.prepare<[number], { workflow_id: string; stage: string; required_role: string | null; status: string }>(
+      'SELECT workflow_id, stage, required_role, status FROM checkpoints WHERE id = ?'
     ).get(checkpointId);
     if (cp) { workflowId = cp.workflow_id; stage = cp.stage; }
+
+    if (cp && cp.status !== 'pending') {
+      return res.status(409).json({ error: 'Checkpoint is not pending' });
+    }
+
+    if (cp) {
+      const requiredRoles = parseRoles(cp.required_role);
+      if (!canApproveCheckpoint(req.user, requiredRoles)) {
+        return res.status(403).json({
+          error: `This stage requires one of the following roles to approve: ${requiredRoles.join(', ')}`,
+          required_roles: requiredRoles,
+          code: 'INSUFFICIENT_ROLE',
+        });
+      }
+    }
   }
 
   if (!workflowId) {
@@ -744,6 +759,18 @@ workflowRoutes.put('/artifact/:id/content', async (req: Request, res: Response) 
   // If a checkpoint was provided, auto-resolve as approved and advance
   if (checkpointId && workflowId) {
     try {
+      const auditor = req.user
+        ? { id: req.user.id, name: req.user.name, username: req.user.username }
+        : { id: null, name: 'System', username: 'system' };
+      db.prepare(`
+        INSERT INTO checkpoint_audit (checkpoint_id, user_id, user_name, user_email, action, notes, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(checkpointId, auditor.id, auditor.name, auditor.username, 'approved', 'Human edited and approved artifact', Date.now());
+
+      if (req.user) {
+        db.prepare('UPDATE checkpoints SET resolved_by_user_id = ? WHERE id = ?').run(req.user.id, checkpointId);
+      }
+
       resolveCheckpoint(checkpointId, 'approved', 'Human edited artifact directly');
 
       // Advance to next stage (same pattern as checkpoint/resolve endpoint)

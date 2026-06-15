@@ -1,7 +1,14 @@
 import type { ExtractedTool } from './types';
+import { ToolPreviewCard } from './ToolEditor';
 
 /** Read-only detail pane for a tool extracted from a skill, with a jump-to-skill action. */
 export function ToolViewer({ tool, onGoToSkill }: { tool: ExtractedTool; onGoToSkill: () => void }) {
+  const toolDef = {
+    name: tool.name,
+    description: tool.description,
+    input_schema: tool.input_schema,
+  };
+
   return (
     <>
       <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/30 flex-shrink-0">
@@ -21,17 +28,8 @@ export function ToolViewer({ tool, onGoToSkill }: { tool: ExtractedTool; onGoToS
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-5 space-y-4">
-        <div>
-          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">Description</p>
-          <p className="text-sm text-slate-700 dark:text-slate-300">{tool.description}</p>
-        </div>
-        <div>
-          <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1">Input Schema</p>
-          <pre className="text-xs font-mono bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-200 rounded-lg p-4 overflow-x-auto whitespace-pre-wrap">
-            {JSON.stringify(tool.input_schema, null, 2)}
-          </pre>
-        </div>
+      <div className="flex-1 overflow-y-auto p-5">
+        <ToolPreviewCard tool={toolDef} />
       </div>
     </>
   );

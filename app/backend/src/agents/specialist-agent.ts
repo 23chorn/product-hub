@@ -25,6 +25,7 @@ const STAGE_TEMPLATE_MAP: Record<string, string> = {
   story_decomposition:  'backlog.template.md',
   tech_refinement:      'tech-refinement.template.md',
   prototype:            'prototype.template.md',
+  figma_design:         'figma-design.template.md',
   qa_engineer:          'qa-tests.template.md',
 };
 

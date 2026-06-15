@@ -1,6 +1,8 @@
 import type { SkillVersion } from '../../services/api';
 import { getAgentDisplayName } from '../../utils/agent-display-names';
 import { SectionHeader } from './SectionHeader';
+import { useAuthStore } from '../../stores/authStore';
+import { STAGE_SHORT_LABELS } from '../../constants/stage-labels';
 import {
   DISCIPLINE_LABELS,
   DISCIPLINE_COLORS,
@@ -71,6 +73,16 @@ export function SkillManagerSidebar({
   selectedToolName,
   onSelectTool,
 }: SkillManagerSidebarProps) {
+  const { user, noAuth } = useAuthStore();
+
+  function canEdit(editRoles: string[] | null): boolean {
+    if (noAuth || !user) return true;
+    if (user.is_admin) return true;
+    if (editRoles === null) return true;
+    if (editRoles.length === 0) return false;
+    return editRoles.some(r => user.roles.includes(r));
+  }
+
   return (
     <nav className="w-60 border-r border-slate-200 dark:border-slate-700 flex flex-col flex-shrink-0 bg-white dark:bg-slate-800/50 overflow-y-auto">
       {isLoading ? (
@@ -93,22 +105,51 @@ export function SkillManagerSidebar({
               </button>
             }
           />
-          {expanded.context && contextFiles.map((file, i) => (
-            <button
-              key={file.fileName}
-              onClick={() => onSelectContext(i, file)}
-              className={`w-full text-left px-4 py-2 border-b border-slate-100 dark:border-slate-700/40 transition-colors ${
-                selectedCtxIndex === i
-                  ? 'bg-teal-50 dark:bg-teal-900/20 border-l-2 border-l-teal-500'
-                  : 'hover:bg-slate-50 dark:hover:bg-slate-700/30 border-l-2 border-l-transparent'
-              }`}
-            >
-              <div className="flex items-center space-x-2">
-                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${file.content ? 'bg-green-500' : 'bg-slate-300 dark:bg-slate-600'}`} />
-                <span className="text-sm text-slate-800 dark:text-slate-200 truncate">{file.label}</span>
-              </div>
-            </button>
-          ))}
+          {expanded.context && contextFiles.map((file, i) => {
+            const editable = canEdit(file.editRoles);
+            const stageLabels: string[] = file.stages
+              ? file.stages.map(s => STAGE_SHORT_LABELS[s] ?? s).filter(Boolean)
+              : ['All agents'];
+            return (
+              <button
+                key={file.fileName}
+                onClick={() => onSelectContext(i, file)}
+                className={`w-full text-left px-4 py-2 border-b border-slate-100 dark:border-slate-700/40 transition-colors ${
+                  selectedCtxIndex === i
+                    ? 'bg-teal-50 dark:bg-teal-900/20 border-l-2 border-l-teal-500'
+                    : 'hover:bg-slate-50 dark:hover:bg-slate-700/30 border-l-2 border-l-transparent'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-1">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${file.content ? 'bg-green-500' : 'bg-slate-300 dark:bg-slate-600'}`} />
+                    <span className="text-sm text-slate-800 dark:text-slate-200 truncate">{file.label}</span>
+                  </div>
+                  {!editable && (
+                    <svg className="w-3 h-3 text-slate-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                  )}
+                </div>
+                {stageLabels.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1 pl-3.5">
+                    {stageLabels.map(label => (
+                      <span
+                        key={label}
+                        className={`text-[10px] px-1.5 py-0.5 rounded font-medium leading-none ${
+                          label === 'All agents'
+                            ? 'bg-teal-50 dark:bg-teal-900/20 text-teal-600 dark:text-teal-400'
+                            : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
+                        }`}
+                      >
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </button>
+            );
+          })}
 
           {/* ── Agents ──────────────────────────────── */}
           <SectionHeader
@@ -130,6 +171,8 @@ export function SkillManagerSidebar({
             const isSelected =
               (item.type === 'skill' && selectedSkillName === item.skill.skill_name) ||
               (item.type === 'persona' && selectedAgentName === item.persona.skillName);
+            const publishedSkill = item.type === 'skill' ? item.skill : item.publishedSkill;
+            const editable = publishedSkill ? canEdit(publishedSkill.editRoles ?? null) : true;
             return (
               <button
                 key={item.key}
@@ -148,7 +191,14 @@ export function SkillManagerSidebar({
                     : 'hover:bg-slate-50 dark:hover:bg-slate-700/30 border-l-2 border-l-transparent'
                 }`}
               >
-                <div className="text-sm text-slate-800 dark:text-slate-200 truncate">{item.displayName}</div>
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-sm text-slate-800 dark:text-slate-200 truncate">{item.displayName}</span>
+                  {!editable && (
+                    <svg className="w-3 h-3 text-slate-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                  )}
+                </div>
                 {item.type === 'skill' ? (
                   <div className="text-xs text-slate-400 mt-0.5">v{item.skill.version} · {item.skill.owner_team}</div>
                 ) : item.publishedSkill ? (

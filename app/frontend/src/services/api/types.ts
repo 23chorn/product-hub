@@ -15,4 +15,5 @@ export interface SkillVersion {
   tool_definitions: string | null;
   created_at: number;
   deprecated_at: number | null;
+  editRoles: string[] | null;
 }

@@ -11,25 +11,29 @@ const PERSONAS_DIR = path.join(PROJECT_ROOT, 'agents', 'personas');
 const TEMPLATES_DIR = path.join(PROJECT_ROOT, 'agents', 'templates');
 
 const STAGE_PERSONA_MAP: Record<string, string> = {
-  analyst:            'analyst',
-  pm_prd:             'pm',
-  solution_architect: 'architect',
-  story_decomposition:'story-decomposition',
-  prototype:          'prototype-builder',
-  coordinator:        'coordinator',
-  critic:             'critic',
-  curator:            'curator',
+  analyst:              'analyst',
+  pm_prd:               'pm',
+  epic_feature_planner: 'epic-feature-planner',
+  solution_architect:   'architect',
+  story_decomposition:  'story-decomposition',
+  qa_engineer:          'qa-engineer',
+  prototype:            'prototype-builder',
+  coordinator:          'coordinator',
+  critic:               'critic',
+  curator:              'curator',
 };
 
 const STAGE_TEMPLATE_FILE_MAP: Record<string, string | null> = {
-  analyst:            'research.template.md',
-  pm_prd:             'prd.template.md',
-  solution_architect: 'architecture.template.md',
-  story_decomposition:'backlog.template.md',
-  prototype:          'prototype.template.md',
-  coordinator:        null,
-  critic:             null,
-  curator:            null,
+  analyst:              'research.template.md',
+  pm_prd:               'prd.template.md',
+  epic_feature_planner: 'epic-features.template.md',
+  solution_architect:   'architecture.template.md',
+  story_decomposition:  'backlog.template.md',
+  qa_engineer:          null,
+  prototype:            'prototype.template.md',
+  coordinator:          null,
+  critic:               null,
+  curator:              null,
 };
 
 export interface SkillVersion {
@@ -140,6 +144,14 @@ const SEED_TOOL_DEFINITIONS: Record<string, string> = {
     },
   ]),
 
+  epic_feature_planner: JSON.stringify([
+    {
+      name: 'validate_epic_features_json',
+      description: 'Validate your epic and feature plan JSON before returning it. Checks epic fields (title ≤6 words, description, businessValue, prdLink, definitionOfDone), feature count (2–8), phase labels (MVP / Phase 2 / Phase 3), acceptance criteria (3–5 per feature, no user-story format), prdRef.functionalRequirements (FR-XX format), that stories arrays are empty [], outOfScope list, and flags any TBD values. Call after completing the full JSON object.',
+      input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete epic & features JSON string (may be wrapped in a ```json code block)' } }, required: ['json'] },
+    },
+  ]),
+
   solution_architect: JSON.stringify([
     {
       name: 'validate_architecture_json',
@@ -150,6 +162,14 @@ const SEED_TOOL_DEFINITIONS: Record<string, string> = {
       name: 'get_domain_skill_context',
       description: 'Retrieve development context for a domain skill by name (e.g. "payments-dev"). Use this to look up service-specific patterns, API contracts, or conventions before making technology decisions.',
       input_schema: { type: 'object', properties: { skill_name: { type: 'string', description: 'The domain skill name to look up' } }, required: ['skill_name'] },
+    },
+  ]),
+
+  qa_engineer: JSON.stringify([
+    {
+      name: 'validate_qa_tests_json',
+      description: 'Validate your QA test suite JSON before returning it. Checks test case IDs (TC-F?-??? format), uniqueness, type (happy_path/negative/edge/boundary/security/performance), priority, Given/When/Then scenario completeness, tag validity (@smoke/@regression/@negative/@edge/@security/@accessibility/@performance), vague Then clauses, that at least one critical test is @smoke tagged, and that ≥20% of tests are negative paths. Call after completing the full JSON.',
+      input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete QA test suite JSON string (may be wrapped in a ```json code block)' } }, required: ['json'] },
     },
   ]),
 

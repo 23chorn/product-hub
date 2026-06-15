@@ -5,6 +5,7 @@
  * when the stage name matches story_decomposition_F<n>.
  */
 import { logger, insertEvent } from './workflow-db';
+import { validateBacklogJson, validateQaTestsJson } from './tool-validators';
 
 /**
  * Run multi-agent collaborative refinement for one feature, accumulate its stories
@@ -21,13 +22,13 @@ export async function runMultiAgentFeatureStage(
   const { runMultiAgentRefinement } = await import('./multi-agent-refinement');
 
   try {
-    const artifactContent = await runMultiAgentRefinement(workflowId, itemId, stage, featureIndex);
-    const strippedArtifact = artifactContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-    const newFeature = JSON.parse(strippedArtifact);
+    const result = await runMultiAgentRefinement(workflowId, itemId, stage, featureIndex);
+    const strippedBacklog = result.backlog.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+    const newFeature = JSON.parse(strippedBacklog);
 
     // Load accumulated backlog (if any previous features completed)
     let accumulatedBacklog: any;
-    const { loadLatestArtifactContent } = await import('./artifact-helpers');
+    const { loadLatestArtifactContent, saveLocalArtifact } = await import('./artifact-helpers');
     const priorBacklogContent = await loadLatestArtifactContent(itemId, 'backlog');
 
     if (priorBacklogContent) {
@@ -42,8 +43,35 @@ export async function runMultiAgentFeatureStage(
 
     // Save the accumulated backlog artifact (epic + all features so far).
     // Type is always 'backlog' so loadLatestArtifactContent(itemId, 'backlog') finds it for accumulation.
-    const { saveLocalArtifact } = await import('./artifact-helpers');
     const artifactId = await saveLocalArtifact(sessionId, 'backlog', JSON.stringify(accumulatedBacklog, null, 2), itemId, null);
+
+    // Deterministic backlog validation — runs regardless of LLM tool use
+    const backlogValidation = JSON.parse(validateBacklogJson({ json: JSON.stringify(newFeature) }));
+    if (!backlogValidation.valid && Array.isArray(backlogValidation.issues) && backlogValidation.issues.length > 0) {
+      logger.warn(`[MULTI-AGENT] Backlog validation issues for Feature ${featureIndex + 1}: ${backlogValidation.issues.join(' | ')}`);
+      insertEvent(workflowId, 'validation_warning', stage,
+        `Backlog quality check flagged ${backlogValidation.issues.length} issue(s) for Feature ${featureIndex + 1} — review before approving`,
+        { issues: backlogValidation.issues }
+      );
+    }
+
+    // Save the standalone QA test suite for this feature as a separate artifact.
+    // Type 'qa_tests' lets the QA engineer stage or external tooling load it directly.
+    if (result.qaTests) {
+      const strippedQa = result.qaTests.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+      await saveLocalArtifact(sessionId, 'qa_tests', strippedQa, itemId, null);
+      logger.info(`[MULTI-AGENT] QA test suite artifact saved for Feature ${featureIndex + 1}`);
+
+      // Deterministic QA suite validation
+      const qaValidation = JSON.parse(validateQaTestsJson({ json: strippedQa }));
+      if (!qaValidation.valid && Array.isArray(qaValidation.issues) && qaValidation.issues.length > 0) {
+        logger.warn(`[MULTI-AGENT] QA test suite validation issues for Feature ${featureIndex + 1}: ${qaValidation.issues.join(' | ')}`);
+        insertEvent(workflowId, 'validation_warning', stage,
+          `QA test suite quality check flagged ${qaValidation.issues.length} issue(s) for Feature ${featureIndex + 1}`,
+          { issues: qaValidation.issues }
+        );
+      }
+    }
 
     // Create checkpoint for human review — ADO push happens at checkpoint approval
     const { pauseAtCheckpoint } = await import('./workflow-router');

@@ -8,6 +8,7 @@ export const STAGE_SESSION_MAP: Record<string, { mode: AppMode; agentType: Agent
   epic_feature_planner: { mode: 'epic_features',    agentType: 'epic-feature-planner' },
   solution_architect:   { mode: 'architecture',      agentType: 'architect' },
   prototype:            { mode: 'prototype',         agentType: 'prototype-builder' },
+  figma_design:         { mode: 'figma_design',      agentType: 'figma-designer' },
 };
 
 // Per-stage output token ceiling. Backlog gets more headroom because the JSON
@@ -19,6 +20,7 @@ export const STAGE_MAX_OUTPUT_TOKENS: Record<string, number> = {
   epic_feature_planner: 16_000,
   solution_architect:   16_000,
   prototype:            64_000,
+  figma_design:         16_000,
 };
 
 // Maps stage name to the artifact.type value stored in the DB.
@@ -28,6 +30,7 @@ export const STAGE_ARTIFACT_TYPE: Record<string, string> = {
   pm_prd:               'prd',
   epic_feature_planner: 'epic_features',
   solution_architect:   'architecture',
+  figma_design:         'figma_design',
 };
 
 // Human-readable labels for stage names (used for revision diffs and events)
@@ -36,6 +39,7 @@ export const STAGE_ARTIFACT_LABEL: Record<string, string> = {
   pm_prd: 'PRD',
   epic_feature_planner: 'Epic & Features',
   solution_architect: 'Architecture Document',
+  figma_design: 'Figma Mockups',
 };
 
 // Internal labels used for event messages and logging
@@ -45,6 +49,7 @@ export const STAGE_LABELS_INTERNAL: Record<string, string> = {
   epic_feature_planner: 'Epic & Feature Planning — Apex',
   solution_architect:   'Architect — Atlas',
   prototype:            'Prototype — Nova',
+  figma_design:         'Figma Design — Luma',
   critic:               'Critic — Flint',
   curator:              'Curator — Ivy',
 };
@@ -56,6 +61,7 @@ export const STAGE_LABELS_BRIEF: Record<string, string> = {
   epic_feature_planner: 'Epic & Features (Apex)',
   solution_architect:   'Architecture Document (Atlas)',
   prototype:            'Prototype (Nova)',
+  figma_design:         'Figma Mockups (Luma)',
 };
 
 // ── Per-stage output format specifications ────────────────────────────────────
@@ -126,6 +132,20 @@ If a context/tech-stack.md file was provided, align all choices with the existin
     format: `Generate an interactive React prototype demonstrating the key user journeys from the PRD and architecture document. The output is a JSON file-map rendered in-browser via Sandpack. The prototype should cover the primary screens and user flows described in the PRD — not implement full backend logic, but show realistic UI interactions and navigation. Focus on fidelity to the approved product design, not on inventing new features.`,
   },
 
+  figma_design: {
+    label: 'Figma Mockups (Luma)',
+    format: `Read design tokens from the Figma design system file, then produce a JSON artifact describing the screen mockups to be created in the target Figma file.
+
+Key requirements:
+- **design_tokens_extracted**: List the key tokens you found (colors, typography, spacing, components). Flag any gaps as design_gaps.
+- **screens_created**: 3–8 screens covering the primary PRD user journeys. Each screen must reference the PRD journey it satisfies, list the design system tokens it uses, and describe interactions that link to other screens.
+- **figma_write_status**: Set to "planned" if FIGMA_MOCKUP_FILE is not configured; "created" if frames were written via the Figma REST API; "partial" if some frames were written.
+- **navigation_flow**: ASCII diagram showing screen-to-screen navigation.
+- **notes**: Summarise the design approach, any gaps, and whether the Figma write was executed or deferred.
+
+Follow the output template injected into your system prompt for the exact JSON schema.`,
+  },
+
   critic: {
     label: 'Critic Review — Flint',
     format: `Produce a structured review in markdown with these sections:
@@ -171,6 +191,7 @@ export function stageGoal(stage: string, goal: string): string {
     epic_feature_planner: `Decompose the PRD requirements into a clear epic and feature structure (2-8 features) with feature-level acceptance criteria and phase labels for: ${goal}`,
     solution_architect:   `Produce a cross-platform architecture document covering technology decisions, data model, API surface, repository impact across all repos, and cross-platform contracts — to serve as the technical reference for epic planning and story decomposition for: ${goal}`,
     prototype:            `Produce an interactive React prototype that demonstrates the key user journeys from the PRD and architecture document for: ${goal}`,
+    figma_design:         `Read design tokens from the Figma design system and produce a JSON artifact describing the screen mockups to be created in the target Figma file for: ${goal}`,
   };
   const outputLabel = STAGE_LABELS_BRIEF[stage] ?? stage;
   return STAGE_GOAL[stage] ?? `Produce the required ${outputLabel} for: ${goal}`;
@@ -183,6 +204,7 @@ export function stageProgressTarget(stage: string): string {
     epic_feature_planner: 'the epic and feature breakdown',
     solution_architect: 'the Architecture Document',
     prototype: 'the prototype screens and file map',
+    figma_design: 'the Figma mockup plan',
   };
   return target[stage] ?? `the ${STAGE_ARTIFACT_LABEL[stage] ?? stage}`;
 }
@@ -195,9 +217,10 @@ export function stageProgressWorking(stage: string): string {
     epic_feature_planner: 'Apex',
     solution_architect: 'Atlas',
     prototype: 'Nova',
+    figma_design: 'Luma',
   };
   const name = actor[stage];
-  if (stage === 'prototype') return `${name} is generating ${subject}.`;
+  if (stage === 'prototype' || stage === 'figma_design') return `${name} is generating ${subject}.`;
   return `${name ?? 'The coordinator'} is writing ${subject}.`;
 }
 
@@ -265,6 +288,11 @@ export function stageNotDecide(stage: string): string {
       'Do not invent new features or requirements not present in the approved PRD. ' +
       'Do not make architecture decisions — follow the architecture document. ' +
       'Focus on demonstrating existing user journeys, not designing new ones.',
+    figma_design:
+      'Do not invent new features, screens, or user journeys not present in the approved PRD. ' +
+      'Do not modify the design system file — only read from it. ' +
+      'Do not choose technology or architecture — those are fixed in prior stages. ' +
+      'Do not write new design tokens; flag missing ones as design_gaps instead.',
   };
   return NOT_DECIDE[stage]
     ?? 'Follow the output format and scope defined above. Do not add scope that was not in the workflow goal.';

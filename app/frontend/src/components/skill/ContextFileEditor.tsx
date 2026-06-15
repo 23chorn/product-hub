@@ -10,6 +10,7 @@ interface ContextFileEditorProps {
   versions: ContextFileVersion[];
   versionsLoading: boolean;
   textareaRef: React.RefObject<HTMLTextAreaElement>;
+  canEdit: boolean;
   onChange: (v: string) => void;
   onSave: () => void;
   onRevert: () => void;
@@ -20,7 +21,7 @@ interface ContextFileEditorProps {
 /** Context-file editor pane: markdown editor, version history sidebar, save/revert footer. */
 export function ContextFileEditor({
   file, editContent, savedContent, isSaving, versions, versionsLoading,
-  textareaRef, onChange, onSave, onRevert, onRestoreVersion, onLoadTemplate,
+  textareaRef, canEdit, onChange, onSave, onRevert, onRestoreVersion, onLoadTemplate,
 }: ContextFileEditorProps) {
   const isDirty = editContent !== savedContent;
   const [showHistory, setShowHistory] = useState(false);
@@ -40,7 +41,14 @@ export function ContextFileEditor({
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{file.description}</p>
           </div>
           <div className="flex items-center space-x-2">
-            <span className="text-xs text-slate-400">Edit · Preview</span>
+            {!canEdit && (
+              <span className="flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 font-medium">
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                Read only
+              </span>
+            )}
             {versions.length > 0 && (
               <button
                 onClick={() => setShowHistory((v) => !v)}
@@ -65,9 +73,10 @@ export function ContextFileEditor({
         <div className="flex-1 p-4 overflow-hidden">
           <MarkdownEditor
             value={editContent}
-            onChange={onChange}
+            onChange={canEdit ? onChange : () => {}}
             placeholder={`Paste or type your ${file.label.toLowerCase()} content here…`}
             textareaRef={textareaRef}
+            readOnly={!canEdit}
           />
         </div>
 
@@ -118,20 +127,20 @@ export function ContextFileEditor({
       </div>
 
       <div className="px-5 py-3 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/30 flex items-center justify-between flex-shrink-0">
-        <span className={`text-xs ${isDirty ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-slate-400'}`}>
-          {isDirty ? 'Unsaved changes' : 'No changes'}
+        <span className={`text-xs ${!canEdit ? 'text-slate-400' : isDirty ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-slate-400'}`}>
+          {!canEdit ? 'Read only — insufficient role' : isDirty ? 'Unsaved changes' : 'No changes'}
         </span>
         <div className="flex items-center space-x-2">
           <button
             onClick={onRevert}
-            disabled={!isDirty}
+            disabled={!isDirty || !canEdit}
             className="text-xs px-3 py-1.5 rounded-md border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Revert
           </button>
           <button
             onClick={onSave}
-            disabled={!isDirty || isSaving}
+            disabled={!isDirty || isSaving || !canEdit}
             className="text-xs px-4 py-1.5 rounded-md bg-teal-600 text-white hover:bg-teal-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-medium"
           >
             {isSaving ? 'Saving…' : 'Save'}

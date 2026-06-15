@@ -4,6 +4,8 @@ import {
   validatePrdJson,
   validateArchitectureJson,
   validateBacklogJson,
+  validateEpicFeaturesJson,
+  validateQaTestsJson,
 } from './tool-validators';
 import { getContextFile, getDomainSkillContext } from './tool-context';
 
@@ -54,5 +56,7 @@ registerTool('validate_analyst_json',           validateAnalystJson);
 registerTool('validate_prd_json',               validatePrdJson);
 registerTool('validate_architecture_json',      validateArchitectureJson);
 registerTool('validate_backlog_json',           validateBacklogJson);
+registerTool('validate_epic_features_json',     validateEpicFeaturesJson);
+registerTool('validate_qa_tests_json',          validateQaTestsJson);
 registerTool('get_context_file',                getContextFile);
 registerTool('get_domain_skill_context',        getDomainSkillContext);

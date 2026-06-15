@@ -48,6 +48,7 @@ export interface WorkflowCheckpoint {
   token_usage: string | null;
   required_role: string | null;
   resolved_by_user_id: number | null;
+  resolved_by_name: string | null;
   artifact?: { id: number; type: string; file_path: string; created_at: number } | null;
 }
 

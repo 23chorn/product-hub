@@ -8,6 +8,8 @@ export interface ContextFile {
   hasTemplate: boolean;
   content: string;
   templateContent?: string;
+  stages: string[] | null;
+  editRoles: string[] | null;
 }
 
 export interface PersonaFile {

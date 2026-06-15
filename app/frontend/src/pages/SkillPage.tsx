@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { api, type SkillVersion } from '../services/api';
 import { useThemeStore } from '../stores/themeStore';
+import { useAuthStore } from '../stores/authStore';
 import { getAgentDisplayName } from '../utils/agent-display-names';
 import { SectionHeader } from '../components/skill/SectionHeader';
 import { SkillViewer } from '../components/skill/SkillViewer';
@@ -21,6 +22,15 @@ import {
 
 export default function SkillPage() {
   const { isDark, toggleTheme } = useThemeStore();
+  const { user, noAuth } = useAuthStore();
+
+  function canEdit(editRoles: string[] | null): boolean {
+    if (noAuth || !user) return true;
+    if (user.is_admin) return true;
+    if (editRoles === null) return true;
+    if (editRoles.length === 0) return false;
+    return editRoles.some(r => user.roles.includes(r));
+  }
 
   const [allSkills, setAllSkills] = useState<SkillVersion[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -361,6 +371,7 @@ export default function SkillPage() {
               setNewVersion={setNewVersion}
               versionHistory={versionHistory}
               isPublishing={isPublishing}
+              canEdit={canEdit(selection.skill.editRoles ?? null)}
               onTabChange={handleSkillTabChange}
               onPublish={handlePublish}
             />

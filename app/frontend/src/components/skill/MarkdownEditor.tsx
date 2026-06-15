@@ -5,12 +5,13 @@ import remarkBreaks from 'remark-breaks';
 
 /** Markdown editor with a 50/50 source + live preview split and synced scrolling. */
 export function MarkdownEditor({
-  value, onChange, placeholder, textareaRef: externalRef,
+  value, onChange, placeholder, textareaRef: externalRef, readOnly = false,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   textareaRef?: React.RefObject<HTMLTextAreaElement>;
+  readOnly?: boolean;
 }) {
   const internalRef = useRef<HTMLTextAreaElement>(null);
   const taRef = externalRef ?? internalRef;
@@ -47,7 +48,8 @@ export function MarkdownEditor({
         onScroll={syncFromEditor}
         placeholder={placeholder}
         spellCheck={false}
-        className="w-1/2 h-full resize-none rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono text-sm p-4 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+        readOnly={readOnly}
+        className={`w-1/2 h-full resize-none rounded-lg border text-slate-900 dark:text-slate-100 font-mono text-sm p-4 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent ${readOnly ? 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 cursor-default' : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'}`}
       />
       <div
         ref={previewRef}

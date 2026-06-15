@@ -25,6 +25,7 @@ interface SkillViewerProps {
   setNewVersion: (v: string) => void;
   versionHistory: SkillVersion[];
   isPublishing: boolean;
+  canEdit: boolean;
   onTabChange: (t: ContentTab) => void;
   onPublish: (meta: SkillMeta) => void;
 }
@@ -32,7 +33,7 @@ interface SkillViewerProps {
 /** Skill detail/editor pane: editable metadata, tab bar (persona/context/tools/template), publish footer. */
 export function SkillViewer({
   skill, displayName, activeTab, editContent, setEditContent,
-  newVersion, setNewVersion, versionHistory, isPublishing,
+  newVersion, setNewVersion, versionHistory, isPublishing, canEdit,
   onTabChange, onPublish,
 }: SkillViewerProps) {
   const [ownerTeam, setOwnerTeam] = useState(skill.owner_team);
@@ -60,7 +61,7 @@ export function SkillViewer({
     skill.discipline === 'agent' ? key !== 'dev_context' : key !== 'persona'
   );
 
-  const tabHint = MARKDOWN_TABS.has(activeTab) ? 'Edit · Preview' : activeTab === 'tools' ? 'JSON · Preview' : null;
+  const tabHint = MARKDOWN_TABS.has(activeTab) ? 'Edit · Preview' : null;
 
   return (
     <>
@@ -74,14 +75,23 @@ export function SkillViewer({
           <span className="text-xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-mono">
             v{skill.version}
           </span>
+          {!canEdit && (
+            <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 font-medium">
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+              Read only
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-3 mt-2 flex-wrap">
           <div className="flex items-center gap-1.5">
             <label className="text-xs text-slate-400 dark:text-slate-500 flex-shrink-0">Owner</label>
             <input
               value={ownerTeam}
-              onChange={(e) => setOwnerTeam(e.target.value)}
-              className="w-32 px-2 py-0.5 text-xs rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500"
+              onChange={(e) => canEdit && setOwnerTeam(e.target.value)}
+              readOnly={!canEdit}
+              className={`w-32 px-2 py-0.5 text-xs rounded border text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 ${canEdit ? 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800' : 'border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 cursor-default'}`}
             />
           </div>
           {skill.discipline === 'agent' && (
@@ -89,8 +99,9 @@ export function SkillViewer({
               <label className="text-xs text-slate-400 dark:text-slate-500 flex-shrink-0">Type</label>
               <input
                 value={agentType}
-                onChange={(e) => setAgentType(e.target.value)}
-                className="w-32 px-2 py-0.5 text-xs rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-mono focus:outline-none focus:ring-1 focus:ring-teal-500"
+                onChange={(e) => canEdit && setAgentType(e.target.value)}
+                readOnly={!canEdit}
+                className={`w-32 px-2 py-0.5 text-xs rounded border text-slate-800 dark:text-slate-200 font-mono focus:outline-none focus:ring-1 focus:ring-teal-500 ${canEdit ? 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800' : 'border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 cursor-default'}`}
                 placeholder="e.g. analyst"
               />
             </div>
@@ -125,30 +136,32 @@ export function SkillViewer({
             value={editContent}
             onChange={setEditContent}
             placeholder={`Enter ${activeTab.replace('_', ' ')} content…`}
+            readOnly={!canEdit}
           />
         ) : (
-          <JsonToolEditor value={editContent} onChange={setEditContent} />
+          <JsonToolEditor value={editContent} onChange={canEdit ? setEditContent : () => {}} readOnly={!canEdit} />
         )}
       </div>
 
       {/* Footer */}
       <div className="px-5 py-3 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/30 flex-shrink-0">
         <div className="flex items-center justify-between">
-          <span className={`text-xs ${isDirty ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-slate-400'}`}>
-            {isDirty ? 'Unsaved — publish to create a new version' : 'No changes'}
+          <span className={`text-xs ${!canEdit ? 'text-slate-400' : isDirty ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-slate-400'}`}>
+            {!canEdit ? 'Read only — insufficient role' : isDirty ? 'Unsaved — publish to create a new version' : 'No changes'}
           </span>
           <div className="flex items-center space-x-2">
             <label className="text-xs text-slate-500 dark:text-slate-400">New version:</label>
             <input
               type="text"
               value={newVersion}
-              onChange={(e) => setNewVersion(e.target.value)}
-              className="w-24 px-2 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono focus:outline-none focus:ring-2 focus:ring-teal-500"
+              onChange={(e) => canEdit && setNewVersion(e.target.value)}
+              readOnly={!canEdit}
+              className="w-24 px-2 py-1 text-xs rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-mono focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:opacity-40"
               placeholder="e.g. 1.0.1"
             />
             <button
               onClick={() => onPublish({ owner_team: ownerTeam, agent_type: agentType })}
-              disabled={!newVersion.trim() || isPublishing}
+              disabled={!newVersion.trim() || isPublishing || !canEdit}
               className="text-xs px-4 py-1.5 rounded-md bg-teal-600 text-white hover:bg-teal-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-medium"
             >
               {isPublishing ? 'Publishing…' : 'Publish Version'}

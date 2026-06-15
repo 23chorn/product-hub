@@ -23,6 +23,7 @@ export interface CheckpointRow {
   token_usage: string | null;       // JSON: StageTokenData
   required_role: string | null;
   resolved_by_user_id: number | null;
+  resolved_by_name: string | null;
   created_at: number;
   resolved_at: number | null;
 }

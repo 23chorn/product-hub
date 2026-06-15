@@ -5,6 +5,7 @@ const STAGE_LABELS_BASE: Record<string, string> = {
   solution_architect:   'Architect — Atlas',
   story_decomposition:  'Shard - Product Owner — Vera, Finn, Remi & Cole',
   prototype:            'Prototype — Nova',
+  figma_design:         'Figma Design — Luma',
   critic:               'Critic — Flint',
   curator:              'Curator — Ivy',
 };
@@ -30,6 +31,7 @@ export const TOGGLEABLE_STAGES: Array<{ key: string; label: string; short: strin
   { key: 'analyst',              label: 'Analyst — Sage',               short: 'Sage · Analyst' },
   { key: 'pm_prd',               label: 'Requirements — Rex',           short: 'Rex · PM' },
   { key: 'prototype',            label: 'Prototype — Nova',             short: 'Nova · Prototype' },
+  { key: 'figma_design',         label: 'Figma Design — Luma',          short: 'Luma · Figma' },
   { key: 'solution_architect',   label: 'Architect — Atlas',            short: 'Atlas · Architect' },
   { key: 'epic_feature_planner', label: 'Epic & Features — Apex',       short: 'Apex · Features' },
   { key: 'story_decomposition',  label: 'Shard - Product Owner',              short: 'Multi-Agent · Refinement' },
@@ -43,6 +45,7 @@ const STAGE_SHORT_LABELS_BASE: Record<string, string> = {
   solution_architect: 'Arch',
   story_decomposition: 'Stories',
   prototype: 'Prototype',
+  figma_design: 'Figma',
   // Session mode aliases — artifact.stage = s.mode, not the workflow stage name
   prd: 'PRD',
   architecture: 'Arch',

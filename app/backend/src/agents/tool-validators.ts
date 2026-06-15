@@ -227,6 +227,19 @@ export function validatePrdJson(input: Record<string, unknown>): string {
     }
   });
 
+  // NFR category coverage — Performance and Security are mandatory
+  if (Array.isArray(p.non_functional_requirements)) {
+    const presentCategories = new Set(
+      p.non_functional_requirements
+        .map((n: any) => (typeof n.category === 'string' ? n.category.toLowerCase() : ''))
+    );
+    const required = ['performance', 'security'];
+    const missing = required.filter(cat => !presentCategories.has(cat));
+    if (missing.length > 0) {
+      issues.push(`non_functional_requirements: missing required categories: ${missing.join(', ')} — every PRD must cover Performance and Security NFRs`);
+    }
+  }
+
   // functional_requirements — aim for 10–20
   const frs = reqArray(p, 'functional_requirements', 'root', issues, 5);
   if (frs) {
@@ -435,12 +448,15 @@ export function validateBacklogJson(input: Record<string, unknown>): string {
   }
 
   const issues: string[] = [];
+  const allStoryIds: string[] = [];
 
   function validateStory(story: any, p: string): void {
     if (!story.story_id) {
       issues.push(`${p}: missing story_id`);
     } else if (!STORY_ID_RE.test(story.story_id)) {
       issues.push(`${p}: story_id "${story.story_id}" must follow F?.S? format (e.g. F1.S2)`);
+    } else {
+      allStoryIds.push(story.story_id);
     }
 
     if (!story.title) issues.push(`${p}: missing title`);
@@ -501,6 +517,8 @@ export function validateBacklogJson(input: Record<string, unknown>): string {
     }
   }
 
+  let allStories: any[] = [];
+
   if (parsed.epic && parsed.features) {
     if (!parsed.epic.title) issues.push('epic: missing title');
     if (!Array.isArray(parsed.features) || parsed.features.length === 0) {
@@ -510,13 +528,263 @@ export function validateBacklogJson(input: Record<string, unknown>): string {
         issues.push(`${parsed.features.length} features exceeds the 6-feature limit`);
       }
       parsed.features.forEach((f: any, i: number) => validateFeature(f, `features[${i}]`));
+      allStories = parsed.features.flatMap((f: any) => Array.isArray(f.stories) ? f.stories : []);
     }
   } else if (parsed.feature) {
     validateFeature(parsed.feature, 'feature');
+    allStories = Array.isArray(parsed.feature.stories) ? parsed.feature.stories : [];
   } else if (parsed.story) {
     validateStory(parsed.story, 'story');
+    allStories = [parsed.story];
   } else {
     issues.push('Root must be one of: { epic, features[] }, { feature }, or { story }');
+  }
+
+  // Duplicate story_id detection
+  const seenIds = new Set<string>();
+  for (const id of allStoryIds) {
+    if (seenIds.has(id)) {
+      issues.push(`Duplicate story_id "${id}" — each story must have a unique ID`);
+    }
+    seenIds.add(id);
+  }
+
+  // depends_on referential integrity
+  for (const story of allStories) {
+    const deps: any[] = Array.isArray(story.depends_on) ? story.depends_on : [];
+    for (const dep of deps) {
+      if (typeof dep === 'string' && dep.trim() && !seenIds.has(dep)) {
+        issues.push(`story "${story.story_id}": depends_on references unknown story_id "${dep}" — all dependencies must exist in this feature batch`);
+      }
+    }
+  }
+
+  // Sprint velocity ceiling — flag if total points exceed a 2-week sprint max
+  const totalPoints = allStories.reduce((sum: number, s: any) => {
+    const p = s.estimated_points ?? s.effort ?? s.storyPoints;
+    return sum + (typeof p === 'number' ? p : 0);
+  }, 0);
+  if (allStories.length > 0 && totalPoints > 80) {
+    issues.push(`Total story points (${totalPoints}) exceed the 80-point sprint ceiling — this feature batch cannot be completed in a single sprint. Split stories or defer lower-priority items.`);
+  }
+
+  return result(issues);
+}
+
+// ── validate_epic_features_json ───────────────────────────────────────────────
+
+const VALID_PHASES = new Set(['MVP', 'Phase 2', 'Phase 3']);
+const FR_ID_RE = /^FR-\d+$/;
+
+export function validateEpicFeaturesJson(input: Record<string, unknown>): string {
+  const { parsed, issues } = parseJson(input);
+  if (parsed === null) return fail(issues);
+
+  const p = parsed;
+
+  // Epic
+  if (!p.epic || typeof p.epic !== 'object') {
+    issues.push('root: "epic" object is required');
+  } else {
+    ['title', 'description', 'businessValue', 'prdLink', 'definitionOfDone'].forEach(f =>
+      req(p.epic, f, 'epic', issues)
+    );
+    if (typeof p.epic.title === 'string' && p.epic.title.split(/\s+/).length > 6) {
+      issues.push('epic.title: must be 3-6 words — keep it short and memorable');
+    }
+  }
+
+  // Features
+  const features = reqArray(p, 'features', 'root', issues, 2);
+  if (features) {
+    if (features.length > 8) {
+      issues.push(`features: ${features.length} features exceeds the 8-feature limit — defer lower-priority features to a later phase`);
+    }
+
+    let mvpCount = 0;
+    features.forEach((f: any, i: number) => {
+      const lp = `features[${i}]`;
+      req(f, 'title', lp, issues);
+      req(f, 'description', lp, issues);
+
+      // Phase validation
+      if (!f.phase) {
+        issues.push(`${lp}: "phase" is required — must be MVP, Phase 2, or Phase 3`);
+      } else if (!VALID_PHASES.has(f.phase)) {
+        issues.push(`${lp}: "phase" must be exactly "MVP", "Phase 2", or "Phase 3" (got "${f.phase}")`);
+      } else if (f.phase === 'MVP') {
+        mvpCount++;
+      }
+
+      // Acceptance criteria — feature level, 3–5
+      const ac = f.acceptanceCriteria ?? f.acceptance_criteria;
+      if (!Array.isArray(ac) || ac.length === 0) {
+        issues.push(`${lp}: "acceptanceCriteria" must be a non-empty array`);
+      } else {
+        if (ac.length < 3) issues.push(`${lp}: only ${ac.length} acceptance criteria — minimum 3 feature-level ACs required`);
+        if (ac.length > 5) issues.push(`${lp}: ${ac.length} acceptance criteria exceeds maximum of 5`);
+        ac.forEach((c: any, j: number) => {
+          if (typeof c === 'string' && (c.includes('As a user') || c.toLowerCase().startsWith('as a'))) {
+            issues.push(`${lp}.acceptanceCriteria[${j}]: looks like a user story, not a feature-level AC — write testable conditions, not user stories`);
+          }
+        });
+      }
+
+      // prdRef with functional requirement IDs
+      if (!f.prdRef || typeof f.prdRef !== 'object') {
+        issues.push(`${lp}: "prdRef" object is required for PRD traceability`);
+      } else {
+        if (!Array.isArray(f.prdRef.functionalRequirements) || f.prdRef.functionalRequirements.length === 0) {
+          issues.push(`${lp}: prdRef.functionalRequirements must reference at least one FR-XX from the PRD`);
+        } else {
+          f.prdRef.functionalRequirements.forEach((fr: any, j: number) => {
+            if (typeof fr !== 'string' || !FR_ID_RE.test(fr)) {
+              issues.push(`${lp}.prdRef.functionalRequirements[${j}]: "${fr}" must match FR-XX format`);
+            }
+          });
+        }
+      }
+
+      // stories must be explicitly empty
+      if (!Array.isArray(f.stories)) {
+        issues.push(`${lp}: "stories" must be an empty array [] — user stories are added by the story decomposition agent, not here`);
+      } else if (f.stories.length > 0) {
+        issues.push(`${lp}: "stories" must be empty [] at this stage — found ${f.stories.length} item(s). Story decomposition is a separate stage.`);
+      }
+
+      // No TBD in any field
+      if (hasTBD(f)) {
+        issues.push(`${lp}: contains unresolved "TBD" — every field must be a definitive decision`);
+      }
+    });
+
+    if (mvpCount === 0) {
+      issues.push('features: no MVP features found — at least one feature must be marked as MVP');
+    }
+    if (mvpCount === features.length && features.length > 3) {
+      issues.push(`features: all ${features.length} features are MVP — apply phase discipline. Most features should be Phase 2 or Phase 3.`);
+    }
+  }
+
+  // outOfScope
+  const oos = reqArray(p, 'outOfScope', 'root', issues, 1);
+  oos?.forEach((item: any, i: number) => {
+    if (typeof item !== 'string' || !item.trim()) {
+      issues.push(`outOfScope[${i}]: must be a non-empty string`);
+    }
+  });
+
+  return result(issues);
+}
+
+// ── validate_qa_tests_json ────────────────────────────────────────────────────
+
+const TC_ID_RE = /^TC-F\d+-\d{3}$/;
+const VALID_TEST_TYPES = new Set(['happy_path', 'negative', 'edge', 'boundary', 'security', 'performance']);
+const VALID_PRIORITIES = new Set(['critical', 'high', 'medium', 'low']);
+const VAGUE_THEN = /\bshould work\s*(correctly)?\b|\bshould function\b|\bshould be fine\b|\bshould succeed\b/i;
+const VALID_TAGS = new Set(['@smoke', '@regression', '@negative', '@edge', '@security', '@accessibility', '@performance']);
+
+export function validateQaTestsJson(input: Record<string, unknown>): string {
+  const { parsed, issues } = parseJson(input);
+  if (parsed === null) return fail(issues);
+
+  const p = parsed;
+  req(p, 'suite', 'root', issues);
+  req(p, 'version', 'root', issues);
+
+  const testCases = reqArray(p, 'test_cases', 'root', issues, 5);
+  if (!testCases) return fail(issues);
+
+  if (testCases.length < 5) {
+    issues.push(`test_cases: only ${testCases.length} test cases — a complete QA suite requires at least 5`);
+  }
+
+  const seenIds = new Set<string>();
+  let smokeCount = 0;
+  let negativeCount = 0;
+  const criticalIds: string[] = [];
+
+  testCases.forEach((tc: any, i: number) => {
+    const lp = `test_cases[${i}]`;
+
+    // ID format
+    if (!tc.id) {
+      issues.push(`${lp}: missing "id"`);
+    } else if (!TC_ID_RE.test(tc.id)) {
+      issues.push(`${lp}: id "${tc.id}" must follow TC-F?-??? format (e.g. TC-F1-001)`);
+    } else if (seenIds.has(tc.id)) {
+      issues.push(`${lp}: duplicate test case id "${tc.id}"`);
+    } else {
+      seenIds.add(tc.id);
+    }
+
+    req(tc, 'title', lp, issues);
+    req(tc, 'description', lp, issues);
+    req(tc, 'category', lp, issues);
+    req(tc, 'prd_ref', lp, issues);
+
+    // type
+    if (!tc.type) {
+      issues.push(`${lp}: "type" is required (happy_path | negative | edge | boundary | security | performance)`);
+    } else if (!VALID_TEST_TYPES.has(tc.type)) {
+      issues.push(`${lp}: invalid type "${tc.type}" — must be one of: ${[...VALID_TEST_TYPES].join(', ')}`);
+    } else if (tc.type === 'negative') {
+      negativeCount++;
+    }
+
+    // priority
+    if (!tc.priority) {
+      issues.push(`${lp}: "priority" is required (critical | high | medium | low)`);
+    } else if (!VALID_PRIORITIES.has(tc.priority)) {
+      issues.push(`${lp}: invalid priority "${tc.priority}" — must be critical, high, medium, or low`);
+    } else if (tc.priority === 'critical') {
+      criticalIds.push(tc.id ?? lp);
+    }
+
+    // scenario — Given/When/Then must all be non-empty arrays
+    if (!tc.scenario || typeof tc.scenario !== 'object') {
+      issues.push(`${lp}: "scenario" object with given/when/then arrays is required`);
+    } else {
+      const { given, when, then } = tc.scenario;
+      if (!Array.isArray(given) || given.length === 0) issues.push(`${lp}.scenario: "given" must be a non-empty array`);
+      if (!Array.isArray(when) || when.length === 0)  issues.push(`${lp}.scenario: "when" must be a non-empty array`);
+      if (!Array.isArray(then) || then.length === 0)  issues.push(`${lp}.scenario: "then" must be a non-empty array`);
+
+      // Vague "then" clause detection
+      if (Array.isArray(then)) {
+        then.forEach((step: any, j: number) => {
+          if (typeof step === 'string' && VAGUE_THEN.test(step)) {
+            issues.push(`${lp}.scenario.then[${j}]: vague assertion "${step}" — every Then step must describe a specific, observable outcome`);
+          }
+        });
+      }
+    }
+
+    // Tags
+    if (!Array.isArray(tc.tags) || tc.tags.length === 0) {
+      issues.push(`${lp}: "tags" must be a non-empty array (e.g. ["@smoke", "@regression"])`);
+    } else {
+      if (tc.tags.includes('@smoke')) smokeCount++;
+      const invalidTags = tc.tags.filter((t: any) => !VALID_TAGS.has(t));
+      if (invalidTags.length > 0) {
+        issues.push(`${lp}: unknown tag(s): ${invalidTags.join(', ')} — valid tags: ${[...VALID_TAGS].join(', ')}`);
+      }
+    }
+  });
+
+  // Suite-level checks
+  if (criticalIds.length > 0 && smokeCount === 0) {
+    issues.push(`No @smoke tests found — at least one critical test case must be tagged @smoke to define the core regression gate (critical tests: ${criticalIds.slice(0, 3).join(', ')})`);
+  }
+
+  if (negativeCount === 0) {
+    issues.push('No negative test cases found — at least one "negative" type test is required to verify error handling and rejection behavior');
+  }
+
+  const negativePercent = Math.round((negativeCount / testCases.length) * 100);
+  if (negativePercent < 20 && testCases.length >= 5) {
+    issues.push(`Only ${negativePercent}% of test cases are negative paths (${negativeCount}/${testCases.length}) — aim for at least 20% negative/edge coverage`);
   }
 
   return result(issues);
