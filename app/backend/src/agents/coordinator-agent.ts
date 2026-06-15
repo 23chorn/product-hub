@@ -535,6 +535,7 @@ ${policyLines}`;
       `- epic_feature_planner — Apex, epic and feature breakdown with phase labels\n` +
       `- story_decomposition  — Shard - Product Owner, multi-agent backlog of epics/stories\n` +
       `- prototype            — Nova, interactive React prototype of key user journeys\n` +
+      `- figma_design         — Luma, Figma screen mockups from design tokens and PRD journeys\n` +
       `- curator              — Ivy, update project context files with learnings\n\n` +
       `Explain your reasoning briefly, then output the chosen stage sequence as a JSON array in a \`\`\`stages code block.\n\n` +
       `Example:\n\`\`\`stages\n["analyst", "pm_prd", "solution_architect", "epic_feature_planner", "story_decomposition", "curator"]\n\`\`\``;

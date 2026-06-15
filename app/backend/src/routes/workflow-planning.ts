@@ -12,7 +12,7 @@ import { CoordinatorAgent } from '../agents/coordinator-agent';
 // The curator runs at the end to update project context files.
 export const DEFAULT_STAGES = ['analyst', 'pm_prd', 'solution_architect', 'epic_feature_planner', 'story_decomposition', 'curator'];
 
-export const KNOWN_STAGES = new Set(['analyst', 'pm_prd', 'epic_feature_planner', 'solution_architect', 'story_decomposition', 'prototype', 'critic', 'curator']);
+export const KNOWN_STAGES = new Set(['analyst', 'pm_prd', 'epic_feature_planner', 'solution_architect', 'story_decomposition', 'prototype', 'figma_design', 'critic', 'curator']);
 
 // ── Pre-workflow planning cost accumulator ────────────────────────────────────
 // Planning conversations happen before a workflow ID exists, so we can't call

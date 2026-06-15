@@ -1,0 +1,129 @@
+{
+  "title": "Figma Mockups: In-App Messaging & Trade Chat — xCube",
+  "figma_file_url": "https://www.figma.com/file/xcube-messaging-mockups/In-App-Messaging",
+  "figma_write_status": "planned",
+  "source_design_system": "xcube-design-system",
+
+  "design_tokens_extracted": {
+    "colors": [
+      { "name": "color/brand/primary", "value": "#3C70FF", "usage": "Primary actions, active tab indicators, channel join buttons" },
+      { "name": "color/brand/interactive", "value": "#5231F7", "usage": "CTA buttons, send button, compose action" },
+      { "name": "color/ui/background", "value": "#FFFFFF", "usage": "Screen background, card surfaces" },
+      { "name": "color/ui/surface-02", "value": "#F5F5F7", "usage": "Input backgrounds, secondary surface, channel list item hover" },
+      { "name": "color/ui/surface-03", "value": "#E4E3E8", "usage": "Dividers, message bubbles from others, unread badges" },
+      { "name": "color/text/primary", "value": "#18171A", "usage": "Channel names, message body, compose input" },
+      { "name": "color/text/secondary", "value": "#616068", "usage": "Timestamps, member counts, message previews" },
+      { "name": "color/text/tertiary", "value": "#7C7A82", "usage": "Placeholder text, empty states" },
+      { "name": "color/status/success", "value": "#0BAE6E", "usage": "Online indicator, message delivered status" },
+      { "name": "color/status/error", "value": "#FF1A40", "usage": "Moderation rejected badge, rate limit warning" }
+    ],
+    "typography": [
+      { "name": "type/heading/h2", "font_family": "Poppins", "size": "20px", "weight": "600", "usage": "Screen titles, channel name in detail header" },
+      { "name": "type/body/bold", "font_family": "SF Pro Text", "size": "15px", "weight": "600", "usage": "Channel names in list, sender names in thread" },
+      { "name": "type/body/regular", "font_family": "SF Pro Text", "size": "15px", "weight": "400", "usage": "Message body, channel descriptions" },
+      { "name": "type/label/semibold", "font_family": "SF Pro Text", "size": "13px", "weight": "600", "usage": "Unread count badges, section headers" },
+      { "name": "type/tiny/regular", "font_family": "SF Pro Text", "size": "11px", "weight": "400", "usage": "Timestamps, member count, moderation status" }
+    ],
+    "spacing": [
+      { "name": "spacing/xs", "value": "4px", "usage": "Icon-to-label gap, badge padding" },
+      { "name": "spacing/sm", "value": "8px", "usage": "Avatar-to-text gap, inline element spacing" },
+      { "name": "spacing/md", "value": "16px", "usage": "Screen horizontal padding, card internal padding" },
+      { "name": "spacing/lg", "value": "24px", "usage": "Section separation, bottom nav height top margin" },
+      { "name": "spacing/xl", "value": "32px", "usage": "Top safe area clearance" }
+    ],
+    "components": [
+      { "name": "BottomNavBar", "node_id": "12:340", "variants": ["default", "chat-active"] },
+      { "name": "Avatar", "node_id": "12:88", "variants": ["sm-24", "md-40", "lg-56", "with-online-dot"] },
+      { "name": "InputField", "node_id": "14:220", "variants": ["default", "focused", "disabled", "with-attachment"] },
+      { "name": "Button/Primary", "node_id": "10:44", "variants": ["default", "pressed", "disabled", "icon-leading"] },
+      { "name": "Button/Ghost", "node_id": "10:58", "variants": ["default", "pressed"] },
+      { "name": "Badge/Unread", "node_id": "16:112", "variants": ["count", "dot"] },
+      { "name": "TickerCard", "node_id": "18:204", "variants": ["compact", "expanded", "price-up", "price-down"] },
+      { "name": "MessageBubble", "node_id": "20:316", "variants": ["sent", "received", "with-ticker", "moderation-pending"] },
+      { "name": "ListItem/Channel", "node_id": "22:88", "variants": ["default", "unread", "active"] }
+    ],
+    "design_gaps": [
+      "ModeratedMessagePlaceholder — a message bubble variant showing 'Message under review' state with pending badge; not in design system",
+      "ChannelEmptyState — full-screen empty state illustration for channels with zero messages; needs new illustration asset"
+    ]
+  },
+
+  "screens_created": [
+    {
+      "name": "Chat Tab — Channel List",
+      "frame_id": "",
+      "frame_url": "",
+      "size": { "width": 390, "height": 844 },
+      "prd_journeys": ["Discover and join a channel", "See unread message activity"],
+      "description": "The primary chat entry point showing all public channels, ordered by recent activity. Unread counts and last message preview help users prioritise.",
+      "layout_notes": "Uses existing BottomNavBar with Chat tab active. Channel list items use ListItem/Channel component (unread variant for unseen channels). Top search bar uses InputField/default. Pull-to-refresh gesture supported.",
+      "interactions": [
+        { "trigger": "tap channel row", "target_screen": "Channel Detail", "notes": "Passes channel id and name" },
+        { "trigger": "tap + Create", "target_screen": "Create Channel", "notes": "FAB in top right" }
+      ],
+      "tokens_used": ["color/ui/background", "color/ui/surface-02", "color/text/primary", "color/text/secondary", "type/body/bold", "type/tiny/regular", "spacing/md", "Badge/Unread", "ListItem/Channel"]
+    },
+    {
+      "name": "Channel Detail — Message Thread",
+      "frame_id": "",
+      "frame_url": "",
+      "size": { "width": 390, "height": 844 },
+      "prd_journeys": ["Send a message in a channel", "Attach a ticker card to a message"],
+      "description": "Real-time message thread for a single channel. Messages appear chronologically with sender avatar and timestamp. Ticker cards are inline with expandable price widget.",
+      "layout_notes": "Fixed header with channel name, member count, and back chevron. Scrollable message list uses MessageBubble variants. Compose bar pinned to bottom above safe area. Ticker card attachment button (chart icon) in compose bar toolbar.",
+      "interactions": [
+        { "trigger": "tap back", "target_screen": "Chat Tab — Channel List", "notes": "" },
+        { "trigger": "tap send", "target_screen": "Channel Detail — Message Thread", "notes": "Optimistically appends sent bubble" },
+        { "trigger": "tap ticker card", "target_screen": "Ticker Card Detail", "notes": "Expands to full quote view" },
+        { "trigger": "tap chart icon in compose", "target_screen": "Ticker Search", "notes": "Opens ticker search to attach" }
+      ],
+      "tokens_used": ["color/ui/background", "color/ui/surface-03", "color/text/primary", "color/text/secondary", "type/body/regular", "type/tiny/regular", "spacing/md", "spacing/sm", "Avatar", "MessageBubble", "InputField", "Button/Primary", "TickerCard"]
+    },
+    {
+      "name": "Ticker Search — Attach to Message",
+      "frame_id": "",
+      "frame_url": "",
+      "size": { "width": 390, "height": 844 },
+      "prd_journeys": ["Attach a ticker card to a message"],
+      "description": "Bottom sheet triggered from the compose bar. User searches by ticker symbol or company name. Tapping a result attaches a TickerCard to the pending message.",
+      "layout_notes": "Modal bottom sheet using existing Sheet component pattern. InputField/focused at top. Results list reuses existing InstrumentSearchResult list item component. Shows last price, change %, and market status inline.",
+      "interactions": [
+        { "trigger": "tap result", "target_screen": "Channel Detail — Message Thread", "notes": "Returns to thread with ticker card pre-attached in compose" },
+        { "trigger": "tap dismiss / swipe down", "target_screen": "Channel Detail — Message Thread", "notes": "" }
+      ],
+      "tokens_used": ["color/ui/background", "color/ui/surface-02", "color/text/primary", "color/status/success", "type/body/bold", "type/body/regular", "spacing/md", "InputField", "Button/Ghost"]
+    },
+    {
+      "name": "Ticker Card Detail",
+      "frame_id": "",
+      "frame_url": "",
+      "size": { "width": 390, "height": 844 },
+      "prd_journeys": ["View live ticker data from a message"],
+      "description": "Expanded view of a TickerCard tapped from a message. Shows live price, intraday chart, bid/ask, volume, and a Buy / Sell CTA linking to the existing order flow.",
+      "layout_notes": "Reuses existing TickerCard/expanded component as the header card. Intraday chart uses existing QuoteChart component. Bottom CTAs are Button/Primary (Buy) and Button/Ghost (Sell). Safe area respected at bottom.",
+      "interactions": [
+        { "trigger": "tap back", "target_screen": "Channel Detail — Message Thread", "notes": "" },
+        { "trigger": "tap Buy / Sell", "target_screen": "Order Flow (existing)", "notes": "Hands off to existing order flow — out of scope for messaging" }
+      ],
+      "tokens_used": ["color/ui/background", "color/brand/primary", "color/status/success", "color/status/error", "type/heading/h2", "type/body/bold", "spacing/md", "spacing/lg", "TickerCard", "Button/Primary", "Button/Ghost"]
+    },
+    {
+      "name": "Create Channel",
+      "frame_id": "",
+      "frame_url": "",
+      "size": { "width": 390, "height": 844 },
+      "prd_journeys": ["Create a new public channel"],
+      "description": "Simple form to create a new public channel. Name (required, unique), optional topic, and a Create button. Inline validation on name uniqueness.",
+      "layout_notes": "Screen-level form with header. Two InputField stacks: Name (with character counter at 50 chars) and Topic (optional, 140 chars). Button/Primary at bottom pinned to keyboard safe area. Error state uses color/status/error inline below Name field.",
+      "interactions": [
+        { "trigger": "tap Create", "target_screen": "Channel Detail — Message Thread", "notes": "Navigates to newly created channel on success" },
+        { "trigger": "tap Cancel / back", "target_screen": "Chat Tab — Channel List", "notes": "" }
+      ],
+      "tokens_used": ["color/ui/background", "color/text/primary", "color/text/tertiary", "color/status/error", "type/body/bold", "type/body/regular", "spacing/md", "InputField", "Button/Primary", "Button/Ghost"]
+    }
+  ],
+
+  "navigation_flow": "BottomNav (Chat Tab) → Channel List\nChannel List → Channel Detail (tap row)\nChannel List → Create Channel (tap +)\nChannel Detail → Ticker Search (tap chart icon)\nChannel Detail → Ticker Card Detail (tap ticker card)\nTicker Search → Channel Detail (select ticker)\nCreate Channel → Channel Detail (on success)",
+
+  "notes": "Figma write is deferred (FIGMA_MOCKUP_FILE not configured in this demo run). All frame_id and frame_url fields are empty placeholders. Design gaps identified: ModeratedMessagePlaceholder and ChannelEmptyState components need to be added to the design system before production handoff. Ticker Card Detail reuses existing QuoteChart and TickerCard components — confirm node IDs with the design system owner before writing frames."
+}
