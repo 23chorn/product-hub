@@ -3,49 +3,30 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import { useWorkflowStore, type WorkflowEvent, type WorkflowStatus, type CoordinatorMessage } from '../../stores/workflowStore';
-import { useSessionStore } from '../../stores/sessionStore';
-import { useConfigStore } from '../../stores/configStore';
 import { ContextDiffPanel } from './ContextDiffPanel';
-import { STAGE_LABELS, TOGGLEABLE_STAGES } from '../../constants/stage-labels';
-import { stripReadyMarker, extractReadyPayload } from '../../utils/coordinator-helpers';
+import { STAGE_LABELS } from '../../constants/stage-labels';
+import { stripReadyMarker } from '../../utils/coordinator-helpers';
 import { ConversationHeader } from './ConversationHeader';
 import { PrototypePreview, type PrototypeData } from './PrototypePreview';
 import { api } from '../../services/api';
 import { eventToMessage } from '../../utils/event-to-message';
-import { ChatInputArea } from './ChatInputArea';
 import { PrototypeActions } from './PrototypeActions';
 import { ChangeRequestSection } from './ChangeRequestSection';
 import { PipelineTerminalView } from '../workflow/PipelineTerminalView';
-import { ConversationMessageList } from './ConversationMessageList';
-import { StageConfirmationCard } from './StageConfirmationCard';
 import { MidWorkflowMessageInput } from './MidWorkflowMessageInput';
 
 export function CoordinatorChat() {
   const {
     activeWorkflow, stageSequence, completedStages, currentStage, pendingStage, checkpoints,
     applyWorkflowStatus, resetWorkflow, setViewingArtifactId,
-    planningPhase, planningSessionId,
-    setPlanningPhase, setPlanningSessionId,
+    planningPhase,
     coordinatorMessages, addCoordinatorMessage, appendToLastCoordinatorMessage, replaceLastCoordinatorMessage,
     isStreaming, setIsStreaming,
     lastEventId, setLastEventId,
   } = useWorkflowStore();
-  const { selectedItem } = useSessionStore();
-  const { config } = useConfigStore();
-
-  // Filter stages based on server config (agents/config.yaml enabled_stages)
-  const configEnabledStages = config?.stages?.enabledStages;
-  const availableStages = TOGGLEABLE_STAGES.filter(
-    s => s.key === 'curator' || !configEnabledStages || configEnabledStages[s.key] !== false
-  );
 
   const [reply, setReply] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [enabledStages, setEnabledStages] = useState<Record<string, boolean>>(
-    () => Object.fromEntries(TOGGLEABLE_STAGES.map(s => [s.key, true]))
-  );
-  const [pendingLaunchData, setPendingLaunchData] = useState<{ enrichedContext: string; kbQueries: string[] } | null>(null);
-  const [stageRationale, setStageRationale] = useState<string | null>(null);
   const [showDiffPanel, setShowDiffPanel] = useState(false);
   const [, setStageStale] = useState(false);
   // Change request state
@@ -65,7 +46,6 @@ export function CoordinatorChat() {
   const [lastActivityMs, setLastActivityMs] = useState(() => Date.now());
   const lastEventTimeRef = useRef(Date.now());
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const replyRef = useRef<HTMLTextAreaElement>(null);
 
   const autoResize = useCallback(() => {
@@ -75,12 +55,10 @@ export function CoordinatorChat() {
     el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
   }, []);
 
-  const itemId = selectedItem?.id ?? '';
   const hasWorkflow = activeWorkflow !== null;
   const isComplete = activeWorkflow?.status === 'complete';
   const isAtCheckpoint = activeWorkflow?.status === 'paused_at_checkpoint';
   const isGathering = planningPhase === 'gathering';
-  const isConfirming = planningPhase === 'confirming';
   const isLaunching = planningPhase === 'launching';
 
   const { pendingDiffCount, setPendingDiffCount } = useWorkflowStore();
@@ -103,19 +81,6 @@ export function CoordinatorChat() {
       })
       .catch(() => {});
   }, [isComplete]);
-
-  // Scroll to bottom whenever messages or checkpoint state change
-  // Use instant scroll on initial load, smooth for subsequent updates
-  const hasInitialScrolled = useRef(false);
-  useEffect(() => {
-    if (!coordinatorMessages.length) {
-      hasInitialScrolled.current = false;
-      return;
-    }
-    const behavior = hasInitialScrolled.current ? 'smooth' : 'instant';
-    messagesEndRef.current?.scrollIntoView({ behavior });
-    hasInitialScrolled.current = true;
-  }, [coordinatorMessages, activeWorkflow?.status, checkpoints, showCRForm, crAssessment]);
 
   // Track which pending checkpoint we've already auto-opened, to avoid re-opening after user closes
   const autoOpenedCheckpointRef = useRef<number | null>(null);
@@ -297,11 +262,10 @@ export function CoordinatorChat() {
     return () => clearInterval(t);
   }, [hasWorkflow, planningPhase, isComplete, isAtCheckpoint]);
 
-  // ── Submit goal → open coordinator planning session ───────────────────────
-  // ── Reply to coordinator / mid-workflow message ─────────────────────────
+  // ── Mid-workflow message to the coordinator ───────────────────────────────
   async function handleSendReply(e: React.FormEvent) {
     e.preventDefault();
-    if (!reply.trim() || isStreaming) return;
+    if (!reply.trim() || isStreaming || !activeWorkflow) return;
     const message = reply.trim();
     setReply('');
     if (replyRef.current) replyRef.current.style.height = 'auto';
@@ -311,110 +275,29 @@ export function CoordinatorChat() {
     addCoordinatorMessage({ role: 'human', content: message, timestamp: Date.now() });
     addCoordinatorMessage({ role: 'coordinator', content: '', timestamp: Date.now() });
 
-    // Mid-workflow message
-    if (hasWorkflow && planningPhase === 'idle') {
-      try {
-        await api.sendWorkflowMessage(
-          activeWorkflow!.id,
-          message,
-          (chunk) => appendToLastCoordinatorMessage(chunk),
-          (_fullContent) => { setIsStreaming(false); },
-          (err) => { setError(err); setIsStreaming(false); }
-        );
-      } catch (err: any) {
-        setError(err.message ?? 'Failed to send message');
-        setIsStreaming(false);
-      }
-      return;
-    }
-
-    // Pre-workflow planning reply
-    if (!planningSessionId) return;
     try {
-      await api.replyToCoordinator(
-        planningSessionId,
+      await api.sendWorkflowMessage(
+        activeWorkflow.id,
         message,
         (chunk) => appendToLastCoordinatorMessage(chunk),
-        (fullContent) => {
-          setIsStreaming(false);
-          const payload = extractReadyPayload(fullContent);
-          if (payload.enrichedContext) handleCoordinatorReady(payload.enrichedContext, payload.kbQueries, payload.recommendedStages, payload.stageRationale);
-        },
-        (err) => { setError(err); setIsStreaming(false); },
-        undefined,
-        (cleaned) => replaceLastCoordinatorMessage(cleaned),
+        (_fullContent) => { setIsStreaming(false); },
+        (err) => { setError(err); setIsStreaming(false); }
       );
     } catch (err: any) {
-      setError(err.message ?? 'Failed to send reply');
+      setError(err.message ?? 'Failed to send message');
       setIsStreaming(false);
     }
   }
 
-  // ── Called when COORDINATOR_READY is received — enter confirming phase ──────
-  function handleCoordinatorReady(enrichedContext: string, kbQueries: string[] = [], recommendedStages: string[] | null = null, rationale: string | null = null) {
-    // Apply recommended stages if provided; otherwise keep all stages enabled
-    if (recommendedStages && recommendedStages.length > 0) {
-      const recommended = new Set(recommendedStages);
-      setEnabledStages(Object.fromEntries(
-        availableStages.map(s => [s.key, recommended.has(s.key)])
-      ));
-    } else {
-      setEnabledStages(Object.fromEntries(availableStages.map(s => [s.key, true])));
-    }
-    setStageRationale(rationale);
-    setPendingLaunchData({ enrichedContext, kbQueries });
-    setPlanningPhase('confirming');
-  }
-
-  // ── Launch workflow after user confirms stages ────────────────────────────
-  async function handleLaunchWorkflow(originalGoal: string, enrichedContext: string, kbQueries: string[] = []) {
-    setPlanningPhase('launching');
-    try {
-      const selectedStages = availableStages.filter(s => enabledStages[s.key]).map(s => s.key);
-      const result = await api.startWorkflow(itemId || undefined, originalGoal, enrichedContext, selectedStages, undefined, planningSessionId, kbQueries);
-      const status = await api.getWorkflowStatus(result.workflowId);
-      applyWorkflowStatus(status);
-      setPlanningPhase('idle');
-      setPlanningSessionId(null);
-      localStorage.removeItem('coordinatorPlanningSessionId');
-
-      addCoordinatorMessage({
-        role: 'coordinator',
-        content: `Workflow started. Running ${status.workflow.stage_sequence ? JSON.parse(status.workflow.stage_sequence).length : '?'} stages autonomously. I'll keep you updated.`,
-        timestamp: Date.now(),
-      });
-    } catch (err: any) {
-      setError(err.response?.data?.error ?? err.message ?? 'Failed to start workflow');
-      setPlanningPhase('gathering');
-    }
-  }
-
-  // ── Find artifacts for "View output" buttons ──────────────────────────────
-  function getArtifactForStage(stage: string): number | null {
-    // Use the latest checkpoint for this stage (last in array) — not the first,
-    // which may be an outdated revision.
-    const cp = checkpoints
-      .filter(c => c.stage === stage && c.artifact_id)
-      .at(-1);
-    return cp?.artifact_id ?? null;
-  }
-
   // ── Render ────────────────────────────────────────────────────────────────
 
-  // ── Conversation view (planning, active workflow, or complete) ──────────
   const rawGoal = activeWorkflow?.goal.includes('\n\n[Coordinator context]\n\n')
     ? activeWorkflow.goal.split('\n\n[Coordinator context]\n\n')[0]
     : activeWorkflow?.goal;
   const displayGoal = activeWorkflow?.summary || rawGoal;
 
-  // The user's original goal is the first human message in the planning
-  // conversation — used to launch the workflow from the confirm screen.
-  const plannedGoal = coordinatorMessages.find((m) => m.role === 'human')?.content ?? '';
-
-  // Input only shown during coordinator planning Q&A
-  const showInput = !isLaunching && !isConfirming && isGathering;
-  // Mid-workflow message is available but collapsed by default
-  const showMidWorkflowToggle = hasWorkflow && !isComplete && !isGathering && !isLaunching;
+  // Mid-workflow message is available (collapsed by default) until the run completes.
+  const showMidWorkflowToggle = hasWorkflow && !isComplete;
 
   return (
     <div className="flex flex-col h-full">
@@ -573,177 +456,6 @@ export function CoordinatorChat() {
         </div>
       )}
 
-      {/* ── Planning / confirming / launching: conversation messages ── */}
-      {(!hasWorkflow || planningPhase !== 'idle') && (
-      <div className="flex-1 overflow-y-auto min-h-0">
-        <div className="max-w-3xl mx-auto px-4 py-4 space-y-2">
-        {(isGathering || isConfirming || isLaunching) && (
-          <ConversationMessageList
-            coordinatorMessages={coordinatorMessages}
-            isStreaming={isStreaming}
-            getArtifactForStage={getArtifactForStage}
-            onViewArtifact={setViewingArtifactId}
-          />
-        )}
-
-        {/* Stage confirmation card — shown after coordinator signals ready */}
-        {isConfirming && pendingLaunchData && (
-          <StageConfirmationCard
-            availableStages={availableStages}
-            enabledStages={enabledStages}
-            onToggleStage={(key) => setEnabledStages(prev => ({ ...prev, [key]: !prev[key] }))}
-            stageRationale={stageRationale}
-            onLaunch={() => handleLaunchWorkflow(plannedGoal, pendingLaunchData.enrichedContext, pendingLaunchData.kbQueries)}
-          />
-        )}
-
-
-        {/* Context Diff Review Panel (planning branch) */}
-        {showDiffPanel && (!hasWorkflow || planningPhase !== 'idle') && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 dark:bg-black/50">
-            <ContextDiffPanel onClose={() => {
-              setShowDiffPanel(false);
-              api.getPendingContextDiffs()
-                .then(({ diffs }) => setPendingDiffCount(diffs.length))
-                .catch(() => {});
-            }} />
-          </div>
-        )}
-
-        {/* Completion: reiteration options (planning branch — normally idle uses terminal footer) */}
-        {isComplete && (!hasWorkflow || planningPhase !== 'idle') && (
-          <div className="pt-4 space-y-3">
-            {/* Context updates button */}
-            {pendingDiffCount > 0 && (
-              <div className="flex justify-center">
-                <button
-                  onClick={() => setShowDiffPanel(true)}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
-                >
-                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-500 text-white text-xs font-bold">
-                    {pendingDiffCount}
-                  </span>
-                  Review Context Updates
-                </button>
-              </div>
-            )}
-            {/* Change Request + Prototype buttons */}
-            {!showCRForm && !crAssessment && (
-              <PrototypeActions
-                prototypeData={prototypeData}
-                onShowCRForm={() => setShowCRForm(true)}
-                onViewPrototype={() => setShowPrototype(true)}
-              />
-            )}
-
-            {/* CR form + assessment */}
-            <ChangeRequestSection
-              showForm={showCRForm}
-              crType={crType}
-              onCRTypeChange={setCRType}
-              crDescription={crDescription}
-              onCRDescriptionChange={setCRDescription}
-              crAssessment={crAssessment && activeCR ? crAssessment : null}
-              crConfirmedStages={crConfirmedStages}
-              onToggleConfirmedStage={(stage) => setCRConfirmedStages(prev => ({ ...prev, [stage]: !prev[stage] }))}
-              crLoading={crLoading}
-              onSubmitAssess={async () => {
-                if (!crDescription.trim() || !activeWorkflow) return;
-                setCRLoading(true);
-                setError(null);
-                try {
-                  const cr = await api.createChangeRequest(activeWorkflow.id, crType, crDescription.trim());
-                  setActiveCR({ id: cr.id, status: cr.status });
-
-                  addCoordinatorMessage({
-                    role: 'coordinator',
-                    content: '',
-                    timestamp: Date.now(),
-                  });
-                  setIsStreaming(true);
-                  await api.assessChangeRequest(
-                    cr.id,
-                    (chunk) => appendToLastCoordinatorMessage(chunk),
-                    (assessment) => {
-                      setCRAssessment(assessment);
-                      setCRConfirmedStages(
-                        Object.fromEntries(assessment.affected_stages.map(s => [s, true]))
-                      );
-                      setActiveCR({ id: cr.id, status: 'assessed', impactAssessment: assessment });
-                    },
-                    () => setIsStreaming(false),
-                    (err) => { setError(err); setIsStreaming(false); },
-                    (cleaned) => replaceLastCoordinatorMessage(cleaned),
-                  );
-                  setShowCRForm(false);
-                } catch (err: any) {
-                  setError(err.response?.data?.error ?? err.message ?? 'Failed to create change request');
-                } finally {
-                  setCRLoading(false);
-                }
-              }}
-              onApplyChanges={async () => {
-                const stages = Object.entries(crConfirmedStages)
-                  .filter(([, v]) => v)
-                  .map(([k]) => k);
-                if (stages.length === 0 || !activeWorkflow || !activeCR) return;
-                setCRLoading(true);
-                setError(null);
-                try {
-                  await api.executeChangeRequest(activeCR.id, stages);
-                  const result = await api.getWorkflowStatus(activeWorkflow.id);
-                  applyWorkflowStatus(result);
-                  addCoordinatorMessage({
-                    role: 'coordinator',
-                    content: `Applying changes to ${stages.map(s => STAGE_LABELS[s] ?? s).join(', ')}. Checkpoints will appear for review.`,
-                    timestamp: Date.now(),
-                  });
-                  setCRAssessment(null);
-                  setCRConfirmedStages({});
-                  setCRDescription('');
-                } catch (err: any) {
-                  setError(err.response?.data?.error ?? err.message ?? 'Failed to execute change request');
-                } finally {
-                  setCRLoading(false);
-                }
-              }}
-              onCancel={async () => {
-                if (crAssessment && activeCR) {
-                  try { await api.cancelChangeRequest(activeCR.id); } catch { /* ignore */ }
-                  setCRAssessment(null);
-                  setCRConfirmedStages({});
-                  setCRDescription('');
-                  clearActiveCR();
-                } else {
-                  setShowCRForm(false);
-                  setCRDescription('');
-                  setCRType('correction');
-                }
-              }}
-            />
-          </div>
-        )}
-
-        <div ref={messagesEndRef} />
-        </div>
-      </div>
-      )}{/* end planning/confirming/launching messages */}
-
-      {/* Planning input — only shown during coordinator Q&A */}
-      {showInput && (
-        <ChatInputArea
-          reply={reply}
-          onReplyChange={setReply}
-          isStreaming={isStreaming}
-          error={error}
-          onClearError={() => setError(null)}
-          onSubmit={handleSendReply}
-          textareaRef={replyRef}
-          onAutoResize={autoResize}
-          hasWorkflow={hasWorkflow}
-        />
-      )}
-
       {/* Mid-workflow: collapsed "Message coordinator" toggle */}
       {showMidWorkflowToggle && (
         <MidWorkflowMessageInput
@@ -759,7 +471,7 @@ export function CoordinatorChat() {
       )}
 
       {/* Error display when no input is visible */}
-      {error && !showInput && !showMidWorkflowToggle && (
+      {error && !showMidWorkflowToggle && (
         <div className="border-t border-slate-200 dark:border-slate-700 px-4 py-2 flex items-center gap-2 text-xs text-red-600 dark:text-red-400 flex-shrink-0">
           {error}
           <button onClick={() => setError(null)} className="ml-auto text-slate-400 hover:text-slate-600">✕</button>

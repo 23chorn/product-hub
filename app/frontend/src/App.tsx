@@ -92,25 +92,6 @@ function App() {
           useWorkflowStore.getState().applyWorkflowStatus(status);
         })
         .catch(() => localStorage.removeItem('activeWorkflowId'));
-    } else {
-      // No active workflow — check for an in-progress pre-workflow planning session
-      const planningSessionId = localStorage.getItem('coordinatorPlanningSessionId');
-      if (planningSessionId) {
-        api.getCoordinatorSession(planningSessionId).then((session) => {
-          if (!session) { localStorage.removeItem('coordinatorPlanningSessionId'); return; }
-          const store = useWorkflowStore.getState();
-          store.setPlanningSessionId(planningSessionId);
-          store.setPlanningPhase('gathering');
-          // Restore conversation: skip first user msg (goal injection), map rest to display format
-          const msgs = session.messages.slice(1).map((m: { role: string; content: string }) => ({
-            role: m.role === 'user' ? 'human' as const : 'coordinator' as const,
-            content: m.content,
-            timestamp: Date.now(),
-          }));
-          store.clearCoordinatorMessages();
-          msgs.forEach((m: { role: 'coordinator' | 'human'; content: string; timestamp: number }) => store.addCoordinatorMessage(m));
-        }).catch(() => localStorage.removeItem('coordinatorPlanningSessionId'));
-      }
     }
   }, []);
 
