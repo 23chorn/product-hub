@@ -12,7 +12,17 @@ function ok(): string {
 }
 
 function fail(issues: string[]): string {
-  return JSON.stringify({ valid: false, issues });
+  // Limit to first 15 issues to avoid overwhelming the model with a massive error list
+  // that can cause Bedrock to fail on subsequent tool iterations
+  const MAX_ISSUES = 15;
+  const limitedIssues = issues.slice(0, MAX_ISSUES);
+  const hasMore = issues.length > MAX_ISSUES;
+
+  return JSON.stringify({
+    valid: false,
+    issues: limitedIssues,
+    ...(hasMore && { truncated: true, total_issues: issues.length })
+  });
 }
 
 function result(issues: string[]): string {

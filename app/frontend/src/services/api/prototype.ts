@@ -55,6 +55,7 @@ export const prototypeApi = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prototype, feedback }),
+      credentials: 'include',
     });
 
     if (!response.ok || !response.body) {

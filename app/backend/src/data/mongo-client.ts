@@ -57,6 +57,14 @@ export function getMongoDb(): Promise<Db | null> {
   return _connectPromise;
 }
 
+/** Reset the connection state so the next getMongoDb() call retries. */
+function resetConnection(): void {
+  _client = null;
+  _db = null;
+  _connectPromise = null;
+  _available = true;
+}
+
 export async function closeMongoDb(): Promise<void> {
   if (_client) {
     await _client.close();
@@ -90,6 +98,7 @@ export async function insertArtifactDoc(
     return result.insertedId.toString();
   } catch (err: any) {
     logger.warn(`MongoDB insertArtifactDoc failed: ${err.message}`);
+    resetConnection();
     return null;
   }
 }
@@ -117,6 +126,7 @@ export async function readArtifactDoc(mongoId: string): Promise<string | null> {
       : JSON.stringify(doc.content, null, 2);
   } catch (err: any) {
     logger.warn(`MongoDB readArtifactDoc(${mongoId}) failed: ${err.message}`);
+    resetConnection();
     return null;
   }
 }
@@ -136,6 +146,7 @@ export async function replaceArtifactDocContent(
     return result.modifiedCount > 0;
   } catch (err: any) {
     logger.warn(`MongoDB replaceArtifactDocContent(${mongoId}) failed: ${err.message}`);
+    resetConnection();
     return false;
   }
 }

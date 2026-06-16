@@ -147,6 +147,9 @@ export async function runMultiAgentRefinement(
   // Extract the target feature from the epic_features artifact.
   // flattenFeatures handles both new phases[] and legacy features[] formats.
   let targetFeature: any = null;
+  let epicContext: any = null;
+  let phaseContext: { label: string; deliverable?: string; epicTitle?: string } | null = null;
+
   if (epicFeaturesContent) {
     try {
       const epicFeatures = JSON.parse(epicFeaturesContent);
@@ -154,6 +157,25 @@ export async function runMultiAgentRefinement(
       const allFeatures = flattenFeatures(epicFeatures);
       if (allFeatures[featureIndex]) {
         targetFeature = allFeatures[featureIndex];
+      }
+
+      epicContext = epicFeatures.epic || null;
+
+      // Find which phase contains this feature by walking the phase list in order
+      if (Array.isArray(epicFeatures.phases)) {
+        let count = 0;
+        for (const phase of epicFeatures.phases) {
+          const features = Array.isArray(phase.features) ? phase.features : [];
+          if (featureIndex < count + features.length) {
+            phaseContext = {
+              label: phase.label,
+              deliverable: phase.deliverable,
+              epicTitle: phase.epicTitle,
+            };
+            break;
+          }
+          count += features.length;
+        }
       }
     } catch (err: any) {
       logger.warn(`[MULTI-AGENT] Failed to parse epic_features: ${err.message}`);
@@ -164,21 +186,49 @@ export async function runMultiAgentRefinement(
     throw new Error(`Feature ${featureNum} not found in epic_features artifact (featureIndex=${featureIndex})`);
   }
 
+  // acceptanceCriteria may be camelCase (from template) or snake_case (from older artifacts)
+  const featureACs: string[] =
+    targetFeature.acceptanceCriteria ?? targetFeature.acceptance_criteria ?? [];
+  const prdRef = targetFeature.prdRef ?? targetFeature.prd_ref ?? null;
+  const frIds: string[] =
+    prdRef?.functionalRequirements ?? prdRef?.functional_requirements ?? [];
+  const nfrIds: string[] =
+    prdRef?.nonFunctionalRequirements ?? prdRef?.non_functional_requirements ?? [];
+  const journeys: string[] =
+    prdRef?.userJourneys ?? prdRef?.user_journeys ?? [];
+  const outOfScope: string[] =
+    epicContext?.outOfScope ?? epicContext?.out_of_scope ?? [];
+
   const featureBrief = `
 # Feature Refinement Session
 
+## Initiative Context
+${epicContext ? `**Initiative:** ${epicContext.title || ''}
+**Purpose:** ${epicContext.description || ''}
+**Business Value:** ${epicContext.businessValue || epicContext.business_value || ''}` : ''}
+${outOfScope.length ? `**Out of Scope (do NOT build these):** ${outOfScope.join('; ')}` : ''}
+
+## Phase Context
+${phaseContext ? `**Phase:** ${phaseContext.label}${phaseContext.epicTitle ? ` — ${phaseContext.epicTitle}` : ''}
+**What ships in this phase:** ${phaseContext.deliverable || ''}` : ''}
+
+## Feature to Decompose
 **Feature ${featureNum}: ${targetFeature.title}**
 
 ${targetFeature.description || ''}
 
-**User Stories to Refine:**
-${targetFeature.user_stories?.map((s: any, i: number) => `${i + 1}. ${s}`).join('\n') || '(No user stories provided)'}
+${targetFeature.rationale ? `**Why this feature / why now:** ${targetFeature.rationale}` : ''}
 
-**Functional Requirements (from PRD):**
-${prdContent ? '(See full PRD below)' : '(No PRD available)'}
+${featureACs.length ? `**Feature Acceptance Criteria (must be satisfied when this feature is fully complete):**
+${featureACs.map((ac: string, i: number) => `${i + 1}. ${ac}`).join('\n')}` : ''}
 
-**Architecture Guidance:**
-${archContent ? '(See architecture document below)' : '(No architecture available)'}
+${prdRef ? `**PRD Traceability:**
+- Functional Requirements satisfied: ${frIds.length ? frIds.join(', ') : '(none listed)'}
+- Non-Functional Requirements that constrain this feature: ${nfrIds.length ? nfrIds.join(', ') : '(none listed)'}
+- User Journeys supported: ${journeys.length ? journeys.join(', ') : '(none listed)'}` : ''}
+
+**Full PRD:** ${prdContent ? '(appended below)' : '(not available)'}
+**Architecture:** ${archContent ? '(appended below)' : '(not available)'}
 `.trim();
 
   // ── Phase 1: Draft (Parallel) ──────────────────────────────────────────────
@@ -293,9 +343,11 @@ function buildDraftPrompts(
 1. Break this feature into **6-8 user stories maximum** (format: "As a [persona], I want [capability], so that [benefit]")
    - Target 6-8. Never exceed 8. If you think you need more, the feature scope is too wide — scope down to the most valuable 8.
    - Each story must be independently deliverable and testable in isolation
+   - Together the stories must fully cover the Feature Acceptance Criteria listed in the brief above
 2. Add product acceptance criteria (Given/When/Then format) to each story
-3. Estimate story points (1-2-3-5 scale) based on scope — prefer smaller estimates for atomic tasks
-4. Don't add technical details yet — that's what the engineers will contribute in the next round
+3. Map each story to the Functional Requirements it satisfies (see PRD Traceability in the brief)
+4. Estimate story points (1-2-3-5 scale) based on scope — prefer smaller estimates for atomic tasks
+5. Don't add technical details yet — that's what the engineers will contribute in the next round
 
 **Output Format:**
 Return a JSON structure (use F${featureNum} for all story IDs):
@@ -548,7 +600,9 @@ Merge all contributions into a single JSON artifact following the backlog templa
 
 **Important:**
 - Include ONLY the JSON artifact in your response (no explanatory text before or after)
-- Carry forward epic fields (business_value, definition_of_done, out_of_scope) and feature fields (phase, acceptance_criteria) from the Epic & Features artifact — do not drop them
+- Carry forward epic fields (business_value, definition_of_done, out_of_scope) and feature fields (phase, acceptance_criteria) from the Feature Brief at the top of this prompt — do not drop or weaken them
+- The feature acceptance_criteria array must match the Feature Acceptance Criteria from the brief verbatim — these are approved conditions, not suggestions
+- The feature phase must match the Phase label from the brief
 - Every story must include prd_ref with functional_requirements (the FR IDs from the PRD this story satisfies) and non_functional_requirements (the NFR IDs that constrain this story). Copy from the feature's prdRef where applicable and refine per story. Use [] for non_functional_requirements only if no NFR genuinely applies to this specific story.
 - Feature acceptance_criteria are high-level "done" conditions for the whole feature, not story-level Gherkin
 - Apply Vera's AC improvements — sharpen any vague acceptance criteria language she flagged

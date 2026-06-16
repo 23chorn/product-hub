@@ -21,6 +21,7 @@ export const workflowApi = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ goal, model }),
+      credentials: 'include',
     });
     if (!response.ok) {
       throw apiError(await response.json().catch(() => ({})), response.status);
@@ -67,6 +68,7 @@ export const workflowApi = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sessionId, message, model }),
+      credentials: 'include',
     });
     if (!response.ok) {
       throw apiError(await response.json().catch(() => ({})), response.status);
@@ -144,6 +146,7 @@ export const workflowApi = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message, model }),
+      credentials: 'include',
     });
     if (!response.ok) {
       throw apiError(await response.json().catch(() => ({})), response.status);

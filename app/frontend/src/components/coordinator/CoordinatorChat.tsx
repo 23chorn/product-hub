@@ -10,7 +10,6 @@ import { ConversationHeader } from './ConversationHeader';
 import { PrototypePreview, type PrototypeData } from './PrototypePreview';
 import { api } from '../../services/api';
 import { eventToMessage } from '../../utils/event-to-message';
-import { PrototypeActions } from './PrototypeActions';
 import { ChangeRequestSection } from './ChangeRequestSection';
 import { PipelineTerminalView } from '../workflow/PipelineTerminalView';
 import { MidWorkflowMessageInput } from './MidWorkflowMessageInput';
@@ -330,6 +329,10 @@ export function CoordinatorChat() {
           <PipelineTerminalView
             coordinatorMessages={coordinatorMessages}
             isRunning={!isComplete}
+            showCRButton={isComplete && !showCRForm && !crAssessment}
+            onShowCRForm={() => setShowCRForm(true)}
+            pendingDiffCount={pendingDiffCount}
+            onShowDiffPanel={() => setShowDiffPanel(true)}
             onCheckpointResolved={(result: { workflow: WorkflowStatus; status: string; warning?: string }) => {
               applyWorkflowStatus(result.workflow);
               addCoordinatorMessage({
@@ -345,112 +348,89 @@ export function CoordinatorChat() {
             onBack={() => { localStorage.removeItem('coordinatorPlanningSessionId'); resetWorkflow(); }}
           />
 
-          {/* Completion / CR / streaming footer */}
-          {(isComplete || isStreaming || showDiffPanel) && (
-            <div className="flex-shrink-0 border-t border-slate-200 dark:border-slate-800/60 bg-white dark:bg-[#0d1117] px-4 py-3 space-y-3 max-h-72 overflow-y-auto">
-              {/* Active streaming message */}
-              {isStreaming && (() => {
-                const lastMsg = coordinatorMessages[coordinatorMessages.length - 1];
-                if (!lastMsg || lastMsg.role !== 'coordinator' || lastMsg.eventType || lastMsg.isProgress) return null;
-                const content = stripReadyMarker(lastMsg.content);
-                if (!content) return (
+          {/* Streaming footer — only shown while coordinator is generating */}
+          {isStreaming && (() => {
+            const lastMsg = coordinatorMessages[coordinatorMessages.length - 1];
+            if (!lastMsg || lastMsg.role !== 'coordinator' || lastMsg.eventType || lastMsg.isProgress) return null;
+            const content = stripReadyMarker(lastMsg.content);
+            return (
+              <div className="flex-shrink-0 border-t border-slate-200 dark:border-slate-800/60 bg-white dark:bg-[#0d1117] px-4 py-3">
+                {!content ? (
                   <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono">
                     <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse" />
                     thinking…
                   </div>
-                );
-                return (
+                ) : (
                   <div className="rounded border border-slate-700/40 bg-slate-800/30 px-3 py-2 text-xs font-sans">
                     <div className="prose prose-xs dark:prose-invert max-w-none [&_p]:my-1">
                       <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{content}</ReactMarkdown>
                     </div>
                   </div>
-                );
-              })()}
+                )}
+              </div>
+            );
+          })()}
 
-              {/* Context diff panel */}
-              {showDiffPanel && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 dark:bg-black/50">
-                  <ContextDiffPanel onClose={() => {
-                    setShowDiffPanel(false);
-                    api.getPendingContextDiffs().then(({ diffs }) => setPendingDiffCount(diffs.length)).catch(() => {});
-                  }} />
-                </div>
-              )}
-
-              {/* Completion actions */}
-              {isComplete && (
-                <div className="space-y-3">
-                  {pendingDiffCount > 0 && (
-                    <div className="flex justify-center">
-                      <button
-                        onClick={() => setShowDiffPanel(true)}
-                        className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors font-sans"
-                      >
-                        <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-500 text-white text-xs font-bold">{pendingDiffCount}</span>
-                        Review Context Updates
-                      </button>
-                    </div>
-                  )}
-                  {!showCRForm && !crAssessment && (
-                    <PrototypeActions
-                      prototypeData={prototypeData}
-                      onShowCRForm={() => setShowCRForm(true)}
-                    />
-                  )}
-                  <ChangeRequestSection
-                    showForm={showCRForm}
-                    crType={crType}
-                    onCRTypeChange={setCRType}
-                    crDescription={crDescription}
-                    onCRDescriptionChange={setCRDescription}
-                    crAssessment={crAssessment && activeCR ? crAssessment : null}
-                    crConfirmedStages={crConfirmedStages}
-                    onToggleConfirmedStage={(stage) => setCRConfirmedStages(prev => ({ ...prev, [stage]: !prev[stage] }))}
-                    crLoading={crLoading}
-                    onSubmitAssess={async () => {
-                      if (!crDescription.trim() || !activeWorkflow) return;
-                      setCRLoading(true); setError(null);
-                      try {
-                        const cr = await api.createChangeRequest(activeWorkflow.id, crType, crDescription.trim());
-                        setActiveCR({ id: cr.id, status: cr.status });
-                        addCoordinatorMessage({ role: 'coordinator', content: '', timestamp: Date.now() });
-                        setIsStreaming(true);
-                        await api.assessChangeRequest(
-                          cr.id,
-                          (text: string) => appendToLastCoordinatorMessage(text),
-                          (a: { affected_stages: string[]; summary: string }) => {
-                            const affected = a.affected_stages ?? [];
-                            setCRAssessment({ affected_stages: affected, summary: a.summary ?? '' });
-                            setCRConfirmedStages(Object.fromEntries(affected.map((s: string) => [s, true])));
-                            replaceLastCoordinatorMessage({ role: 'coordinator', content: a.summary ?? '', timestamp: Date.now() });
-                          },
-                          () => { setIsStreaming(false); setCRLoading(false); },
-                          (err: string) => setError(err),
-                        );
-                      } catch (err: any) {
-                        setError(err.response?.data?.error ?? err.message ?? 'Failed to assess'); setCRLoading(false);
-                      }
-                    }}
-                    onApplyChanges={async () => {
-                      if (!activeCR || !activeWorkflow) return;
-                      setCRLoading(true); setError(null);
-                      const confirmedList = Object.entries(crConfirmedStages).filter(([, v]) => v).map(([k]) => k);
-                      try {
-                        const result = await api.executeChangeRequest(activeCR.id, confirmedList);
-                        applyWorkflowStatus(result);
-                        clearActiveCR(); setCRAssessment(null); setCRConfirmedStages({}); setCRDescription(''); setCRType('correction'); setShowCRForm(false);
-                        addCoordinatorMessage({ role: 'coordinator', content: `Change request applied to: ${confirmedList.map((s: string) => STAGE_LABELS[s] ?? s).join(', ')}.`, timestamp: Date.now() });
-                      } catch (err: any) {
-                        setError(err.response?.data?.error ?? err.message ?? 'Failed to execute');
-                      } finally { setCRLoading(false); }
-                    }}
-                    onCancel={() => { clearActiveCR(); setCRAssessment(null); setCRConfirmedStages({}); setCRDescription(''); setCRType('correction'); setShowCRForm(false); }}
-                  />
-                </div>
-              )}
+          {/* Context diff panel — fixed overlay, mounts at component level */}
+          {showDiffPanel && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 dark:bg-black/50">
+              <ContextDiffPanel onClose={() => {
+                setShowDiffPanel(false);
+                api.getPendingContextDiffs().then(({ diffs }) => setPendingDiffCount(diffs.length)).catch(() => {});
+              }} />
             </div>
           )}
+
+          {/* Change request form/assessment — fixed overlay, always mounted */}
+          <ChangeRequestSection
+            showForm={showCRForm}
+            crType={crType}
+            onCRTypeChange={setCRType}
+            crDescription={crDescription}
+            onCRDescriptionChange={setCRDescription}
+            crAssessment={crAssessment && activeCR ? crAssessment : null}
+            crConfirmedStages={crConfirmedStages}
+            onToggleConfirmedStage={(stage) => setCRConfirmedStages(prev => ({ ...prev, [stage]: !prev[stage] }))}
+            crLoading={crLoading}
+            onSubmitAssess={async () => {
+              if (!crDescription.trim() || !activeWorkflow) return;
+              setCRLoading(true); setError(null);
+              try {
+                const cr = await api.createChangeRequest(activeWorkflow.id, crType, crDescription.trim());
+                setActiveCR({ id: cr.id, status: cr.status });
+                addCoordinatorMessage({ role: 'coordinator', content: '', timestamp: Date.now() });
+                setIsStreaming(true);
+                await api.assessChangeRequest(
+                  cr.id,
+                  (text: string) => appendToLastCoordinatorMessage(text),
+                  (a: { affected_stages: string[]; summary: string }) => {
+                    const affected = a.affected_stages ?? [];
+                    setCRAssessment({ affected_stages: affected, summary: a.summary ?? '' });
+                    setCRConfirmedStages(Object.fromEntries(affected.map((s: string) => [s, true])));
+                    replaceLastCoordinatorMessage({ role: 'coordinator', content: a.summary ?? '', timestamp: Date.now() });
+                  },
+                  () => { setIsStreaming(false); setCRLoading(false); },
+                  (err: string) => setError(err),
+                );
+              } catch (err: any) {
+                setError(err.response?.data?.error ?? err.message ?? 'Failed to assess'); setCRLoading(false);
+              }
+            }}
+            onApplyChanges={async () => {
+              if (!activeCR || !activeWorkflow) return;
+              setCRLoading(true); setError(null);
+              const confirmedList = Object.entries(crConfirmedStages).filter(([, v]) => v).map(([k]) => k);
+              try {
+                const result = await api.executeChangeRequest(activeCR.id, confirmedList);
+                applyWorkflowStatus(result);
+                clearActiveCR(); setCRAssessment(null); setCRConfirmedStages({}); setCRDescription(''); setCRType('correction'); setShowCRForm(false);
+                addCoordinatorMessage({ role: 'coordinator', content: `Change request applied to: ${confirmedList.map((s: string) => STAGE_LABELS[s] ?? s).join(', ')}.`, timestamp: Date.now() });
+              } catch (err: any) {
+                setError(err.response?.data?.error ?? err.message ?? 'Failed to execute');
+              } finally { setCRLoading(false); }
+            }}
+            onCancel={() => { clearActiveCR(); setCRAssessment(null); setCRConfirmedStages({}); setCRDescription(''); setCRType('correction'); setShowCRForm(false); }}
+          />
         </div>
       )}
 

@@ -16,7 +16,7 @@ import * as fs from 'fs';
 import * as fsAsync from 'fs/promises';
 import * as path from 'path';
 import { streamAI, resolveModelId, type SystemPrompt, type TokenUsage } from '../utils/ai-provider';
-import { loadLatestArtifactContent, saveMainArtifact, resolveArtifactPath } from './artifact-helpers';
+import { loadLatestArtifactContent, saveLocalArtifact, resolveArtifactPath } from './artifact-helpers';
 import db from '../data/database';
 import Logger from '../utils/logger';
 
@@ -322,7 +322,7 @@ async function savePrototypeArtifact(
     SELECT id FROM sessions WHERE item_id = ? ORDER BY created_at DESC LIMIT 1
   `).get(itemId);
 
-  await saveMainArtifact(session?.id ?? '', artifactType, JSON.stringify(prototype, null, 2), itemId);
+  await saveLocalArtifact(session?.id ?? '', artifactType, JSON.stringify(prototype, null, 2), itemId);
   logger.info(`Saved ${artifactType} artifact for item ${itemId}`);
 }
 

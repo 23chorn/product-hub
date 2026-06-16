@@ -25,7 +25,7 @@ import {
 } from '../agents/change-request';
 import db from '../data/database';
 import { insertEvent, parseRoles } from '../agents/workflow-db';
-import { resolveArtifactPath, loadArtifactContentById, updateArtifactContent, syncArtifactToWiki } from '../agents/artifact-helpers';
+import { resolveArtifactPath, loadArtifactContentById, updateArtifactContent, approveWikiArtifact } from '../agents/artifact-helpers';
 import Logger from '../utils/logger';
 import { isDemoMode } from '../demo/demo-mode';
 import {
@@ -337,25 +337,11 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
         }
       }
 
-      // ── Wiki-backed stages: sync artifact to Azure Wiki on first approval ────
-      const isAdoHandledStage =
-        cpDetail?.stage === 'epic_feature_planner' ||
-        /^story_decomposition_F\d+$/.test(cpDetail?.stage ?? '');
-
-      if (cpDetail && cpDetail.artifact_id && !isAdoHandledStage) {
-        try {
-          const { appConfig } = require('../config/app-config');
-          if (appConfig.integrations.workItems === 'ado') {
-            const wikiUrl = await syncArtifactToWiki(cpDetail.artifact_id);
-            stampArtifactUrl(wikiUrl);
-            insertEvent(workflowId, 'wiki_synced', cpDetail.stage,
-              'Artifact synced to Azure Wiki',
-              { wiki_url: wikiUrl });
-            logger.info(`[CHECKPOINT] ${cpDetail.stage} → synced artifact to wiki: ${wikiUrl}`);
-          }
-        } catch (err: any) {
-          logger.warn(`[CHECKPOINT] Wiki sync failed for ${cpDetail.stage}: ${err.message}`);
-        }
+      // ── Wiki-backed stages: update status from Draft → Approved ─────────────
+      if (cpDetail?.artifact_id) {
+        approveWikiArtifact(cpDetail.artifact_id).catch(err =>
+          logger.warn(`[CHECKPOINT] Wiki approval status update failed for artifact ${cpDetail.artifact_id}: ${err.message}`)
+        );
       }
 
       // Fold stage-specific coordinator context into the workflow goal so the
@@ -814,11 +800,12 @@ workflowRoutes.put('/artifact/:id/content', async (req: AuthRequest, res: Respon
   }
 
   if (!workflowId) {
-    // Fall back: find workflow via artifact → session → workflow
+    // Fall back: find workflow via artifact → checkpoints (sessions don't have workflow_id)
     const wfRow = db.prepare<[number], { workflow_id: string; stage: string }>(`
-      SELECT s.workflow_id, a.type as stage FROM artifacts a
-      JOIN sessions s ON a.session_id = s.id
-      WHERE a.id = ? AND s.workflow_id IS NOT NULL
+      SELECT c.workflow_id, a.type as stage FROM artifacts a
+      JOIN checkpoints c ON c.artifact_id = a.id
+      WHERE a.id = ?
+      LIMIT 1
     `).get(id);
     if (wfRow) { workflowId = wfRow.workflow_id; stage = wfRow.stage; }
   }

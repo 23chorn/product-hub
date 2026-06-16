@@ -80,7 +80,7 @@ export async function propagateFeedback(checkpointId: number, feedback: string):
 
   // Skip critic on human-initiated revisions — the human is now the reviewer
   // Pass priorDraft so runAutonomousStage threads it as the assistant turn
-  runAutonomousStage(session.id, checkpoint.workflow_id, checkpoint.stage, workflow.item_id, brief, shouldAutoApprove, undefined, priorDraft, undefined, true)
+  runAutonomousStage(session.id, checkpoint.workflow_id, checkpoint.stage, workflow.item_id, brief, shouldAutoApprove, undefined, priorDraft, true)
     .catch(err => logger.error(`Revision re-run for stage "${checkpoint.stage}" failed: ${err.message}`));
 
   logger.info(`Revision re-run started — session ${session.id} for stage "${checkpoint.stage}" in workflow ${checkpoint.workflow_id}`);
@@ -148,7 +148,7 @@ export async function reiterateFromStage(
 
   // Fire the autonomous stage — skip critic since this is human-initiated
   // Pass priorDraft so runAutonomousStage threads it as the assistant turn
-  runAutonomousStage(session.id, workflowId, fromStage, workflow.item_id, brief, shouldAutoApprove, undefined, priorDraft, undefined, true)
+  runAutonomousStage(session.id, workflowId, fromStage, workflow.item_id, brief, shouldAutoApprove, undefined, priorDraft, true)
     .catch(err => logger.error(`Reiteration re-run for stage "${fromStage}" failed: ${err.message}`));
 
   logger.info(`Reiteration started — session ${session.id} for stage "${fromStage}" in workflow ${workflowId}`);

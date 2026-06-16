@@ -4,6 +4,7 @@ import * as path from 'path';
 import db from '../data/database';
 import { STAGE_ARTIFACT_TYPE } from './stage-metadata';
 import { saveToWiki, wikiPathForArtifact } from '../integrations/document-store/azure-wiki-store';
+import { convertArtifactToMarkdown } from '../utils/artifact-to-markdown';
 import {
   insertArtifactDoc,
   updateArtifactDocId,
@@ -67,7 +68,8 @@ async function readArtifactRow(row: ArtifactRow): Promise<string | null> {
   if (!row.file_path) return null;
   try {
     return fs.readFileSync(resolveArtifactPath(row.file_path), 'utf-8');
-  } catch {
+  } catch (err: any) {
+    logger.warn(`Disk read failed for artifact file_path=${row.file_path}: ${err.message}`);
     return null;
   }
 }
@@ -78,7 +80,7 @@ async function readArtifactRow(row: ArtifactRow): Promise<string | null> {
  * Saves a main document artifact to the Azure Wiki and inserts an artifact row
  * with the external reference. Returns the artifact row ID.
  *
- * Used for all human-facing document types: research, PRD, architecture, backlog, and prototype.
+ * Used for human-facing document types that should be persisted to the wiki.
  */
 export async function saveMainArtifact(
   sessionId: string,
@@ -106,9 +108,27 @@ export async function saveMainArtifact(
   return result.lastInsertRowid as number;
 }
 
+function wikiStatusBanner(status: 'draft' | 'approved', date?: string): string {
+  const dateStr = date ?? new Date().toISOString().slice(0, 10);
+  if (status === 'approved') {
+    return `> **Status:** Approved — ${dateStr}\n\n---\n\n`;
+  }
+  return `> **Status:** Draft — Pending review\n\n---\n\n`;
+}
+
+function stripStatusBanner(content: string): string {
+  return content.replace(/^> \*\*Status:\*\*[^\n]*\n\n---\n\n/, '');
+}
+
+function toWikiContent(artifactType: string, rawContent: string, status: 'draft' | 'approved'): string {
+  const clean = stripStatusBanner(rawContent);
+  return wikiStatusBanner(status) + convertArtifactToMarkdown(artifactType, clean);
+}
+
 /**
- * Sync a local artifact to Azure Wiki after first human approval.
- * Updates the artifact row to add external_system, external_path, and external_url.
+ * Sync a local artifact to the Azure Wiki (first publish).
+ * Content is converted from JSON to markdown where a converter exists.
+ * Updates the artifact row to record external_system, external_path, and external_url.
  */
 export async function syncArtifactToWiki(artifactId: number): Promise<string> {
   const artifact = db.prepare<[number], ArtifactRow>(
@@ -121,8 +141,9 @@ export async function syncArtifactToWiki(artifactId: number): Promise<string> {
     return artifact.external_url!;
   }
 
-  // Read local content
-  const content = await fsAsync.readFile(artifact.file_path, 'utf-8');
+  // Read content — handles MongoDB-stored artifacts (file_path = '') and disk fallback
+  const content = await readArtifactRow(artifact);
+  if (!content) throw new Error(`Could not read artifact ${artifactId} content (external_system=${artifact.external_system ?? 'disk'})`);
 
   // Get item title for wiki path
   const session = db.prepare<[string], { item_id: string }>(
@@ -139,9 +160,9 @@ export async function syncArtifactToWiki(artifactId: number): Promise<string> {
   const stageEntry = Object.entries(STAGE_ARTIFACT_TYPE).find(([, type]) => type === artifact.type);
   const stage = stageEntry ? stageEntry[0] : artifact.type;
 
-  // Push to wiki
+  // Convert JSON to markdown, prefix with Draft status banner
   const wikiPath = wikiPathForArtifact(item.title, stage);
-  const { url } = await saveToWiki(wikiPath, content);
+  const { url } = await saveToWiki(wikiPath, toWikiContent(artifact.type, content, 'draft'));
 
   // Update artifact row
   db.prepare(`
@@ -152,6 +173,27 @@ export async function syncArtifactToWiki(artifactId: number): Promise<string> {
 
   logger.info(`Artifact ${artifactId} synced to wiki: ${wikiPath}`);
   return url;
+}
+
+/**
+ * Re-publish an already-synced wiki artifact with "Approved" status.
+ * Re-reads source content and regenerates the markdown, replacing the Draft banner.
+ */
+export async function approveWikiArtifact(artifactId: number): Promise<void> {
+  const artifact = db.prepare<[number], ArtifactRow>(
+    'SELECT * FROM artifacts WHERE id = ?'
+  ).get(artifactId);
+
+  if (!artifact || artifact.external_system !== 'azure_wiki' || !artifact.external_path) return;
+
+  const content = await readArtifactRow(artifact);
+  if (!content) {
+    logger.warn(`approveWikiArtifact: could not read content for artifact ${artifactId}`);
+    return;
+  }
+
+  await saveToWiki(artifact.external_path, toWikiContent(artifact.type, content, 'approved'));
+  logger.info(`Artifact ${artifactId} wiki status updated to Approved`);
 }
 
 // ── Local artifact save (disk only, no wiki push) ────────────────────────────
@@ -202,8 +244,7 @@ export async function saveLocalArtifact(
   logger.warn(`MongoDB unavailable — writing artifact "${stage}" to disk`);
   const artifactDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, stage, 'artifacts');
   await fsAsync.mkdir(artifactDir, { recursive: true });
-  const jsonTypes = new Set(['backlog', 'qa_tests', 'prototype']);
-  const ext = jsonTypes.has(artifactType) ? 'json' : 'md';
+  const ext = (() => { try { JSON.parse(content); return 'json'; } catch { return 'md'; } })();
   const artifactPath = path.join(artifactDir, `${Date.now()}-${stage}.${ext}`);
   await fsAsync.writeFile(artifactPath, content, 'utf-8');
 
@@ -366,10 +407,11 @@ export async function loadLatestArtifactContent(itemId: string, artifactType: st
 
 /**
  * Update artifact content — dispatches to MongoDB, Azure Wiki, or disk depending on where it's stored.
+ * Wiki artifacts are converted from JSON to markdown with a Draft status banner before publishing.
  */
 export async function updateArtifactContent(artifactId: number, content: string): Promise<{ url?: string }> {
   const row = db.prepare<[number], ArtifactRow & { external_url: string | null }>(
-    'SELECT file_path, external_system, external_path, external_url FROM artifacts WHERE id = ?'
+    'SELECT id, session_id, type, file_path, external_system, external_path, external_url FROM artifacts WHERE id = ?'
   ).get(artifactId);
   if (!row) throw new Error(`Artifact ${artifactId} not found`);
 
@@ -383,7 +425,7 @@ export async function updateArtifactContent(artifactId: number, content: string)
   if (row.external_system === 'azure_wiki' && row.external_path) {
     logger.info(`[UPDATE] azure_wiki → ${row.external_path}`);
     const { url } = await import('../integrations/document-store/azure-wiki-store').then(m =>
-      m.updateInWiki(row.external_path!, content)
+      m.updateInWiki(row.external_path!, toWikiContent(row.type, content, 'draft'))
     );
     logger.info(`[UPDATE] azure_wiki ✓ ${row.external_path}`);
     db.prepare('UPDATE artifacts SET external_url = ? WHERE id = ?').run(url, artifactId);

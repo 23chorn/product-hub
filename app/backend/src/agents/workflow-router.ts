@@ -405,7 +405,7 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
     let reasoning: string | null;
 
     const workflowPolicies = JSON.parse(workflow.policy_overrides ?? '{}');
-    const isDemoWorkflow = isDemoMode() || workflowPolicies.demo_mode === 'true' || workflowPolicies.demo_auto_approve === 'true';
+    const isDemoWorkflow = workflowPolicies.demo_mode === 'true' || workflowPolicies.demo_auto_approve === 'true';
 
     if (isDemoWorkflow) {
       await demoSleep(DEMO_STAGE_DELAY_MS['curator'] ?? 1500);
@@ -492,7 +492,7 @@ No changes needed to tech-stack.md or process.md — those remain accurate as wr
   logger.info(`Created ${stageMap.mode} session ${session.id} for stage "${nextStage}"`);
 
   insertEvent(workflowId, 'stage_progress', nextStage, stageProgressBriefing(nextStage));
-  const brief = isDemoMode() || _wfPolicyOverrides.demo_mode === 'true' || _isDemoAutoApprove
+  const brief = _wfPolicyOverrides.demo_mode === 'true' || _isDemoAutoApprove
     ? `## Goal\nDemo mode — running with fixture data.\n\n## Output required\nSee fixture.`
     : await getCoordinator().generateStageBrief(workflowId, nextStage);
   sessionManager.updateWorkflow(session.id, workflowId, brief);
@@ -514,13 +514,33 @@ No changes needed to tech-stack.md or process.md — those remain accurate as wr
           insertEvent(workflowId, 'error', nextStage,
             `Stage "${nextStage}" failed unexpectedly: ${err.message}`,
             { error: err.message });
+
+          // Try to recover the artifact that may have been saved before the error.
+          // This mirrors the logic in workflow-lifecycle.ts stale recovery.
+          let artifactId: number | null = null;
+          const artifactType = STAGE_ARTIFACT_TYPE[nextStage];
+          if (stageMap && artifactType) {
+            const latestArtifact = db.prepare<[string, string, string], { id: number }>(
+              `SELECT a.id FROM artifacts a
+               JOIN sessions s ON a.session_id = s.id
+               WHERE s.item_id = (SELECT item_id FROM workflows WHERE id = ?)
+                 AND s.mode = ?
+                 AND a.type = ?
+               ORDER BY a.created_at DESC LIMIT 1`
+            ).get(workflowId, stageMap.mode, artifactType);
+            artifactId = latestArtifact?.id ?? null;
+            if (artifactId) {
+              logger.info(`Safety net: recovered artifact ${artifactId} for failed stage "${nextStage}"`);
+            }
+          }
+
           stmts.insertCheckpoint.run(
-            workflowId, nextStage, null, 'pending',
+            workflowId, nextStage, artifactId, 'pending',
             JSON.stringify({ error: err.message, autonomous: true, safety_net: true }),
             rolesJson(nextStage), now
           );
           stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
-          logger.info(`Safety net: created error checkpoint for stuck workflow ${workflowId}`);
+          logger.info(`Safety net: created error checkpoint for stuck workflow ${workflowId}${artifactId ? ` with artifact ${artifactId}` : ''}`);
         }
       } catch (inner) {
         logger.error(`Safety net checkpoint creation also failed: ${(inner as Error).message}`);

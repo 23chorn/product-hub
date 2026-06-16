@@ -18,6 +18,7 @@ export const changeRequestApi = {
     const response = await fetch(`${API_BASE_URL}/api/change-request/${crId}/assess`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
     });
     if (!response.ok) {
       throw apiError(await response.json().catch(() => ({})), response.status);

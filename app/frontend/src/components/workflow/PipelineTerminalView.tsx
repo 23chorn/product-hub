@@ -23,9 +23,13 @@ interface Props {
   isRunning: boolean;
   onCheckpointResolved: (result: any) => void;
   onBack: () => void;
+  onShowCRForm?: () => void;
+  showCRButton?: boolean;
+  pendingDiffCount?: number;
+  onShowDiffPanel?: () => void;
 }
 
-export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpointResolved, onBack }: Props) {
+export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpointResolved, onBack, onShowCRForm, showCRButton, pendingDiffCount, onShowDiffPanel }: Props) {
   const {
     activeWorkflow,
     stageSequence,
@@ -411,7 +415,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                   {isCancelled ? 'workflow stopped' : 'workflow complete'}
                 </div>
                 <div className="flex items-center gap-2">
-                  {(isCancelled || (isComplete && canRestartDemo)) && (
+                  {isComplete && (
                     <button
                       onClick={handleRestart}
                       disabled={restarting}
@@ -466,7 +470,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
         </div>
 
         {/* Artifacts section (sticky at bottom of right panel) */}
-        {artifacts.length > 0 && (() => {
+        {(artifacts.length > 0 || showCRButton || (pendingDiffCount ?? 0) > 0) && (() => {
           // Group by stage, keep only the latest per stage
           const latestByStage = new Map<string, typeof artifacts[0]>();
           artifacts.forEach(artifact => {
@@ -490,9 +494,10 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
           const regularArtifacts = Array.from(latestByStage.values())
             .filter(a => !TICKET_MODES.has(a.stage ?? ''));
 
+          const hasArtifacts = regularArtifacts.length > 0 || !!ticketArtifact;
           return (
             <div className="flex-shrink-0 border-t border-slate-200 dark:border-slate-700/60 bg-white dark:bg-[#0d1117] px-2 py-2">
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
                 {regularArtifacts.map((artifact) => {
                   const stageLabel = STAGE_SHORT_LABELS[artifact.stage ?? ''] ?? STAGE_LABELS[artifact.stage ?? ''] ?? artifact.type;
                   return (
@@ -512,6 +517,29 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                   >
                     Tickets
                   </button>
+                )}
+                {showCRButton && onShowCRForm && (
+                  <>
+                    {hasArtifacts && <span className="text-slate-300 dark:text-slate-700 select-none">·</span>}
+                    <button
+                      onClick={onShowCRForm}
+                      className="px-2.5 py-1 text-xs font-medium rounded border border-purple-300 dark:border-purple-700 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors"
+                    >
+                      Change Request
+                    </button>
+                  </>
+                )}
+                {(pendingDiffCount ?? 0) > 0 && onShowDiffPanel && (
+                  <>
+                    {(hasArtifacts || (showCRButton && !!onShowCRForm)) && <span className="text-slate-300 dark:text-slate-700 select-none">·</span>}
+                    <button
+                      onClick={onShowDiffPanel}
+                      className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded border border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"
+                    >
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] font-bold leading-none">{pendingDiffCount}</span>
+                      Context Updates
+                    </button>
+                  </>
                 )}
               </div>
             </div>

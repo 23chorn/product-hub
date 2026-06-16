@@ -1,6 +1,10 @@
 /**
- * Converts structured JSON artifacts back to human-readable markdown for display in the UI.
+ * Converts structured JSON artifacts to markdown for external publishing (e.g. wiki).
+ * Mirrors the logic in app/frontend/src/utils/artifact-to-markdown.ts.
  */
+
+import Logger from './logger';
+const logger = new Logger('ARTIFACT-TO-MARKDOWN');
 
 function row(...cells: string[]): string {
   return `| ${cells.join(' | ')} |`;
@@ -12,7 +16,6 @@ function tableHeader(...headers: string[]): string {
 function analystToMarkdown(d: Record<string, any>): string {
   const lines: string[] = [];
   lines.push(`# ${d.title ?? 'Research Brief'}\n`);
-
   if (d.executive_summary) lines.push(`## Executive Summary\n\n${d.executive_summary}\n`);
   if (d.problem_space) lines.push(`## Problem Space\n\n${d.problem_space}\n`);
 
@@ -70,7 +73,6 @@ function prdToMarkdown(d: Record<string, any>): string {
   const lines: string[] = [];
   lines.push(`# ${d.title ?? 'PRD'}\n`);
   if (d.status) lines.push(`**Status:** ${d.status}\n`);
-
   if (d.problem_statement) lines.push(`## Problem Statement\n\n${d.problem_statement}\n`);
 
   if (Array.isArray(d.personas) && d.personas.length) {
@@ -151,21 +153,14 @@ function architectureToMarkdown(d: Record<string, any>): string {
   lines.push(`# ${d.title ?? 'Solution Architecture'}\n`);
   if (d.overview) lines.push(`## System Overview\n\n${d.overview}\n`);
 
-  // New dependencies — shown prominently before Technology Decisions so the PM reviewer can't miss them
   if (Array.isArray(d.new_dependencies)) {
     if (d.new_dependencies.length === 0) {
-      lines.push(`## ✓ New Dependencies\n\n> **No new dependencies introduced.** All technology choices reuse the existing stack.\n`);
+      lines.push(`## New Dependencies\n\n> No new dependencies introduced. All technology choices reuse the existing stack.\n`);
     } else {
-      lines.push(`## ⚠ New Dependencies (${d.new_dependencies.length})\n\n> **Review required.** The following technologies are not in the existing tech stack. Each must be approved before implementation begins.\n`);
+      lines.push(`## New Dependencies (${d.new_dependencies.length})\n\n> The following technologies are not in the existing tech stack and require approval before implementation.\n`);
       lines.push(tableHeader('Name', 'Type', 'Why existing stack cannot solve this', 'Alternatives evaluated', 'Cost / Risk'));
       for (const dep of d.new_dependencies as any[]) {
-        lines.push(row(
-          dep.name ?? '',
-          dep.type ?? '',
-          dep.not_solvable_with_existing_stack_because ?? '',
-          dep.existing_alternatives_evaluated ?? '',
-          dep.cost_or_risk ?? ''
-        ));
+        lines.push(row(dep.name ?? '', dep.type ?? '', dep.not_solvable_with_existing_stack_because ?? '', dep.existing_alternatives_evaluated ?? '', dep.cost_or_risk ?? ''));
       }
       lines.push('');
     }
@@ -258,95 +253,31 @@ function architectureToMarkdown(d: Record<string, any>): string {
   return lines.join('\n');
 }
 
-function figmaDesignToMarkdown(d: Record<string, any>): string {
-  const lines: string[] = [];
-  lines.push(`# ${d.title ?? 'Figma Mockup Plan'}\n`);
-
-  const statusBadge = d.figma_write_status === 'created' ? '✅ Written to Figma'
-    : d.figma_write_status === 'partial' ? '⚠️ Partially written'
-    : '🕐 Planned (write deferred)';
-  lines.push(`**Status:** ${statusBadge}\n`);
-  if (d.figma_file_url) lines.push(`**Mockup file:** ${d.figma_file_url}\n`);
-  if (d.source_design_system) lines.push(`**Design system:** \`${d.source_design_system}\`\n`);
-
-  const dt = d.design_tokens_extracted;
-  if (dt) {
-    if (Array.isArray(dt.design_gaps) && dt.design_gaps.length) {
-      lines.push(`## ⚠ Design Gaps (${dt.design_gaps.length})\n`);
-      lines.push(`> The following components or tokens are missing from the design system and must be created before production handoff.\n`);
-      for (const gap of dt.design_gaps) lines.push(`- ${gap}`);
-      lines.push('');
-    }
-
-    if (Array.isArray(dt.colors) && dt.colors.length) {
-      lines.push(`## Design Tokens — Colors\n`);
-      lines.push(tableHeader('Token', 'Value', 'Usage'));
-      for (const c of dt.colors) lines.push(row(c.name ?? '', c.value ?? '', c.usage ?? ''));
-      lines.push('');
-    }
-
-    if (Array.isArray(dt.typography) && dt.typography.length) {
-      lines.push(`## Design Tokens — Typography\n`);
-      lines.push(tableHeader('Style', 'Family', 'Size', 'Weight', 'Usage'));
-      for (const t of dt.typography) lines.push(row(t.name ?? '', t.font_family ?? '', t.size ?? '', t.weight ?? '', t.usage ?? ''));
-      lines.push('');
-    }
-
-    if (Array.isArray(dt.components) && dt.components.length) {
-      lines.push(`## Components Used\n`);
-      lines.push(tableHeader('Component', 'Node ID', 'Variants'));
-      for (const c of dt.components) lines.push(row(c.name ?? '', c.node_id ?? '', Array.isArray(c.variants) ? c.variants.join(', ') : ''));
-      lines.push('');
-    }
-  }
-
-  if (Array.isArray(d.screens_created) && d.screens_created.length) {
-    lines.push(`## Screens (${d.screens_created.length})\n`);
-    for (const s of d.screens_created) {
-      lines.push(`### ${s.name ?? 'Screen'}`);
-      if (s.frame_url) lines.push(`[Open in Figma](${s.frame_url})\n`);
-      if (s.description) lines.push(`${s.description}\n`);
-      if (Array.isArray(s.prd_journeys) && s.prd_journeys.length) {
-        lines.push(`**Covers journeys:** ${s.prd_journeys.join(', ')}\n`);
-      }
-      if (s.layout_notes) lines.push(`**Layout:** ${s.layout_notes}\n`);
-      if (Array.isArray(s.interactions) && s.interactions.length) {
-        lines.push(`**Interactions:**`);
-        for (const i of s.interactions) {
-          const note = i.notes ? ` — ${i.notes}` : '';
-          lines.push(`- ${i.trigger ?? ''} → ${i.target_screen ?? ''}${note}`);
-        }
-        lines.push('');
-      }
-    }
-  }
-
-  if (d.navigation_flow) lines.push(`## Navigation Flow\n\n\`\`\`\n${d.navigation_flow}\n\`\`\`\n`);
-  if (d.notes) lines.push(`## Notes\n\n${d.notes}\n`);
-
-  return lines.join('\n');
-}
-
 const CONVERTERS: Record<string, (d: Record<string, any>) => string> = {
-  analyst: analystToMarkdown,
-  research: analystToMarkdown,
-  prd: prdToMarkdown,
+  analyst:      analystToMarkdown,
+  research:     analystToMarkdown,
+  prd:          prdToMarkdown,
   architecture: architectureToMarkdown,
-  figma_design: figmaDesignToMarkdown,
 };
 
 /**
- * Convert a JSON artifact string to markdown for display.
- * Returns null if the artifactType has no converter (i.e. it was always markdown or a specialized view).
+ * Convert a JSON artifact string to markdown.
+ * Returns the original content unchanged if no converter exists for the type
+ * (e.g. content that is already markdown, or a specialised view type).
  */
-export function convertArtifactToMarkdown(artifactType: string, content: string): string | null {
+export function convertArtifactToMarkdown(artifactType: string, content: string): string {
   const converter = CONVERTERS[artifactType];
   if (!converter) {
-    console.warn(`[artifact-to-markdown] No converter for type "${artifactType}"`);
-    return null;
+    logger.warn(`No converter registered for type "${artifactType}" — returning content as-is`);
+    return content;
+  }
+  // If the content is already markdown (doesn't start with a JSON object), return as-is
+  if (!content.trimStart().startsWith('{')) {
+    logger.info(`${artifactType} artifact is already markdown — skipping conversion`);
+    return content;
   }
   try {
-    console.log(`[artifact-to-markdown] Converting ${artifactType} (${content.length} chars)`);
+    logger.info(`Converting ${artifactType} artifact (${content.length} chars) to markdown`);
 
     // Try parsing the full content first
     let parsed: any;
@@ -355,7 +286,7 @@ export function convertArtifactToMarkdown(artifactType: string, content: string)
     } catch (firstErr: any) {
       // If parse fails due to extra content after JSON, extract just the first JSON object
       if (firstErr.message.includes('after JSON')) {
-        console.warn(`[artifact-to-markdown] Extra content after JSON detected, extracting first complete object`);
+        logger.warn(`Extra content after JSON detected, extracting first complete object`);
         // Find the position of the first '{' and match closing '}'
         const start = content.indexOf('{');
         if (start === -1) throw firstErr;
@@ -372,7 +303,7 @@ export function convertArtifactToMarkdown(artifactType: string, content: string)
         }
 
         const jsonOnly = content.slice(start, end);
-        console.log(`[artifact-to-markdown] Extracted JSON substring (${jsonOnly.length} chars)`);
+        logger.info(`Extracted JSON substring (${jsonOnly.length} chars)`);
         parsed = JSON.parse(jsonOnly);
       } else {
         throw firstErr;
@@ -380,74 +311,11 @@ export function convertArtifactToMarkdown(artifactType: string, content: string)
     }
 
     const markdown = converter(parsed);
-    console.log(`[artifact-to-markdown] Conversion successful (${markdown.length} chars output)`);
+    logger.info(`Conversion complete — output ${markdown.length} chars`);
     return markdown;
   } catch (err: any) {
-    console.error(`[artifact-to-markdown] JSON parse failed for ${artifactType}:`, err.message);
-    console.error(`[artifact-to-markdown] Content preview:`, content.slice(0, 200));
+    logger.error(`Failed to parse JSON for type "${artifactType}": ${err.message}`);
+    logger.error(`Content preview: ${content.slice(0, 200)}...`);
     return content;
   }
-}
-
-export type DocumentArtifactType = keyof typeof CONVERTERS;
-
-export function isDocumentArtifact(artifactType: string): boolean {
-  return artifactType in CONVERTERS;
-}
-
-// ── Open questions parser ─────────────────────────────────────────────────────
-
-export interface OpenQuestion {
-  id: string;
-  type: string;
-  description: string;
-  impact: string;
-  owner: string;
-}
-
-/**
- * Extract open (unresolved) questions from a PRD artifact.
- * Handles both JSON-structured PRDs and markdown-table PRDs.
- */
-export function parseOpenQuestions(content: string): OpenQuestion[] {
-  // JSON path
-  if (content.trimStart().startsWith('{')) {
-    try {
-      const parsed = JSON.parse(content);
-      if (Array.isArray(parsed.open_questions)) {
-        return parsed.open_questions
-          .filter((q: any) => (q.status ?? 'open').toLowerCase() === 'open')
-          .map((q: any) => ({
-            id:          String(q.id ?? ''),
-            type:        String(q.type ?? 'Question'),
-            description: String(q.description ?? ''),
-            impact:      String(q.impact ?? ''),
-            owner:       String(q.owner ?? ''),
-          }));
-      }
-    } catch {}
-    return [];
-  }
-
-  // Markdown path — find "Open Questions" section, parse the table
-  const sectionMatch = content.match(/##\s+Open Questions[^\n]*\n([\s\S]*?)(?=\n##\s|\n*$)/i);
-  if (!sectionMatch) return [];
-
-  const tableLines = sectionMatch[1].split('\n').filter(l => l.trim().startsWith('|'));
-  const questions: OpenQuestion[] = [];
-
-  // Skip header (row 0) and separator (row 1)
-  for (let i = 2; i < tableLines.length; i++) {
-    const cells = tableLines[i]
-      .split('|')
-      .slice(1, -1)
-      .map(c => c.trim());
-    if (cells.length < 6) continue;
-    const [id, type, description, impact, owner, status] = cells;
-    if ((status ?? '').toLowerCase() === 'open') {
-      questions.push({ id, type, description, impact, owner });
-    }
-  }
-
-  return questions;
 }

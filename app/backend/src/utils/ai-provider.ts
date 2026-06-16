@@ -314,6 +314,38 @@ async function* streamWithAnthropic(
     ];
   }
 
+  // ── Fallback: extract JSON from last validator tool call if no text was yielded ──
+  // When specialist agents use structural validators, Claude may call the tool with JSON
+  // but never echo it back as text. If no text was yielded after the tool loop completes,
+  // extract the JSON from the most recent validate_*_json tool call and yield it.
+  let accumulatedText = '';
+  for (const msg of internalMessages) {
+    if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+      for (const block of msg.content) {
+        if ((block as any).type === 'text') accumulatedText += (block as any).text;
+      }
+    }
+  }
+
+  if (accumulatedText.trim().length === 0 && internalMessages.length > 0) {
+    // No text was yielded — check for a validator tool call in the last assistant turn
+    const lastAssistantMsg = [...internalMessages].reverse().find(m => m.role === 'assistant');
+    if (lastAssistantMsg && Array.isArray(lastAssistantMsg.content)) {
+      const validatorToolUse = lastAssistantMsg.content
+        .filter((b: InternalBlock): b is InternalToolUseBlock => b.type === 'tool_use')
+        .reverse()
+        .find((tu: InternalToolUseBlock) => tu.name && tu.name.startsWith('validate_') && tu.name.endsWith('_json'));
+
+      if (validatorToolUse?.input?.json) {
+        const extractedJson = String(validatorToolUse.input.json);
+        logger.info(`[ANTHROPIC/FALLBACK] No text yielded — extracting JSON from tool call ${validatorToolUse.name} (${extractedJson.length} chars)`);
+        yield extractedJson;
+      } else {
+        logger.warn('[ANTHROPIC/FALLBACK] No text yielded and no validator tool call found with JSON input');
+      }
+    }
+  }
+
   // Log search activity
   if (totalSearchCount > 0) {
     logger.info(`[WEB SEARCH] ${totalSearchCount} search quer${totalSearchCount === 1 ? 'y' : 'ies'} (${allSearchUrls.length} result(s) total)`);
@@ -385,6 +417,7 @@ async function* streamWithBedrock(
   let totalOutputTokens = 0;
   let totalCacheRead = 0;
   let totalCacheWrite = 0;
+  let shouldBreakToolLoop = false;
 
   for (let toolIteration = 0; toolIteration < MAX_TOOL_ITERATIONS; toolIteration++) {
     const command = new ConverseStreamCommand({
@@ -456,12 +489,33 @@ async function* streamWithBedrock(
         if (isThrottle) {
           throw new Error('Bedrock request throttled after retries. Wait a moment then try again, or switch to a different model.');
         }
+        // Log detailed error info for debugging
+        logger.error(`[BEDROCK] Stream failed on tool iteration ${toolIteration}, attempt ${attempt}:`, {
+          name: err?.name,
+          type: err?.__type,
+          message: err?.message,
+          messageCount: bedrockMessages.length,
+          lastMessageRole: bedrockMessages[bedrockMessages.length - 1]?.role,
+          lastMessageBlockCount: bedrockMessages[bedrockMessages.length - 1]?.content?.length
+        });
+
+        // If we're in a tool loop (iteration > 0) and hit a Bedrock error, break out
+        // and return what we have so far via the fallback extraction logic below
+        if (toolIteration > 0) {
+          logger.warn(`[BEDROCK] Breaking tool loop after error on iteration ${toolIteration} — will attempt to extract partial result`);
+          shouldBreakToolLoop = true;
+          break; // Exit retry loop, then check flag to exit tool loop
+        }
+
         throw err;
       }
     }
 
     // Flush any remaining text block
     if (currentText) assistantBlocks.push({ text: currentText });
+
+    // Break out of tool loop if we hit an error on a retry
+    if (shouldBreakToolLoop) break;
 
     // If no tool use was requested, we are done
     if (stopReason !== 'tool_use') break;
@@ -490,6 +544,39 @@ async function* streamWithBedrock(
       { role: 'assistant', content: assistantBlocks },
       { role: 'user', content: toolResultBlocks },
     ];
+  }
+
+  // ── Fallback: extract JSON from last validator tool call if no text was yielded ──
+  // When specialist agents use structural validators, Claude may call the tool with JSON
+  // but never echo it back as text. If fullResponse is empty after the tool loop completes,
+  // extract the JSON from the most recent validate_*_json tool call and yield it.
+  let accumulatedText = '';
+  for (const msg of bedrockMessages) {
+    if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+      for (const block of msg.content) {
+        if ((block as any).text) accumulatedText += (block as any).text;
+      }
+    }
+  }
+
+  if (accumulatedText.trim().length === 0 && bedrockMessages.length > 0) {
+    // No text was yielded — check for a validator tool call in the last assistant turn
+    const lastAssistantMsg = [...bedrockMessages].reverse().find(m => m.role === 'assistant');
+    if (lastAssistantMsg && Array.isArray(lastAssistantMsg.content)) {
+      const validatorToolUse = lastAssistantMsg.content
+        .filter(b => (b as any).toolUse)
+        .map(b => (b as any).toolUse)
+        .reverse()
+        .find((tu: any) => tu.name && tu.name.startsWith('validate_') && tu.name.endsWith('_json'));
+
+      if (validatorToolUse?.input?.json) {
+        const extractedJson = String(validatorToolUse.input.json);
+        logger.info(`[BEDROCK/FALLBACK] No text yielded — extracting JSON from tool call ${validatorToolUse.name} (${extractedJson.length} chars)`);
+        yield extractedJson;
+      } else {
+        logger.warn('[BEDROCK/FALLBACK] No text yielded and no validator tool call found with JSON input');
+      }
+    }
   }
 
   const totalInput = totalInputTokens + totalCacheWrite + totalCacheRead;

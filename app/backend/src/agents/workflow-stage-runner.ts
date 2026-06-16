@@ -23,7 +23,7 @@ import {
   STAGE_ARTIFACT_LABEL, stageProgressHeartbeat, stageProgressReview, stageProgressReviewComplete, stageProgressRevision, stageProgressSection, stageProgressWorking,
 } from './stage-metadata';
 import {
-  saveCriticArtifact, saveDiffArtifact, saveLocalArtifact, loadLatestArtifactContent, updateArtifactContent,
+  saveCriticArtifact, saveDiffArtifact, saveLocalArtifact, loadLatestArtifactContent, updateArtifactContent, syncArtifactToWiki,
 } from './artifact-helpers';
 import { getActiveSkill } from './skill-registry';
 import { type ToolDefinition, getRegisteredTools } from './tool-registry';
@@ -426,8 +426,30 @@ export async function runAutonomousStage(
       const jsonContent = jsonStart > 0 ? stripped.slice(jsonStart) : stripped;
       try {
         artifactContent = JSON.stringify(JSON.parse(jsonContent), null, 2);
-      } catch {
-        artifactContent = jsonContent;
+      } catch (firstErr: any) {
+        // If parse fails due to extra content after JSON, extract just the first complete object
+        if (firstErr.message && firstErr.message.includes('after JSON')) {
+          logger.warn(`Extra content after JSON detected in stage "${stage}", extracting first complete object`);
+          let braceCount = 0;
+          let end = 0;
+          for (let i = 0; i < jsonContent.length; i++) {
+            if (jsonContent[i] === '{') braceCount++;
+            else if (jsonContent[i] === '}') braceCount--;
+            if (braceCount === 0) {
+              end = i + 1;
+              break;
+            }
+          }
+          const jsonOnly = jsonContent.slice(0, end);
+          try {
+            artifactContent = JSON.stringify(JSON.parse(jsonOnly), null, 2);
+            logger.info(`Successfully extracted and parsed JSON object (${jsonOnly.length} chars)`);
+          } catch {
+            artifactContent = jsonContent;
+          }
+        } else {
+          artifactContent = jsonContent;
+        }
       }
     }
 
@@ -551,9 +573,22 @@ export async function runAutonomousStage(
     else if (stage === 'figma_design') stageLabel = 'Figma Design';
     else if (stage.match(/^story_decomposition_F\d+$/)) stageLabel = 'Shard - Product Owner';
 
-    // Wiki push is deferred to checkpoint approval — no wiki URL available at stage execution time
-    const isStoryFeatureStage = stage.match(/^story_decomposition_F\d+$/);
-    const wikiUrl: string | null = null;
+    const isAdoHandledStage = stage === 'epic_feature_planner' || /^story_decomposition_F\d+$/.test(stage);
+    let wikiUrl: string | null = null;
+
+    const tryWikiPush = async (): Promise<string | null> => {
+      if (isAdoHandledStage || !artifactId) return null;
+      try {
+        const { appConfig } = require('../config/app-config');
+        if (appConfig.integrations.workItems !== 'ado') return null;
+        const url = await syncArtifactToWiki(artifactId);
+        insertEvent(workflowId, 'wiki_synced', stage, 'Artifact synced to Azure Wiki', { wiki_url: url });
+        return url;
+      } catch (err: any) {
+        logger.warn(`[WIKI] Push failed for ${stage}: ${err.message}`);
+        return null;
+      }
+    };
 
     // ── Inline critic review for specialist stages ────────────────────────────
     // After each specialist produces an artifact, the critic reviews it.
@@ -633,6 +668,7 @@ export async function runAutonomousStage(
       };
 
       if (review.verdict === 'approve') {
+        wikiUrl = await tryWikiPush();
         const now = Date.now();
         const checkpointStatusCritic = autoApprove ? 'approved' : 'pending';
         const cpResult = stmts.insertCheckpoint.run(
@@ -713,6 +749,7 @@ export async function runAutonomousStage(
         ? ` Questions: ${review.questions.slice(0, 2).join('; ')}`
         : '';
 
+      wikiUrl = await tryWikiPush();
       const now = Date.now();
       const cpResult2 = stmts.insertCheckpoint.run(
         workflowId, stage, artifactId, autoApprove ? 'approved' : 'pending',
@@ -781,6 +818,7 @@ export async function runAutonomousStage(
         inline_review: true,
         reviewed_stage: stage,
       };
+      wikiUrl = await tryWikiPush();
       const now = Date.now();
       const checkpointStatusMock = autoApprove ? 'approved' : 'pending';
       stmts.insertCheckpoint.run(
@@ -811,6 +849,7 @@ export async function runAutonomousStage(
     }
 
     // ── Non-critic path (critic disabled or non-specialist stage) ─────────────
+    wikiUrl = await tryWikiPush();
     const checkpointStatus = autoApprove ? 'approved' : 'pending';
     const now = Date.now();
     const cpResult3 = stmts.insertCheckpoint.run(

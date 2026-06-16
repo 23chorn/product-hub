@@ -6,6 +6,7 @@ import { useConfigStore } from '../../stores/configStore';
 import { useAuthStore, canApprove, parseRequiredRoles, ROLE_LABELS } from '../../stores/authStore';
 import { api } from '../../services/api';
 import { CriticQuestionForm, CriticIssuesPanel } from './CriticQuestionForm';
+import { OpenQuestionsPanel } from './OpenQuestionsPanel';
 import { STAGE_LABELS } from '../../constants/stage-labels';
 import { tryParseBacklog } from '../../utils/backlog-helpers';
 import { BacklogView } from './BacklogView';
@@ -14,7 +15,7 @@ import { QATestsView, tryParseQATests } from './QATestsView';
 import { TechRefinementView, tryParseTechRefinement } from './TechRefinementView';
 import { extractPersonas, PersonaPanel } from './PersonaPanel';
 import { PrototypePreview, type PrototypeData } from '../coordinator/PrototypePreview';
-import { convertArtifactToMarkdown, isDocumentArtifact } from '../../utils/artifact-to-markdown';
+import { convertArtifactToMarkdown, isDocumentArtifact, parseOpenQuestions, type OpenQuestion } from '../../utils/artifact-to-markdown';
 import { ArtifactSyncActions } from './ArtifactSyncActions';
 import { CriticReviewFlyout } from './CriticReviewFlyout';
 import { RejectConfirmModal } from './RejectConfirmModal';
@@ -38,6 +39,7 @@ export function ArtifactViewer() {
   const [editContent, setEditContent] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saveToast, setSaveToast] = useState<string | null>(null);
+  const [showOpenQPanel, setShowOpenQPanel] = useState(false);
 
   const { user, noAuth } = useAuthStore();
 
@@ -58,7 +60,11 @@ export function ArtifactViewer() {
 
     api.getArtifactContent(viewingArtifactId)
       .then(({ content: c, type: t }) => {
-        if (!stale) { setContent(c); setArtifactType(t); }
+        if (!stale) {
+          console.log(`[ArtifactViewer] Loaded artifact ${viewingArtifactId}, type="${t}", content length=${c.length}`);
+          setContent(c);
+          setArtifactType(t);
+        }
       })
       .catch((err) => {
         if (!stale) {
@@ -193,20 +199,40 @@ export function ArtifactViewer() {
     ? checkpoints.find(c => c.artifact_id === viewingArtifactId && c.status === 'approved')
     : null;
 
-  // Parse critic data from the checkpoint associated with this artifact (pending or approved)
+  // Parse critic data — try the directly associated checkpoint first, then fall back to the
+  // most recent sibling checkpoint for the same stage (covers error-recovery checkpoints that
+  // have no critic field because the revision attempt failed mid-run).
   const artifactCheckpoint = pendingCheckpoint
     ?? checkpoints.find(c => c.artifact_id === viewingArtifactId && c.coordinator_action);
   const criticData = (() => {
     try {
-      return artifactCheckpoint?.coordinator_action
-        ? JSON.parse(artifactCheckpoint.coordinator_action)?.critic ?? null
-        : null;
+      if (artifactCheckpoint?.coordinator_action) {
+        const c = JSON.parse(artifactCheckpoint.coordinator_action)?.critic;
+        if (c) return c;
+      }
+      if (pendingCheckpoint) {
+        const sibling = [...checkpoints]
+          .sort((a, b) => b.created_at - a.created_at)
+          .find(c => c.id !== pendingCheckpoint.id && c.stage === pendingCheckpoint.stage && c.coordinator_action);
+        if (sibling?.coordinator_action) {
+          const c = JSON.parse(sibling.coordinator_action)?.critic;
+          if (c) return c;
+        }
+      }
+      return null;
     } catch { return null; }
   })();
-  const showSidePanel = showReviseForm && criticData?.questions?.length > 0;
+  const showCriticPanel = showReviseForm && (criticData?.questions?.length ?? 0) > 0;
+  const showSidePanel = showCriticPanel || showOpenQPanel;
   const hasIssues = (criticData?.issues?.length ?? 0) > 0;
   const hasQuestions = (criticData?.questions?.length ?? 0) > 0;
   const hasCriticData = hasIssues || hasQuestions;
+
+  // Parse open (unresolved) questions from the PRD artifact content
+  const openQuestions: OpenQuestion[] = (artifactType === 'prd' && content && pendingCheckpoint)
+    ? parseOpenQuestions(content)
+    : [];
+  const hasOpenQuestions = openQuestions.length > 0;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -224,7 +250,7 @@ export function ArtifactViewer() {
           : 'w-full max-w-2xl'
       }`}>
         {/* Issues panel — far left, toggled from review header */}
-        {showSidePanel && showIssuesPanel && hasIssues && (
+        {showCriticPanel && showIssuesPanel && hasIssues && (
           <div className="w-[340px] flex-shrink-0 bg-white dark:bg-slate-800 shadow-xl flex flex-col border-r border-slate-200 dark:border-slate-700">
             <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex-shrink-0 flex items-center justify-between">
               <div>
@@ -250,8 +276,8 @@ export function ArtifactViewer() {
           </div>
         )}
 
-        {/* Review panel — questions, left of artifact */}
-        {showSidePanel && (
+        {/* Critic review panel — questions, left of artifact */}
+        {showCriticPanel && (
           <div className="w-[520px] flex-shrink-0 bg-slate-50 dark:bg-slate-900 shadow-xl flex flex-col border-r border-slate-200 dark:border-slate-700">
             <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex-shrink-0 flex items-center justify-between">
               <div>
@@ -276,6 +302,26 @@ export function ArtifactViewer() {
                 questions={criticData.questions}
                 onSubmit={(fb) => resolve('revised', fb)}
                 onCancel={() => { setShowReviseForm(false); setShowIssuesPanel(false); setFeedback(''); }}
+                loading={resolveLoading}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Open questions panel — left of artifact, shown when answering PRD open questions */}
+        {showOpenQPanel && (
+          <div className="w-[520px] flex-shrink-0 bg-slate-50 dark:bg-slate-900 shadow-xl flex flex-col border-r border-slate-200 dark:border-slate-700">
+            <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex-shrink-0">
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Open Questions</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                {openQuestions.length} question{openQuestions.length !== 1 ? 's' : ''} to resolve
+              </p>
+            </div>
+            <div className="flex-1 min-h-0 px-4 py-3 flex flex-col">
+              <OpenQuestionsPanel
+                questions={openQuestions}
+                onSubmit={(fb) => { setShowOpenQPanel(false); resolve('revised', fb); }}
+                onCancel={() => setShowOpenQPanel(false)}
                 loading={resolveLoading}
               />
             </div>
@@ -442,8 +488,10 @@ export function ArtifactViewer() {
                         } catch { /* fall through to raw view */ }
                       }
                       // Document artifacts are stored as JSON but rendered as markdown via the converter.
+                      console.log(`[ArtifactViewer] Checking if "${artifactType}" is document artifact: ${isDocumentArtifact(artifactType)}`);
                       if (isDocumentArtifact(artifactType)) {
                         const md = convertArtifactToMarkdown(artifactType, content);
+                        console.log(`[ArtifactViewer] Markdown conversion result: ${md === null ? 'null' : md.length + ' chars'}`);
                         if (md !== null) {
                           return (
                             <div className="prose prose-sm dark:prose-invert max-w-none">
@@ -488,21 +536,20 @@ export function ArtifactViewer() {
               {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
               {saveToast && <p className="text-xs text-green-600 dark:text-green-400">{saveToast}</p>}
               <div className="flex gap-2">
-                {pendingCheckpoint ? (
+                <button
+                  onClick={() => handleSave(false)}
+                  disabled={!isDirty || isSaving}
+                  className="flex-1 py-2 px-3 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-sm font-medium rounded-lg transition-colors"
+                >
+                  {isSaving ? 'Saving...' : 'Save'}
+                </button>
+                {pendingCheckpoint && (
                   <button
                     onClick={() => handleSave(true)}
                     disabled={!isDirty || isSaving}
-                    className="flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-sm font-medium rounded-lg transition-colors"
+                    className="py-2 px-3 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-sm font-medium rounded-lg transition-colors"
                   >
-                    {isSaving ? 'Saving...' : 'Save & Approve'}
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => handleSave(false)}
-                    disabled={!isDirty || isSaving}
-                    className="flex-1 py-2 px-3 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-sm font-medium rounded-lg transition-colors"
-                  >
-                    {isSaving ? 'Saving...' : 'Save'}
+                    Save & Approve
                   </button>
                 )}
                 <button
@@ -606,28 +653,41 @@ export function ArtifactViewer() {
                   </div>
                 </div>
               ) : hasApprovePermission && !showSidePanel ? (
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => resolve('approved')}
-                    disabled={resolveLoading}
-                    className="flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white text-sm font-medium rounded-lg transition-colors"
-                  >
-                    Approve
-                  </button>
-                  <button
-                    onClick={() => setShowReviseForm(true)}
-                    disabled={resolveLoading}
-                    className="flex-1 py-2 px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 text-white text-sm font-medium rounded-lg transition-colors"
-                  >
-                    Revise
-                  </button>
-                  <button
-                    onClick={() => setShowRejectConfirm(true)}
-                    disabled={resolveLoading}
-                    className="flex-1 py-2 px-3 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 text-red-700 dark:text-red-400 text-sm font-medium rounded-lg transition-colors"
-                  >
-                    Reject
-                  </button>
+                <div className="space-y-2">
+                  {/* Answer open questions — shown for PRD artifacts with unresolved questions */}
+                  {hasOpenQuestions && (
+                    <button
+                      onClick={() => setShowOpenQPanel(true)}
+                      disabled={resolveLoading}
+                      className="w-full py-2 px-3 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/30 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-sm font-medium rounded-lg transition-colors text-left flex items-center justify-between"
+                    >
+                      <span>Answer open questions</span>
+                      <span className="text-xs font-normal opacity-70">{openQuestions.length} unresolved</span>
+                    </button>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => resolve('approved')}
+                      disabled={resolveLoading}
+                      className="flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white text-sm font-medium rounded-lg transition-colors"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => setShowReviseForm(true)}
+                      disabled={resolveLoading}
+                      className="flex-1 py-2 px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 text-white text-sm font-medium rounded-lg transition-colors"
+                    >
+                      Revise
+                    </button>
+                    <button
+                      onClick={() => setShowRejectConfirm(true)}
+                      disabled={resolveLoading}
+                      className="flex-1 py-2 px-3 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 text-red-700 dark:text-red-400 text-sm font-medium rounded-lg transition-colors"
+                    >
+                      Reject
+                    </button>
+                  </div>
                 </div>
               ) : null}
             </div>

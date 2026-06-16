@@ -15,6 +15,7 @@ import db from '../data/database';
 import { insertEvent } from './workflow-db';
 import { loadArtifactContentById } from './artifact-helpers';
 import { loadPrdForItem, buildEpicEnrichment, buildFeatureEnrichment } from '../utils/prd-enrichment';
+import { convertArtifactToMarkdown } from '../utils/artifact-to-markdown';
 import { AzureDevOpsClient } from '../integrations/azure-devops';
 import Logger from '../utils/logger';
 
@@ -397,12 +398,24 @@ export async function syncToWiki(workflowId: string, stages?: string[]): Promise
       logger.warn(`Sync to wiki: could not load ${config.type} artifact ${artifactRow.id}`);
       continue;
     }
-    const content = stripCodeFence(rawContent);
+    logger.info(`Sync to wiki: loaded ${config.type} artifact ${artifactRow.id} (${rawContent.length} chars)`);
+    const stripped = stripCodeFence(rawContent);
+    logger.info(`Sync to wiki: after stripCodeFence (${stripped.length} chars), first 200: ${stripped.slice(0, 200)}`);
+    const content = convertArtifactToMarkdown(config.type, stripped);
+    logger.info(`Sync to wiki: after conversion to markdown (${content.length} chars), first 200: ${content.slice(0, 200)}`);
 
     const wikiPath = `/Product Documentation/Features/${featureName}/${config.pageName}`;
     await client.ensureWikiPath(wikiId, wikiPath);
     const { url } = await client.upsertWikiPage(wikiId, wikiPath, content);
     results.push({ stage, pageName: config.pageName, url });
+
+    // Track the wiki location so demo cleanup (and general tooling) can find and delete the page.
+    // This is an upsert-style update — safe to call on re-sync.
+    db.prepare(`
+      UPDATE artifacts
+      SET external_system = 'azure_wiki', external_path = ?, external_url = ?
+      WHERE id = ?
+    `).run(wikiPath, url, artifactRow.id);
   }
 
   // Insert success event

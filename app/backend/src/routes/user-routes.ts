@@ -35,26 +35,6 @@ router.post('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
-/** PUT /api/users/:id — update a user */
-router.put('/:id', async (req: AuthRequest, res: Response) => {
-  const id = parseInt(req.params.id, 10);
-  if (isNaN(id)) return res.status(400).json({ error: 'Invalid user id' });
-  const { username, name, email, password, is_admin, slack_user_id, roles } = req.body;
-  const user = await updateUser(id, { username, name, email, password, is_admin, slack_user_id, roles });
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  res.json({ user });
-});
-
-/** DELETE /api/users/:id — delete a user */
-router.delete('/:id', (req: AuthRequest, res: Response) => {
-  const id = parseInt(req.params.id, 10);
-  if (isNaN(id)) return res.status(400).json({ error: 'Invalid user id' });
-  if (req.user?.id === id) return res.status(400).json({ error: 'Cannot delete your own account' });
-  const ok = deleteUser(id);
-  if (!ok) return res.status(404).json({ error: 'User not found' });
-  res.json({ ok: true });
-});
-
 /** GET /api/users/roles — list available roles */
 router.get('/roles', (_req: AuthRequest, res: Response) => {
   res.json({ roles: getAvailableRoles() });
@@ -86,6 +66,26 @@ router.delete('/stage-roles', (req: AuthRequest, res: Response) => {
   const { stage, role_name } = req.body as { stage?: string; role_name?: string };
   if (!stage || !role_name) return res.status(400).json({ error: 'stage and role_name are required' });
   removeStageRole(stage, role_name);
+  res.json({ ok: true });
+});
+
+/** PUT /api/users/:id — update a user */
+router.put('/:id', async (req: AuthRequest, res: Response) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: 'Invalid user id' });
+  const { username, name, email, password, is_admin, slack_user_id, roles } = req.body;
+  const user = await updateUser(id, { username, name, email, password, is_admin, slack_user_id, roles });
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  res.json({ user });
+});
+
+/** DELETE /api/users/:id — delete a user */
+router.delete('/:id', (req: AuthRequest, res: Response) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: 'Invalid user id' });
+  if (req.user?.id === id) return res.status(400).json({ error: 'Cannot delete your own account' });
+  const ok = deleteUser(id);
+  if (!ok) return res.status(404).json({ error: 'User not found' });
   res.json({ ok: true });
 });
 
