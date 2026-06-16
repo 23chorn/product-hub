@@ -522,23 +522,25 @@ export function validateBacklogJson(input: Record<string, unknown>): string {
       }
     }
 
-    const platforms = story.platform;
-    if (!Array.isArray(platforms) || platforms.length === 0) {
-      issues.push(`${p}: missing platform array`);
-    } else {
-      const invalid = platforms.filter((pl: any) => !VALID_PLATFORMS.has(pl));
-      if (invalid.length > 0) {
-        issues.push(`${p}: invalid platform value(s): ${invalid.join(', ')}`);
+    // Platform must be exactly ONE stream. Accept a single string or a 1-element array.
+    const platformRaw = story.platform;
+    const platformStr: string | null =
+      typeof platformRaw === 'string' ? platformRaw
+      : Array.isArray(platformRaw) && platformRaw.length === 1 ? String(platformRaw[0])
+      : null;
+    if (!platformStr) {
+      if (Array.isArray(platformRaw) && platformRaw.length > 1) {
+        issues.push(`${p}: platform must be a single stream — found [${(platformRaw as string[]).join(', ')}]. Split into separate stories, one per platform (backend | web | ios | android).`);
+      } else {
+        issues.push(`${p}: missing platform — must be exactly one of: backend, web, ios, android`);
       }
+    } else if (!VALID_PLATFORMS.has(platformStr)) {
+      issues.push(`${p}: invalid platform "${platformStr}" — must be one of: backend, web, ios, android`);
     }
 
     const points = story.estimated_points ?? story.effort ?? story.storyPoints;
     if (typeof points !== 'number' || !FIBONACCI.has(points)) {
       issues.push(`${p}: estimated_points must be a Fibonacci number (1, 2, 3, 5, or 8)`);
-    }
-
-    if (!Array.isArray(story.test_cases)) {
-      issues.push(`${p}: missing test_cases array`);
     }
   }
 

@@ -348,6 +348,7 @@ function buildDraftPrompts(
 3. Map each story to the Functional Requirements it satisfies (see PRD Traceability in the brief)
 4. Estimate story points (1-2-3-5 scale) based on scope — prefer smaller estimates for atomic tasks
 5. Don't add technical details yet — that's what the engineers will contribute in the next round
+6. **CRITICAL — One stream per ticket:** Each story must belong to exactly ONE platform stream: \`backend\`, \`web\`, \`ios\`, or \`android\`. If a piece of work spans multiple platforms (e.g., an API + a UI), write a separate story for each platform. Name them descriptively: e.g. "Set Up Alert API [Backend]" and "Alert Creation Form [Web]".
 
 **Output Format:**
 Return a JSON structure (use F${featureNum} for all story IDs):
@@ -365,11 +366,14 @@ Return a JSON structure (use F${featureNum} for all story IDs):
         "functional_requirements": ["FR-01"],
         "non_functional_requirements": ["NFR1"]
       },
+      "platform": "backend",
       "estimated_points": 3
     }
   ]
 }
 \`\`\`
+
+The \`platform\` value must be exactly one of: \`backend\`, \`web\`, \`ios\`, \`android\`.
 `;
     } else if (participant.name === 'Vera') {
       // QA Engineer: Testability concerns
@@ -470,14 +474,15 @@ Plain text per-story feedback. Example:
       prompt += `
 **Phase 2.1 Task — Add Technical Details:**
 1. Review Shard - Product Owner's story breakdown
-2. For stories that touch your platform, add specific technical acceptance criteria
-3. Propose story splits if needed (e.g., "Backend API" + "Frontend UI" as separate stories)
-4. Flag dependencies (e.g., "Frontend story depends on Backend API story")
+2. For each story that touches your platform, add specific technical acceptance criteria
+3. **CRITICAL — One stream per ticket:** If any story covers work on YOUR platform but is not already split into its own ticket, propose a new platform-specific story for it. Every story must belong to exactly ONE stream: \`backend\`, \`web\`, \`ios\`, or \`android\`. Shared logic (e.g. "user sees X") must be split into separate stories if it requires distinct implementation on each platform.
+4. Flag dependencies (e.g., "Web story F?.S3 depends on Backend story F?.S2 being complete first")
 
 **Output Format:**
-Plain text mapping of story_id → technical ACs. Example:
+Plain text mapping of story_id → technical ACs, plus any proposed new platform-specific stories. Example:
 - F?.S1 (Backend): "POST /api/alerts endpoint returns 201 with alert ID in JSON"
 - F?.S2 (Web): "AlertForm component validates ticker symbol before submit"
+- NEW story needed: "Alert Badge [iOS]" — the iOS app needs a native badge update on alert trigger, separate from the web notification story
 `;
     }
 
@@ -582,12 +587,12 @@ Merge all contributions into a single JSON artifact following the backlog templa
           "i_want": "...",
           "so_that": "...",
           "acceptance_criteria": ["Given...", "When...", "Then..."],
-          "technical_acceptance_criteria": ["Backend: ...", "Web: ...", "Mobile: ..."],
+          "technical_acceptance_criteria": ["Specific to the one platform this story covers"],
           "prd_ref": {
             "functional_requirements": ["FR-01"],
             "non_functional_requirements": ["NFR1"]
           },
-          "platform": ["backend", "web", "ios", "android"],
+          "platform": "backend",
           "estimated_points": 5,
           "depends_on": [],
           "technical_notes": "..."
@@ -607,7 +612,7 @@ Merge all contributions into a single JSON artifact following the backlog templa
 - Feature acceptance_criteria are high-level "done" conditions for the whole feature, not story-level Gherkin
 - Apply Vera's AC improvements — sharpen any vague acceptance criteria language she flagged
 - Ensure all story_id references are consistent (F?.S1, F?.S2, etc.)
-- Platform tags should reflect which engineers contributed technical ACs
+- **CRITICAL — One stream per ticket:** Each story's \`platform\` field MUST be a single string — exactly one of: \`"backend"\`, \`"web"\`, \`"ios"\`, \`"android"\`. Never use an array. If an engineer proposed work on your behalf that spans multiple platforms, split it into separate stories — one per platform. Each story's technical_acceptance_criteria must be specific to that one platform only. Stories that require work on multiple platforms must appear as multiple separate stories (e.g. "Create Alert API [Backend]" and "Create Alert Form [Web]"). Title each story to make the platform clear.
 - Do NOT include a test_cases field — the QA engineer stage owns the full test suite as a separate artifact
 `;
 

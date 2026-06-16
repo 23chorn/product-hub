@@ -434,7 +434,8 @@ export async function pushFeatureToADO(
     const acceptanceCriteria = storyData.acceptanceCriteria ?? storyData.acceptance_criteria ?? [];
     const technicalAcceptanceCriteria = storyData.technical_acceptance_criteria ?? [];
     const effort = storyData.storyPoints ?? storyData.estimated_points ?? undefined;
-    const platform = storyData.platform ?? [];
+    const platformRaw = storyData.platform;
+    const platform: string[] = Array.isArray(platformRaw) ? platformRaw : platformRaw ? [String(platformRaw)] : [];
     const technicalNotes = storyData.technical_notes ?? storyData.agentContext ?? '';
     const testCases = storyData.test_cases ?? [];
 

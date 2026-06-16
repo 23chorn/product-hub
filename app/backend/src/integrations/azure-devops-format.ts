@@ -92,13 +92,14 @@ export function buildTechnicalSuggestions(technical: { constraints?: string[]; a
  * technical_notes: { ios, android, backend } — each is a free-text string.
  * Returns an empty string when no meaningful notes are present.
  */
-export function buildPlatformNotes(notes: { ios?: string | null; android?: string | null; backend?: string | null } | undefined): string {
+export function buildPlatformNotes(notes: { ios?: string | null; android?: string | null; backend?: string | null; web?: string | null } | undefined): string {
   if (!notes) return '';
 
   const platforms = [
+    { label: 'Backend', value: notes.backend },
+    { label: 'Web', value: notes.web },
     { label: 'iOS', value: notes.ios },
     { label: 'Android', value: notes.android },
-    { label: 'Backend', value: notes.backend },
   ].filter(p => p.value && p.value !== 'null' && p.value.trim() !== '' && p.value.trim().toLowerCase() !== 'n/a');
 
   if (!platforms.length) return '';
@@ -116,7 +117,7 @@ export function buildPlatformNotes(notes: { ios?: string | null; android?: strin
  * Future streams (web) can be added here once the tech_refinement agent supports them.
  * Returns a semicolon-separated ADO tag string, or undefined when no tags apply.
  */
-export function deriveTeamTags(notes: { ios?: string | null; android?: string | null; backend?: string | null } | undefined): string | undefined {
+export function deriveTeamTags(notes: { ios?: string | null; android?: string | null; backend?: string | null; web?: string | null } | undefined): string | undefined {
   if (!notes) return undefined;
 
   const isPresent = (v: string | null | undefined) =>
@@ -124,9 +125,9 @@ export function deriveTeamTags(notes: { ios?: string | null; android?: string | 
 
   const tags: string[] = [];
   if (isPresent(notes.backend)) tags.push('Backend');
+  if (isPresent(notes.web))     tags.push('Web');
   if (isPresent(notes.ios))     tags.push('iOS');
   if (isPresent(notes.android)) tags.push('Android');
-  // Web: not yet supported — add here when web tech_refinement agent is introduced
 
   return tags.length ? tags.join('; ') : undefined;
 }

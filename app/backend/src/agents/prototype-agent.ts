@@ -304,6 +304,178 @@ export async function loadFigmaMockupFileData(itemId?: string): Promise<string> 
   }
 }
 
+// ── Figma → ADO link embedding ─────────────────────────────────────────────────
+
+const FRONTEND_PLATFORMS = new Set(['web', 'ios', 'android']);
+
+/**
+ * After the designer marks Figma complete, embed Figma links into the ADO tickets
+ * for every frontend story (platform = web | ios | android) in this workflow.
+ *
+ * Each story gets:
+ *   - The Figma file as a Hyperlink relation (shows up in the Links tab)
+ *   - Individual frame links for any screen whose name overlaps with the story title
+ *
+ * Errors are logged but never thrown — a failed embed must not block workflow advance.
+ */
+export async function embedFigmaLinksInFrontendTickets(
+  workflowId: string,
+  itemId: string,
+  figmaArtifact: {
+    figma_file_url?: string;
+    screens_created?: Array<{ name: string; frame_url?: string }>;
+  },
+): Promise<void> {
+  const { appConfig } = require('../config/app-config');
+  if (appConfig.integrations.workItems !== 'ado') return;
+
+  const fileUrl = figmaArtifact.figma_file_url;
+  if (!fileUrl) {
+    logger.info('[FIGMA-ADO] No figma_file_url in artifact — skipping link embed');
+    return;
+  }
+
+  const screens: Array<{ name: string; frame_url?: string }> =
+    Array.isArray(figmaArtifact.screens_created) ? figmaArtifact.screens_created : [];
+
+  // Load all story mappings for this workflow
+  const storyMappings = db.prepare<[string], { local_key: string; ado_id: number }>(
+    `SELECT local_key, ado_id FROM ado_work_item_map WHERE workflow_id = ? AND ado_type = 'story'`
+  ).all(workflowId);
+
+  if (storyMappings.length === 0) {
+    logger.info('[FIGMA-ADO] No ADO story mappings found — skipping link embed');
+    return;
+  }
+
+  // Build a map of local_key → ado_id for quick lookup
+  const adoIdByKey = new Map(storyMappings.map(m => [m.local_key, m.ado_id]));
+
+  // Load the latest merged backlog artifact to find frontend stories
+  const backlogRaw = await (await import('./artifact-helpers')).loadLatestArtifactContent(itemId, 'backlog');
+  if (!backlogRaw) {
+    logger.info('[FIGMA-ADO] No backlog artifact found — skipping link embed');
+    return;
+  }
+
+  let backlog: any;
+  try {
+    const cleaned = backlogRaw.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+    backlog = JSON.parse(cleaned);
+  } catch {
+    logger.warn('[FIGMA-ADO] Could not parse backlog artifact JSON — skipping link embed');
+    return;
+  }
+
+  // Collect all frontend stories from all features
+  const frontendStories: Array<{ story_id: string; title: string }> = [];
+  for (const feature of (backlog.features ?? []) as any[]) {
+    for (const story of (feature.stories ?? []) as any[]) {
+      const platformRaw = story.platform;
+      const platformStr = typeof platformRaw === 'string' ? platformRaw
+        : Array.isArray(platformRaw) && platformRaw.length === 1 ? platformRaw[0] : null;
+      if (platformStr && FRONTEND_PLATFORMS.has(platformStr)) {
+        frontendStories.push({ story_id: story.story_id, title: story.title ?? '' });
+      }
+    }
+  }
+
+  if (frontendStories.length === 0) {
+    logger.info('[FIGMA-ADO] No frontend stories in backlog — skipping link embed');
+    return;
+  }
+
+  logger.info(`[FIGMA-ADO] Embedding Figma links in ${frontendStories.length} frontend stories`);
+
+  const { AzureDevOpsClient } = require('../integrations/azure-devops');
+  const client = new AzureDevOpsClient();
+
+  await Promise.allSettled(frontendStories.map(async story => {
+    const adoId = adoIdByKey.get(story.story_id);
+    if (!adoId) return;
+
+    // Always link the file
+    await client.addHyperlinkToWorkItem(adoId, fileUrl, 'Figma Mockups');
+
+    // Find screens whose name overlaps the story title (word-level match)
+    const storyWords = new Set(
+      story.title.toLowerCase().replace(/[^\w\s]/g, ' ').split(/\s+/).filter(w => w.length > 3)
+    );
+    for (const screen of screens) {
+      if (!screen.frame_url) continue;
+      const screenWords = screen.name.toLowerCase().replace(/[^\w\s]/g, ' ').split(/\s+/);
+      if (screenWords.some(w => w.length > 3 && storyWords.has(w))) {
+        await client.addHyperlinkToWorkItem(adoId, screen.frame_url, `Figma Frame: ${screen.name}`);
+      }
+    }
+  }));
+
+  logger.info('[FIGMA-ADO] Figma links embedded in frontend ADO tickets');
+}
+
+// ── Figma annotation writer ────────────────────────────────────────────────────
+
+/**
+ * Write a structured design brief as a comment on the Figma mockup file.
+ * This gives the designer a screen-by-screen plan visible inside Figma.
+ * Returns the comment ID on success, null on failure.
+ */
+export async function writeFigmaAnnotations(
+  fileKey: string,
+  screens: Array<{ name: string; description?: string; layout_notes?: string; prd_journeys?: string[]; interactions?: Array<{ trigger: string; target_screen: string }> }>,
+  navigationFlow?: string,
+): Promise<{ success: boolean; commentId: string | null }> {
+  const token = process.env.FIGMA_API_KEY ?? process.env.FIGMA_ACCESS_TOKEN;
+  if (!token || !fileKey || screens.length === 0) return { success: false, commentId: null };
+
+  const lines: string[] = ['🎨 Product Hub — Design Brief', ''];
+  lines.push(`${screens.length} screens planned. Make your edits in this file, then return to Product Hub and mark complete.`);
+  lines.push('');
+
+  for (let i = 0; i < screens.length; i++) {
+    const s = screens[i];
+    lines.push(`── Screen ${i + 1}: ${s.name} ──`);
+    if (s.description) lines.push(s.description);
+    if (s.layout_notes) lines.push(`Layout: ${s.layout_notes}`);
+    if (Array.isArray(s.prd_journeys) && s.prd_journeys.length) {
+      lines.push(`Covers: ${s.prd_journeys.join(', ')}`);
+    }
+    if (Array.isArray(s.interactions) && s.interactions.length) {
+      lines.push(`Links to: ${s.interactions.map(ix => `${ix.target_screen} (${ix.trigger})`).join(', ')}`);
+    }
+    lines.push('');
+  }
+
+  if (navigationFlow) {
+    lines.push('── Navigation Flow ──');
+    lines.push(navigationFlow);
+  }
+
+  const message = lines.join('\n').slice(0, 2000);
+
+  try {
+    const res = await fetch(`https://api.figma.com/v1/files/${fileKey}/comments`, {
+      method: 'POST',
+      headers: { 'X-Figma-Token': token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+    });
+
+    if (res.ok) {
+      const data = await res.json() as { id?: string };
+      logger.info(`Wrote design brief comment to Figma file ${fileKey} (comment ${data.id})`);
+      return { success: true, commentId: data.id ?? null };
+    }
+
+    const errText = await res.text().catch(() => res.status.toString());
+    logger.warn(`Figma comment write failed (${res.status}): ${errText}`);
+    return { success: false, commentId: null };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn(`Figma comment write error: ${msg}`);
+    return { success: false, commentId: null };
+  }
+}
+
 // ── JSON repair (for truncated model output) ───────────────────────────────────
 
 export function repairTruncatedJson(raw: string): string {

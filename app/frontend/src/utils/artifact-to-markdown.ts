@@ -263,6 +263,8 @@ function figmaDesignToMarkdown(d: Record<string, any>): string {
   lines.push(`# ${d.title ?? 'Figma Mockup Plan'}\n`);
 
   const statusBadge = d.figma_write_status === 'created' ? '✅ Written to Figma'
+    : d.figma_write_status === 'annotated' ? '📝 Design brief posted — awaiting designer edits'
+    : d.figma_write_status === 'reviewed' ? '✅ Designer review complete'
     : d.figma_write_status === 'partial' ? '⚠️ Partially written'
     : '🕐 Planned (write deferred)';
   lines.push(`**Status:** ${statusBadge}\n`);

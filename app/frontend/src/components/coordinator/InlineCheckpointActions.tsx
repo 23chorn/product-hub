@@ -130,8 +130,29 @@ export function InlineCheckpointActions({
         )
       ) : isFigmaDesign ? (
         <div className="space-y-2">
+          {(() => {
+            let figmaUrl: string | null = null;
+            try { figmaUrl = JSON.parse(checkpoint.coordinator_action ?? '{}').figma_file_url || null; } catch { /* ignore */ }
+            return figmaUrl ? (
+              <a
+                href={figmaUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-1.5 w-full text-xs px-3 py-1.5 rounded-md bg-[#1E1E1E] hover:bg-[#333] text-white font-medium transition-colors"
+              >
+                <svg width="10" height="10" viewBox="0 0 38 57" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M19 28.5A9.5 9.5 0 1 1 28.5 19 9.5 9.5 0 0 1 19 28.5Z" fill="#1ABCFE"/>
+                  <path d="M0 47.5A9.5 9.5 0 0 1 9.5 38H19V47.5A9.5 9.5 0 0 1 0 47.5Z" fill="#0ACF83"/>
+                  <path d="M19 0V19H28.5A9.5 9.5 0 0 0 19 0Z" fill="#FF7262"/>
+                  <path d="M0 9.5A9.5 9.5 0 0 0 9.5 19H19V0H9.5A9.5 9.5 0 0 0 0 9.5Z" fill="#F24E1E"/>
+                  <path d="M0 28.5A9.5 9.5 0 0 0 9.5 38H19V19H9.5A9.5 9.5 0 0 0 0 28.5Z" fill="#FF7262"/>
+                </svg>
+                Open in Figma
+              </a>
+            ) : null;
+          })()}
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Review the Figma mockups, make your edits in Figma, then mark complete to advance the workflow.
+            Make your edits in Figma, then mark complete to advance the workflow.
           </p>
           <div className="flex items-center gap-2">
             <button

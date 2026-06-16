@@ -21,7 +21,8 @@ Structural validation (story_id format, field names, Given/When/Then format, AC 
 ## Scope coverage
 
 - The PRD is provided as a reference document above. Use it to verify that every functional requirement has a corresponding story. A PRD FR with no corresponding story is **MAJOR** — scope has been silently dropped.
-- Platform tags must match the actual work described. A story tagged only `["web"]` that clearly involves API changes, with no corresponding backend story, is **MAJOR** — the backend work is hidden.
+- Each story must have exactly one platform tag (`backend`, `web`, `ios`, or `android`). A story with no platform tag or multiple platform values is **MAJOR** — the validator enforces single-stream but the critic should flag any semantic mismatch too.
+- Platform assignment must match the actual work described. A story tagged `web` that clearly involves API design with no corresponding `backend` story is **MAJOR** — the backend work is hidden. Each stream of work that touches a different platform must be its own ticket.
 - Phase tags must be consistent with the PRD's Out of Scope section. A story tagged MVP that covers explicitly out-of-scope functionality is **CRITICAL**.
 
 ## PM Questions

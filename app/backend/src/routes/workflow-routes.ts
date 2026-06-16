@@ -463,10 +463,11 @@ workflowRoutes.post('/checkpoint/figma-complete', async (req: AuthRequest, res: 
     ).get(cp.workflow_id);
 
     // Fetch latest Figma mockup file state
-    const { loadFigmaMockupFileData } = await import('../agents/prototype-agent');
+    const { loadFigmaMockupFileData, embedFigmaLinksInFrontendTickets } = await import('../agents/prototype-agent');
     const figmaSnapshot = await loadFigmaMockupFileData(wf?.item_id);
 
     // Patch the artifact with designer_reviewed flag + snapshot
+    let figmaArtifactData: { figma_file_url?: string; screens_created?: any[] } = {};
     if (cp.artifact_id) {
       const rawContent = await loadArtifactContentById(cp.artifact_id);
       if (rawContent) {
@@ -477,10 +478,17 @@ workflowRoutes.post('/checkpoint/figma-complete', async (req: AuthRequest, res: 
           if (figmaSnapshot) parsed.figma_snapshot = figmaSnapshot.slice(0, 8000);
           parsed.figma_write_status = 'reviewed';
           await updateArtifactContent(cp.artifact_id, JSON.stringify(parsed, null, 2));
+          figmaArtifactData = { figma_file_url: parsed.figma_file_url, screens_created: parsed.screens_created };
         } catch {
           // Non-JSON artifact — skip patch, still advance
         }
       }
+    }
+
+    // Embed Figma links into frontend ADO tickets (fire-and-forget — errors must not block advance)
+    if (wf?.item_id) {
+      embedFigmaLinksInFrontendTickets(cp.workflow_id, wf.item_id, figmaArtifactData)
+        .catch(err => logger.warn(`[FIGMA-ADO] Link embed failed: ${err.message}`));
     }
 
     // Audit + resolve

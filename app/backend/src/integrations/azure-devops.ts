@@ -685,6 +685,37 @@ export class AzureDevOpsClient {
   }
 
   /**
+   * Add an external hyperlink relation to a work item.
+   * Shows up in the work item's Links tab as "Hyperlink".
+   * Safe to call multiple times — ADO deduplicates by URL.
+   */
+  async addHyperlinkToWorkItem(id: number, url: string, comment: string): Promise<void> {
+    try {
+      await this.client.patch(`/wit/workitems/${id}`, [
+        {
+          op: 'add',
+          path: '/relations/-',
+          value: {
+            rel: 'Hyperlink',
+            url,
+            attributes: { comment },
+          },
+        },
+      ]);
+      logger.info(`Added hyperlink to work item #${id}: ${url}`);
+    } catch (error: any) {
+      const msg = adoErrorMessage(error);
+      // ADO returns 400 if the hyperlink already exists — treat as success
+      if (msg.includes('already exists') || msg.includes('duplicate')) {
+        logger.info(`Hyperlink already present on work item #${id} — skipping`);
+        return;
+      }
+      logger.error(`Failed to add hyperlink to work item #${id}: ${msg}`);
+      throw new Error(`Azure DevOps API error: ${msg}`);
+    }
+  }
+
+  /**
    * Get Epic URL for browser
    */
   getEpicUrl(epicId: number): string {

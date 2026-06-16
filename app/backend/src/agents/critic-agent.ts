@@ -24,6 +24,7 @@ const STAGE_CRITIC_FILE: Record<string, string> = {
   solution_architect:'critic-architect.md',
   story_decomposition:'critic-backlog.md',
   qa_engineer:       'critic-qa.md',
+  figma_design:      'critic-figma-designer.md',
 };
 
 // ── Public types ──────────────────────────────────────────────────────────────

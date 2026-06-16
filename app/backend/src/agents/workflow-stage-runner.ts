@@ -500,6 +500,38 @@ export async function runAutonomousStage(
 
     const artifactId = await saveLocalArtifact(sessionId, stage, artifactContent, itemId, skillVersionId);
 
+    // ── Special handling for figma_design: write design brief to Figma as a comment ──
+    if (stage === 'figma_design') {
+      try {
+        const cleaned = artifactContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+        const parsed = JSON.parse(cleaned);
+        const fileKey = getFigmaFileKey(itemId);
+        const screens = Array.isArray(parsed.screens_created) ? parsed.screens_created : [];
+
+        if (fileKey && screens.length > 0) {
+          insertEvent(workflowId, 'stage_progress', stage, 'Writing design brief to Figma...');
+          const { writeFigmaAnnotations } = await import('./prototype-agent');
+          const result = await writeFigmaAnnotations(fileKey, screens, parsed.navigation_flow);
+
+          if (result.success) {
+            parsed.figma_write_status = 'annotated';
+            if (result.commentId) parsed.figma_comment_id = result.commentId;
+            const updated = JSON.stringify(parsed, null, 2);
+            await updateArtifactContent(artifactId, updated);
+            artifactContent = updated;
+            insertEvent(workflowId, 'stage_progress', stage,
+              `Design brief posted to Figma — open the file and make your edits, then mark complete in Product Hub.`);
+          } else {
+            logger.warn(`[FIGMA-DESIGN] Annotation write failed for file ${fileKey} — status remains "planned"`);
+          }
+        } else if (!fileKey) {
+          logger.info('[FIGMA-DESIGN] No Figma file key — annotation skipped');
+        }
+      } catch (err: any) {
+        logger.warn(`[FIGMA-DESIGN] Post-processing failed: ${err.message}`);
+      }
+    }
+
     // ── Special handling for solution_architect: extract epic_features_enriched from JSON ──
     if (stage === 'solution_architect') {
       try {
@@ -682,9 +714,16 @@ export async function runAutonomousStage(
         wikiUrl = await tryWikiPush();
         const now = Date.now();
         const checkpointStatusCritic = autoApprove ? 'approved' : 'pending';
+        let figmaFileUrl: string | undefined;
+        if (stage === 'figma_design') {
+          try {
+            const cleaned = artifactContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+            figmaFileUrl = JSON.parse(cleaned).figma_file_url || undefined;
+          } catch { /* ignore */ }
+        }
         const cpResult = stmts.insertCheckpoint.run(
           workflowId, stage, artifactId, checkpointStatusCritic,
-          JSON.stringify({ session_id: sessionId, autonomous: true, critic: criticDetails, auto_approved: autoApprove, ...(diffArtifactId ? { diff_artifact_id: diffArtifactId } : {}) }),
+          JSON.stringify({ session_id: sessionId, autonomous: true, critic: criticDetails, auto_approved: autoApprove, ...(diffArtifactId ? { diff_artifact_id: diffArtifactId } : {}), ...(figmaFileUrl ? { figma_file_url: figmaFileUrl } : {}) }),
           checkpointStatusCritic === 'pending' ? rolesJson(stage) : null, now
         );
         if (specialistTokenData) {
@@ -863,9 +902,16 @@ export async function runAutonomousStage(
     wikiUrl = await tryWikiPush();
     const checkpointStatus = autoApprove ? 'approved' : 'pending';
     const now = Date.now();
+    let figmaFileUrlNoCritic: string | undefined;
+    if (stage === 'figma_design') {
+      try {
+        const cleaned = artifactContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+        figmaFileUrlNoCritic = JSON.parse(cleaned).figma_file_url || undefined;
+      } catch { /* ignore */ }
+    }
     const cpResult3 = stmts.insertCheckpoint.run(
       workflowId, stage, artifactId, checkpointStatus,
-      JSON.stringify({ session_id: sessionId, autonomous: true, auto_approved: autoApprove, ...(diffArtifactId ? { diff_artifact_id: diffArtifactId } : {}) }),
+      JSON.stringify({ session_id: sessionId, autonomous: true, auto_approved: autoApprove, ...(diffArtifactId ? { diff_artifact_id: diffArtifactId } : {}), ...(figmaFileUrlNoCritic ? { figma_file_url: figmaFileUrlNoCritic } : {}) }),
       checkpointStatus === 'pending' ? rolesJson(stage) : null, now
     );
     if (specialistTokenData) {
