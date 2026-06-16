@@ -15,7 +15,7 @@ import { v4 as uuidv4 } from 'uuid';
 import * as path from 'path';
 import db, { getPolicies } from '../data/database';
 import { sessionManager } from '../session/session-manager';
-import { streamAI, resolveModelId, resolveAgentModel, type TokenUsage } from '../utils/ai-provider';
+import { streamAI, resolveModelId, resolveAgentModel } from '../utils/ai-provider';
 import type { AppMode, AgentType } from '@pap/shared';
 import {
   STAGE_SESSION_MAP, STAGE_MAX_OUTPUT_TOKENS, STAGE_ARTIFACT_TYPE,
@@ -27,8 +27,8 @@ import {
 import { deleteWorkflow as deleteWorkflowImpl, recoverStaleWorkflows as recoverStaleWorkflowsImpl, startStaleRecoveryTimer } from './workflow-lifecycle';
 import { isDemoMode, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
 import { notifyWorkflowComplete } from '../utils/slack-notifier';
-import { WorkflowRow, CheckpointRow, WorkflowStatus, WorkflowEvent, StageTokenData } from './workflow-types';
-export type { WorkflowRow, CheckpointRow, WorkflowStatus, WorkflowEvent, StageTokenData } from './workflow-types';
+import { WorkflowRow, CheckpointRow, WorkflowStatus, WorkflowEvent } from './workflow-types';
+export type { WorkflowRow, CheckpointRow, WorkflowStatus, WorkflowEvent } from './workflow-types';
 export { propagateFeedback, reiterateFromStage, retryCurrentStage, restartWorkflow } from './workflow-mutations';
 export { deleteWorkflow } from './workflow-lifecycle';
 import Logger from '../utils/logger';
@@ -174,25 +174,6 @@ function insertEvent(
   return result.lastInsertRowid as number;
 }
 
-/**
- * Atomically add an estimated cost (USD) to a workflow's running total.
- */
-function addWorkflowCost(workflowId: string, cost: number): void {
-  if (cost <= 0) return;
-  db.prepare(`UPDATE workflows SET estimated_cost = estimated_cost + ? WHERE id = ?`).run(cost, workflowId);
-}
-
-/** Build an onTokens callback that accumulates cost on a workflow. */
-export function costTracker(workflowId: string): (usage: TokenUsage) => void {
-  return (usage) => addWorkflowCost(workflowId, usage.estimatedCost);
-}
-
-/** Write token usage JSON to a checkpoint row. */
-function setCheckpointTokenUsage(checkpointRowId: number, data: StageTokenData): void {
-  db.prepare('UPDATE checkpoints SET token_usage = ? WHERE id = ?')
-    .run(JSON.stringify(data), checkpointRowId);
-}
-
 export function getWorkflowEvents(workflowId: string, sinceId?: number): WorkflowEvent[] {
   if (sinceId !== undefined && sinceId > 0) {
     return eventStmts.getEventsSince.all(workflowId, sinceId);
@@ -333,7 +314,7 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
     insertEvent(workflowId, 'stage_started', 'critic', 'Running quality review on the current stage output...');
 
     const { content: artifactContent, type: artifactType } = loadLatestArtifactForItem(workflow.item_id);
-    const review = await getCritic().review(artifactContent, artifactType, resolveAgentModel('critic'), costTracker(workflowId), workflow.current_stage ?? undefined);
+    const review = await getCritic().review(artifactContent, artifactType, resolveAgentModel('critic'), undefined, workflow.current_stage ?? undefined);
 
     // Save full critic review as artifact .md file
     const criticArtifactId = await saveCriticArtifact(workflow.item_id, 'critic', review.fullText);
@@ -419,15 +400,6 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
   if (nextStage === 'curator') {
     insertEvent(workflowId, 'stage_started', 'curator', 'Updating project context files...');
 
-    let curatorTokenData: import('./workflow-db').StageTokenData['specialist'] | null = null;
-    const curatorTokenCallback = (usage: TokenUsage) => {
-      curatorTokenData = {
-        model: usage.model, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,
-        cacheReadTokens: usage.cacheReadTokens, cacheWriteTokens: usage.cacheWriteTokens,
-        searchCount: 0, estimatedCost: usage.estimatedCost,
-      };
-      addWorkflowCost(workflowId, usage.estimatedCost);
-    };
 
     let diffCount: number;
     let reasoning: string | null;
@@ -463,7 +435,7 @@ Reviewed all stage outputs against the existing context files. Proposing 3 targe
 
 No changes needed to tech-stack.md or process.md — those remain accurate as written.`;
     } else {
-      const result = await getCurator().runCuration(workflowId, resolveAgentModel('curator'), curatorTokenCallback);
+      const result = await getCurator().runCuration(workflowId, resolveAgentModel('curator'));
       diffCount = result.diffCount;
       reasoning = result.reasoning;
     }
@@ -480,11 +452,6 @@ No changes needed to tech-stack.md or process.md — those remain accurate as wr
       JSON.stringify({ auto_approved: true, context_diffs_proposed: diffCount }),
       null, now
     );
-    if (curatorTokenData) {
-      setCheckpointTokenUsage(curatorCpResult.lastInsertRowid as number,
-        { specialist: curatorTokenData! });
-    }
-
     insertEvent(workflowId, 'stage_completed', 'curator',
       diffCount > 0
         ? `Context curation complete — ${diffCount} update${diffCount !== 1 ? 's' : ''} proposed.`

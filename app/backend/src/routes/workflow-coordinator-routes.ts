@@ -13,7 +13,6 @@ import {
   saveCoordinatorSession,
   loadCoordinatorSession,
   getPlanningCoordinator,
-  accumulatePlanningCost,
   cleanCoordinatorResponse,
 } from './workflow-planning';
 
@@ -44,7 +43,7 @@ workflowCoordinatorRoutes.post('/coordinator/open', async (req: Request, res: Re
 
   let fullContent = '';
   try {
-    for await (const chunk of getPlanningCoordinator().streamPlanningResponse(messages, model, (u) => accumulatePlanningCost(sessionId, u.estimatedCost))) {
+    for await (const chunk of getPlanningCoordinator().streamPlanningResponse(messages, model, undefined)) {
       fullContent += chunk;
       sseSend(res, { type: 'content', content: chunk });
     }
@@ -119,7 +118,7 @@ workflowCoordinatorRoutes.post('/coordinator/reply', async (req: Request, res: R
   try {
     initSSE(res);
 
-    for await (const chunk of getPlanningCoordinator().streamPlanningResponse(session.messages, model, (u) => accumulatePlanningCost(sessionId, u.estimatedCost))) {
+    for await (const chunk of getPlanningCoordinator().streamPlanningResponse(session.messages, model, undefined)) {
       fullContent += chunk;
       sseSend(res, { type: 'content', content: chunk });
     }

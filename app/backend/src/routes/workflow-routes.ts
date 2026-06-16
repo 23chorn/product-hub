@@ -16,7 +16,6 @@ import {
   retryCurrentStage,
   restartWorkflow,
   deleteWorkflow,
-  costTracker,
 } from '../agents/workflow-router';
 import { requestCancel } from '../agents/workflow-stage-runner';
 import {
@@ -32,7 +31,6 @@ import { isDemoMode } from '../demo/demo-mode';
 import {
   DEFAULT_STAGES,
   KNOWN_STAGES,
-  consumePlanningCost,
   getPlanningCoordinator,
 } from './workflow-planning';
 
@@ -115,14 +113,6 @@ workflowRoutes.post('/start', async (req: Request, res: Response) => {
     }
 
     const workflow = createWorkflow(itemId!, fullGoal, stages, policyOverrides);
-
-    // Apply any pre-workflow planning cost accumulated during coordinator Q&A
-    if (planningSessionId) {
-      const planCost = consumePlanningCost(planningSessionId);
-      if (planCost > 0) {
-        costTracker(workflow.id)({ model: 'coordinator', inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, searchCount: 0, estimatedCost: planCost });
-      }
-    }
 
     let nextStage: string | null = null;
     let nextSessionId: string | null = null;
@@ -706,7 +696,7 @@ workflowRoutes.post('/:id/message', async (req: Request, res: Response) => {
 
     let fullContent = '';
     try {
-      for await (const chunk of coordinator.streamResponse(workflowId, contextMessage, model, costTracker(workflowId))) {
+      for await (const chunk of coordinator.streamResponse(workflowId, contextMessage, model)) {
         fullContent += chunk;
         sseSend(res, { type: 'content', content: chunk });
       }

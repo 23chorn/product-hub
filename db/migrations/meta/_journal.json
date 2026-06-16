@@ -15,6 +15,13 @@
       "when": 1750000000000,
       "tag": "0002_multi_role_stages",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1750100000000,
+      "tag": "0003_backfill_missing_columns",
+      "breakpoints": true
     }
   ]
 }

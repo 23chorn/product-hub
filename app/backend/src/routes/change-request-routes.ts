@@ -8,7 +8,6 @@ import {
   assessImpact,
   executeChangeRequest,
 } from '../agents/change-request';
-import { costTracker } from '../agents/workflow-router';
 import db from '../data/database';
 import Logger from '../utils/logger';
 
@@ -78,7 +77,7 @@ changeRequestRoutes.post('/change-request/:crId/assess', async (req: Request, re
   initSSE(res);
 
   try {
-    const generator = assessImpact(crId, costTracker(cr.workflow_id));
+    const generator = assessImpact(crId);
     let assessment: { affected_stages: string[]; summary: string; cleanedText: string } | undefined;
 
     while (true) {

@@ -7,7 +7,6 @@ export interface ConversationHeaderProps {
   currentStage: string | null | undefined;
   displayGoal: string | null | undefined;
   itemId: string | undefined;
-  estimatedCost: number | undefined;
   totalStages: number;
   completedCount: number;
   onCancel: () => void;
@@ -24,7 +23,7 @@ export interface ConversationHeaderProps {
 export function ConversationHeader(props: ConversationHeaderProps) {
   const {
     isComplete, isLaunching, isGathering, isAtCheckpoint,
-    hasWorkflow, displayGoal, estimatedCost,
+    hasWorkflow, displayGoal,
     onCancel,
   } = props;
 
@@ -43,13 +42,6 @@ export function ConversationHeader(props: ConversationHeaderProps) {
     ? 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
     : hasWorkflow
     ? 'bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-400'
-    : '';
-
-  const showCost = estimatedCost !== undefined && estimatedCost > 0.0001;
-  const costStr = estimatedCost !== undefined
-    ? estimatedCost < 0.01
-      ? `$${estimatedCost.toFixed(4)}`
-      : `$${estimatedCost.toFixed(2)}`
     : '';
 
   // When a workflow is active the terminal header owns the back button and title
@@ -81,18 +73,11 @@ export function ConversationHeader(props: ConversationHeaderProps) {
         )}
       </div>
 
-      {(statusLabel || showCost) && (
-        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-          {statusLabel && (
-            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${statusColor}`}>
-              {statusLabel}
-            </span>
-          )}
-          {showCost && (
-            <span className="text-[11px] font-mono text-slate-400 dark:text-slate-500" title="Estimated workflow cost">
-              {costStr}
-            </span>
-          )}
+      {statusLabel && (
+        <div className="flex items-center gap-2 mt-1.5">
+          <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${statusColor}`}>
+            {statusLabel}
+          </span>
         </div>
       )}
     </div>

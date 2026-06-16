@@ -29,7 +29,7 @@ import { getActiveSkill } from './skill-registry';
 import { type ToolDefinition, getRegisteredTools } from './tool-registry';
 import { loadWorkflowArtifacts, loadLocalDesignSystem, loadFigmaDesignSystem, repairTruncatedJson } from './prototype-agent';
 import {
-  PROJECT_ROOT, logger, stmts, insertEvent, addWorkflowCost,
+  PROJECT_ROOT, logger, stmts, insertEvent,
   setCheckpointTokenUsage, loadGlobalPolicies, workflowOps, rolesJson,
   type StageTokenData,
 } from './workflow-db';
@@ -69,7 +69,6 @@ export async function runAutonomousStage(
   autoApprove: boolean,
   priorCriticIssues?: string[],
   priorDraftContent?: string,
-  priorRunsCost?: number,
   skipCritic?: boolean
 ): Promise<void> {
   // ── Multi-Agent Refinement for story_decomposition_F* stages ────────────────
@@ -134,30 +133,19 @@ export async function runAutonomousStage(
   // Per-stage token tracking — captured here, stored on the final pending checkpoint.
   let specialistTokenData: StageTokenData['specialist'] | null = null;
   let criticTokenData: StageTokenData['critic'] | null = null;
-  // Costs captured in plain numbers to avoid TS5.9 closure-narrowing issues with ?.estimatedCost
-  let specialistRunCost = 0;
-  let criticRunCost = 0;
 
   const specialistTokenCallback = (usage: TokenUsage) => {
     specialistTokenData = {
       model: usage.model, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,
       cacheReadTokens: usage.cacheReadTokens, cacheWriteTokens: usage.cacheWriteTokens,
-      searchCount: usage.searchCount, estimatedCost: usage.estimatedCost,
+      searchCount: usage.searchCount,
     };
-    specialistRunCost = usage.estimatedCost;
-    addWorkflowCost(workflowId, usage.estimatedCost);
   };
   const criticTokenCallback = (usage: TokenUsage) => {
     criticTokenData = {
       model: usage.model, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,
       cacheReadTokens: usage.cacheReadTokens, cacheWriteTokens: usage.cacheWriteTokens,
-      estimatedCost: usage.estimatedCost,
     };
-    criticRunCost = usage.estimatedCost;
-    addWorkflowCost(workflowId, usage.estimatedCost);
-  };
-  const coordinatorFilterTokenCallback = (usage: TokenUsage) => {
-    addWorkflowCost(workflowId, usage.estimatedCost);
   };
 
   logger.info(`Autonomous stage "${stage}" starting (session=${sessionId})`);
@@ -612,7 +600,7 @@ export async function runAutonomousStage(
       if (review.verdict === 'revise' && review.issues.length > 0) {
         insertEvent(workflowId, 'stage_progress', stage, `Validating the review against the scope for ${STAGE_ARTIFACT_LABEL[stage] ?? stage}…`);
         const filterResult = await getCoordinator().filterCriticIssues(
-          workflowId, stage, review.issues, coordinatorFilterTokenCallback
+          workflowId, stage, review.issues
         );
         if (filterResult.filteredCount > 0) {
           const noun = filterResult.filteredCount === 1 ? 'issue' : 'issues';
@@ -654,7 +642,7 @@ export async function runAutonomousStage(
         );
         if (specialistTokenData) {
           setCheckpointTokenUsage(cpResult.lastInsertRowid as number,
-            { specialist: specialistTokenData, ...(criticTokenData ? { critic: criticTokenData } : {}), ...(priorRunsCost ? { priorRunsCost } : {}) });
+            { specialist: specialistTokenData, ...(criticTokenData ? { critic: criticTokenData } : {}) });
         }
         const minorCount = review.issues.filter(i => i.severity === 'minor').length;
         const approveMsg = minorCount > 0
@@ -713,8 +701,7 @@ export async function runAutonomousStage(
         sessionManager.updateWorkflow(newSession.id, workflowId, revisedBrief);
 
         logger.info(`Inline critic revision ${priorRevisions + 1}/${MAX_INLINE_REVISIONS} for "${stage}" in workflow ${workflowId}`);
-        const thisRunCost = specialistRunCost + criticRunCost;
-        runAutonomousStage(newSession.id, workflowId, stage, itemId, revisedBrief, autoApprove, priorIssuesForRevision, fullResponse, (priorRunsCost ?? 0) + thisRunCost)
+        runAutonomousStage(newSession.id, workflowId, stage, itemId, revisedBrief, autoApprove, priorIssuesForRevision, fullResponse)
           .catch(err => logger.error(`Inline revision for "${stage}" failed: ${err.message}`));
         return;
       }

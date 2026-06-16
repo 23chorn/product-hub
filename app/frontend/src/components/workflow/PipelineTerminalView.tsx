@@ -179,13 +179,6 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
     return status !== 'pending' || eventsByStage.has(s);
   });
 
-  const showCost = (activeWorkflow.estimated_cost ?? 0) > 0.0001;
-  const costStr = activeWorkflow.estimated_cost !== undefined
-    ? activeWorkflow.estimated_cost < 0.01
-      ? `$${activeWorkflow.estimated_cost.toFixed(4)}`
-      : `$${activeWorkflow.estimated_cost.toFixed(2)}`
-    : '';
-
   return (
     <div className="flex h-full overflow-hidden bg-white dark:bg-[#0d1117] font-mono">
       {/* ── Left: stage list ───────────────────────────────────── */}
@@ -288,9 +281,6 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
             )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
-            {showCost && (
-              <span className="text-[11px] font-mono text-slate-500">{costStr}</span>
-            )}
             <button
               onClick={() => setShowAudit(true)}
               title="Activity — who reviewed each stage"

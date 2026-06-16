@@ -14,23 +14,6 @@ export const DEFAULT_STAGES = ['analyst', 'pm_prd', 'prototype', 'figma_design',
 
 export const KNOWN_STAGES = new Set(['analyst', 'pm_prd', 'epic_feature_planner', 'solution_architect', 'story_decomposition', 'prototype', 'figma_design', 'critic', 'curator']);
 
-// ── Pre-workflow planning cost accumulator ────────────────────────────────────
-// Planning conversations happen before a workflow ID exists, so we can't call
-// costTracker(). Instead, accumulate cost in memory keyed by planning sessionId
-// and apply it to the workflow when /start is called.
-const planningCosts = new Map<string, number>();
-
-export function accumulatePlanningCost(sessionId: string, cost: number): void {
-  planningCosts.set(sessionId, (planningCosts.get(sessionId) ?? 0) + cost);
-}
-
-/** Return the accumulated planning cost for a session and clear it. */
-export function consumePlanningCost(sessionId: string): number {
-  const cost = planningCosts.get(sessionId) ?? 0;
-  planningCosts.delete(sessionId);
-  return cost;
-}
-
 // ── Coordinator planning sessions (DB-backed) ─────────────────────────────────
 
 export type PlanningMessages = Array<{ role: 'user' | 'assistant'; content: string }>;

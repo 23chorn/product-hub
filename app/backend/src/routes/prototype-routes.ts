@@ -3,7 +3,6 @@ import { initSSE, sseSend } from '../utils/sse';
 import * as fs from 'fs';
 import * as path from 'path';
 import { revisePrototype, loadLatestPrototype, repairTruncatedJson, type PrototypeResult } from '../agents/prototype-agent';
-import { costTracker } from '../agents/workflow-router';
 import Logger from '../utils/logger';
 
 const PROTOTYPE_DIR = path.resolve(__dirname, '../../../../agents/templates/prototype');
@@ -27,8 +26,7 @@ prototypeRoutes.post('/workflow/:id/prototype/revise', async (req: Request, res:
   initSSE(res);
 
   try {
-    const onTokens = costTracker(workflowId);
-    const generator = revisePrototype(workflowId, prototype, feedback, onTokens);
+    const generator = revisePrototype(workflowId, prototype, feedback);
     let result: PrototypeResult | null = null;
 
     while (true) {

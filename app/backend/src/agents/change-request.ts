@@ -10,7 +10,6 @@ import db from '../data/database';
 import { CoordinatorAgent } from './coordinator-agent';
 import {
   reiterateFromStage,
-  costTracker,
   getWorkflowStatus,
   advanceStage,
 } from './workflow-router';
@@ -25,7 +24,7 @@ import {
 } from './stage-metadata';
 import { sessionManager } from '../session/session-manager';
 import { SpecialistAgent } from './specialist-agent';
-import { streamAI, resolveAgentModel, type TokenUsage } from '../utils/ai-provider';
+import { streamAI, resolveAgentModel } from '../utils/ai-provider';
 import Logger from '../utils/logger';
 
 const logger = new Logger('CHANGE-REQUEST');
@@ -51,7 +50,6 @@ interface WorkflowRow {
   current_stage: string | null;
   stage_sequence: string;
   policy_overrides: string;
-  estimated_cost: number;
   created_at: number;
   updated_at: number;
 }
@@ -186,8 +184,7 @@ export function cancelChangeRequest(crId: number): void {
  * Streams the assessment via SSE. Returns the assessment JSON.
  */
 export async function* assessImpact(
-  crId: number,
-  onTokens?: (usage: TokenUsage) => void
+  crId: number
 ): AsyncGenerator<string, { affected_stages: string[]; summary: string; cleanedText: string }, unknown> {
   const cr = stmts.getCR.get(crId);
   if (!cr) throw new Error(`Change request not found: ${crId}`);
@@ -253,7 +250,7 @@ Only include stages from: ${stageSequence.filter(s => s !== 'critic' && s !== 'c
   const resolvedModel = resolveAgentModel('coordinator');
   let fullResponse = '';
 
-  for await (const chunk of streamAI(resolvedModel, systemPrompt, [{ role: 'user', content: userMessage }], undefined, { onTokens })) {
+  for await (const chunk of streamAI(resolvedModel, systemPrompt, [{ role: 'user', content: userMessage }])) {
     fullResponse += chunk;
     yield chunk;
   }

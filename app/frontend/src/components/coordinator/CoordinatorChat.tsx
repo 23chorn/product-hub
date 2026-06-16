@@ -311,7 +311,6 @@ export function CoordinatorChat() {
         currentStage={currentStage}
         displayGoal={displayGoal}
         itemId={activeWorkflow?.item_id}
-        estimatedCost={activeWorkflow?.estimated_cost}
         totalStages={stageSequence.length}
         completedCount={completedStages.length}
         onCancel={resetWorkflow}
@@ -397,7 +396,6 @@ export function CoordinatorChat() {
                     <PrototypeActions
                       prototypeData={prototypeData}
                       onShowCRForm={() => setShowCRForm(true)}
-                      onViewPrototype={() => setShowPrototype(true)}
                     />
                   )}
                   <ChangeRequestSection

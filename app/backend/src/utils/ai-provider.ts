@@ -11,11 +11,8 @@ import { getAnthropicClient } from './anthropic-client';
 import type { ModelOption } from '@pap/shared';
 import {
   PROVIDER_MODELS,
-  WEB_SEARCH_COST_PER_QUERY,
   ANTHROPIC_AGENT_MODELS,
   modelMaxOutputTokens,
-  estimateCost,
-  calculateCost,
 } from './model-config';
 import Logger from './logger';
 import { type ToolDefinition, executeTool } from '../agents/tool-registry';
@@ -44,7 +41,7 @@ const DEFAULT_MODELS: Record<AIProvider, string> = {
   ollama:    'llama3.2:1b',
 };
 
-export { calculateCost, estimateCost, PROVIDER_MODELS, ANTHROPIC_AGENT_MODELS, WEB_SEARCH_COST_PER_QUERY } from './model-config';
+export { PROVIDER_MODELS, ANTHROPIC_AGENT_MODELS } from './model-config';
 
 export function getAvailableModels(): ModelOption[] {
   return PROVIDER_MODELS[getActiveProvider()] ?? [];
@@ -111,7 +108,6 @@ export interface TokenUsage {
   cacheReadTokens: number;
   cacheWriteTokens: number;
   searchCount: number;   // web search queries made (Anthropic only; 0 for other providers)
-  estimatedCost: number; // USD (includes search cost)
 }
 
 /**
@@ -327,8 +323,7 @@ async function* streamWithAnthropic(
   logger.info(
     `[TOKENS] model=${model}` +
     ` | input=${totalInput} (uncached=${totalInputTokens} cache_write=${totalCacheWrite} cache_read=${totalCacheRead})` +
-    ` | output=${totalOutputTokens}` +
-    estimateCost(model, totalInputTokens, totalCacheWrite, totalCacheRead, totalOutputTokens, totalSearchCount)
+    ` | output=${totalOutputTokens}`
   );
 
   options.onTokens?.({
@@ -338,7 +333,6 @@ async function* streamWithAnthropic(
     cacheReadTokens: totalCacheRead,
     cacheWriteTokens: totalCacheWrite,
     searchCount: totalSearchCount,
-    estimatedCost: calculateCost(model, totalInputTokens, totalCacheWrite, totalCacheRead, totalOutputTokens, totalSearchCount),
   });
 }
 
@@ -502,8 +496,7 @@ async function* streamWithBedrock(
   logger.info(
     `[TOKENS] model=${model}` +
     ` | input=${totalInput} (uncached=${totalInputTokens} cache_write=${totalCacheWrite} cache_read=${totalCacheRead})` +
-    ` | output=${totalOutputTokens}` +
-    estimateCost(model, totalInputTokens, totalCacheWrite, totalCacheRead, totalOutputTokens)
+    ` | output=${totalOutputTokens}`
   );
 
   onTokens?.({
@@ -513,7 +506,6 @@ async function* streamWithBedrock(
     cacheReadTokens: totalCacheRead,
     cacheWriteTokens: totalCacheWrite,
     searchCount: 0,
-    estimatedCost: calculateCost(model, totalInputTokens, totalCacheWrite, totalCacheRead, totalOutputTokens),
   });
 }
 
@@ -575,13 +567,11 @@ async function* streamWithOllama(
           logger.info(
             `[TOKENS] model=${model}` +
             ` | input=${inputTokens}` +
-            ` | output=${outputTokens}` +
-            estimateCost(model, inputTokens, 0, 0, outputTokens)
+            ` | output=${outputTokens}`
           );
           onTokens?.({
             model, inputTokens, outputTokens, cacheReadTokens: 0, cacheWriteTokens: 0,
             searchCount: 0,
-            estimatedCost: calculateCost(model, inputTokens, 0, 0, outputTokens),
           });
         }
       } catch {

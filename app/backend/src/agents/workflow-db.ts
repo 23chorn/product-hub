@@ -7,7 +7,6 @@
 
 import * as path from 'path';
 import db, { getPolicies } from '../data/database';
-import { type TokenUsage } from '../utils/ai-provider';
 import Logger from '../utils/logger';
 
 export const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
@@ -25,7 +24,6 @@ export interface WorkflowRow {
   current_stage: string | null;
   stage_sequence: string;    // JSON string[]
   policy_overrides: string;  // JSON Record<string,string>
-  estimated_cost: number;    // cumulative USD cost
   created_at: number;
   updated_at: number;
 }
@@ -74,7 +72,6 @@ export interface StageTokenData {
     cacheReadTokens: number;
     cacheWriteTokens: number;
     searchCount: number;
-    estimatedCost: number;
   };
   critic?: {
     model: string;
@@ -82,10 +79,7 @@ export interface StageTokenData {
     outputTokens: number;
     cacheReadTokens: number;
     cacheWriteTokens: number;
-    estimatedCost: number;
   };
-  /** Cost from prior revision runs for this stage (not reflected in specialist/critic tokens above). */
-  priorRunsCost?: number;
 }
 
 // ── Policy helpers ─────────────────────────────────────────────────────────────
@@ -217,19 +211,6 @@ export function touchWorkflow(workflowId: string): void {
   db.prepare('UPDATE workflows SET updated_at = ? WHERE id = ?').run(Date.now(), workflowId);
 }
 
-/**
- * Atomically add an estimated cost (USD) to a workflow's running total.
- */
-export function addWorkflowCost(workflowId: string, cost: number): void {
-  if (cost <= 0) return;
-  db.prepare(`UPDATE workflows SET estimated_cost = estimated_cost + ? WHERE id = ?`).run(cost, workflowId);
-}
-
-/** Build an onTokens callback that accumulates cost on a workflow. */
-export function costTracker(workflowId: string): (usage: TokenUsage) => void {
-  return (usage) => addWorkflowCost(workflowId, usage.estimatedCost);
-}
-
 /** Write token usage JSON to a checkpoint row. */
 export function setCheckpointTokenUsage(checkpointRowId: number, data: StageTokenData): void {
   db.prepare('UPDATE checkpoints SET token_usage = ? WHERE id = ?')
@@ -261,7 +242,6 @@ export const workflowOps = {
     autoApprove: boolean,
     priorCriticIssues?: string[],
     priorDraftContent?: string,
-    priorRunsCost?: number,
     skipCritic?: boolean
   ) => Promise<void>,
 };

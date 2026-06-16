@@ -4,34 +4,6 @@ export function formatTokens(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 }
 
-export function formatCost(usd: number): string {
-  if (usd === 0) return '$0';
-  if (usd < 0.001) return `$${usd.toFixed(5)}`;
-  if (usd < 0.01) return `$${usd.toFixed(4)}`;
-  return `$${usd.toFixed(3)}`;
-}
-
-export interface StageTokenData {
-  specialist: {
-    model: string;
-    inputTokens: number;
-    outputTokens: number;
-    cacheReadTokens: number;
-    cacheWriteTokens: number;
-    searchCount: number;
-    estimatedCost: number;
-  };
-  critic?: {
-    model: string;
-    inputTokens: number;
-    outputTokens: number;
-    cacheReadTokens: number;
-    cacheWriteTokens: number;
-    estimatedCost: number;
-  };
-  priorRunsCost?: number;
-}
-
 export function labelClass(status: StageStatus): string {
   switch (status) {
     case 'complete':       return 'text-green-700 dark:text-green-400';
