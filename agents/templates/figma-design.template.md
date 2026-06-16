@@ -5,9 +5,9 @@ Produce a single valid JSON object matching the schema below, wrapped in a ```js
 ```json
 {
   "title": "Figma Mockups: <feature name>",
-  "figma_file_url": "https://www.figma.com/file/<FIGMA_MOCKUP_FILE>/...",
+  "figma_file_url": "",
   "figma_write_status": "planned | created | partial",
-  "source_design_system": "<FIGMA_DESIGN_SYSTEM_FILE key>",
+  "source_design_system": "",
 
   "design_tokens_extracted": {
     "colors": [
@@ -51,7 +51,8 @@ Produce a single valid JSON object matching the schema below, wrapped in a ```js
 
 ## Field requirements
 
-- `figma_write_status`: Use `"planned"` when `FIGMA_MOCKUP_FILE` is not set or write is deferred. Use `"created"` when all frames were successfully written. Use `"partial"` if some frames were written.
+- `figma_file_url`: Use the file URL from the **Target Figma File** section of your context if provided (format: `https://www.figma.com/file/<key>/`). Leave as an empty string if no target file was specified.
+- `figma_write_status`: Use `"planned"` when no target Figma file is configured or write is deferred. Use `"created"` when all frames were successfully written. Use `"partial"` if some frames were written.
 - `design_tokens_extracted.colors`: Include at minimum the primary brand color, background, text, and interactive/CTA token.
 - `design_tokens_extracted.design_gaps`: List any component or token needed for the mockups that does not exist in the design system. An empty array means the design system is sufficient.
 - `screens_created`: Minimum 3, maximum 8. Each screen must correspond to a named user journey from the PRD.

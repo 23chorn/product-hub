@@ -176,15 +176,89 @@ export async function loadFigmaDesignSystem(statusCb: (msg: string) => void): Pr
   return '';
 }
 
+// ── Per-item Figma file key helpers ───────────────────────────────────────────
+
+/** Read the figmaFileKey stored in items.metadata, falling back to the env var. */
+export function getFigmaFileKey(itemId: string): string | null {
+  const row = db.prepare<[string], { metadata: string | null }>(
+    'SELECT metadata FROM items WHERE id = ?'
+  ).get(itemId);
+  if (row?.metadata) {
+    try {
+      const meta = JSON.parse(row.metadata) as { figmaFileKey?: string };
+      if (meta.figmaFileKey) return meta.figmaFileKey;
+    } catch { /* ignore */ }
+  }
+  return process.env.FIGMA_MOCKUP_FILE ?? null;
+}
+
+/** Persist a figmaFileKey into items.metadata (merges with existing metadata). */
+export function setFigmaFileKey(itemId: string, fileKey: string): void {
+  const row = db.prepare<[string], { metadata: string | null }>(
+    'SELECT metadata FROM items WHERE id = ?'
+  ).get(itemId);
+  let meta: Record<string, unknown> = {};
+  if (row?.metadata) {
+    try { meta = JSON.parse(row.metadata) as Record<string, unknown>; } catch { /* ignore */ }
+  }
+  meta.figmaFileKey = fileKey;
+  db.prepare('UPDATE items SET metadata = ?, updated_at = ? WHERE id = ?')
+    .run(JSON.stringify(meta), Date.now(), itemId);
+}
+
 /**
- * Fetch the current state of the Figma mockup file (FIGMA_MOCKUP_FILE).
+ * Create a new Figma file via the REST API and return its file key.
+ * Requires FIGMA_API_KEY and (optionally) FIGMA_TEAM_ID env vars.
+ * Returns null on failure so callers can fall back gracefully.
+ */
+export async function createFigmaFile(name: string): Promise<string | null> {
+  const token = process.env.FIGMA_API_KEY ?? process.env.FIGMA_ACCESS_TOKEN;
+  if (!token) {
+    logger.warn('Cannot create Figma file: FIGMA_API_KEY not set');
+    return null;
+  }
+
+  const projectId = process.env.FIGMA_PROJECT_ID;
+
+  try {
+    const endpoint = projectId
+      ? `https://api.figma.com/v1/projects/${projectId}/files`
+      : 'https://api.figma.com/v1/files';
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'X-Figma-Token': token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+
+    if (res.ok) {
+      const data = await res.json() as { key?: string };
+      if (data.key) {
+        logger.info(`Created Figma file "${name}" with key ${data.key}${projectId ? ` in project ${projectId}` : ' (Drafts)'}`);
+        return data.key;
+      }
+    }
+
+    const errText = await res.text().catch(() => res.status.toString());
+    logger.warn(`Figma file creation failed (${res.status}): ${errText}`);
+    return null;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn(`Figma file creation error: ${msg}`);
+    return null;
+  }
+}
+
+/**
+ * Fetch the current state of the Figma mockup file for an item.
  * Used by the figma-complete endpoint to snapshot designer edits into the artifact.
  * Returns raw content string from the MCP call, or empty string if unavailable.
  */
-export async function loadFigmaMockupFileData(): Promise<string> {
-  const fileKey = process.env.FIGMA_MOCKUP_FILE;
+export async function loadFigmaMockupFileData(itemId?: string): Promise<string> {
+  const fileKey = itemId ? getFigmaFileKey(itemId) : (process.env.FIGMA_MOCKUP_FILE ?? null);
   const token = process.env.FIGMA_API_KEY ?? process.env.FIGMA_ACCESS_TOKEN;
   if (!fileKey || !token) return '';
+
 
   let Client: any;
   let StdioClientTransport: any;

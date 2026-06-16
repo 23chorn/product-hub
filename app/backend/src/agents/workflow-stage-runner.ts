@@ -27,7 +27,7 @@ import {
 } from './artifact-helpers';
 import { getActiveSkill } from './skill-registry';
 import { type ToolDefinition, getRegisteredTools } from './tool-registry';
-import { loadWorkflowArtifacts, loadLocalDesignSystem, loadFigmaDesignSystem, repairTruncatedJson } from './prototype-agent';
+import { loadWorkflowArtifacts, loadLocalDesignSystem, loadFigmaDesignSystem, repairTruncatedJson, getFigmaFileKey, setFigmaFileKey, createFigmaFile } from './prototype-agent';
 import {
   PROJECT_ROOT, logger, stmts, insertEvent,
   setCheckpointTokenUsage, loadGlobalPolicies, workflowOps, rolesJson,
@@ -299,8 +299,19 @@ export async function runAutonomousStage(
       if (designSystem) parts.push(`## Design System\n\n${designSystem}`);
       if (prdContent) parts.push(`## PRD\n\nUse this to identify user journeys each screen must cover:\n\n${prdContent}`);
       if (protoContent) parts.push(`## Prototype\n\nUse this as a reference for the screens and navigation flows to visualise:\n\n${protoContent}`);
-      const mockupFile = process.env.FIGMA_MOCKUP_FILE;
-      if (mockupFile) parts.push(`## Target Figma File\n\nCreate mockup frames in Figma file key: \`${mockupFile}\``);
+      let mockupFile = getFigmaFileKey(itemId);
+      if (!mockupFile) {
+        const item = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(itemId);
+        const fileName = item ? `${item.title} — Mockups` : 'Initiative Mockups';
+        insertEvent(workflowId, 'stage_progress', stage, `Creating Figma file "${fileName}"...`);
+        const created = await createFigmaFile(fileName);
+        if (created) {
+          setFigmaFileKey(itemId, created);
+          mockupFile = created;
+          insertEvent(workflowId, 'stage_progress', stage, `Figma file created: ${created}`);
+        }
+      }
+      if (mockupFile) parts.push(`## Target Figma File\n\nCreate mockup frames in Figma file key: \`${mockupFile}\`\nFile URL: https://www.figma.com/file/${mockupFile}/`);
       if (parts.length > 0) itemContext = parts.join('\n\n---\n\n');
     }
 

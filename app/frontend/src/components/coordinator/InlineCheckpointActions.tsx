@@ -4,6 +4,7 @@ import { parseCriticData } from '../../utils/coordinator-helpers';
 import { CriticQuestionForm } from '../artifact/CriticQuestionForm';
 import { api } from '../../services/api';
 import { useAuthStore, canApprove, parseRequiredRoles, ROLE_LABELS } from '../../stores/authStore';
+import { useWorkflowStore } from '../../stores/workflowStore';
 
 // Inline approve/reject for checkpoints that have no artifact (e.g. stuck stages)
 export function InlineCheckpointActions({
@@ -22,6 +23,7 @@ export function InlineCheckpointActions({
 
   const { user, noAuth } = useAuthStore();
   const hasPermission = canApprove(user, noAuth, requiredRoles);
+  const { activeWorkflow } = useWorkflowStore();
 
   const criticData = parseCriticData(checkpoint);
   const hasQuestions = (criticData?.questions?.length ?? 0) > 0;
@@ -45,6 +47,20 @@ export function InlineCheckpointActions({
     try {
       const result = await api.figmaComplete(checkpoint.id);
       onResolved({ ...result, status: 'approved' });
+    } catch (err: any) {
+      setError(err.response?.data?.error ?? err.message ?? 'Failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function rerunStage() {
+    if (!activeWorkflow?.id) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api.retryWorkflowStage(activeWorkflow.id);
+      onResolved({ ...result, status: 'revised' });
     } catch (err: any) {
       setError(err.response?.data?.error ?? err.message ?? 'Failed');
     } finally {
@@ -124,6 +140,13 @@ export function InlineCheckpointActions({
               className="text-xs px-3 py-1.5 rounded-md bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white font-medium transition-colors"
             >
               {loading ? 'Syncing Figma...' : 'Mark Figma Complete'}
+            </button>
+            <button
+              onClick={rerunStage}
+              disabled={loading}
+              className="text-xs px-2.5 py-1 rounded-md border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+            >
+              Rerun
             </button>
             <button
               onClick={() => setShowRejectConfirm(true)}

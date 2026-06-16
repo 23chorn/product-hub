@@ -457,9 +457,14 @@ workflowRoutes.post('/checkpoint/figma-complete', async (req: AuthRequest, res: 
       return res.status(403).json({ error: 'Insufficient permissions to resolve this checkpoint' });
     }
 
+    // Resolve item_id for the workflow so we can look up the per-item Figma file key
+    const wf = db.prepare<[string], { item_id: string }>(
+      'SELECT item_id FROM workflows WHERE id = ?'
+    ).get(cp.workflow_id);
+
     // Fetch latest Figma mockup file state
     const { loadFigmaMockupFileData } = await import('../agents/prototype-agent');
-    const figmaSnapshot = await loadFigmaMockupFileData();
+    const figmaSnapshot = await loadFigmaMockupFileData(wf?.item_id);
 
     // Patch the artifact with designer_reviewed flag + snapshot
     if (cp.artifact_id) {
