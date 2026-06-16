@@ -120,28 +120,28 @@
     "epic": { "title": "In-App Messaging & Trade Chat" },
     "features": [
       {
-        "title": "Channel Infrastructure & Real-Time Messaging",
+        "title": "Channel Management",
         "target_repos": ["xcube-api", "xcube-ios", "xcube-android"],
-        "data_contracts": ["channels table (PostgreSQL new)", "channel_members table (PostgreSQL new)", "messages table (Cassandra new)", "Redis Pub/Sub: ch:{channelId}", "Redis key: ratelimit:msg:{userId}"],
-        "cross_repo_boundaries": "iOS/Android call REST /api/channels for CRUD and history; connect WebSocket /ws/chat for real-time; Message Service fans out via Redis Pub/Sub across stateless pods",
-        "technical_notes": "WebSocket pods are stateless — each subscribes to Redis Pub/Sub topics for channels their connected clients have joined. Rate limit enforced at Message Service ingestion, not gateway, to avoid Redis round-trip on gateway.",
+        "data_contracts": ["channels table (PostgreSQL new)", "channel_members table (PostgreSQL new)", "Redis key: channel:{id}:unread:{userId}"],
+        "cross_repo_boundaries": "iOS/Android call REST /api/channels for CRUD; GET /api/channels returns sorted list by lastMessageAt with unread counts; POST /api/channels/:id/join is idempotent",
+        "technical_notes": "Channel membership uses PostgreSQL (RDS) for ACID guarantees on member_count. Unread tracking stored in Redis (ephemeral — reset on disconnect is acceptable). Channel discovery endpoint must paginate — no full-table scans.",
+        "risks": ["Public channel directory search requires pg_trgm index on name + topic; add before launch", "member_count can drift under concurrent joins — use SELECT FOR UPDATE or counter table"]
+      },
+      {
+        "title": "Real-time Text Messaging",
+        "target_repos": ["xcube-api", "xcube-ios", "xcube-android"],
+        "data_contracts": ["messages table (Cassandra new)", "Redis Pub/Sub: ch:{channelId}", "Redis key: ratelimit:msg:{userId}", "WebSocket endpoint: /ws/chat"],
+        "cross_repo_boundaries": "iOS/Android connect WebSocket /ws/chat for real-time; REST GET /api/channels/:id/messages for history; Message Service fans out via Redis Pub/Sub across stateless pods",
+        "technical_notes": "WebSocket pods are stateless — each subscribes to Redis Pub/Sub topics for channels their connected clients have joined. Rate limit enforced at Message Service ingestion (30 msg/min per user). Cassandra partition key = channel_id; clustering DESC gives most-recent-first reads without sorting. TTL = 7 years per row.",
         "risks": ["Cassandra partition hotspot if a single channel (e.g. #aapl-watchers at earnings) receives >10K msg/min — add sub-partitioning by hour if needed", "Redis Pub/Sub fan-out at 10K concurrent connections with 5 pods = 2K subs per pod × topic delivery — benchmark at load"]
       },
       {
-        "title": "Ticker Card Sharing & Order Flow Integration",
+        "title": "Live Ticker Card Sharing & Push Notifications",
         "target_repos": ["xcube-api", "xcube-ios", "xcube-android"],
-        "data_contracts": ["ticker_ref JSON field in messages (Cassandra)", "Market Data Service WebSocket: existing /ws/quotes", "Deep-link schema: xcube://instrument/{symbol}?orderprefill=market"],
-        "cross_repo_boundaries": "Message Service subscribes to existing Market Data WebSocket for ticker symbols referenced in active cards; pushes ticker_update frames to chat clients every 15s; deep-link handled natively on iOS/Android",
-        "technical_notes": "Ticker card price updates are pushed by Message Service, not polled by clients, to avoid N×M polling (N clients × M tickers). Message Service maintains a set of active ticker subscriptions per Cassandra-connected channel. Deep-link must pre-fill order direction (buy/sell) — derive from message context or default to buy.",
-        "risks": ["Message Service must unsubscribe from ticker quote stream when no clients are viewing the card — otherwise subscription leaks accumulate over time"]
-      },
-      {
-        "title": "Content Moderation & Compliance Archive",
-        "target_repos": ["xcube-api", "xcube-data-infra"],
-        "data_contracts": ["moderation_status field in messages (Cassandra)", "Human review queue: Slack webhook (MVP)", "Kafka topic: messages.archive", "S3: xcube-message-archive (Parquet, 7-year lifecycle)", "Athena table: xcube_message_archive"],
-        "cross_repo_boundaries": "Moderation Service is a module within xcube-api (not a separate service at MVP); Debezium CDC connector reads Cassandra and produces to Kafka from xcube-data-infra; S3/Athena managed in data-infra repo",
-        "technical_notes": "Rule-based moderation is synchronous (<5ms) and runs inline before Cassandra write. LLM classifier runs async after write — message is delivered on rule-based pass, then retroactively held and removed from client cache if LLM flags it. Slack webhook for human review is MVP-only; replace with internal review UI in Phase 2.",
-        "risks": ["Debezium CDC on Cassandra requires kafka-connect-cassandra plugin — validate compatibility with MSK Connect before provisioning", "LLM classifier prompt injection via crafted message — add input sanitisation and test adversarially in staging"]
+        "data_contracts": ["ticker_ref JSON field in messages (Cassandra)", "Market Data Service WebSocket: existing /ws/quotes", "Deep-link schema: xcube://instrument/{symbol}?orderprefill=market", "APNs (iOS) and FCM (Android) push payloads"],
+        "cross_repo_boundaries": "Message Service subscribes to existing Market Data WebSocket for ticker symbols in active cards; pushes ticker_update frames to chat clients every 15s; deep-link handled natively on iOS/Android; Notification Service fans out APNs/FCM on new message event",
+        "technical_notes": "Ticker card price updates pushed by Message Service to avoid N×M client polling. Message Service maintains active ticker subscriptions per channel and unsubscribes when no clients are viewing. Push notifications fan out via APNs (high-priority) and FCM (high-priority channel for Doze bypass). Muted channels excluded from fan-out at query time, not client-side.",
+        "risks": ["Message Service must unsubscribe from ticker quote stream when no clients viewing — subscription leaks accumulate over time", "APNs rate limit: max 30 pushes/second per device — batch fan-out for large channels"]
       }
     ]
   }

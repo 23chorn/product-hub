@@ -12,24 +12,6 @@
       "deliverable": "Users can create or join topic-based channels, send text messages in real time, and have those messages persist and sync across devices",
       "features": [
         {
-          "title": "Real-time Text Messaging",
-          "description": "Users can send and receive text messages in topic-based channels with sub-500ms delivery during market hours. This is the foundational interaction that eliminates the need to leave xCube for Discord or WhatsApp — the core hypothesis to validate before investing in enrichment features. Without reliable, low-latency delivery, every downstream feature in this initiative is worthless.",
-          "rationale": "The transport layer is the prerequisite for all other features in this initiative. Nothing can ship before it, and it must be validated with real users before Phase 1 features are layered on.",
-          "acceptanceCriteria": [
-            "Messages are delivered to all channel members within 500ms at p99 during market hours (NFR2 — Performance)",
-            "Messages persist and are retrievable across devices for 7 years with cryptographic integrity verification (NFR5 — Data Retention)",
-            "Offline messages are queued and delivered automatically when the user reconnects within the same session",
-            "Message send failures surface a user-visible error with a manual retry option within 3 seconds of failure detection"
-          ],
-          "prdRef": {
-            "functionalRequirements": ["FR-01", "FR-02"],
-            "nonFunctionalRequirements": ["NFR2", "NFR5"],
-            "userJourneys": ["Journey 3: Send a message in a channel"]
-          },
-          "deferredTo": null,
-          "stories": []
-        },
-        {
           "title": "Channel Management",
           "description": "Users can create, join, and leave topic-based trading channels with configurable public or private membership. Channel organisation is how traders self-select into relevant communities (by ticker, sector, or strategy), which directly drives the retention metric the initiative is targeting. A messaging transport without addressable channels has no product value — users cannot find relevant conversations.",
           "rationale": "Inseparable from message delivery in MVP — a transport with no room structure cannot be tested with real users or validate the community hypothesis.",
@@ -43,6 +25,24 @@
             "functionalRequirements": ["FR-03", "FR-04"],
             "nonFunctionalRequirements": [],
             "userJourneys": ["Journey 1: Join a topic channel and discuss a ticker"]
+          },
+          "deferredTo": null,
+          "stories": []
+        },
+        {
+          "title": "Real-time Text Messaging",
+          "description": "Users can send and receive text messages in topic-based channels with sub-500ms delivery during market hours. This is the foundational interaction that eliminates the need to leave xCube for Discord or WhatsApp — the core hypothesis to validate before investing in enrichment features. Without reliable, low-latency delivery, every downstream feature in this initiative is worthless.",
+          "rationale": "The transport layer is the prerequisite for all other features in this initiative. Nothing can ship before it, and it must be validated with real users before Phase 1 features are layered on.",
+          "acceptanceCriteria": [
+            "Messages are delivered to all channel members within 500ms at p99 during market hours (NFR2 — Performance)",
+            "Messages persist and are retrievable across devices for 7 years with cryptographic integrity verification (NFR5 — Data Retention)",
+            "Offline messages are queued and delivered automatically when the user reconnects within the same session",
+            "Message send failures surface a user-visible error with a manual retry option within 3 seconds of failure detection"
+          ],
+          "prdRef": {
+            "functionalRequirements": ["FR-01", "FR-02"],
+            "nonFunctionalRequirements": ["NFR2", "NFR5"],
+            "userJourneys": ["Journey 3: Send a message in a channel"]
           },
           "deferredTo": null,
           "stories": []
