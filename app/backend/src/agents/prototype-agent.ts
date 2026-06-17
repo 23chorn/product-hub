@@ -179,6 +179,12 @@ export async function loadFigmaDesignSystem(statusCb: (msg: string) => void): Pr
 // ── Per-item Figma file key helpers ───────────────────────────────────────────
 
 /** Read the figmaFileKey stored in items.metadata, falling back to the env var. */
+/** Extract a Figma file key from a /file/ or /design/ URL. Returns null if the URL doesn't match. */
+export function extractFigmaFileKey(url: string): string | null {
+  const match = url.match(/figma\.com\/(?:file|design)\/([a-zA-Z0-9]+)/);
+  return match ? match[1] : null;
+}
+
 export function getFigmaFileKey(itemId: string): string | null {
   const row = db.prepare<[string], { metadata: string | null }>(
     'SELECT metadata FROM items WHERE id = ?'

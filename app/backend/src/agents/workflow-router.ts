@@ -27,6 +27,7 @@ import {
 import { deleteWorkflow as deleteWorkflowImpl, recoverStaleWorkflows as recoverStaleWorkflowsImpl, startStaleRecoveryTimer } from './workflow-lifecycle';
 import { isDemoMode, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
 import { notifyWorkflowComplete } from '../utils/slack-notifier';
+import { pushItemStatusToAirtable } from './ado-stage-push';
 import { WorkflowRow, CheckpointRow, WorkflowStatus, WorkflowEvent } from './workflow-types';
 export type { WorkflowRow, CheckpointRow, WorkflowStatus, WorkflowEvent } from './workflow-types';
 export { propagateFeedback, reiterateFromStage, retryCurrentStage, restartWorkflow } from './workflow-mutations';
@@ -298,6 +299,7 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
     );
     insertEvent(workflowId, 'workflow_complete', null, 'All stages complete. Your outputs are ready for review.');
     logger.info(`Workflow ${workflowId} complete — all ${sequence.length} stages done`);
+    pushItemStatusToAirtable(workflow.item_id, 'Ready').catch(() => {});
     const titleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(workflow.item_id);
     if (titleRow) notifyWorkflowComplete(titleRow.title);
     throw new Error(`WORKFLOW_COMPLETE:${workflowId}`);
@@ -464,6 +466,7 @@ No changes needed to tech-stack.md or process.md — those remain accurate as wr
       'All stages complete. Your outputs are ready for review.');
 
     logger.info(`Curator completed for workflow ${workflowId} — ${diffCount} diff(s) proposed, workflow complete`);
+    pushItemStatusToAirtable(workflow.item_id, 'Ready').catch(() => {});
     const curatorTitleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(workflow.item_id);
     if (curatorTitleRow) notifyWorkflowComplete(curatorTitleRow.title);
     throw new Error(`WORKFLOW_COMPLETE:${workflowId}`);
@@ -622,7 +625,8 @@ export function pauseAtCheckpoint(
   stage: string,
   artifactId?: number,
   sessionId?: string,
-  metadata?: Record<string, any>
+  metadata?: Record<string, any>,
+  requiredRole?: string  // Optional explicit role override
 ): import('./workflow-db').CheckpointRow {
   const now = Date.now();
 
@@ -631,24 +635,84 @@ export function pauseAtCheckpoint(
   if (sessionId) coordinatorAction.session_id = sessionId;
   if (metadata) coordinatorAction = { ...coordinatorAction, ...metadata };
 
+  // Use explicit role if provided, otherwise lookup from stage_roles table
+  const roleValue = requiredRole ? JSON.stringify([requiredRole]) : rolesJson(stage);
+
   const result = stmts.insertCheckpoint.run(
     workflowId, stage, artifactId ?? null, 'pending',
     Object.keys(coordinatorAction).length > 0 ? JSON.stringify(coordinatorAction) : null,
-    rolesJson(stage), now
+    roleValue, now
   );
 
   stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
 
   const checkpoint = stmts.getCheckpoint.get(result.lastInsertRowid as number)!;
-  logger.info(`Paused workflow ${workflowId} at checkpoint #${checkpoint.id} for stage "${stage}"`);
+  logger.info(`Paused workflow ${workflowId} at checkpoint #${checkpoint.id} for stage "${stage}"${requiredRole ? ` (role: ${requiredRole})` : ''}`);
   return checkpoint;
 }
 
 /**
+ * Get the base stage name from a checkpoint stage (strips _qa suffix).
+ * Example: "story_decomposition_F1_qa" → "story_decomposition_F1"
+ */
+function getBaseStage(stage: string): string {
+  return stage.replace(/_qa$/, '');
+}
+
+/**
+ * Get the current checkpoints in a group (base stage + base_stage_qa) — the latest one
+ * per stage variant. getCheckpointsByWorkflow returns oldest-first, so after a retry or
+ * revision leaves older 'revised' rows behind for the same stage name, only the most
+ * recent row per variant should count toward the group's approval state.
+ */
+function getCheckpointGroup(workflowId: string, stage: string): import('./workflow-db').CheckpointRow[] {
+  const baseStage = getBaseStage(stage);
+  const qaStage = `${baseStage}_qa`;
+
+  const allCheckpoints = stmts.getCheckpointsByWorkflow.all(workflowId);
+  const reversed = [...allCheckpoints].reverse();
+  const latestBase = reversed.find(cp => cp.stage === baseStage);
+  const latestQa = reversed.find(cp => cp.stage === qaStage);
+  return [latestBase, latestQa].filter((cp): cp is import('./workflow-db').CheckpointRow => !!cp);
+}
+
+/**
+ * Check if all checkpoints in a group are approved.
+ * Used to determine if workflow can advance past a dual-checkpoint stage.
+ */
+function isCheckpointGroupFullyApproved(workflowId: string, stage: string): boolean {
+  const group = getCheckpointGroup(workflowId, stage);
+  if (group.length === 0) return false;
+
+  // All checkpoints in group must be approved
+  return group.every(cp => cp.status === 'approved');
+}
+
+/**
+ * Invalidate all approved checkpoints in a group when one is revised.
+ * This ensures that if stories are approved but QA requests changes,
+ * the story approval is cleared since the refinement will regenerate both.
+ */
+function invalidateCheckpointGroupApprovals(workflowId: string, stage: string, exceptCheckpointId: number): void {
+  const group = getCheckpointGroup(workflowId, stage);
+  const now = Date.now();
+
+  for (const cp of group) {
+    if (cp.id !== exceptCheckpointId && cp.status === 'approved') {
+      stmts.updateCheckpoint.run('revised', 'Invalidated due to sibling checkpoint revision', cp.coordinator_action, now, cp.id);
+      logger.info(`Checkpoint ${cp.id} (stage: ${cp.stage}) invalidated — sibling checkpoint requested changes`);
+      insertEvent(workflowId, 'checkpoint_invalidated', cp.stage,
+        `${cp.stage} approval invalidated — refinement will regenerate both stories and QA tests`,
+        { invalidated_checkpoint_id: cp.id, trigger_checkpoint_id: exceptCheckpointId });
+    }
+  }
+}
+
+/**
  * Resolve a checkpoint after human review.
- * - approved: workflow can advance to the next stage
+ * - approved: if all sibling checkpoints in the group are also approved, workflow can advance
  * - rejected: workflow stays active but intervention is needed
- * - revised: current_stage is rolled back so advanceStage reruns it
+ * - revised: invalidates any approved sibling checkpoints and rolls back for full stage re-run
  */
 export function resolveCheckpoint(
   checkpointId: number,
@@ -664,17 +728,34 @@ export function resolveCheckpoint(
   const now = Date.now();
 
   if (status === 'revised') {
+    // Invalidate any approved checkpoints in the same group since the stage will regenerate all artifacts
+    invalidateCheckpointGroupApprovals(checkpoint.workflow_id, checkpoint.stage, checkpointId);
+
     // Roll current_stage back to the stage before this one so advanceStage re-enters it
     const workflow = stmts.getWorkflow.get(checkpoint.workflow_id)!;
     const sequence: string[] = JSON.parse(workflow.stage_sequence);
-    const stageIdx = sequence.indexOf(checkpoint.stage);
+    const baseStage = getBaseStage(checkpoint.stage);
+    const stageIdx = sequence.indexOf(baseStage);
     const prevStage = stageIdx > 0 ? sequence[stageIdx - 1] : null;
 
     stmts.updateCheckpoint.run(status, feedback ?? null, checkpoint.coordinator_action, now, checkpointId);
     stmts.updateWorkflowStageAndStatus.run(prevStage, 'active', now, checkpoint.workflow_id);
-    logger.info(`Checkpoint ${checkpointId} revised — workflow ${checkpoint.workflow_id} will rerun stage "${checkpoint.stage}"`);
+    logger.info(`Checkpoint ${checkpointId} revised — workflow ${checkpoint.workflow_id} will rerun stage "${baseStage}"`);
+  } else if (status === 'approved') {
+    // Mark this checkpoint as approved
+    stmts.updateCheckpoint.run(status, feedback ?? null, checkpoint.coordinator_action, now, checkpointId);
+
+    // Check if all checkpoints in the group are now approved
+    if (isCheckpointGroupFullyApproved(checkpoint.workflow_id, checkpoint.stage)) {
+      // All approvals obtained — workflow can advance
+      stmts.updateWorkflowStatus.run('active', now, checkpoint.workflow_id);
+      logger.info(`Checkpoint ${checkpointId} approved — all checkpoints in group approved, workflow ${checkpoint.workflow_id} can advance`);
+    } else {
+      // Still waiting on sibling checkpoint(s) — keep workflow paused
+      logger.info(`Checkpoint ${checkpointId} approved — workflow ${checkpoint.workflow_id} remains paused pending sibling checkpoint approval`);
+    }
   } else {
-    // approved or rejected — both set workflow back to active
+    // rejected — set workflow back to active for intervention
     stmts.updateCheckpoint.run(status, feedback ?? null, checkpoint.coordinator_action, now, checkpointId);
     stmts.updateWorkflowStatus.run('active', now, checkpoint.workflow_id);
     logger.info(`Checkpoint ${checkpointId} ${status} — workflow ${checkpoint.workflow_id} active`);

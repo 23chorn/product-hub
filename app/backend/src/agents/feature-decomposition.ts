@@ -93,10 +93,11 @@ export async function injectFeatureDecompositionStages(workflowId: string): Prom
     featureStages.push(`story_decomposition_F${i + 1}`);
   }
 
-  // Build new sequence: replace story_decomposition with per-feature F* stages
+  // Build new sequence: replace story_decomposition with per-feature F* stages + final merge
   const newSequence = [
     ...sequence.slice(0, storyDecompIndex),
     ...featureStages,
+    'backlog_merge',  // Merge all isolated features into final backlog artifact
     ...sequence.slice(storyDecompIndex + 1)
   ];
 
@@ -211,6 +212,78 @@ export async function buildFeatureCheckpointMetadata(
 }
 
 /**
+ * Build a rich HTML description for an ADO Epic, folding in fields that have no dedicated
+ * ADO field on the Epic work item type (business value, PRD link, out-of-scope items) so
+ * they're visible in ADO rather than silently dropped.
+ */
+export function buildEpicDescription(opts: {
+  initiativeDescription?: string;
+  deliverable?: string;
+  phaseLabel?: string;
+  businessValue?: string;
+  prdLink?: string;
+  outOfScope?: string[];
+}): string {
+  const parts: string[] = [];
+  if (opts.initiativeDescription) parts.push(opts.initiativeDescription);
+  if (opts.deliverable) parts.push(`<strong>${opts.phaseLabel ?? 'This phase'} delivers:</strong> ${opts.deliverable}`);
+  if (opts.businessValue) parts.push(`<strong>Business Value:</strong> ${opts.businessValue}`);
+  if (opts.prdLink) parts.push(`<strong>PRD Reference:</strong> ${opts.prdLink}`);
+  if (opts.outOfScope && opts.outOfScope.length > 0) {
+    parts.push(`<strong>Out of Scope:</strong><br>${opts.outOfScope.map(o => `&bull; ${o}`).join('<br>')}`);
+  }
+  return parts.join('<br><br>');
+}
+
+/**
+ * Build a rich HTML description for an ADO Feature, folding in fields that have no dedicated
+ * ADO field on the Feature work item type (rationale, acceptance criteria, PRD traceability,
+ * deferral notes) so they're visible in ADO rather than silently dropped.
+ */
+/**
+ * Build the shared "initiative:<slug>" tag applied to every epic and feature created for
+ * one epic_features push, so they're identifiable as belonging together in ADO even though
+ * phase epics have no parent-child relationship to each other.
+ */
+function buildInitiativeTag(epicTitle: string): string {
+  const slug = epicTitle
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+  return `initiative:${slug}`;
+}
+
+export function buildFeatureDescription(featureData: any): string {
+  const parts: string[] = [];
+  if (featureData.description) parts.push(featureData.description);
+  if (featureData.rationale) parts.push(`<strong>Why this phase:</strong> ${featureData.rationale}`);
+
+  const ac: string[] = featureData.acceptanceCriteria ?? featureData.acceptance_criteria ?? [];
+  if (ac.length > 0) {
+    parts.push(`<strong>Acceptance Criteria:</strong><br>${ac.map(a => `&bull; ${a}`).join('<br>')}`);
+  }
+
+  const prdRef = featureData.prdRef ?? featureData.prd_ref;
+  const frRefs: string[] = prdRef?.functionalRequirements ?? prdRef?.functional_requirements ?? [];
+  const nfrRefs: string[] = prdRef?.nonFunctionalRequirements ?? prdRef?.non_functional_requirements ?? [];
+  const journeys: string[] = prdRef?.userJourneys ?? prdRef?.user_journeys ?? [];
+  if (frRefs.length > 0 || nfrRefs.length > 0 || journeys.length > 0) {
+    const refLines: string[] = [];
+    if (frRefs.length > 0) refLines.push(`Functional: ${frRefs.join(', ')}`);
+    if (nfrRefs.length > 0) refLines.push(`Non-Functional: ${nfrRefs.join(', ')}`);
+    if (journeys.length > 0) refLines.push(`User Journeys: ${journeys.join('; ')}`);
+    parts.push(`<strong>PRD Traceability:</strong><br>${refLines.join('<br>')}`);
+  }
+
+  if (featureData.deferredTo) {
+    parts.push(`<strong>Deferred to:</strong> ${featureData.deferredTo}`);
+  }
+
+  return parts.join('<br><br>');
+}
+
+/**
  * Push epic + all features (without stories) to ADO after epic_feature_planner approval.
  * Creates the epic and feature work items as placeholders. Stories are added later
  * by pushFeatureToADO() as each feature is decomposed.
@@ -226,13 +299,12 @@ export async function pushEpicAndFeaturesToADO(
 
   logger.info(`[EPIC PUSH] Looking for epic_features artifact for item_id=${workflow.item_id}`);
 
-  // Load epic_features artifact (try enriched first, then fallback)
+  // Load epic_features artifact. NOTE: 'epic_features_enriched' (written by the architect
+  // stage) is a differently-shaped artifact for engineering context during story decomposition
+  // — phases[].features[] with technical fields (target_repos, data_contracts) and no top-level
+  // 'epic' header or 'title' field. It is not a superset of 'epic_features' and must not be used here.
   const { loadLatestArtifactContent } = await import('./artifact-helpers');
-  let epicFeaturesContent = await loadLatestArtifactContent(workflow.item_id, 'epic_features_enriched');
-  if (!epicFeaturesContent) {
-    logger.info(`[EPIC PUSH] No epic_features_enriched found, trying epic_features`);
-    epicFeaturesContent = await loadLatestArtifactContent(workflow.item_id, 'epic_features');
-  }
+  const epicFeaturesContent = await loadLatestArtifactContent(workflow.item_id, 'epic_features');
 
   if (!epicFeaturesContent) {
     // Debug: check what artifacts exist
@@ -264,6 +336,10 @@ export async function pushEpicAndFeaturesToADO(
   const client = new AzureDevOpsClient();
   const now = Date.now();
 
+  // Shared tag + naming prefix so sibling phase epics (which have no parent-child relationship
+  // to each other in ADO) are still identifiable as one initiative.
+  const initiativeTag = buildInitiativeTag(epicFeatures.epic.title);
+
   // New phases[] format: create one ADO epic per phase, features nested under it.
   // Legacy format: create a single ADO epic for the whole initiative.
   const featureIds: number[] = [];
@@ -272,11 +348,22 @@ export async function pushEpicAndFeaturesToADO(
   if (Array.isArray(epicFeatures.phases) && epicFeatures.phases.length > 0) {
     let globalFeatureIdx = 0;
     for (const phase of epicFeatures.phases) {
-      const phaseEpicTitle = phase.epicTitle ?? `${phase.label} — ${epicFeatures.epic.title}`;
+      // Always build the title from the initiative + phase label — phase.epicTitle from the
+      // LLM is inconsistent about whether it references the initiative name, which made
+      // sibling phase epics look unrelated in ADO.
+      const phaseEpicTitle = `${epicFeatures.epic.title} — ${phase.label}`;
       const phaseEpic = await client.createWorkItem({
         type: client['workItemTypes'].epic as any,
         title: phaseEpicTitle,
-        description: `${phase.deliverable ?? ''} (${phase.label})`.trim(),
+        description: buildEpicDescription({
+          initiativeDescription: epicFeatures.epic.description,
+          deliverable: phase.deliverable,
+          phaseLabel: phase.label,
+          businessValue: epicFeatures.epic.businessValue,
+          prdLink: epicFeatures.epic.prdLink,
+          outOfScope: epicFeatures.outOfScope,
+        }),
+        tags: initiativeTag,
       });
       const phaseEpicId = phaseEpic.id!;
       if (firstEpicId === null) firstEpicId = phaseEpicId;
@@ -293,8 +380,9 @@ export async function pushEpicAndFeaturesToADO(
         const feature = await client.createWorkItem({
           type: client['workItemTypes'].feature as any,
           title: featureData.title,
-          description: featureData.description,
+          description: buildFeatureDescription(featureData),
           parentId: phaseEpicId,
+          tags: initiativeTag,
         });
         featureIds.push(feature.id!);
         const featureUrl = `https://dev.azure.com/${client['organization']}/${client['project']}/_workitems/edit/${feature.id}`;
@@ -311,7 +399,13 @@ export async function pushEpicAndFeaturesToADO(
     const epic = await client.createWorkItem({
       type: client['workItemTypes'].epic as any,
       title: epicFeatures.epic.title,
-      description: epicFeatures.epic.description,
+      description: buildEpicDescription({
+        initiativeDescription: epicFeatures.epic.description,
+        businessValue: epicFeatures.epic.businessValue,
+        prdLink: epicFeatures.epic.prdLink,
+        outOfScope: epicFeatures.outOfScope,
+      }),
+      tags: initiativeTag,
     });
     firstEpicId = epic.id!;
     const epicUrl = client.getEpicUrl(firstEpicId);
@@ -326,8 +420,9 @@ export async function pushEpicAndFeaturesToADO(
       const feature = await client.createWorkItem({
         type: client['workItemTypes'].feature as any,
         title: featureData.title,
-        description: featureData.description,
+        description: buildFeatureDescription(featureData),
         parentId: firstEpicId,
+        tags: initiativeTag,
       });
       featureIds.push(feature.id!);
       const featureUrl = `https://dev.azure.com/${client['organization']}/${client['project']}/_workitems/edit/${feature.id}`;
@@ -362,10 +457,11 @@ export async function pushFeatureToADO(
   const workflow = stmts.getWorkflow.get(workflowId);
   if (!workflow) throw new Error(`Workflow not found: ${workflowId}`);
 
-  // Load accumulated backlog
+  // Load this feature's isolated backlog artifact (backlog_F1, backlog_F2, ... — each
+  // story_decomposition_F* stage saves its own feature in isolation, not an accumulated backlog).
   const { loadLatestArtifactContent } = await import('./artifact-helpers');
-  const backlogContent = await loadLatestArtifactContent(workflow.item_id, 'backlog');
-  if (!backlogContent) throw new Error('No backlog artifact found');
+  const backlogContent = await loadLatestArtifactContent(workflow.item_id, `backlog_F${featureIndex + 1}`);
+  if (!backlogContent) throw new Error(`No backlog_F${featureIndex + 1} artifact found`);
 
   // Parse backlog
   const cleaned = backlogContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
@@ -373,12 +469,13 @@ export async function pushFeatureToADO(
   const jsonContent = jsonStart > 0 ? cleaned.slice(jsonStart) : cleaned;
   const backlog = JSON.parse(jsonContent);
 
+  // The isolated artifact contains exactly this one feature.
   const allBacklogFeatures = flattenFeatures(backlog);
-  if (!backlog.epic || allBacklogFeatures.length === 0 || featureIndex >= allBacklogFeatures.length) {
-    throw new Error(`Feature index ${featureIndex} out of range`);
+  if (!backlog.epic || allBacklogFeatures.length === 0) {
+    throw new Error(`backlog_F${featureIndex + 1} artifact has no feature data`);
   }
 
-  const targetFeature = allBacklogFeatures[featureIndex];
+  const targetFeature = allBacklogFeatures[0];
 
   // Fetch epic mapping — phase epics use 'epic_mvp', 'epic_phase_1', etc.; legacy uses 'epic'
   const epicMapping = db.prepare<[string], { ado_id: number }>(
@@ -437,7 +534,6 @@ export async function pushFeatureToADO(
     const platformRaw = storyData.platform;
     const platform: string[] = Array.isArray(platformRaw) ? platformRaw : platformRaw ? [String(platformRaw)] : [];
     const technicalNotes = storyData.technical_notes ?? storyData.agentContext ?? '';
-    const testCases = storyData.test_cases ?? [];
 
     // PRD traceability refs
     const prdRef = storyData.prd_ref ?? storyData.prdRef;
@@ -482,28 +578,30 @@ export async function pushFeatureToADO(
       parentId: featureId,
     });
     storyIds.push(story.id!);
+  }
 
-    // Collect test cases for this story (will push to Test Plans after all stories created)
-    if (testCases.length > 0) {
-      for (const tc of testCases) {
-        // Generate title from scenario if missing (fixture format may not include title)
-        let title = tc.title;
-        if (!title && tc.scenario) {
-          // Use the first "Then" statement as the title
-          const firstThen = tc.scenario.then?.[0] ?? tc.scenario.given?.[0] ?? tc.id;
-          title = firstThen.length > 80 ? `${firstThen.slice(0, 77)}...` : firstThen;
-        }
-        if (!title) {
-          title = tc.id ?? 'Test Case';
-        }
+  // QA test cases live in a separate qa_tests artifact (not embedded in story JSON) — load this
+  // feature's via its own checkpoint so we get exactly the right one (qa_tests isn't a per-feature
+  // artifact type, so "latest" alone can't be trusted to pick the right feature).
+  const qaCheckpoint = db.prepare<[string, string], { artifact_id: number | null }>(
+    `SELECT artifact_id FROM checkpoints WHERE workflow_id = ? AND stage = ? AND status = 'approved'
+     ORDER BY created_at DESC LIMIT 1`
+  ).get(workflowId, `story_decomposition_F${featureIndex + 1}_qa`);
 
-        allTestCases.push({
-          ...tc,
-          title,
-          story_ref: storyData.story_id ?? storyData.title,
-          story_ado_id: story.id,
-        });
+  if (qaCheckpoint?.artifact_id) {
+    try {
+      const { loadArtifactContentById } = await import('./artifact-helpers');
+      const qaContent = await loadArtifactContentById(qaCheckpoint.artifact_id);
+      if (qaContent) {
+        const qaCleaned = qaContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+        const qaJsonStart = qaCleaned.indexOf('{');
+        const qaParsed = JSON.parse(qaJsonStart > 0 ? qaCleaned.slice(qaJsonStart) : qaCleaned);
+        for (const tc of qaParsed.test_cases ?? []) {
+          allTestCases.push({ ...tc, title: tc.title ?? tc.id ?? 'Test Case' });
+        }
       }
+    } catch (err: any) {
+      logger.warn(`[STORY PUSH] Failed to load QA test cases for F${featureIndex + 1}: ${err.message}`);
     }
   }
 

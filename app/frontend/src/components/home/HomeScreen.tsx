@@ -239,6 +239,7 @@ export function HomeScreen() {
         selectedStages, undefined,
         planningSessionIdRef.current ?? undefined,
         kbQueries,
+        launchItem.productArea,
       );
       const status = await api.getWorkflowStatus(result.workflowId);
       applyWorkflowStatus(status);

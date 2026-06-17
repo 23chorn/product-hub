@@ -103,6 +103,17 @@ function buildConfigFromEnv(): AppConfig {
     }
   }
 
+  if (knowledgeBase === 'azure_wiki') {
+    const missing = ['AZURE_DEVOPS_ORG', 'AZURE_DEVOPS_PROJECT', 'AZURE_DEVOPS_PAT']
+      .filter(k => !process.env[k]);
+    if (missing.length > 0) {
+      throw new Error(
+        `KNOWLEDGE_BASE_INTEGRATION=azure_wiki but required env vars are missing: ${missing.join(', ')}.\n` +
+        `Set them in .env or change KNOWLEDGE_BASE_INTEGRATION=none to disable.`
+      );
+    }
+  }
+
   // ENABLE_WORKFLOW_MODE defaults to true for local use.
   // Set to 'false' to hide the Workflow Mode UI without removing the feature.
   const workflowModeEnabled = process.env.ENABLE_WORKFLOW_MODE !== 'false';
@@ -149,8 +160,12 @@ function resolveKnowledgeBaseIntegration(): KnowledgeBaseIntegration {
   const explicit = process.env.KNOWLEDGE_BASE_INTEGRATION?.toLowerCase();
   if (explicit === 'notion') return 'notion';
   if (explicit === 'gitbook') return 'gitbook';
+  if (explicit === 'azure_wiki') return 'azure_wiki';
   if (explicit === 'none') return 'none';
-  // Infer from credential presence — require all mandatory vars before auto-enabling
+  // Infer from credential presence — require all mandatory vars before auto-enabling.
+  // azure_wiki is intentionally NOT inferred from ADO credentials — WORK_ITEMS_INTEGRATION=ado
+  // only means work items live in ADO, not that the wiki should be used as the knowledge base.
+  // Set KNOWLEDGE_BASE_INTEGRATION=azure_wiki explicitly to opt in.
   if (process.env.NOTION_API_KEY) return 'notion';
   if (process.env.GITBOOK_API_TOKEN && process.env.GITBOOK_SPACE_ID) return 'gitbook';
   return 'none';

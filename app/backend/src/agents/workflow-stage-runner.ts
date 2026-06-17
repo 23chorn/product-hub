@@ -48,7 +48,7 @@ export {
 import { setCancelController, clearCancelController, isCancelRequested } from './workflow-cancel';
 export { getCoordinator, getCritic, getCurator } from './workflow-agents';
 import { getCoordinator, getCritic } from './workflow-agents';
-import { runMultiAgentFeatureStage, runMultiAgentFeatureRevision } from './feature-stage-runner';
+import { runBacklogMerge, runMultiAgentFeatureStage, runMultiAgentFeatureRevision } from './feature-stage-runner';
 
 // ── Autonomous stage execution ────────────────────────────────────────────────
 
@@ -71,6 +71,14 @@ export async function runAutonomousStage(
   priorDraftContent?: string,
   skipCritic?: boolean
 ): Promise<void> {
+  // ── Backlog Merge Stage ──────────────────────────────────────────────────────
+  // After all feature stages complete, merge their isolated artifacts into one final backlog.
+  // This is a simple concatenation — no LLM call needed, just JSON manipulation.
+  if (stage === 'backlog_merge') {
+    await runBacklogMerge(sessionId, workflowId, itemId);
+    return;
+  }
+
   // ── Multi-Agent Refinement for story_decomposition_F* stages ────────────────
   // Each feature runs a multi-agent collaborative session (platform-filtered participants).
   // When priorDraftContent is set (human revision or critic revision), use the targeted
@@ -173,6 +181,11 @@ export async function runAutonomousStage(
 
     logger.info(`[DEMO CHECK] Stage "${stage}" - isDemoWorkflow: ${isDemoWorkflow}, policyOverrides: ${JSON.stringify(policyOverrides)}`);
 
+    // Admin-only global setting: when on, figma_design still produces the full screens/tokens/notes
+    // overview, but never auto-creates or writes to a Figma file — a human pastes their own link instead.
+    const figmaBypassPolicy = loadGlobalPolicies().get('figma_bypass_mode');
+    const figmaBypass = figmaBypassPolicy === 'true' || figmaBypassPolicy === (true as any);
+
     let demoFixture: string | null = null;
     if (isDemoWorkflow) {
       demoFixture = getDemoFixture(stage) ?? null;
@@ -187,22 +200,41 @@ export async function runAutonomousStage(
     const goalMatch = brief.match(/^## Goal\n([\s\S]*?)(?=\n## |\n# |$)/m);
     const goalText = goalMatch ? goalMatch[1].trim() : null;
 
+    // ── Extract productArea from item metadata ───────────────────────────────────
+    let productAreaScope: string | null = null;
+    try {
+      const itemRow = db.prepare<[string], { metadata: string | null }>('SELECT metadata FROM items WHERE id = ?').get(itemId);
+      if (itemRow?.metadata) {
+        const meta = JSON.parse(itemRow.metadata) as Record<string, unknown>;
+        if (typeof meta.productArea === 'string' && meta.productArea.trim()) {
+          productAreaScope = meta.productArea.trim();
+        }
+      }
+    } catch { /* malformed metadata — ignore */ }
+
+    // Helper to add platform scope constraint to item context
+    const addPlatformScope = (base: string): string => {
+      if (!productAreaScope) return base;
+      const scopeText = `\n\n**Platform Scope:** ${productAreaScope}\n- Design and architect ONLY for the platforms this tag implies (e.g., "Web App" → web platform only; "Mobile App" → iOS + Android only)\n- Do NOT design for platforms outside this scope\n- User stories, architecture decisions, and prototypes must be scoped to these platforms only`;
+      return base + scopeText;
+    };
+
     // Build item context: for analyst, the goal itself is the primary context.
     // For later stages, inject the previous stage's artifact.
     let itemContext: string | undefined;
     if (stage === 'analyst') {
       if (goalText) {
-        itemContext = `## THIS IS YOUR RESEARCH TOPIC\nThe task below defines exactly what to research. The company context above is background only — your output must be about this specific goal, NOT about the company's existing products.\n\n**Goal:** ${goalText}`;
+        itemContext = addPlatformScope(`## THIS IS YOUR RESEARCH TOPIC\nThe task below defines exactly what to research. The company context above is background only — your output must be about this specific goal, NOT about the company's existing products.\n\n**Goal:** ${goalText}`);
       }
     } else if (stage === 'pm_prd') {
       const analystContent = await loadLatestArtifactContent(itemId, 'analyst');
       if (analystContent) {
-        itemContext = `**Research Brief (use as background for the PRD):**\n\n${analystContent}`;
+        itemContext = addPlatformScope(`**Research Brief (use as background for the PRD):**\n\n${analystContent}`);
       }
     } else if (stage === 'epic_feature_planner') {
       const prdContent = await loadLatestArtifactContent(itemId, 'prd');
       if (prdContent) {
-        itemContext = `**PRD Document (use as source of functional requirements to decompose into epic and features):**\n\n${prdContent}`;
+        itemContext = addPlatformScope(`**PRD Document (use as source of functional requirements to decompose into epic and features):**\n\n${prdContent}`);
       }
     } else if (stage === 'solution_architect') {
       const parts: string[] = [];
@@ -218,7 +250,7 @@ export async function runAutonomousStage(
         techStackNote = `**Note:** No existing tech stack document found at context/tech-stack.md. You should recommend technology choices with tradeoffs for each decision.`;
       }
       parts.push(techStackNote);
-      itemContext = parts.join('\n\n---\n\n');
+      itemContext = addPlatformScope(parts.join('\n\n---\n\n'));
     }
 
     // ── Feature-specific story decomposition ─────────────────────────────────────
@@ -283,7 +315,7 @@ export async function runAutonomousStage(
       const parts: string[] = [];
       if (designSystem) parts.push(`## Design System\n\n${designSystem}`);
       if (artifacts) parts.push(`## Workflow Artifacts\n\nUse these documents to understand what to prototype:\n\n${artifacts}`);
-      if (parts.length > 0) itemContext = parts.join('\n\n---\n\n');
+      if (parts.length > 0) itemContext = addPlatformScope(parts.join('\n\n---\n\n'));
     } else if (stage === 'figma_design') {
       // Read design tokens from the Figma design system file via MCP
       const figma = await loadFigmaDesignSystem((msg) => {
@@ -299,20 +331,22 @@ export async function runAutonomousStage(
       if (designSystem) parts.push(`## Design System\n\n${designSystem}`);
       if (prdContent) parts.push(`## PRD\n\nUse this to identify user journeys each screen must cover:\n\n${prdContent}`);
       if (protoContent) parts.push(`## Prototype\n\nUse this as a reference for the screens and navigation flows to visualise:\n\n${protoContent}`);
-      let mockupFile = getFigmaFileKey(itemId);
-      if (!mockupFile) {
-        const item = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(itemId);
-        const fileName = item ? `${item.title} — Mockups` : 'Initiative Mockups';
-        insertEvent(workflowId, 'stage_progress', stage, `Creating Figma file "${fileName}"...`);
-        const created = await createFigmaFile(fileName);
-        if (created) {
-          setFigmaFileKey(itemId, created);
-          mockupFile = created;
-          insertEvent(workflowId, 'stage_progress', stage, `Figma file created: ${created}`);
+      if (!figmaBypass) {
+        let mockupFile = getFigmaFileKey(itemId);
+        if (!mockupFile) {
+          const item = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(itemId);
+          const fileName = item ? `${item.title} — Mockups` : 'Initiative Mockups';
+          insertEvent(workflowId, 'stage_progress', stage, `Creating Figma file "${fileName}"...`);
+          const created = await createFigmaFile(fileName);
+          if (created) {
+            setFigmaFileKey(itemId, created);
+            mockupFile = created;
+            insertEvent(workflowId, 'stage_progress', stage, `Figma file created: ${created}`);
+          }
         }
+        if (mockupFile) parts.push(`## Target Figma File\n\nCreate mockup frames in Figma file key: \`${mockupFile}\`\nFile URL: https://www.figma.com/file/${mockupFile}/`);
       }
-      if (mockupFile) parts.push(`## Target Figma File\n\nCreate mockup frames in Figma file key: \`${mockupFile}\`\nFile URL: https://www.figma.com/file/${mockupFile}/`);
-      if (parts.length > 0) itemContext = parts.join('\n\n---\n\n');
+      if (parts.length > 0) itemContext = addPlatformScope(parts.join('\n\n---\n\n'));
     }
 
     const systemPrompt = await agent.buildSystemPrompt(persona, undefined, itemContext, true, stage);
@@ -500,8 +534,43 @@ export async function runAutonomousStage(
 
     const artifactId = await saveLocalArtifact(sessionId, stage, artifactContent, itemId, skillVersionId);
 
+    // ── Push artifact link to Airtable (all stages that produce viewable artifacts) ──
+    const pushArtifactLinkToAirtable = async () => {
+      try {
+        const { appConfig } = require('../config/app-config');
+        if (appConfig.integrations.roadmap !== 'airtable') return;
+
+        const stageToFieldMap: Record<string, string> = {
+          analyst: 'researchBriefLink',
+          pm_prd: 'prdLink',
+          solution_architect: 'technicalDesignLink',
+          figma_design: 'figmaDesignLink',
+        };
+
+        const airtableField = stageToFieldMap[stage];
+        if (!airtableField) return; // Stage doesn't have an Airtable column
+
+        const itemRow = db.prepare<[string], { airtable_id: string | null }>(
+          'SELECT airtable_id FROM items WHERE id = ?'
+        ).get(itemId);
+        if (!itemRow?.airtable_id) return;
+
+        // Build the local artifact URL (will be replaced by wiki URL if wiki sync happens)
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+        const localUrl = `${frontendUrl}/?artifact=${artifactId}`;
+        const { pushLinksToAirtable } = await import('./ado-stage-push');
+        await pushLinksToAirtable(itemRow.airtable_id, { [airtableField]: localUrl });
+        logger.info(`Pushed ${airtableField} to Airtable for stage ${stage}`);
+      } catch (err: any) {
+        logger.warn(`Failed to push artifact link to Airtable for ${stage}: ${err.message}`);
+      }
+    };
+
+    // Fire the Airtable push in the background (don't block artifact save)
+    pushArtifactLinkToAirtable().catch(() => {});
+
     // ── Special handling for figma_design: write design brief to Figma as a comment ──
-    if (stage === 'figma_design') {
+    if (stage === 'figma_design' && !figmaBypass) {
       try {
         const cleaned = artifactContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
         const parsed = JSON.parse(cleaned);
@@ -623,9 +692,29 @@ export async function runAutonomousStage(
       if (isAdoHandledStage || !artifactId) return null;
       try {
         const { appConfig } = require('../config/app-config');
-        if (appConfig.integrations.workItems !== 'ado') return null;
+        if (appConfig.integrations.knowledgeBase !== 'azure_wiki') return null;
         const url = await syncArtifactToWiki(artifactId);
         insertEvent(workflowId, 'wiki_synced', stage, 'Artifact synced to Azure Wiki', { wiki_url: url });
+
+        // Mirror the link back to Airtable columns, same as epicLink/testPlanLink
+        // already do after the ADO-handled stages (ado-stage-push.ts).
+        const stageToFieldMap: Record<string, string> = {
+          analyst: 'researchBriefLink',
+          pm_prd: 'prdLink',
+          solution_architect: 'technicalDesignLink',
+          figma_design: 'figmaDesignLink',
+        };
+        const airtableField = stageToFieldMap[stage];
+        if (airtableField && appConfig.integrations.roadmap === 'airtable') {
+          const itemRow = db.prepare<[string], { airtable_id: string | null }>(
+            'SELECT airtable_id FROM items WHERE id = ?'
+          ).get(itemId);
+          if (itemRow?.airtable_id) {
+            const { pushLinksToAirtable } = await import('./ado-stage-push');
+            pushLinksToAirtable(itemRow.airtable_id, { [airtableField]: url }).catch(() => {});
+          }
+        }
+
         return url;
       } catch (err: any) {
         logger.warn(`[WIKI] Push failed for ${stage}: ${err.message}`);

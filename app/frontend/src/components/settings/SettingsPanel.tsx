@@ -11,7 +11,7 @@ import { UserManagementPanel } from './UserManagementPanel';
 interface Settings {
   user: { name: string; projectName: string; skillLevel: string; communicationLanguage: string };
   sprint: { velocity: number; capacityFactor: number; aiAssistedEnabled: boolean };
-  pipeline: { enabledStages: Record<string, boolean> };
+  pipeline: { enabledStages: Record<string, boolean>; figmaBypassMode: boolean };
   qualityGates: { requireCriticReview: boolean; autoApproveCritic: boolean };
   integrations: { slackWebhookUrl: string | null };
   demo: { enabled: boolean; projectPath: string | null; fixtureTheme: string };
@@ -234,6 +234,24 @@ export function SettingsPanel() {
                   </div>
                 );
               })}
+            </div>
+
+            <div className="mt-5">
+              <SectionHeader
+                title="Figma design"
+                description="Controls how the figma_design stage (Luma) handles Figma itself."
+              />
+              <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <FieldRow
+                  label="Figma bypass mode"
+                  hint="Luma still generates the screens, design-token, and gap-analysis overview, but skips creating or writing to a Figma file — the reviewer pastes their own Figma link at the checkpoint instead."
+                >
+                  <Toggle
+                    checked={draft.pipeline.figmaBypassMode}
+                    onChange={v => patch('pipeline', { figmaBypassMode: v })}
+                  />
+                </FieldRow>
+              </div>
             </div>
           </div>
         )}

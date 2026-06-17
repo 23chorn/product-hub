@@ -20,6 +20,12 @@ import { ArtifactSyncActions } from './ArtifactSyncActions';
 import { CriticReviewFlyout } from './CriticReviewFlyout';
 import { RejectConfirmModal } from './RejectConfirmModal';
 
+// Per-feature isolated backlog artifacts are saved as backlog_F1, backlog_F2, ... (see
+// saveLocalArtifact in artifact-helpers.ts) — the merged final backlog is plain 'backlog'.
+function isBacklogArtifactType(artifactType: string): boolean {
+  return artifactType === 'backlog' || /^backlog_F\d+$/.test(artifactType);
+}
+
 export function ArtifactViewer() {
   const { viewingArtifactId, setViewingArtifactId, checkpoints, activeWorkflow, applyWorkflowStatus, addCoordinatorMessage } = useWorkflowStore();
   const { config } = useConfigStore();
@@ -132,7 +138,7 @@ export function ArtifactViewer() {
   }
 
   const workItemsEnabled = !!(config?.integrations?.workItems && config.integrations.workItems !== 'none');
-  const isBacklog = artifactType === 'backlog' || artifactType === 'epic_features';
+  const isBacklog = isBacklogArtifactType(artifactType) || artifactType === 'epic_features';
   // Show push button only when workflow is complete and backlog was approved
   const backlogApproved = isBacklog && checkpoints.some(c => c.stage === 'story_decomposition' && c.status === 'approved');
   const workflowComplete = activeWorkflow?.status === 'complete';
@@ -384,7 +390,7 @@ export function ArtifactViewer() {
                     } else {
                       // Pretty-print JSON for backlog/prototype so it's readable
                       let formatted = content;
-                      if (artifactType === 'backlog' || artifactType === 'epic_features' || artifactType === 'prototype') {
+                      if (isBacklogArtifactType(artifactType) || artifactType === 'epic_features' || artifactType === 'prototype') {
                         try { formatted = JSON.stringify(JSON.parse(content), null, 2); } catch { /* use as-is */ }
                       }
                       setEditContent(formatted);
@@ -432,8 +438,8 @@ export function ArtifactViewer() {
           {/* Content */}
           {(() => {
             const epicFeaturesData = content && artifactType === 'epic_features' ? tryParseEpicFeatures(content) : null;
-            const backlogData = content && artifactType === 'backlog' ? tryParseBacklog(content) : null;
-            const techData = content && artifactType === 'backlog' && !backlogData ? tryParseTechRefinement(content) : null;
+            const backlogData = content && isBacklogArtifactType(artifactType) ? tryParseBacklog(content) : null;
+            const techData = content && isBacklogArtifactType(artifactType) && !backlogData ? tryParseTechRefinement(content) : null;
             const showPersonaPanel = isFullscreen && backlogData && extractPersonas(backlogData).length > 0;
 
             return (
@@ -457,7 +463,7 @@ export function ArtifactViewer() {
                       const qaData = artifactType === 'qa_tests' ? tryParseQATests(content) : null;
                       if (qaData) return <QATestsView data={qaData} />;
                       // JSON artifact types that failed to parse — render as code block with warning
-                      if (artifactType === 'qa_tests' || artifactType === 'backlog') {
+                      if (artifactType === 'qa_tests' || isBacklogArtifactType(artifactType)) {
                         return (
                           <div className="space-y-3">
                             <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">

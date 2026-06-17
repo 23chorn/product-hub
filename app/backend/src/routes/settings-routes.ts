@@ -3,6 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import db from '../data/database';
 import Logger from '../utils/logger';
+import { hasAnyUsers } from '../data/users';
+import type { AuthRequest } from '../middleware/auth';
 
 const logger = new Logger('SETTINGS');
 const router = Router();
@@ -164,6 +166,7 @@ router.get('/', (_req: Request, res: Response) => {
       },
       pipeline: {
         enabledStages: cfg.enabled_stages ?? {},
+        figmaBypassMode: getPolicy('figma_bypass_mode') === 'true',
       },
       qualityGates: {
         requireCriticReview: getPolicy('require_critic_review') !== 'false',
@@ -188,16 +191,20 @@ router.get('/', (_req: Request, res: Response) => {
 
 // ── PUT /api/settings ─────────────────────────────────────────────────────────
 
-router.put('/', (req: Request, res: Response) => {
+router.put('/', (req: AuthRequest, res: Response) => {
   try {
     const { user, sprint, pipeline, qualityGates, integrations, demo } = req.body as {
       user?: { name?: string; projectName?: string; skillLevel?: string; communicationLanguage?: string };
       sprint?: { velocity?: number; capacityFactor?: number; aiAssistedEnabled?: boolean };
-      pipeline?: { enabledStages?: Record<string, boolean> };
+      pipeline?: { enabledStages?: Record<string, boolean>; figmaBypassMode?: boolean };
       qualityGates?: { requireCriticReview?: boolean; autoApproveCritic?: boolean };
       integrations?: { slackWebhookUrl?: string | null };
       demo?: { enabled?: boolean };
     };
+
+    if (pipeline?.figmaBypassMode !== undefined && hasAnyUsers() && !req.user?.is_admin) {
+      return res.status(403).json({ error: 'Admin access required to change Figma bypass mode' });
+    }
 
     const cfgUpdates: Record<string, any> = {};
 
@@ -217,6 +224,10 @@ router.put('/', (req: Request, res: Response) => {
     }
 
     writeConfig(cfgUpdates);
+
+    if (pipeline?.figmaBypassMode !== undefined) {
+      setPolicy('figma_bypass_mode', String(pipeline.figmaBypassMode));
+    }
 
     if (qualityGates) {
       if (qualityGates.requireCriticReview !== undefined) {

@@ -3,7 +3,7 @@ import * as fsAsync from 'fs/promises';
 import * as path from 'path';
 import db from '../data/database';
 import { STAGE_ARTIFACT_TYPE } from './stage-metadata';
-import { saveToWiki, wikiPathForArtifact } from '../integrations/document-store/azure-wiki-store';
+import { saveToWiki, loadFromWiki, wikiPathForArtifact } from '../integrations/document-store/azure-wiki-store';
 import { convertArtifactToMarkdown } from '../utils/artifact-to-markdown';
 import {
   insertArtifactDoc,
@@ -26,6 +26,8 @@ type ArtifactRow = {
   external_system: string | null;
   external_path: string | null;
   external_url: string | null;
+  wiki_path?: string | null;
+  wiki_url?: string | null;
 };
 
 /**
@@ -56,22 +58,34 @@ export function resolveArtifactPath(storedPath: string): string {
 }
 
 /**
- * Read content from an artifact row — MongoDB first, disk fallback.
+ * Read content from an artifact row — MongoDB first, disk fallback, wiki as last resort.
+ * The wiki is a one-way export mirror, never the primary source — it's only consulted
+ * here if both mongo and disk come up empty (e.g. mongo unreachable and the disk file
+ * was moved/deleted).
  */
 async function readArtifactRow(row: ArtifactRow): Promise<string | null> {
   if (row.external_system === 'mongodb' && row.external_path) {
     const content = await readArtifactDoc(row.external_path);
     if (content !== null) return content;
-    logger.warn(`MongoDB read miss for artifact external_path=${row.external_path} — no disk fallback available`);
-    return null;
+    logger.warn(`MongoDB read miss for artifact external_path=${row.external_path} — falling back`);
+  } else if (row.file_path) {
+    try {
+      return fs.readFileSync(resolveArtifactPath(row.file_path), 'utf-8');
+    } catch (err: any) {
+      logger.warn(`Disk read failed for artifact file_path=${row.file_path}: ${err.message} — falling back`);
+    }
   }
-  if (!row.file_path) return null;
-  try {
-    return fs.readFileSync(resolveArtifactPath(row.file_path), 'utf-8');
-  } catch (err: any) {
-    logger.warn(`Disk read failed for artifact file_path=${row.file_path}: ${err.message}`);
-    return null;
+
+  if (row.wiki_path) {
+    try {
+      logger.info(`Falling back to wiki for artifact (mongo/disk unavailable): ${row.wiki_path}`);
+      return await loadFromWiki(row.wiki_path);
+    } catch (err: any) {
+      logger.warn(`Wiki fallback read failed for path=${row.wiki_path}: ${err.message}`);
+    }
   }
+
+  return null;
 }
 
 // ── Main artifact save (wiki-backed) ─────────────────────────────────────────
@@ -128,7 +142,8 @@ function toWikiContent(artifactType: string, rawContent: string, status: 'draft'
 /**
  * Sync a local artifact to the Azure Wiki (first publish).
  * Content is converted from JSON to markdown where a converter exists.
- * Updates the artifact row to record external_system, external_path, and external_url.
+ * The wiki is a one-way mirror — this only sets wiki_path/wiki_url, never touches
+ * external_system/external_path so the mongodb/disk pointer (the primary source) stays intact.
  */
 export async function syncArtifactToWiki(artifactId: number): Promise<string> {
   const artifact = db.prepare<[number], ArtifactRow>(
@@ -136,12 +151,12 @@ export async function syncArtifactToWiki(artifactId: number): Promise<string> {
   ).get(artifactId);
 
   if (!artifact) throw new Error(`Artifact ${artifactId} not found`);
-  if (artifact.external_system === 'azure_wiki') {
+  if (artifact.wiki_path && artifact.wiki_url) {
     logger.info(`Artifact ${artifactId} already synced to wiki`);
-    return artifact.external_url!;
+    return artifact.wiki_url;
   }
 
-  // Read content — handles MongoDB-stored artifacts (file_path = '') and disk fallback
+  // Read content from the primary store (mongodb or disk)
   const content = await readArtifactRow(artifact);
   if (!content) throw new Error(`Could not read artifact ${artifactId} content (external_system=${artifact.external_system ?? 'disk'})`);
 
@@ -164,27 +179,27 @@ export async function syncArtifactToWiki(artifactId: number): Promise<string> {
   const wikiPath = wikiPathForArtifact(item.title, stage);
   const { url } = await saveToWiki(wikiPath, toWikiContent(artifact.type, content, 'draft'));
 
-  // Update artifact row
   db.prepare(`
     UPDATE artifacts
-    SET external_system = ?, external_path = ?, external_url = ?
+    SET wiki_path = ?, wiki_url = ?
     WHERE id = ?
-  `).run('azure_wiki', wikiPath, url, artifactId);
+  `).run(wikiPath, url, artifactId);
 
   logger.info(`Artifact ${artifactId} synced to wiki: ${wikiPath}`);
   return url;
 }
 
 /**
- * Re-publish an already-synced wiki artifact with "Approved" status.
- * Re-reads source content and regenerates the markdown, replacing the Draft banner.
+ * Re-publish an already-synced wiki mirror with "Approved" status.
+ * Re-reads source content from the primary store (mongodb/disk) and regenerates
+ * the markdown, replacing the Draft banner.
  */
 export async function approveWikiArtifact(artifactId: number): Promise<void> {
   const artifact = db.prepare<[number], ArtifactRow>(
     'SELECT * FROM artifacts WHERE id = ?'
   ).get(artifactId);
 
-  if (!artifact || artifact.external_system !== 'azure_wiki' || !artifact.external_path) return;
+  if (!artifact || !artifact.wiki_path) return;
 
   const content = await readArtifactRow(artifact);
   if (!content) {
@@ -192,7 +207,7 @@ export async function approveWikiArtifact(artifactId: number): Promise<void> {
     return;
   }
 
-  await saveToWiki(artifact.external_path, toWikiContent(artifact.type, content, 'approved'));
+  await saveToWiki(artifact.wiki_path, toWikiContent(artifact.type, content, 'approved'));
   logger.info(`Artifact ${artifactId} wiki status updated to Approved`);
 }
 
@@ -244,8 +259,9 @@ export async function saveLocalArtifact(
   logger.warn(`MongoDB unavailable — writing artifact "${stage}" to disk`);
   const artifactDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, stage, 'artifacts');
   await fsAsync.mkdir(artifactDir, { recursive: true });
-  const ext = (() => { try { JSON.parse(content); return 'json'; } catch { return 'md'; } })();
-  const artifactPath = path.join(artifactDir, `${Date.now()}-${stage}.${ext}`);
+  // Every stage routed through here produces JSON by design (see STAGE_OUTPUT_FORMATS) — use
+  // .json unconditionally rather than sniffing content, which mislabeled truncated/fenced JSON as .md.
+  const artifactPath = path.join(artifactDir, `${Date.now()}-${stage}.json`);
   await fsAsync.writeFile(artifactPath, content, 'utf-8');
 
   const result = db.prepare(`
@@ -366,7 +382,7 @@ export async function saveDiffArtifact(
  */
 export async function loadArtifactContentById(artifactId: number): Promise<string | null> {
   const row = db.prepare<[number], ArtifactRow>(
-    'SELECT file_path, external_system, external_path FROM artifacts WHERE id = ?'
+    'SELECT file_path, external_system, external_path, wiki_path FROM artifacts WHERE id = ?'
   ).get(artifactId);
   if (!row) return null;
   logger.info(`Loading artifact id=${artifactId} from ${row.external_system ?? 'disk'}`);
@@ -375,13 +391,13 @@ export async function loadArtifactContentById(artifactId: number): Promise<strin
 
 /**
  * Load the most recent artifact content for an item by artifact type.
- * Fetches from wiki for externally stored artifacts, reads from disk otherwise.
+ * Primary source is mongodb/disk; falls back to the wiki mirror only if both are unavailable.
  */
 export async function loadLatestArtifactContent(itemId: string, artifactType: string): Promise<string | null> {
   logger.info(`[ARTIFACT-LOAD] Looking for artifact: itemId=${itemId}, type=${artifactType}`);
 
   const row = db.prepare<[string, string], ArtifactRow>(`
-    SELECT a.file_path, a.external_system, a.external_path
+    SELECT a.file_path, a.external_system, a.external_path, a.wiki_path
     FROM artifacts a
     JOIN sessions s ON a.session_id = s.id
     WHERE s.item_id = ? AND a.type = ?
@@ -406,12 +422,13 @@ export async function loadLatestArtifactContent(itemId: string, artifactType: st
 }
 
 /**
- * Update artifact content — dispatches to MongoDB, Azure Wiki, or disk depending on where it's stored.
- * Wiki artifacts are converted from JSON to markdown with a Draft status banner before publishing.
+ * Update artifact content — writes to the primary store (MongoDB or disk).
+ * If a wiki mirror exists for this artifact, best-effort refreshes it too (as Draft) —
+ * a wiki push failure must not block saving the primary content.
  */
 export async function updateArtifactContent(artifactId: number, content: string): Promise<{ url?: string }> {
-  const row = db.prepare<[number], ArtifactRow & { external_url: string | null }>(
-    'SELECT id, session_id, type, file_path, external_system, external_path, external_url FROM artifacts WHERE id = ?'
+  const row = db.prepare<[number], ArtifactRow>(
+    'SELECT id, session_id, type, file_path, external_system, external_path, external_url, wiki_path, wiki_url FROM artifacts WHERE id = ?'
   ).get(artifactId);
   if (!row) throw new Error(`Artifact ${artifactId} not found`);
 
@@ -419,25 +436,27 @@ export async function updateArtifactContent(artifactId: number, content: string)
     const ok = await replaceArtifactDocContent(row.external_path, parseContentForMongo(content));
     if (!ok) throw new Error(`MongoDB update failed for artifact ${artifactId}`);
     logger.info(`[UPDATE] mongodb ✓ ${row.external_path}`);
-    return {};
-  }
-
-  if (row.external_system === 'azure_wiki' && row.external_path) {
-    logger.info(`[UPDATE] azure_wiki → ${row.external_path}`);
-    const { url } = await import('../integrations/document-store/azure-wiki-store').then(m =>
-      m.updateInWiki(row.external_path!, toWikiContent(row.type, content, 'draft'))
-    );
-    logger.info(`[UPDATE] azure_wiki ✓ ${row.external_path}`);
-    db.prepare('UPDATE artifacts SET external_url = ? WHERE id = ?').run(url, artifactId);
-    return { url };
-  }
-
-  if (row.file_path) {
+  } else if (row.file_path) {
     fs.writeFileSync(resolveArtifactPath(row.file_path), content, 'utf-8');
-    return {};
+  } else {
+    throw new Error(`Artifact ${artifactId} has no storage location`);
   }
 
-  throw new Error(`Artifact ${artifactId} has no storage location`);
+  if (row.wiki_path) {
+    try {
+      const { updateInWiki } = await import('../integrations/document-store/azure-wiki-store');
+      const { url } = await updateInWiki(row.wiki_path, toWikiContent(row.type, content, 'draft'));
+      if (url !== row.wiki_url) {
+        db.prepare('UPDATE artifacts SET wiki_url = ? WHERE id = ?').run(url, artifactId);
+      }
+      logger.info(`[UPDATE] wiki mirror refreshed ✓ ${row.wiki_path}`);
+      return { url };
+    } catch (err: any) {
+      logger.warn(`[UPDATE] wiki mirror refresh failed for ${row.wiki_path}: ${err.message}`);
+    }
+  }
+
+  return {};
 }
 
 // ── Legacy sync loaders (kept for backward compat with non-async callers) ─────
@@ -457,12 +476,6 @@ export function loadLatestArtifactForItem(itemId: string): { content: string; ty
 
   if (!row) return { content: '(no artifact found)', type: 'document' };
   if (!row.file_path && !row.external_path) return { content: '(no artifact found)', type: row.type };
-
-  // External artifacts — can't read synchronously; callers should migrate to loadLatestArtifactContent
-  if (row.external_system === 'azure_wiki') {
-    logger.warn(`loadLatestArtifactForItem called for wiki-backed artifact — content unavailable synchronously`);
-    return { content: '(artifact stored in wiki — use async loader)', type: row.type };
-  }
 
   try {
     return { content: fs.readFileSync(resolveArtifactPath(row.file_path), 'utf-8'), type: row.type };
@@ -485,10 +498,6 @@ export function loadLatestArtifactForStage(itemId: string, stage: string): strin
     ORDER BY a.created_at DESC LIMIT 1
   `).get(itemId, artifactType);
   if (!row) return undefined;
-  if (row.external_system === 'azure_wiki') {
-    logger.warn(`loadLatestArtifactForStage called for wiki-backed artifact (${stage}) — use async loader`);
-    return undefined;
-  }
   if (!row.file_path) return undefined;
   try {
     return fs.readFileSync(resolveArtifactPath(row.file_path), 'utf-8');
@@ -506,10 +515,6 @@ export function loadFullArtifact(artifactId: number): string | undefined {
     'SELECT file_path, external_system, external_path FROM artifacts WHERE id = ?'
   ).get(artifactId);
   if (!row) return undefined;
-  if (row.external_system === 'azure_wiki') {
-    logger.warn(`loadFullArtifact called for wiki-backed artifact ${artifactId} — use async loader`);
-    return undefined;
-  }
   if (!row.file_path) return undefined;
   try {
     return fs.readFileSync(resolveArtifactPath(row.file_path), 'utf-8');
@@ -526,7 +531,6 @@ export function loadArtifactSummary(artifactId: number): string | undefined {
     'SELECT file_path, external_system, external_path FROM artifacts WHERE id = ?'
   ).get(artifactId);
   if (!row) return undefined;
-  if (row.external_system === 'azure_wiki') return '(stored in wiki)';
   if (!row.file_path) return undefined;
   try {
     const content = fs.readFileSync(resolveArtifactPath(row.file_path), 'utf-8');

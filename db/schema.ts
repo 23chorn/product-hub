@@ -76,9 +76,14 @@ export const artifacts = sqliteTable('artifacts', {
   session_id:       text('session_id').notNull().references(() => sessions.id, { onDelete: 'cascade' }),
   type:             text('type').notNull(),
   file_path:        text('file_path').notNull().default(''),
-  external_system:  text('external_system'),   // 'mongodb' | 'azure_wiki' | null
+  external_system:  text('external_system'),   // 'mongodb' | null — primary content store only
   external_path:    text('external_path'),
   external_url:     text('external_url'),
+  // Wiki is a one-way mirror, never the primary content source. Kept separate from
+  // external_system/external_path so syncing to wiki never displaces the mongodb/disk
+  // pointer — reads stay mongo -> disk -> wiki(last resort).
+  wiki_path:        text('wiki_path'),
+  wiki_url:         text('wiki_url'),
   skill_version_id: integer('skill_version_id').references(() => skillVersions.id),
   status:           text('status', { enum: ['draft', 'approved', 'superseded'] }).notNull().default('draft'),
   created_at:       integer('created_at').notNull(),

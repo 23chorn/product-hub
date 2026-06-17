@@ -4,7 +4,8 @@
  * single-specialist flow. Split out of runAutonomousStage, which dispatches here
  * when the stage name matches story_decomposition_F<n>.
  *
- * Exports two functions:
+ * Exports three functions:
+ *   runBacklogMerge — merge all isolated feature artifacts into final backlog
  *   runMultiAgentFeatureStage  — full 3-phase pipeline for initial runs
  *   runMultiAgentFeatureRevision — surgical single-agent edit for human/critic revisions
  */
@@ -13,8 +14,82 @@ import { logger, insertEvent } from './workflow-db';
 import { validateBacklogJson, validateQaTestsJson } from './tool-validators';
 
 /**
- * Run multi-agent collaborative refinement for one feature, accumulate its stories
- * into the running backlog artifact, and create a pending checkpoint for review.
+ * Merge all isolated feature artifacts (backlog_F1, backlog_F2, backlog_F3, ...) into
+ * a single final backlog artifact. This is a simple JSON merge — no LLM call needed.
+ */
+export async function runBacklogMerge(
+  sessionId: string,
+  workflowId: string,
+  itemId: string
+): Promise<void> {
+  logger.info(`[BACKLOG MERGE] Starting merge of all feature artifacts`);
+  const { loadLatestArtifactContent, saveLocalArtifact } = await import('./artifact-helpers');
+
+  insertEvent(workflowId, 'stage_progress', 'backlog_merge',
+    'Merging all feature artifacts into final backlog...');
+
+  // Load all feature artifacts (backlog_F1, backlog_F2, ...)
+  const featureArtifacts: any[] = [];
+  let featureIndex = 1;
+  let mergedEpic: any = null;
+
+  while (true) {
+    const artifactType = `backlog_F${featureIndex}`;
+    const content = await loadLatestArtifactContent(itemId, artifactType);
+    if (!content) break; // No more features
+
+    try {
+      const cleaned = content.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+      const parsed = JSON.parse(cleaned);
+
+      // Store epic from first feature (they should all be identical)
+      if (!mergedEpic && parsed.epic) {
+        mergedEpic = parsed.epic;
+      }
+
+      // Collect features array
+      if (parsed.features && Array.isArray(parsed.features)) {
+        featureArtifacts.push(...parsed.features);
+      }
+
+      logger.info(`[BACKLOG MERGE] Loaded Feature ${featureIndex}: ${parsed.features?.length ?? 0} features`);
+      featureIndex++;
+    } catch (err: any) {
+      logger.error(`[BACKLOG MERGE] Failed to parse ${artifactType}: ${err.message}`);
+      break;
+    }
+  }
+
+  if (featureArtifacts.length === 0) {
+    logger.warn(`[BACKLOG MERGE] No feature artifacts found to merge`);
+    insertEvent(workflowId, 'error', 'backlog_merge', 'No feature artifacts found to merge');
+    return;
+  }
+
+  // Build final merged backlog
+  const mergedBacklog = {
+    epic: mergedEpic ?? { title: 'Epic', business_value: '', definition_of_done: [], out_of_scope: [] },
+    features: featureArtifacts,
+  };
+
+  // Save the merged backlog artifact
+  const artifactContent = JSON.stringify(mergedBacklog, null, 2);
+  const artifactId = await saveLocalArtifact(sessionId, 'backlog', artifactContent, itemId, null);
+
+  logger.info(`[BACKLOG MERGE] Merged ${featureArtifacts.length} features into final backlog (artifact ${artifactId})`);
+  insertEvent(workflowId, 'stage_completed', 'backlog_merge',
+    `Merged ${featureArtifacts.length} features into final backlog — ready for ADO sync`,
+    { artifact_id: artifactId, feature_count: featureArtifacts.length });
+
+  // Create checkpoint for final backlog review (optional — or auto-advance)
+  const { pauseAtCheckpoint } = await import('./workflow-router');
+  await pauseAtCheckpoint(workflowId, 'backlog_merge', artifactId, undefined, undefined, 'pm');
+  logger.info(`[BACKLOG MERGE] Checkpoint created for final backlog review`);
+}
+
+/**
+ * Run multi-agent collaborative refinement for one feature, save it in isolation,
+ * and create TWO pending checkpoints for PM + QA review.
  * `featureIndex` is zero-based.
  */
 export async function runMultiAgentFeatureStage(
@@ -31,24 +106,14 @@ export async function runMultiAgentFeatureStage(
     const strippedBacklog = result.backlog.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
     const newFeature = JSON.parse(strippedBacklog);
 
-    // Load accumulated backlog (if any previous features completed)
-    let accumulatedBacklog: any;
-    const { loadLatestArtifactContent, saveLocalArtifact } = await import('./artifact-helpers');
-    const priorBacklogContent = await loadLatestArtifactContent(itemId, 'backlog');
-
-    if (priorBacklogContent) {
-      // Append new feature to existing backlog
-      const cleaned = priorBacklogContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-      accumulatedBacklog = JSON.parse(cleaned);
-      accumulatedBacklog.features.push(...newFeature.features);
-    } else {
-      // First feature — initialize backlog structure
-      accumulatedBacklog = newFeature;
-    }
-
-    // Save the accumulated backlog artifact (epic + all features so far).
-    // Type is always 'backlog' so loadLatestArtifactContent(itemId, 'backlog') finds it for accumulation.
-    const artifactId = await saveLocalArtifact(sessionId, 'backlog', JSON.stringify(accumulatedBacklog, null, 2), itemId, null);
+    // Save this feature in isolation (not accumulated).
+    // Each feature stage gets its own artifact: backlog_F1, backlog_F2, backlog_F3
+    // This prevents exponential token growth — F9 doesn't need to re-output F1-F8!
+    const { saveLocalArtifact } = await import('./artifact-helpers');
+    const featureNum = featureIndex + 1;
+    const featureArtifactType = `backlog_F${featureNum}`;
+    const featureArtifactContent = JSON.stringify(newFeature, null, 2);
+    const artifactId = await saveLocalArtifact(sessionId, featureArtifactType, featureArtifactContent, itemId, null);
 
     // Deterministic backlog validation — runs regardless of LLM tool use
     const backlogValidation = JSON.parse(validateBacklogJson({ json: JSON.stringify(newFeature) }));
@@ -62,9 +127,10 @@ export async function runMultiAgentFeatureStage(
 
     // Save the standalone QA test suite for this feature as a separate artifact.
     // Type 'qa_tests' lets the QA engineer stage or external tooling load it directly.
+    let qaArtifactId: number | null = null;
     if (result.qaTests) {
       const strippedQa = result.qaTests.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-      await saveLocalArtifact(sessionId, 'qa_tests', strippedQa, itemId, null);
+      qaArtifactId = await saveLocalArtifact(sessionId, 'qa_tests', strippedQa, itemId, null);
       logger.info(`[MULTI-AGENT] QA test suite artifact saved for Feature ${featureIndex + 1}`);
 
       // Deterministic QA suite validation
@@ -78,11 +144,22 @@ export async function runMultiAgentFeatureStage(
       }
     }
 
-    // Create checkpoint for human review — ADO push happens at checkpoint approval
+    // Create TWO checkpoints for two-stage approval:
+    // 1. Backlog checkpoint (PM role) — reviews stories, acceptance criteria, platform tags
+    // 2. QA Test Suite checkpoint (QA role) — reviews test coverage and quality
     const { pauseAtCheckpoint } = await import('./workflow-router');
-    await pauseAtCheckpoint(workflowId, stage, artifactId, undefined);
 
-    logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} refinement complete — checkpoint created`);
+    // Checkpoint 1: Backlog review (PM role)
+    await pauseAtCheckpoint(workflowId, stage, artifactId, undefined, undefined, 'pm');
+    logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} backlog checkpoint created (PM review)`);
+
+    // Checkpoint 2: QA test suite review (QA role)
+    if (qaArtifactId) {
+      await pauseAtCheckpoint(workflowId, `${stage}_qa`, qaArtifactId, undefined, undefined, 'qa');
+      logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} QA test suite checkpoint created (QA review)`);
+    }
+
+    logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} refinement complete — dual checkpoints created`);
 
     insertEvent(workflowId, 'stage_completed', stage,
       `Multi-agent collaborative refinement complete for Feature ${featureIndex + 1} — ready for human review`,
@@ -117,21 +194,21 @@ export async function runMultiAgentFeatureRevision(
   insertEvent(workflowId, 'stage_progress', stage,
     `Revision mode: applying targeted changes to Feature ${featureNum} stories only…`);
 
-  // Shard (Product Owner) applies the targeted edit — no full multi-agent pipeline needed
+  // Shard (Product Owner) applies the targeted edit to THIS FEATURE ONLY (isolated revision)
   const { SpecialistAgent } = await import('./specialist-agent');
   const agent = new SpecialistAgent('story-decomposition' as AgentType);
   const persona = await agent.loadPersona(stage);
   const systemPrompt = await agent.buildSystemPrompt(persona, undefined, undefined, true, stage);
 
   const revisionDirective =
-    `You are performing a SURGICAL EDIT of the backlog JSON above. Apply ONLY the targeted changes described in the revision brief at the top of this conversation.\n\n` +
+    `You are performing a SURGICAL EDIT of Feature ${featureNum} stories above. Apply ONLY the targeted changes described in the revision brief at the top of this conversation.\n\n` +
     `Rules — apply strictly:\n` +
     `- Modify ONLY the stories for Feature ${featureNum} (story IDs F${featureNum}.S*) that are explicitly mentioned in the feedback.\n` +
-    `- Copy all stories for every other feature EXACTLY as-is — no changes whatsoever.\n` +
+    `- Copy all other stories for Feature ${featureNum} EXACTLY as-is.\n` +
     `- Do NOT add new stories unless the feedback explicitly requests it.\n` +
     `- Do NOT restructure, reorder, rename, or rewrite any field not mentioned in the feedback.\n` +
     `- Preserve the exact JSON schema: every story must have story_id, title, as_a, i_want, so_that, acceptance_criteria, technical_acceptance_criteria, platform, estimated_points, depends_on.\n` +
-    `- Return the complete backlog JSON (epic + all features + all stories) — only the flagged stories will differ from the prior draft.`;
+    `- Return the complete Feature ${featureNum} JSON (epic + this one feature + all its stories) — only the flagged stories will differ from the prior draft.`;
 
   const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
     { role: 'user', content: brief },
@@ -139,8 +216,13 @@ export async function runMultiAgentFeatureRevision(
     { role: 'user', content: revisionDirective },
   ];
 
+  // Revisions now only output THIS feature (not accumulated). Use the same ceiling as the
+  // initial synthesis (multi-agent-refinement.ts) so revisions don't truncate where drafts don't.
+  const { STAGE_MAX_OUTPUT_TOKENS } = await import('./stage-metadata');
+  const maxTokens = STAGE_MAX_OUTPUT_TOKENS['story_decomposition'] ?? 16_000;
+
   let fullResponse = '';
-  for await (const chunk of agent.streamResponse(systemPrompt, messages, undefined, undefined, 8_000)) {
+  for await (const chunk of agent.streamResponse(systemPrompt, messages, undefined, undefined, maxTokens)) {
     fullResponse += chunk;
   }
 
@@ -157,13 +239,8 @@ export async function runMultiAgentFeatureRevision(
     throw new Error(`Revision produced invalid JSON: ${err.message}`);
   }
 
-  // Validate only the revised feature's stories
-  const singleFeatureForValidation = {
-    features: revisedBacklog.features
-      ? [revisedBacklog.features[featureIndex]].filter(Boolean)
-      : [],
-  };
-  const backlogValidation = JSON.parse(validateBacklogJson({ json: JSON.stringify(singleFeatureForValidation) }));
+  // Validate the revised feature
+  const backlogValidation = JSON.parse(validateBacklogJson({ json: JSON.stringify(revisedBacklog) }));
   if (!backlogValidation.valid && Array.isArray(backlogValidation.issues) && backlogValidation.issues.length > 0) {
     logger.warn(`[MULTI-AGENT REVISION] Validation issues for Feature ${featureNum}: ${backlogValidation.issues.join(' | ')}`);
     insertEvent(workflowId, 'validation_warning', stage,
@@ -171,11 +248,12 @@ export async function runMultiAgentFeatureRevision(
       { issues: backlogValidation.issues });
   }
 
-  // Save revised backlog artifact
+  // Save revised feature artifact (isolated, not accumulated)
   const { saveLocalArtifact, saveDiffArtifact } = await import('./artifact-helpers');
   const { computeRevisionDiff } = await import('../utils/revision-diff');
+  const featureArtifactType = `backlog_F${featureNum}`;
   const artifactContent = JSON.stringify(revisedBacklog, null, 2);
-  const artifactId = await saveLocalArtifact(sessionId, 'backlog', artifactContent, itemId, null);
+  const artifactId = await saveLocalArtifact(sessionId, featureArtifactType, artifactContent, itemId, null);
 
   // Compute and save diff so the reviewer can see exactly what changed
   try {

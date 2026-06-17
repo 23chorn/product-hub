@@ -26,6 +26,8 @@ import {
 import db from '../data/database';
 import { insertEvent, parseRoles } from '../agents/workflow-db';
 import { resolveArtifactPath, loadArtifactContentById, updateArtifactContent, approveWikiArtifact } from '../agents/artifact-helpers';
+import { pushItemStatusToAirtable } from '../agents/ado-stage-push';
+import { airtableStatusForStage } from '../agents/stage-metadata';
 import Logger from '../utils/logger';
 import { isDemoMode } from '../demo/demo-mode';
 import {
@@ -232,6 +234,15 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
 
       resolveCheckpoint(cpId, 'approved', feedback);
 
+      // Generate approval event for this specific checkpoint
+      const isQaCheckpoint = cpDetail?.stage.endsWith('_qa');
+      const checkpointType = isQaCheckpoint ? 'QA tests' : 'Stories';
+      const baseStage = cpDetail?.stage.replace(/_qa$/, '') ?? '';
+      insertEvent(workflowId, 'checkpoint_approved', cpDetail?.stage ?? '',
+        `${checkpointType} approved by ${req.user?.name ?? 'System'}`,
+        { checkpoint_id: cpId, artifact_id: cpDetail?.artifact_id ?? null });
+      logger.info(`[CHECKPOINT] ${cpDetail?.stage} approved by ${req.user?.username ?? 'system'}`);
+
       // Fetch itemId once — needed by story_decomposition and qa_engineer pushes
       const wfRow = db.prepare<[string], { item_id: string }>(
         'SELECT item_id FROM workflows WHERE id = ?'
@@ -337,6 +348,12 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
         }
       }
 
+      // ── Push pipeline status to Airtable (Researching/Scoping/Designing/Architecting/Refining) ──
+      const airtableStatus = cpDetail ? airtableStatusForStage(cpDetail.stage) : null;
+      if (airtableStatus) {
+        pushItemStatusToAirtable(itemId, airtableStatus).catch(() => {});
+      }
+
       // ── Wiki-backed stages: update status from Draft → Approved ─────────────
       if (cpDetail?.artifact_id) {
         approveWikiArtifact(cpDetail.artifact_id).catch(err =>
@@ -409,7 +426,20 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
     }
 
     if (status === 'rejected') {
+      // Read checkpoint details before resolving
+      const cpDetail = db.prepare<[number], { stage: string; artifact_id: number | null }>(
+        'SELECT stage, artifact_id FROM checkpoints WHERE id = ?'
+      ).get(cpId);
+
       resolveCheckpoint(cpId, 'rejected', feedback);
+
+      // Generate rejection event
+      const isQaCheckpoint = cpDetail?.stage.endsWith('_qa');
+      const checkpointType = isQaCheckpoint ? 'QA tests' : 'Stories';
+      insertEvent(workflowId, 'checkpoint_rejected', cpDetail?.stage ?? '',
+        `${checkpointType} rejected by ${req.user?.name ?? 'System'}`,
+        { checkpoint_id: cpId, artifact_id: cpDetail?.artifact_id ?? null, feedback });
+
       markWorkflowComplete(workflowId);
       const workflowStatus = getWorkflowStatus(workflowId);
       return res.json({ workflow: workflowStatus, complete: true });
@@ -417,7 +447,21 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
 
     // revised
     if (!feedback) return res.status(400).json({ error: 'feedback is required for revised status' });
+
+    // Read checkpoint details before propagating feedback
+    const cpDetail = db.prepare<[number], { stage: string; artifact_id: number | null }>(
+      'SELECT stage, artifact_id FROM checkpoints WHERE id = ?'
+    ).get(cpId);
+
     await propagateFeedback(cpId, feedback);
+
+    // Generate revision event for this specific checkpoint
+    const isQaCheckpoint = cpDetail?.stage.endsWith('_qa');
+    const checkpointType = isQaCheckpoint ? 'QA tests' : 'Stories';
+    insertEvent(workflowId, 'checkpoint_revised', cpDetail?.stage ?? '',
+      `${checkpointType} require revision — ${req.user?.name ?? 'System'} requested changes`,
+      { checkpoint_id: cpId, artifact_id: cpDetail?.artifact_id ?? null, feedback });
+
     const workflowStatus = getWorkflowStatus(workflowId);
     return res.json({ workflow: workflowStatus });
   } catch (err: any) {
@@ -432,17 +476,26 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
 
 /**
  * POST /api/workflow/checkpoint/figma-complete
- * Body: { checkpointId: number }
+ * Body: { checkpointId: number, figmaUrl?: string, notes?: string }
  *
  * Signals that the designer has finished their Figma edits. The backend fetches
  * the current state of FIGMA_MOCKUP_FILE, patches the artifact with
  * designer_reviewed: true + a snapshot timestamp, then resolves the checkpoint
  * as approved and advances the workflow.
+ *
+ * When figma_design ran in bypass mode (no agent-written file), `figmaUrl` is the
+ * link the designer pasted in after building/updating the design themselves —
+ * it gets stamped onto the artifact as figma_file_url with figma_write_status: 'external'.
  */
 workflowRoutes.post('/checkpoint/figma-complete', async (req: AuthRequest, res: Response) => {
-  const { checkpointId } = req.body as { checkpointId?: number };
+  const { checkpointId, figmaUrl, notes } = req.body as { checkpointId?: number; figmaUrl?: string; notes?: string };
   const cpId = typeof checkpointId === 'number' ? checkpointId : parseInt(String(checkpointId), 10);
   if (isNaN(cpId)) return res.status(400).json({ error: 'checkpointId must be a number' });
+
+  const trimmedFigmaUrl = figmaUrl?.trim();
+  if (trimmedFigmaUrl && !/^https?:\/\/(www\.)?figma\.com\//i.test(trimmedFigmaUrl)) {
+    return res.status(400).json({ error: 'figmaUrl must be a figma.com link' });
+  }
 
   try {
     const cp = db.prepare<[number], { workflow_id: string; stage: string; artifact_id: number | null; status: string; required_role: string | null }>(
@@ -462,8 +515,14 @@ workflowRoutes.post('/checkpoint/figma-complete', async (req: AuthRequest, res: 
       'SELECT item_id FROM workflows WHERE id = ?'
     ).get(cp.workflow_id);
 
+    // If the designer pasted their own link, persist its file key for future snapshot lookups
+    const { loadFigmaMockupFileData, embedFigmaLinksInFrontendTickets, extractFigmaFileKey, setFigmaFileKey } = await import('../agents/prototype-agent');
+    if (trimmedFigmaUrl && wf?.item_id) {
+      const fileKey = extractFigmaFileKey(trimmedFigmaUrl);
+      if (fileKey) setFigmaFileKey(wf.item_id, fileKey);
+    }
+
     // Fetch latest Figma mockup file state
-    const { loadFigmaMockupFileData, embedFigmaLinksInFrontendTickets } = await import('../agents/prototype-agent');
     const figmaSnapshot = await loadFigmaMockupFileData(wf?.item_id);
 
     // Patch the artifact with designer_reviewed flag + snapshot
@@ -476,7 +535,13 @@ workflowRoutes.post('/checkpoint/figma-complete', async (req: AuthRequest, res: 
           parsed.designer_reviewed = true;
           parsed.designer_reviewed_at = new Date().toISOString();
           if (figmaSnapshot) parsed.figma_snapshot = figmaSnapshot.slice(0, 8000);
-          parsed.figma_write_status = 'reviewed';
+          if (trimmedFigmaUrl) {
+            parsed.figma_file_url = trimmedFigmaUrl;
+            parsed.figma_write_status = 'external';
+          } else {
+            parsed.figma_write_status = 'reviewed';
+          }
+          if (notes?.trim()) parsed.designer_notes = notes.trim();
           await updateArtifactContent(cp.artifact_id, JSON.stringify(parsed, null, 2));
           figmaArtifactData = { figma_file_url: parsed.figma_file_url, screens_created: parsed.screens_created };
         } catch {
@@ -723,8 +788,8 @@ workflowRoutes.post('/:id/message', async (req: Request, res: Response) => {
 
 /**
  * GET /api/workflow/artifact/:id/content
- * Returns the text content of an artifact. For externally stored artifacts, fetches
- * from the Azure Wiki using the stored external_path reference.
+ * Returns the text content of an artifact — MongoDB first, disk fallback, the Azure
+ * Wiki mirror only as a last resort if both are unavailable.
  */
 workflowRoutes.get('/artifact/:id/content', async (req: Request, res: Response) => {
   const id = parseInt(req.params.id, 10);
@@ -845,6 +910,14 @@ workflowRoutes.put('/artifact/:id/content', async (req: AuthRequest, res: Respon
       }
 
       resolveCheckpoint(checkpointId, 'approved', 'Human edited artifact directly');
+
+      const airtableStatus = stage ? airtableStatusForStage(stage) : null;
+      if (airtableStatus) {
+        const wfItemRow = db.prepare<[string], { item_id: string }>(
+          'SELECT item_id FROM workflows WHERE id = ?'
+        ).get(workflowId);
+        if (wfItemRow) pushItemStatusToAirtable(wfItemRow.item_id, airtableStatus).catch(() => {});
+      }
 
       // Advance to next stage (same pattern as checkpoint/resolve endpoint)
       advanceStage(workflowId)

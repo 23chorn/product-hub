@@ -26,7 +26,7 @@ const AGENT_EDIT_ROLES: Record<string, string[]> = {
   'android-engineer':   ['tech_lead'],
   'backend-engineer':   ['tech_lead'],
   'web-engineer':       ['tech_lead'],
-  qa_engineer:          ['tech_lead'],
+  qa_engineer:          ['qa'],
   'tech-refinement':    ['tech_lead'],
   'figma-designer':     ['design'],
   // Meta / infrastructure agents — admin only

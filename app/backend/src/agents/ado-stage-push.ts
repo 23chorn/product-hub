@@ -267,7 +267,7 @@ export async function pushTestPlanToAdo(workflowId: string, itemId: string): Pro
 
 // ── Airtable link-back helper ─────────────────────────────────────────────────
 
-async function pushLinksToAirtable(airtableId: string, updates: Record<string, string>): Promise<void> {
+export async function pushLinksToAirtable(airtableId: string, updates: Record<string, string>): Promise<void> {
   try {
     const { appConfig } = require('../config/app-config');
     if (appConfig.integrations.roadmap !== 'airtable') return;
@@ -277,4 +277,17 @@ async function pushLinksToAirtable(airtableId: string, updates: Record<string, s
   } catch (err: any) {
     logger.warn(`Failed to push links to Airtable (${airtableId}): ${err.message}`);
   }
+}
+
+/**
+ * Push a pipeline status (e.g. "Researching", "Scoping", "Ready") to the
+ * Airtable record an item originated from. No-op if the item has no
+ * airtable_id (locally created items) or roadmap integration isn't Airtable.
+ */
+export async function pushItemStatusToAirtable(itemId: string, status: string): Promise<void> {
+  const itemRow = db.prepare<[string], { airtable_id: string | null }>(
+    'SELECT airtable_id FROM items WHERE id = ?'
+  ).get(itemId);
+  if (!itemRow?.airtable_id) return;
+  await pushLinksToAirtable(itemRow.airtable_id, { status });
 }

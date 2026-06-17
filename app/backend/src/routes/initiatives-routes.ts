@@ -262,11 +262,11 @@ router.delete('/:id', async (req: Request, res: Response) => {
           const path = await import('path');
 
           // Wiki artifact paths (analyst, pm_prd, solution_architect, prototype)
-          const wikiPaths = db.prepare<[string], { external_path: string }>(
-            `SELECT DISTINCT a.external_path
+          const wikiPaths = db.prepare<[string], { wiki_path: string }>(
+            `SELECT DISTINCT a.wiki_path
              FROM artifacts a JOIN sessions s ON a.session_id = s.id
-             WHERE s.item_id = ? AND a.external_system = 'azure_wiki' AND a.external_path IS NOT NULL`
-          ).all(id).map(r => r.external_path);
+             WHERE s.item_id = ? AND a.wiki_path IS NOT NULL`
+          ).all(id).map(r => r.wiki_path);
 
           // ADO work item IDs — delete children before parents (stories → features → epic)
           const adoWorkItemIds = db.prepare<[string], { ado_id: number }>(

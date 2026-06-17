@@ -9,7 +9,8 @@ export interface AirtableItem {
   description: string;
 
   // Your existing status and prioritization
-  status: 'In Progress' | 'Blocked' | 'Ready' | 'Discovery' | 'Deferred' | 'Shipped';
+  status: 'In Progress' | 'Blocked' | 'Ready' | 'Discovery' | 'Deferred' | 'Shipped'
+    | 'Researching' | 'Scoping' | 'Designing' | 'Architecting' | 'Refining';
   businessValue: number; // 1-10 score
   priorityScore: number; // Calculated formula
   estimate: 'XS' | 'S' | 'M' | 'L' | 'XL';
@@ -31,8 +32,10 @@ export interface AirtableItem {
   owner?: string;
   researchBriefLink?: string;
   prdLink?: string;
+  technicalDesignLink?: string;
   epicLink?: string;
   testPlanLink?: string;
+  figmaDesignLink?: string;
   azureEpicId?: string;
   azureFeatureIds?: string;
   azureStoryIds?: string;
@@ -313,7 +316,7 @@ export interface ValidationResult {
 
 export type RoadmapIntegration = 'airtable' | 'none';
 export type WorkItemsIntegration = 'ado' | 'jira' | 'none';
-export type KnowledgeBaseIntegration = 'notion' | 'gitbook' | 'none';
+export type KnowledgeBaseIntegration = 'notion' | 'gitbook' | 'azure_wiki' | 'none';
 
 export interface AppConfig {
   ai: {

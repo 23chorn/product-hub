@@ -198,21 +198,25 @@ export function BacklogView({ data }: { data: BacklogData }) {
             )}
 
             {/* Platform tags (new multi-agent format) */}
-            {story.platform && story.platform.length > 0 && (
-              <div className="flex gap-1.5 flex-wrap mt-2">
-                {story.platform.map(p => (
-                  <span key={p} className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                    p === 'backend' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
-                    : p === 'web' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                    : p === 'ios' ? 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400'
-                    : p === 'android' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
-                  }`}>
-                    {p.toUpperCase()}
-                  </span>
-                ))}
-              </div>
-            )}
+            {(() => {
+              const platformRaw = story.platform;
+              const platforms = Array.isArray(platformRaw) ? platformRaw : platformRaw ? [String(platformRaw)] : [];
+              return platforms.length > 0 && (
+                <div className="flex gap-1.5 flex-wrap mt-2">
+                  {platforms.map(p => (
+                    <span key={p} className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                      p === 'backend' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
+                      : p === 'web' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                      : p === 'ios' ? 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400'
+                      : p === 'android' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
+                    }`}>
+                      {p.toUpperCase()}
+                    </span>
+                  ))}
+                </div>
+              );
+            })()}
 
             {/* Test Cases (new multi-agent format) */}
             {story.test_cases && story.test_cases.length > 0 && (
@@ -366,21 +370,25 @@ export function BacklogView({ data }: { data: BacklogData }) {
                   )}
 
                   {/* Platform tags (new multi-agent format) */}
-                  {story.platform && story.platform.length > 0 && (
-                    <div className="flex gap-1.5 flex-wrap">
-                      {story.platform.map(p => (
-                        <span key={p} className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                          p === 'backend' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
-                          : p === 'web' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                          : p === 'ios' ? 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400'
-                          : p === 'android' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
-                        }`}>
-                          {p.toUpperCase()}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                  {(() => {
+                    const platformRaw = story.platform;
+                    const platforms = Array.isArray(platformRaw) ? platformRaw : platformRaw ? [String(platformRaw)] : [];
+                    return platforms.length > 0 && (
+                      <div className="flex gap-1.5 flex-wrap">
+                        {platforms.map(p => (
+                          <span key={p} className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                            p === 'backend' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
+                            : p === 'web' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                            : p === 'ios' ? 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400'
+                            : p === 'android' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
+                          }`}>
+                            {p.toUpperCase()}
+                          </span>
+                        ))}
+                      </div>
+                    );
+                  })()}
 
                   {/* Test Cases (new multi-agent format) */}
                   {story.test_cases && story.test_cases.length > 0 && (

@@ -21,7 +21,7 @@ export interface BacklogStory {
   so_that?: string;
   acceptance_criteria?: string[];
   technical_acceptance_criteria?: string[];
-  platform?: string[];
+  platform?: string | string[]; // Can be a single string or array
   estimated_points?: number;
   depends_on?: string[];
   test_cases?: Array<{

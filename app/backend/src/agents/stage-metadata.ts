@@ -13,12 +13,15 @@ export const STAGE_SESSION_MAP: Record<string, { mode: AppMode; agentType: Agent
 
 // Per-stage output token ceiling. Backlog gets more headroom because the JSON
 // scales with story count (6 features × 12 stories at max = ~22k tokens).
+// QA test suites: ~8 stories × 3 test cases × 500 tokens = ~12k needed.
 // All Claude 4.x models support 64k output, so these are safe upper bounds.
 export const STAGE_MAX_OUTPUT_TOKENS: Record<string, number> = {
   analyst:              12_000,
   pm_prd:               12_000,
   epic_feature_planner: 16_000,
   solution_architect:   16_000,
+  story_decomposition:  16_000,  // single feature backlog (epic + ~8 stories with prd_ref/technical detail)
+  qa_engineer:          14_000,  // 10-15 test cases per feature with full test detail
   prototype:            64_000,
   figma_design:         16_000,
 };
@@ -266,6 +269,25 @@ export function stageProgressReviewComplete(stage: string): string {
 
 export function stageProgressRevision(stage: string): string {
   return `Auto-revising ${stageProgressTarget(stage)} based on quality review feedback...`;
+}
+
+// ── Airtable roadmap status sync ──────────────────────────────────────────────
+
+// Maps a completed stage to the corresponding Airtable "Status" select value.
+// Pushed back to the originating Airtable record when that stage's checkpoint
+// is approved. Stages not listed here (critic, prototype, figma_design) don't
+// have a corresponding pipeline status and are left unchanged.
+const STAGE_AIRTABLE_STATUS: Record<string, string> = {
+  analyst:              'Researching',
+  pm_prd:               'Scoping',
+  epic_feature_planner: 'Refining',
+  solution_architect:   'Architecting',
+  story_decomposition:  'Refining',
+};
+
+export function airtableStatusForStage(stage: string): string | null {
+  if (stage.startsWith('story_decomposition_F')) return STAGE_AIRTABLE_STATUS.story_decomposition;
+  return STAGE_AIRTABLE_STATUS[stage] ?? null;
 }
 
 // Explicit boundaries (what this specialist must NOT decide)

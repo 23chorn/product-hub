@@ -202,10 +202,12 @@ export class AirtableClient {
       notes: record.fields['Notes'],
       releaseLogs: record.fields['Release Logs'],
       owner: record.fields['Owner'] || '',
-      researchBriefLink: record.fields['Research Brief'] || '',
-      prdLink: record.fields['PRD Link'] || '',
-      epicLink: record.fields['Epic Link'] || '',
+      researchBriefLink: record.fields['Research'] || '',
+      prdLink: record.fields['PRD'] || '',
+      technicalDesignLink: record.fields['Technical Design'] || '',
+      epicLink: record.fields['Epic'] || '',
       testPlanLink: record.fields['Test Plan'] || '',
+      figmaDesignLink: record.fields['Figma Design'] || '',
       azureEpicId: record.fields['Azure Epic ID'] || '',
       azureFeatureIds: record.fields['Azure Feature IDs'] || '',
       azureStoryIds: record.fields['Azure Story IDs'] || '',
@@ -233,10 +235,12 @@ export class AirtableClient {
     if (item.requiresDevWork !== undefined) fields['Requires Dev Work'] = item.requiresDevWork;
     if (item.notes !== undefined) fields['Notes'] = item.notes;
     if (item.owner !== undefined) fields['Owner'] = item.owner;
-    if (item.researchBriefLink !== undefined) fields['Research Brief'] = item.researchBriefLink;
-    if (item.prdLink !== undefined) fields['PRD Link'] = item.prdLink;
-    if (item.epicLink !== undefined) fields['Epic Link'] = item.epicLink;
+    if (item.researchBriefLink !== undefined) fields['Research'] = item.researchBriefLink;
+    if (item.prdLink !== undefined) fields['PRD'] = item.prdLink;
+    if (item.technicalDesignLink !== undefined) fields['Technical Design'] = item.technicalDesignLink;
+    if (item.epicLink !== undefined) fields['Epic'] = item.epicLink;
     if (item.testPlanLink !== undefined) fields['Test Plan'] = item.testPlanLink;
+    if (item.figmaDesignLink !== undefined) fields['Figma Design'] = item.figmaDesignLink;
     if (item.azureEpicId !== undefined) fields['Azure Epic ID'] = item.azureEpicId;
     if (item.azureFeatureIds !== undefined) fields['Azure Feature IDs'] = item.azureFeatureIds;
     if (item.azureStoryIds !== undefined) fields['Azure Story IDs'] = item.azureStoryIds;

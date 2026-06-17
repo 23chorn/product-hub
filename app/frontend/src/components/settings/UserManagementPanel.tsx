@@ -8,7 +8,9 @@ const ALL_ROLES = Object.keys(ROLE_LABELS) as (keyof typeof ROLE_LABELS)[];
 
 const STAGE_ROLE_STAGES = [
   'analyst', 'pm_prd', 'solution_architect', 'epic_feature_planner',
-  'story_decomposition_F1', 'story_decomposition_F2', 'story_decomposition_F3', 'prototype',
+  'story_decomposition_F1', 'story_decomposition_F2', 'story_decomposition_F3',
+  'qa_engineer', 'qa_engineer_F1', 'qa_engineer_F2', 'qa_engineer_F3',
+  'prototype',
 ];
 
 type Tab = 'users' | 'stage_roles';

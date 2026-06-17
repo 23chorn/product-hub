@@ -178,10 +178,22 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   const bottomGeneralEvents = generalEvents.filter(m => !LIFECYCLE_EVENT_TYPES.has(m.eventType ?? '') && !CR_EVENT_TYPES.has(m.eventType ?? '') && !!m.eventType);
 
   // Stages to show in the event log (exclude stages with no events yet if pending)
-  const activeStages = stageSequence.filter(s => {
+  // Also inject QA checkpoint stages right after their parent refinement stages
+  const baseActiveStages = stageSequence.filter(s => {
     const status = deriveStageStatus(s, currentStage, completedStages, pendingStage, activeWorkflow.status);
     return status !== 'pending' || eventsByStage.has(s);
   });
+
+  // Inject QA checkpoint stages after refinement stages
+  const activeStages: string[] = [];
+  for (const stage of baseActiveStages) {
+    activeStages.push(stage);
+    // Check if there's a QA checkpoint for this refinement stage
+    const qaCheckpoint = checkpoints.find(c => c.stage === `${stage}_qa` && c.status === 'pending');
+    if (qaCheckpoint) {
+      activeStages.push(`${stage}_qa`);
+    }
+  }
 
   return (
     <div className="flex h-full overflow-hidden bg-white dark:bg-[#0d1117] font-mono">
@@ -481,20 +493,42 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
             }
           });
 
-          // Collapse epic_feature_planner + all story_decomposition_F* into a single "Tickets" button.
+          // "Tickets" button is for the Epic/Feature shells only (epic_feature_planner).
           // artifact.stage = s.mode (session mode), not the workflow stage name:
           //   epic_feature_planner → mode 'epic_features'
-          //   story_decomposition_F* → mode 'backlog'
-          const TICKET_MODES = new Set(['epic_features', 'backlog']);
+          //   story_decomposition_F* → mode 'backlog' (handled per-feature below instead)
+          const TICKET_MODES = new Set(['epic_features']);
           const ticketCandidates = Array.from(latestByStage.values())
             .filter(a => TICKET_MODES.has(a.stage ?? ''))
             .sort((a, b) => b.created_at - a.created_at);
           const ticketArtifact = ticketCandidates[0] ?? null;
 
-          const regularArtifacts = Array.from(latestByStage.values())
-            .filter(a => !TICKET_MODES.has(a.stage ?? ''));
+          // Per-feature Tickets + QA Tests buttons — one pair per feature, shown once that
+          // feature's checkpoint is approved. checkpoints is oldest-first, so a later approval
+          // naturally overwrites an earlier one as we walk through.
+          const FEATURE_STAGE_RE = /^story_decomposition_F(\d+)$/;
+          const FEATURE_QA_STAGE_RE = /^story_decomposition_F(\d+)_qa$/;
+          const featureButtonsMap = new Map<number, { num: number; ticketArtifactId?: number; qaArtifactId?: number }>();
+          checkpoints.forEach(c => {
+            if (c.status !== 'approved' || !c.artifact_id) return;
+            const storyMatch = FEATURE_STAGE_RE.exec(c.stage);
+            if (storyMatch) {
+              const num = parseInt(storyMatch[1], 10);
+              featureButtonsMap.set(num, { ...(featureButtonsMap.get(num) ?? { num }), ticketArtifactId: c.artifact_id });
+              return;
+            }
+            const qaMatch = FEATURE_QA_STAGE_RE.exec(c.stage);
+            if (qaMatch) {
+              const num = parseInt(qaMatch[1], 10);
+              featureButtonsMap.set(num, { ...(featureButtonsMap.get(num) ?? { num }), qaArtifactId: c.artifact_id });
+            }
+          });
+          const featureButtons = Array.from(featureButtonsMap.values()).sort((a, b) => a.num - b.num);
 
-          const hasArtifacts = regularArtifacts.length > 0 || !!ticketArtifact;
+          const regularArtifacts = Array.from(latestByStage.values())
+            .filter(a => !TICKET_MODES.has(a.stage ?? '') && a.stage !== 'backlog' && a.type !== 'qa_tests');
+
+          const hasArtifacts = regularArtifacts.length > 0 || !!ticketArtifact || featureButtons.length > 0;
           return (
             <div className="flex-shrink-0 border-t border-slate-200 dark:border-slate-700/60 bg-white dark:bg-[#0d1117] px-2 py-2">
               <div className="flex flex-wrap items-center gap-1.5">
@@ -515,9 +549,29 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                     onClick={() => setViewingArtifactId(ticketArtifact.id)}
                     className="px-2.5 py-1 text-xs font-medium rounded bg-slate-100 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors"
                   >
-                    Tickets
+                    Epic/Features
                   </button>
                 )}
+                {featureButtons.map(f => (
+                  <span key={f.num} className="inline-flex items-center gap-1">
+                    {f.ticketArtifactId && (
+                      <button
+                        onClick={() => setViewingArtifactId(f.ticketArtifactId!)}
+                        className="px-2.5 py-1 text-xs font-medium rounded bg-slate-100 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors"
+                      >
+                        F{f.num} Tickets
+                      </button>
+                    )}
+                    {f.qaArtifactId && (
+                      <button
+                        onClick={() => setViewingArtifactId(f.qaArtifactId!)}
+                        className="px-2.5 py-1 text-xs font-medium rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200 dark:hover:bg-emerald-800/40 transition-colors"
+                      >
+                        F{f.num} QA Tests
+                      </button>
+                    )}
+                  </span>
+                ))}
                 {showCRButton && onShowCRForm && (
                   <>
                     {hasArtifacts && <span className="text-slate-300 dark:text-slate-700 select-none">·</span>}

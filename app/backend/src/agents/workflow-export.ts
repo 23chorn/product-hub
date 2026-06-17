@@ -409,11 +409,12 @@ export async function syncToWiki(workflowId: string, stages?: string[]): Promise
     const { url } = await client.upsertWikiPage(wikiId, wikiPath, content);
     results.push({ stage, pageName: config.pageName, url });
 
-    // Track the wiki location so demo cleanup (and general tooling) can find and delete the page.
-    // This is an upsert-style update — safe to call on re-sync.
+    // Track the wiki mirror location (separate from external_system/external_path, which
+    // stay pointed at the primary mongodb/disk store) so demo cleanup and general tooling
+    // can find and delete the page. This is an upsert-style update — safe to call on re-sync.
     db.prepare(`
       UPDATE artifacts
-      SET external_system = 'azure_wiki', external_path = ?, external_url = ?
+      SET wiki_path = ?, wiki_url = ?
       WHERE id = ?
     `).run(wikiPath, url, artifactRow.id);
   }

@@ -20,6 +20,7 @@ export function InlineCheckpointActions({
   const [feedback, setFeedback] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [manualFigmaUrl, setManualFigmaUrl] = useState('');
 
   const { user, noAuth } = useAuthStore();
   const hasPermission = canApprove(user, noAuth, requiredRoles);
@@ -41,11 +42,11 @@ export function InlineCheckpointActions({
     }
   }
 
-  async function figmaComplete() {
+  async function figmaComplete(figmaUrl?: string) {
     setLoading(true);
     setError(null);
     try {
-      const result = await api.figmaComplete(checkpoint.id);
+      const result = await api.figmaComplete(checkpoint.id, figmaUrl);
       onResolved({ ...result, status: 'approved' });
     } catch (err: any) {
       setError(err.response?.data?.error ?? err.message ?? 'Failed');
@@ -134,49 +135,87 @@ export function InlineCheckpointActions({
             let figmaUrl: string | null = null;
             try { figmaUrl = JSON.parse(checkpoint.coordinator_action ?? '{}').figma_file_url || null; } catch { /* ignore */ }
             return figmaUrl ? (
-              <a
-                href={figmaUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-1.5 w-full text-xs px-3 py-1.5 rounded-md bg-[#1E1E1E] hover:bg-[#333] text-white font-medium transition-colors"
-              >
-                <svg width="10" height="10" viewBox="0 0 38 57" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M19 28.5A9.5 9.5 0 1 1 28.5 19 9.5 9.5 0 0 1 19 28.5Z" fill="#1ABCFE"/>
-                  <path d="M0 47.5A9.5 9.5 0 0 1 9.5 38H19V47.5A9.5 9.5 0 0 1 0 47.5Z" fill="#0ACF83"/>
-                  <path d="M19 0V19H28.5A9.5 9.5 0 0 0 19 0Z" fill="#FF7262"/>
-                  <path d="M0 9.5A9.5 9.5 0 0 0 9.5 19H19V0H9.5A9.5 9.5 0 0 0 0 9.5Z" fill="#F24E1E"/>
-                  <path d="M0 28.5A9.5 9.5 0 0 0 9.5 38H19V19H9.5A9.5 9.5 0 0 0 0 28.5Z" fill="#FF7262"/>
-                </svg>
-                Open in Figma
-              </a>
-            ) : null;
+              <>
+                <a
+                  href={figmaUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-1.5 w-full text-xs px-3 py-1.5 rounded-md bg-[#1E1E1E] hover:bg-[#333] text-white font-medium transition-colors"
+                >
+                  <svg width="10" height="10" viewBox="0 0 38 57" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M19 28.5A9.5 9.5 0 1 1 28.5 19 9.5 9.5 0 0 1 19 28.5Z" fill="#1ABCFE"/>
+                    <path d="M0 47.5A9.5 9.5 0 0 1 9.5 38H19V47.5A9.5 9.5 0 0 1 0 47.5Z" fill="#0ACF83"/>
+                    <path d="M19 0V19H28.5A9.5 9.5 0 0 0 19 0Z" fill="#FF7262"/>
+                    <path d="M0 9.5A9.5 9.5 0 0 0 9.5 19H19V0H9.5A9.5 9.5 0 0 0 0 9.5Z" fill="#F24E1E"/>
+                    <path d="M0 28.5A9.5 9.5 0 0 0 9.5 38H19V19H9.5A9.5 9.5 0 0 0 0 28.5Z" fill="#FF7262"/>
+                  </svg>
+                  Open in Figma
+                </a>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Make your edits in Figma, then mark complete to advance the workflow.
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => figmaComplete()}
+                    disabled={loading}
+                    className="text-xs px-3 py-1.5 rounded-md bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white font-medium transition-colors"
+                  >
+                    {loading ? 'Syncing Figma...' : 'Mark Figma Complete'}
+                  </button>
+                  <button
+                    onClick={rerunStage}
+                    disabled={loading}
+                    className="text-xs px-2.5 py-1 rounded-md border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    Rerun
+                  </button>
+                  <button
+                    onClick={() => setShowRejectConfirm(true)}
+                    disabled={loading}
+                    className="text-xs px-2.5 py-1 rounded-md border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Use the screens, design tokens, and notes from "review output →" above to build or update the design in Figma, then paste the link below.
+                </p>
+                <input
+                  type="text"
+                  value={manualFigmaUrl}
+                  onChange={(e) => setManualFigmaUrl(e.target.value)}
+                  placeholder="https://www.figma.com/design/..."
+                  className="w-full text-xs rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => figmaComplete(manualFigmaUrl.trim())}
+                    disabled={loading || !manualFigmaUrl.trim()}
+                    className="text-xs px-3 py-1.5 rounded-md bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white font-medium transition-colors"
+                  >
+                    {loading ? 'Saving...' : 'Save Link & Continue'}
+                  </button>
+                  <button
+                    onClick={rerunStage}
+                    disabled={loading}
+                    className="text-xs px-2.5 py-1 rounded-md border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    Rerun
+                  </button>
+                  <button
+                    onClick={() => setShowRejectConfirm(true)}
+                    disabled={loading}
+                    className="text-xs px-2.5 py-1 rounded-md border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </>
+            );
           })()}
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Make your edits in Figma, then mark complete to advance the workflow.
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={figmaComplete}
-              disabled={loading}
-              className="text-xs px-3 py-1.5 rounded-md bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white font-medium transition-colors"
-            >
-              {loading ? 'Syncing Figma...' : 'Mark Figma Complete'}
-            </button>
-            <button
-              onClick={rerunStage}
-              disabled={loading}
-              className="text-xs px-2.5 py-1 rounded-md border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-            >
-              Rerun
-            </button>
-            <button
-              onClick={() => setShowRejectConfirm(true)}
-              disabled={loading}
-              className="text-xs px-2.5 py-1 rounded-md border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-            >
-              Reject
-            </button>
-          </div>
         </div>
       ) : (
         <div className="flex items-center gap-2">

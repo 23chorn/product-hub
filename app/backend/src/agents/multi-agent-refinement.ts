@@ -138,10 +138,11 @@ export async function runMultiAgentRefinement(
   logger.info(`[MULTI-AGENT] Active participants for Feature ${featureNum}: ${participantNames}`);
 
   // ── Load Context ────────────────────────────────────────────────────────────
-  const [prdContent, archContent, epicFeaturesContent] = await Promise.all([
+  const [prdContent, archContent, epicFeaturesContent, figmaContent] = await Promise.all([
     loadLatestArtifactContent(itemId, 'prd'),
     loadLatestArtifactContent(itemId, 'architecture'),
     loadLatestArtifactContent(itemId, 'epic_features'), // Epic + features from epic_feature_planner
+    loadLatestArtifactContent(itemId, 'figma_design'),  // Designer-approved screens from the figma_design stage, if it ran
   ]);
 
   // Extract the target feature from the epic_features artifact.
@@ -199,6 +200,35 @@ export async function runMultiAgentRefinement(
   const outOfScope: string[] =
     epicContext?.outOfScope ?? epicContext?.out_of_scope ?? [];
 
+  // ── Match Figma screens to this feature's PRD journeys ─────────────────────
+  // Keeps designer-captured detail (frame links, interactions, layout notes) attached
+  // to the right stories instead of dead-ending as a single hyperlink post-hoc.
+  interface FigmaScreenRef {
+    name: string;
+    frame_url?: string;
+    description?: string;
+    layout_notes?: string;
+    interactions?: Array<{ trigger?: string; target_screen?: string; notes?: string }>;
+    prd_journeys?: string[];
+  }
+  let relevantScreens: FigmaScreenRef[] = [];
+  if (figmaContent) {
+    try {
+      const cleaned = figmaContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+      const figmaDesign = JSON.parse(cleaned);
+      const allScreens: FigmaScreenRef[] = Array.isArray(figmaDesign.screens_created) ? figmaDesign.screens_created : [];
+      const journeySet = new Set(journeys.map(j => j.toLowerCase()));
+      relevantScreens = journeySet.size > 0
+        ? allScreens.filter(s => (s.prd_journeys ?? []).some(j => journeySet.has(j.toLowerCase())))
+        : [];
+      // No journey overlap found (or feature has no listed journeys) — fall back to
+      // the full screen set so design detail isn't silently dropped from the brief.
+      if (relevantScreens.length === 0) relevantScreens = allScreens;
+    } catch (err: any) {
+      logger.warn(`[MULTI-AGENT] Failed to parse figma_design artifact: ${err.message}`);
+    }
+  }
+
   const featureBrief = `
 # Feature Refinement Session
 
@@ -226,6 +256,12 @@ ${prdRef ? `**PRD Traceability:**
 - Functional Requirements satisfied: ${frIds.length ? frIds.join(', ') : '(none listed)'}
 - Non-Functional Requirements that constrain this feature: ${nfrIds.length ? nfrIds.join(', ') : '(none listed)'}
 - User Journeys supported: ${journeys.length ? journeys.join(', ') : '(none listed)'}` : ''}
+
+${relevantScreens.length ? `## Design Reference (Figma — designer-approved)
+${relevantScreens.map(s => `**${s.name}**${s.frame_url ? ` — ${s.frame_url}` : ' (frame not yet created)'}
+${s.description ? s.description : ''}${s.layout_notes ? `\nLayout: ${s.layout_notes}` : ''}${s.interactions?.length ? `\nInteractions: ${s.interactions.map(i => `${i.trigger ?? '?'} → ${i.target_screen ?? '?'}${i.notes ? ` (${i.notes})` : ''}`).join('; ')}` : ''}`).join('\n\n')}
+
+Any story whose UI surfaces one of these screens must cite the screen's frame_url directly in its acceptance_criteria or technical_acceptance_criteria — don't leave the design link implicit.` : ''}
 
 **Full PRD:** ${prdContent ? '(appended below)' : '(not available)'}
 **Architecture:** ${archContent ? '(appended below)' : '(not available)'}
@@ -378,15 +414,15 @@ The \`platform\` value must be exactly one of: \`backend\`, \`web\`, \`ios\`, \`
     } else if (participant.name === 'Vera') {
       // QA Engineer: Testability concerns
       prompt += `
-**Your Role:** You are the **QA Engineer** in this refinement session.
+**Your Role:** You are the **QA Engineer** in this refinement session. Your suite covers user-facing flows (web/iOS/Android) — backend-only/API-only stories are a different specialist's concern and won't get dedicated test cases from you.
 
 **Phase 1 Task — Testability Review:**
 1. Review the feature brief and user stories (you'll see the Product Lead's draft in Round 2)
-2. List potential **testability concerns** for this feature:
-   - What will be hard to test?
-   - What edge cases need coverage?
-   - What test data or environments are needed?
-3. Propose test case categories (happy path, error handling, edge cases, performance, accessibility)
+2. List potential **testability concerns** for this feature, focused on what a user would experience:
+   - What user-facing behavior will be hard to verify?
+   - What user-visible edge cases need coverage (validation messages, blocked actions, ambiguous states)?
+   - What test data or environments are needed to exercise those user flows?
+3. Propose test case categories grounded in user flows (happy path, validation/error messaging, edge cases the user can hit, accessibility) — not backend/API contract categories
 
 **Output Format:**
 Plain text list of concerns and recommendations. Example:
@@ -632,12 +668,17 @@ Merge all contributions into a single JSON artifact following the backlog templa
   let lastHeartbeat = Date.now();
   const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000; // touch updated_at every 5 minutes
 
+  // Single feature output (not accumulated), but story count + prd_ref/technical detail
+  // can still exceed 8k — use the shared ceiling so this stays in sync with the revision flow.
+  const { STAGE_MAX_OUTPUT_TOKENS } = await import('./stage-metadata');
+  const maxTokens = STAGE_MAX_OUTPUT_TOKENS['story_decomposition'] ?? 16_000;
+
   for await (const chunk of facilitator.streamResponse(
     systemPrompt,
     [{ role: 'user', content: synthesisPrompt }],
     undefined,
     undefined,
-    32_000 // Large output for full backlog
+    maxTokens
   )) {
     finalArtifact += chunk;
     const now = Date.now();
@@ -720,7 +761,7 @@ ${shardFinalStories || '(none)'}
 ---
 
 **Your Task — Produce a Standalone QA Test Suite:**
-Using your testability notes and the finalised story list above, produce a JSON test suite that a QA engineer can use directly to write automated tests.
+Using your testability notes and the finalised story list above, produce a JSON test suite covering the **user-facing flows** of this feature — what an end user does and observes. This is not a technical/API test suite; a separate specialist owns contract-level testing for backend-only stories.
 
 \`\`\`json
 {
@@ -736,10 +777,11 @@ Using your testability notes and the finalised story list above, produce a JSON 
       "id": "TC-F${featureNum}-001",
       "title": "<what is being verified>",
       "description": "<why this matters>",
-      "type": "happy_path | error_handling | edge_case | performance | accessibility",
+      "type": "happy_path | negative | edge | boundary | security | performance",
       "priority": "critical | high | medium | low",
       "category": "<test category, e.g. Channel Membership>",
       "story_ref": "F${featureNum}.S1",
+      "prd_ref": ["FR-01"],
       "scenario": {
         "given": ["<precondition>"],
         "when": ["<action>"],
@@ -755,10 +797,16 @@ Using your testability notes and the finalised story list above, produce a JSON 
 \`\`\`
 
 Requirements:
-- Minimum 3 test cases per story; cover at least happy path and one error/edge case
+- **Scope — user-facing flows only**: write test cases against the user-facing stories (\`platform: web\`, \`ios\`, or \`android\`), not backend-only stories. A backend story with no UI counterpart gets no dedicated test case — its behavior is exercised indirectly through the user-facing story that depends on it. The rare exception is backend work with a directly observable user outcome and no UI counterpart (e.g., an alert email triggered by a scheduled job) — frame that test from the user's observable outcome, never as an API/contract check.
+- **Test case limits**: 10-15 test cases is the ceiling for this feature, driven by the feature's user-facing goals and flows (not mechanically per story). If most of this feature's stories are backend-only (e.g. an ingestion job, caching layer, or internal API with no UI), it is correct to produce far fewer — write only the user-facing stories' flows, never pad with technical tests to reach the ceiling.
+  - Priority: the happy path for each major user flow first, then spend remaining budget on the highest-risk user-visible failure modes (validation errors, blocked actions, misleading states)
+  - Focus on the most critical test scenarios — comprehensive, not exhaustive
 - Each test_case id must use the pattern TC-F${featureNum}-NNN (three-digit counter)
-- story_ref must match a story_id from the final story list
-- automation_notes must be specific enough for a QA engineer to implement the test
+- story_ref must match a user-facing story_id from the final story list
+- prd_ref must list the functional requirement ID(s) (e.g. "FR-01") this test verifies — copy from the referenced story's prd_ref
+- type must be exactly one of: happy_path, negative, edge, boundary, security, performance — at least one negative-type case is required, and at least 20% of cases should be negative/edge
+- tags must be a non-empty array using only: @smoke, @regression, @negative, @edge, @security, @accessibility, @performance — tag at least one critical happy-path case @smoke
+- automation_notes must be specific enough for a QA engineer to implement the test (UI selector, user action, mock of the backend dependency — not an API contract assertion)
 - Include ONLY the JSON artifact in your response (no explanatory text before or after)
 `;
 
@@ -766,13 +814,17 @@ Requirements:
   const persona = await vera.loadPersona(stage);
   const systemPrompt = await vera.buildSystemPrompt(persona, undefined, undefined, true, stage);
 
+  // Use qa_engineer token limit from stage metadata (14k — comfortable headroom for the 10-15 test case cap)
+  const { STAGE_MAX_OUTPUT_TOKENS } = await import('./stage-metadata');
+  const maxTokens = STAGE_MAX_OUTPUT_TOKENS['qa_engineer'] ?? 14_000;
+
   let output = '';
   for await (const chunk of vera.streamResponse(
     systemPrompt,
     [{ role: 'user', content: synthesisPrompt }],
     undefined,
     undefined,
-    16_000
+    maxTokens
   )) {
     output += chunk;
   }

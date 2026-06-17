@@ -175,12 +175,13 @@ export async function retryCurrentStage(workflowId: string): Promise<{ stage: st
   insertEvent(workflowId, 'stage_progress', stage,
     stageProgressWorking(stage));
 
-  // Dismiss any pending checkpoint for this stage so the UI clears
+  // Dismiss any pending checkpoint for this stage (and its QA companion checkpoint,
+  // e.g. story_decomposition_F1 + story_decomposition_F1_qa) so the UI clears
   const now = Date.now();
   db.prepare(`
     UPDATE checkpoints SET status = 'revised', resolved_at = ?
-    WHERE workflow_id = ? AND stage = ? AND status = 'pending'
-  `).run(now, workflowId, stage);
+    WHERE workflow_id = ? AND (stage = ? OR stage = ?) AND status = 'pending'
+  `).run(now, workflowId, stage, `${stage}_qa`);
 
   // Reset workflow status to active on this stage
   stmts.updateWorkflowStageAndStatus.run(stage, 'active', now, workflowId);

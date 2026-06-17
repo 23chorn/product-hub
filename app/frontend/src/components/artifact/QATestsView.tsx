@@ -77,13 +77,14 @@ export function tryParseQATests(content: string): QATestSuite | null {
   }
 }
 
+// Keys match VALID_TEST_TYPES in app/backend/src/agents/tool-validators.ts — keep in sync.
 const TYPE_CONFIG: Record<string, { label: string; color: string; dot: string }> = {
   happy_path:  { label: 'Happy Path',  color: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',   dot: 'bg-green-400' },
-  bad_path:    { label: 'Bad Path',    color: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400',           dot: 'bg-red-400' },
-  edge_case:   { label: 'Edge Case',   color: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400', dot: 'bg-purple-400' },
-  functional:  { label: 'Functional',  color: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400',       dot: 'bg-blue-400' },
+  negative:    { label: 'Negative',    color: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400',           dot: 'bg-red-400' },
+  edge:        { label: 'Edge Case',   color: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400', dot: 'bg-purple-400' },
+  boundary:    { label: 'Boundary',    color: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400',   dot: 'bg-amber-400' },
+  security:    { label: 'Security',    color: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400', dot: 'bg-indigo-400' },
   performance: { label: 'Performance', color: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400', dot: 'bg-orange-400' },
-  compliance:  { label: 'Compliance',  color: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-600', dot: 'bg-yellow-400' },
 };
 
 const PRIORITY_CONFIG: Record<string, { label: string; color: string }> = {
@@ -93,7 +94,7 @@ const PRIORITY_CONFIG: Record<string, { label: string; color: string }> = {
   low:      { label: 'Low',      color: 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400' },
 };
 
-const TYPE_ORDER = ['happy_path', 'bad_path', 'edge_case', 'functional', 'performance', 'compliance'];
+const TYPE_ORDER = ['happy_path', 'negative', 'edge', 'boundary', 'security', 'performance'];
 
 function TestCaseCard({ tc }: { tc: TestCase }) {
   const [open, setOpen] = useState(false);

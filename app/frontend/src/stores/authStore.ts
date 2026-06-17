@@ -62,4 +62,5 @@ export const ROLE_LABELS: Record<string, string> = {
   product: 'Product',
   tech_lead: 'Tech Lead',
   design: 'Design',
+  qa: 'QA',
 };

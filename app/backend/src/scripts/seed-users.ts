@@ -12,7 +12,7 @@ const SAMPLE_USERS = [
     name: 'Alice Admin',
     password: 'password123',
     is_admin: true,
-    roles: ['product', 'tech_lead', 'design'],
+    roles: ['product', 'tech_lead', 'design', 'qa'],
     slack_user_id: 'U01ADMIN',
   },
   {
@@ -45,6 +45,14 @@ const SAMPLE_USERS = [
     password: 'password123',
     is_admin: false,
     roles: ['product', 'tech_lead'],
+    slack_user_id: null,
+  },
+  {
+    username: 'qa',
+    name: 'Quinn QA',
+    password: 'password123',
+    is_admin: false,
+    roles: ['qa'],
     slack_user_id: null,
   },
   {
