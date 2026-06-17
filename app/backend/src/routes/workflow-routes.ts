@@ -232,7 +232,10 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
         'SELECT stage, artifact_id FROM checkpoints WHERE id = ?'
       ).get(cpId);
 
-      resolveCheckpoint(cpId, 'approved', feedback);
+      // canAdvance is false when this checkpoint has a still-pending sibling (e.g. the PM
+      // stories checkpoint for a story_decomposition_F* stage while its QA tests checkpoint
+      // hasn't been approved yet) — advanceStage()/ADO push must wait for that sibling.
+      const canAdvance = resolveCheckpoint(cpId, 'approved', feedback);
 
       // Generate approval event for this specific checkpoint
       const isQaCheckpoint = cpDetail?.stage.endsWith('_qa');
@@ -321,9 +324,15 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
       }
 
       // ── story_decomposition_F*: push stories + test cases to ADO ──────────────
-      if (cpDetail && cpDetail.stage.startsWith('story_decomposition_F')) {
+      // Gated on canAdvance: this stage has two sibling checkpoints (PM stories + QA tests).
+      // pushFeatureToADO() pulls test cases from the QA checkpoint's approved artifact, so it
+      // must only run once *both* are approved — otherwise whichever checkpoint is approved
+      // first pushes stories with no test cases, and the later approval is a no-op because
+      // stories already exist, silently dropping the test cases from ADO. Strip the `_qa`
+      // suffix so this resolves the feature index whichever of the pair triggered it.
+      if (cpDetail && cpDetail.stage.startsWith('story_decomposition_F') && canAdvance) {
         const { parseFeatureStage, pushFeatureToADO } = await import('../agents/feature-decomposition');
-        const featureIndex = parseFeatureStage(cpDetail.stage);
+        const featureIndex = parseFeatureStage(cpDetail.stage.replace(/_qa$/, ''));
 
         if (featureIndex !== null) {
           try {
@@ -400,26 +409,30 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
 
       // Advance to the next stage asynchronously — don't block the response.
       // The checkpoint is already approved; the frontend polls for status updates.
-      advanceStage(workflowId)
-        .then(result => {
-          logger.info(`Stage advanced to "${result.stage}" for workflow ${workflowId}`);
-        })
-        .catch(err => {
-          if (err.message?.startsWith('WORKFLOW_COMPLETE:')) {
-            logger.info(`Workflow ${workflowId} complete after checkpoint approval`);
+      // Only advance once canAdvance is true — i.e. this stage has no still-pending sibling
+      // checkpoint. Otherwise the workflow correctly stays paused for the sibling's review.
+      if (canAdvance) {
+        advanceStage(workflowId)
+          .then(result => {
+            logger.info(`Stage advanced to "${result.stage}" for workflow ${workflowId}`);
+          })
+          .catch(err => {
+            if (err.message?.startsWith('WORKFLOW_COMPLETE:')) {
+              logger.info(`Workflow ${workflowId} complete after checkpoint approval`);
 
-            // If there's an active CR, finalize it
-            if (activeCR) {
-              try {
-                completeChangeRequest(activeCR.id, workflowId);
-              } catch (crErr: any) {
-                logger.warn(`Failed to complete CR #${activeCR.id}: ${crErr.message}`);
+              // If there's an active CR, finalize it
+              if (activeCR) {
+                try {
+                  completeChangeRequest(activeCR.id, workflowId);
+                } catch (crErr: any) {
+                  logger.warn(`Failed to complete CR #${activeCR.id}: ${crErr.message}`);
+                }
               }
+            } else {
+              logger.error(`advanceStage failed after checkpoint approval: ${err.message}`);
             }
-          } else {
-            logger.error(`advanceStage failed after checkpoint approval: ${err.message}`);
-          }
-        });
+          });
+      }
 
       const workflowStatus = getWorkflowStatus(workflowId);
       return res.json({ workflow: workflowStatus });
@@ -569,17 +582,19 @@ workflowRoutes.post('/checkpoint/figma-complete', async (req: AuthRequest, res: 
     if (req.user) {
       db.prepare('UPDATE checkpoints SET resolved_by_user_id = ? WHERE id = ?').run(req.user.id, cpId);
     }
-    resolveCheckpoint(cpId, 'approved', 'Figma design marked complete by designer');
+    const canAdvance = resolveCheckpoint(cpId, 'approved', 'Figma design marked complete by designer');
 
     insertEvent(cp.workflow_id, 'stage_complete', 'figma_design', 'Designer marked Figma mockups as complete');
 
-    advanceStage(cp.workflow_id)
-      .then(result => { logger.info(`Stage advanced to "${result.stage}" after figma-complete`); })
-      .catch(err => {
-        if (!err.message?.startsWith('WORKFLOW_COMPLETE:')) {
-          logger.error(`advanceStage failed after figma-complete: ${err.message}`);
-        }
-      });
+    if (canAdvance) {
+      advanceStage(cp.workflow_id)
+        .then(result => { logger.info(`Stage advanced to "${result.stage}" after figma-complete`); })
+        .catch(err => {
+          if (!err.message?.startsWith('WORKFLOW_COMPLETE:')) {
+            logger.error(`advanceStage failed after figma-complete: ${err.message}`);
+          }
+        });
+    }
 
     const workflowStatus = getWorkflowStatus(cp.workflow_id);
     return res.json({ workflow: workflowStatus });
@@ -909,7 +924,7 @@ workflowRoutes.put('/artifact/:id/content', async (req: AuthRequest, res: Respon
         db.prepare('UPDATE checkpoints SET resolved_by_user_id = ? WHERE id = ?').run(req.user.id, checkpointId);
       }
 
-      resolveCheckpoint(checkpointId, 'approved', 'Human edited artifact directly');
+      const canAdvance = resolveCheckpoint(checkpointId, 'approved', 'Human edited artifact directly');
 
       const airtableStatus = stage ? airtableStatusForStage(stage) : null;
       if (airtableStatus) {
@@ -919,18 +934,22 @@ workflowRoutes.put('/artifact/:id/content', async (req: AuthRequest, res: Respon
         if (wfItemRow) pushItemStatusToAirtable(wfItemRow.item_id, airtableStatus).catch(() => {});
       }
 
-      // Advance to next stage (same pattern as checkpoint/resolve endpoint)
-      advanceStage(workflowId)
-        .then(result => {
-          logger.info(`Stage advanced to "${result.stage}" after human edit on workflow ${workflowId}`);
-        })
-        .catch(err => {
-          if (err.message?.startsWith('WORKFLOW_COMPLETE:')) {
-            logger.info(`Workflow ${workflowId} complete after human edit approval`);
-          } else {
-            logger.error(`advanceStage failed after human edit: ${err.message}`);
-          }
-        });
+      // Advance to next stage (same pattern as checkpoint/resolve endpoint) — only once
+      // this checkpoint's group (e.g. sibling QA checkpoint for story_decomposition_F*) is
+      // fully approved.
+      if (canAdvance) {
+        advanceStage(workflowId)
+          .then(result => {
+            logger.info(`Stage advanced to "${result.stage}" after human edit on workflow ${workflowId}`);
+          })
+          .catch(err => {
+            if (err.message?.startsWith('WORKFLOW_COMPLETE:')) {
+              logger.info(`Workflow ${workflowId} complete after human edit approval`);
+            } else {
+              logger.error(`advanceStage failed after human edit: ${err.message}`);
+            }
+          });
+      }
 
       const workflowStatus = getWorkflowStatus(workflowId);
       return res.json({ ok: true, workflowStatus });

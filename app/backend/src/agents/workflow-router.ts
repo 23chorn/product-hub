@@ -253,6 +253,15 @@ async function generateWorkflowSummary(workflowId: string, goal: string): Promis
 // ── Core stage advancement ────────────────────────────────────────────────────
 
 /**
+ * Per-workflow queue serializing advanceStage() calls. Two checkpoints can be approved
+ * (and each independently call advanceStage) close enough together that their async work
+ * — ADO/Airtable/wiki pushes — interleaves; without this, the second call can read a
+ * current_stage that the first call already moved past, skipping the stage in between.
+ * Keyed by workflowId; each entry is the tail promise of that workflow's queue.
+ */
+const advanceQueues = new Map<string, Promise<unknown>>();
+
+/**
  * Advance a workflow to the next stage in its sequence.
  *
  * - For regular stages (analyst, pm_prd, epic_feature_planner, story_decomposition): creates a specialist session
@@ -264,7 +273,16 @@ async function generateWorkflowSummary(workflowId: string, goal: string): Promis
  *
  * Returns { stage, sessionId } or throws WORKFLOW_COMPLETE when all stages done.
  */
-export async function advanceStage(workflowId: string): Promise<{ stage: string; sessionId: string | null }> {
+export function advanceStage(workflowId: string): Promise<{ stage: string; sessionId: string | null }> {
+  const prior = advanceQueues.get(workflowId) ?? Promise.resolve();
+  const run = prior.then(() => advanceStageCore(workflowId), () => advanceStageCore(workflowId));
+  // Swallow rejection in the queue chain itself (already surfaced to this call's caller via `run`)
+  // so a failed advance doesn't permanently wedge the next queued call.
+  advanceQueues.set(workflowId, run.catch(() => {}));
+  return run;
+}
+
+async function advanceStageCore(workflowId: string): Promise<{ stage: string; sessionId: string | null }> {
   const workflow = stmts.getWorkflow.get(workflowId);
   if (!workflow) throw new Error(`Workflow not found: ${workflowId}`);
   if (workflow.status === 'complete') throw new Error(`Workflow ${workflowId} is already complete`);
@@ -345,8 +363,10 @@ export async function advanceStage(workflowId: string): Promise<{ stage: string;
         criticDetails);
       logger.info(`Critic auto-approved for workflow ${workflowId}`);
 
-      // Continue to next stage
-      return advanceStage(workflowId);
+      // Continue to next stage. Calls the core directly (not the exported advanceStage)
+      // since this is a synchronous continuation of the current call, not a new concurrent
+      // request — going through the queue would deadlock waiting on itself.
+      return advanceStageCore(workflowId);
     }
 
     if (autoApproveCritic && review.verdict === 'revise') {
@@ -713,12 +733,19 @@ function invalidateCheckpointGroupApprovals(workflowId: string, stage: string, e
  * - approved: if all sibling checkpoints in the group are also approved, workflow can advance
  * - rejected: workflow stays active but intervention is needed
  * - revised: invalidates any approved sibling checkpoints and rolls back for full stage re-run
+ *
+ * Returns `canAdvance` — true only when this resolution completed the checkpoint's group
+ * (e.g. for dual-checkpoint story_decomposition_F* stages, true only on whichever of the
+ * PM/QA checkpoints is approved *last*). Callers must only call advanceStage() / fire
+ * stage-completion side effects (like pushing a feature to ADO) when this is true — calling
+ * them after the first-of-two approval lets advanceStage() race ahead of the still-pending
+ * sibling checkpoint and skip a stage.
  */
 export function resolveCheckpoint(
   checkpointId: number,
   status: 'approved' | 'rejected' | 'revised',
   feedback?: string
-): void {
+): boolean {
   const checkpoint = stmts.getCheckpoint.get(checkpointId);
   if (!checkpoint) throw new Error(`Checkpoint not found: ${checkpointId}`);
   if (checkpoint.status !== 'pending') {
@@ -741,6 +768,7 @@ export function resolveCheckpoint(
     stmts.updateCheckpoint.run(status, feedback ?? null, checkpoint.coordinator_action, now, checkpointId);
     stmts.updateWorkflowStageAndStatus.run(prevStage, 'active', now, checkpoint.workflow_id);
     logger.info(`Checkpoint ${checkpointId} revised — workflow ${checkpoint.workflow_id} will rerun stage "${baseStage}"`);
+    return false;
   } else if (status === 'approved') {
     // Mark this checkpoint as approved
     stmts.updateCheckpoint.run(status, feedback ?? null, checkpoint.coordinator_action, now, checkpointId);
@@ -750,15 +778,18 @@ export function resolveCheckpoint(
       // All approvals obtained — workflow can advance
       stmts.updateWorkflowStatus.run('active', now, checkpoint.workflow_id);
       logger.info(`Checkpoint ${checkpointId} approved — all checkpoints in group approved, workflow ${checkpoint.workflow_id} can advance`);
+      return true;
     } else {
       // Still waiting on sibling checkpoint(s) — keep workflow paused
       logger.info(`Checkpoint ${checkpointId} approved — workflow ${checkpoint.workflow_id} remains paused pending sibling checkpoint approval`);
+      return false;
     }
   } else {
     // rejected — set workflow back to active for intervention
     stmts.updateCheckpoint.run(status, feedback ?? null, checkpoint.coordinator_action, now, checkpointId);
     stmts.updateWorkflowStatus.run('active', now, checkpoint.workflow_id);
     logger.info(`Checkpoint ${checkpointId} ${status} — workflow ${checkpoint.workflow_id} active`);
+    return false;
   }
 }
 
