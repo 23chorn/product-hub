@@ -5,12 +5,13 @@ import { ROLE_LABELS } from '../../stores/authStore';
 import type { CurrentUser } from '../../stores/authStore';
 
 const ALL_ROLES = Object.keys(ROLE_LABELS) as (keyof typeof ROLE_LABELS)[];
+// view_only is a hard-deny marker, not an approval permission — never offer it as a stage approver role.
+const ASSIGNABLE_STAGE_ROLES = ALL_ROLES.filter(r => r !== 'view_only');
 
 const STAGE_ROLE_STAGES = [
   'analyst', 'pm_prd', 'solution_architect', 'epic_feature_planner',
-  'story_decomposition_F1', 'story_decomposition_F2', 'story_decomposition_F3',
-  'qa_engineer', 'qa_engineer_F1', 'qa_engineer_F2', 'qa_engineer_F3',
-  'prototype',
+  'story_decomposition', 'story_decomposition_qa', 'qa_engineer',
+  'prototype', 'figma_design',
 ];
 
 type Tab = 'users' | 'stage_roles';
@@ -136,8 +137,8 @@ export function UserManagementPanel() {
   const STAGE_LABELS_MAP: Record<string, string> = {
     analyst: 'Research Analyst', pm_prd: 'PRD', solution_architect: 'Architecture',
     epic_feature_planner: 'Epic & Feature Plan',
-    story_decomposition_F1: 'Story Decomp F1', story_decomposition_F2: 'Story Decomp F2',
-    story_decomposition_F3: 'Story Decomp F3', prototype: 'Prototype',
+    story_decomposition: 'Story Decomposition', story_decomposition_qa: 'QA Test Suite',
+    qa_engineer: 'QA Engineer (legacy)', prototype: 'Prototype', figma_design: 'Figma Design',
   };
 
   return (
@@ -223,7 +224,7 @@ export function UserManagementPanel() {
           </p>
           {STAGE_ROLE_STAGES.map(stage => {
             const assigned = stageRoles[stage] ?? [];
-            const available = ALL_ROLES.filter(r => !assigned.includes(r));
+            const available = ASSIGNABLE_STAGE_ROLES.filter(r => !assigned.includes(r));
             return (
               <div key={stage} className="py-2 border-b border-slate-200 dark:border-slate-700 last:border-0">
                 <div className="flex items-center justify-between gap-2 mb-1.5">

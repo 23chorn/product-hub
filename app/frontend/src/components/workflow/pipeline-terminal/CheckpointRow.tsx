@@ -1,6 +1,7 @@
 import { useWorkflowStore } from '../../../stores/workflowStore';
 import { InlineCheckpointActions } from '../../coordinator/InlineCheckpointActions';
 import { parseRequiredRoles, ROLE_LABELS } from '../../../stores/authStore';
+import { STAGE_SHORT_LABELS } from '../../../constants/stage-labels';
 
 export function isStaleRecoveryCheckpoint(coordinatorAction: string | null): boolean {
   try { return !!JSON.parse(coordinatorAction ?? '{}').stale_recovery; } catch { return false; }
@@ -46,7 +47,9 @@ export function CheckpointRow({
       : checkpoint.artifact_id;
 
     const isQaCheckpoint = checkpoint.stage.endsWith('_qa');
-    const checkpointLabel = isQaCheckpoint ? 'QA Test Suite Review' : 'Stories Review';
+    const checkpointLabel = isQaCheckpoint
+      ? 'QA Test Suite Review'
+      : `${STAGE_SHORT_LABELS[checkpoint.stage] ?? checkpoint.stage} Review`;
     const requiredRoles = parseRequiredRoles(checkpoint.required_role);
     const roleBadge = requiredRoles.length > 0
       ? requiredRoles.map(r => ROLE_LABELS[r] ?? r).join(' / ')

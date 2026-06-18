@@ -17,12 +17,23 @@ import { effectiveStatus, STATUS_FILTERS, type EnrichedItem, type LaunchPhase, t
 
 let _cachedLocalItems: EnrichedItem[] = [];
 
+// Survives HomeScreen unmount/remount (e.g. entering an initiative and clicking back)
+// so the filter choice sticks. Only resets on a full UI reload or — via
+// resetHomeScreenFilter() — when a new login session starts.
+let _cachedStatusFilter: StatusFilter = 'mine';
+
+/** Reset the cached status filter back to its default. Call on logout so the next login starts fresh. */
+export function resetHomeScreenFilter(): void {
+  _cachedStatusFilter = 'mine';
+}
+
 export function HomeScreen() {
   const [localItems, setLocalItemsRaw] = useState<EnrichedItem[]>(_cachedLocalItems);
   const [loading, setLoading] = useState(_cachedLocalItems.length === 0);
   const [syncing, setSyncing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [statusFilter, setStatusFilterRaw] = useState<StatusFilter>(_cachedStatusFilter);
+  const setStatusFilter = (f: StatusFilter) => { _cachedStatusFilter = f; setStatusFilterRaw(f); };
   const [myPendingCount, setMyPendingCount] = useState(0);
   const [mineWorkflowIds, setMineWorkflowIds] = useState<Set<string>>(new Set());
   const [itemsLoaded, setItemsLoaded] = useState(false);
@@ -271,12 +282,13 @@ export function HomeScreen() {
   );
 
   const statusCounts = useMemo<Record<StatusFilter, number>>(() => {
-    const c: Record<StatusFilter, number> = { all: visibleItems.length, active: 0, review: 0, done: 0, new: 0, mine: myPendingCount };
+    const c: Record<StatusFilter, number> = { all: visibleItems.length, active: 0, review: 0, done: 0, stopped: 0, new: 0, mine: myPendingCount };
     visibleItems.forEach(item => {
       const s = item.workflow ? effectiveStatus(item.workflow) : undefined;
       if (s === 'active') c.active++;
       else if (s === 'paused_at_checkpoint') c.review++;
-      else if (s === 'complete' || s === 'cancelled') c.done++;
+      else if (s === 'cancelled') c.stopped++;
+      else if (s === 'complete') c.done++;
       else c.new++;
     });
     return c;
@@ -286,10 +298,13 @@ export function HomeScreen() {
     const q = searchQuery.toLowerCase().trim();
     return visibleItems.filter(item => {
       const s = item.workflow ? effectiveStatus(item.workflow) : undefined;
-      if (statusFilter === 'mine' && (!item.workflow || !mineWorkflowIds.has(item.workflow.id))) return false;
+      // Stopped initiatives never count as needing review/approval, even if a
+      // checkpoint was left pending at the moment the workflow was cancelled.
+      if (statusFilter === 'mine' && (!item.workflow || s === 'cancelled' || !mineWorkflowIds.has(item.workflow.id))) return false;
       if (statusFilter === 'active' && s !== 'active') return false;
       if (statusFilter === 'review' && s !== 'paused_at_checkpoint') return false;
-      if (statusFilter === 'done' && s !== 'complete' && s !== 'cancelled') return false;
+      if (statusFilter === 'done' && s !== 'complete') return false;
+      if (statusFilter === 'stopped' && s !== 'cancelled') return false;
       if (statusFilter === 'new' && item.workflow) return false;
       if (!q) return true;
       return item.initiative.toLowerCase().includes(q) || (item.description?.toLowerCase().includes(q) ?? false);
@@ -319,6 +334,7 @@ export function HomeScreen() {
         statusCounts={statusCounts}
         myPendingCount={myPendingCount}
         showMineFilter={!noAuth && !!user}
+        isAdmin={noAuth || !!user?.is_admin}
       />
 
       {/* Scrollable content */}

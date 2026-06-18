@@ -37,6 +37,8 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
     completedStages,
     pendingStage,
     checkpoints,
+    productArea,
+    strategicTheme,
     applyWorkflowStatus,
     clearCoordinatorMessages,
     setLastEventId,
@@ -169,8 +171,10 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
     eventsByStage.set(key, arr);
   }
 
-  // Lifecycle events shown as a pinned banner at the top of the event log
-  const LIFECYCLE_EVENT_TYPES = new Set(['workflow_started', 'workflow_cancelled', 'reiteration']);
+  // Lifecycle events shown as a pinned banner at the top of the event log.
+  // workflow_cancelled is excluded — it belongs in the main timeline, not tucked
+  // away behind the collapsed "general" toggle.
+  const LIFECYCLE_EVENT_TYPES = new Set(['workflow_started', 'reiteration']);
   const CR_EVENT_TYPES = new Set(['cr_created', 'cr_assessed', 'cr_stage_started', 'cr_stage_completed', 'cr_complete']);
   const generalEvents = eventsByStage.get('general') ?? [];
   const topLifecycleEvents = generalEvents.filter(m => LIFECYCLE_EVENT_TYPES.has(m.eventType ?? ''));
@@ -277,20 +281,30 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
             <span className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate leading-tight">
               {activeWorkflow.summary ?? activeWorkflow.goal.split('\n')[0].slice(0, 70)}
             </span>
+            {productArea && (
+              <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400">
+                {productArea}
+              </span>
+            )}
+            {strategicTheme && (
+              <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                {strategicTheme}
+              </span>
+            )}
             {isRunning && !isComplete && (
-              <span className="flex-shrink-0 flex items-center gap-1 text-[10px] text-teal-600 dark:text-teal-400">
-                <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse" />
+              <span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse" />
                 live
               </span>
             )}
             {isComplete && !isCancelled && (
-              <span className="flex-shrink-0 flex items-center gap-1 text-[10px] text-green-600 dark:text-green-400">
+              <span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
                 complete
               </span>
             )}
             {isCancelled && (
-              <span className="flex-shrink-0 flex items-center gap-1 text-[10px] text-red-600 dark:text-red-400">
+              <span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
                 <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
                 stopped
               </span>

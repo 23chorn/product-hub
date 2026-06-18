@@ -1,5 +1,14 @@
 import { effectiveStatus, type EnrichedItem } from './types';
 import { StatusBadge } from './StatusBadge';
+import { useAuthStore, ROLE_LABELS, canLaunchWorkflow } from '../../stores/authStore';
+
+/** Format a workflow's last state-change timestamp, e.g. "18 Jun, 14:32". */
+function formatUpdatedAt(ms: number): string {
+  const d = new Date(ms);
+  const date = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  return `${date}, ${time}`;
+}
 
 /** Card for one initiative in the HomeScreen grid: title, status, tags, and launch/resume/delete actions. */
 export function InitiativeCard({
@@ -16,12 +25,17 @@ export function InitiativeCard({
   onConfirmDelete: () => void;
   onCancelDelete: () => void;
 }) {
+  const { user, noAuth } = useAuthStore();
+  const isAdmin = noAuth || !!user?.is_admin;
+  const canLaunch = canLaunchWorkflow(user, noAuth);
   const wf = item.workflow;
   const eff = wf ? effectiveStatus(wf) : undefined;
   const isActive = eff === 'active' || eff === 'paused_at_checkpoint';
   const isComplete = eff === 'complete';
   const isCancelled = eff === 'cancelled';
   const isDemo = !!wf?.isDemo;
+  const needsReview = eff === 'paused_at_checkpoint';
+  const pendingApprovals = needsReview ? wf?.pendingApprovals ?? [] : [];
 
   return (
     <div
@@ -40,14 +54,28 @@ export function InitiativeCard({
               </span>
             )}
             <StatusBadge wf={wf} />
+            {isAdmin && pendingApprovals.map((approval, i) => (
+              <span
+                key={`${approval.stage}-${i}`}
+                className="flex-shrink-0 inline-flex items-center text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400"
+                title={`Requires approval from: ${approval.roles.map(r => ROLE_LABELS[r] ?? r).join(' or ') || 'any role'}`}
+              >
+                Needs {approval.roles.length > 0 ? approval.roles.map(r => ROLE_LABELS[r] ?? r).join('/') : 'approval'}
+              </span>
+            ))}
           </div>
-          {wf?.currentStage && (wf.status === 'active' || wf.status === 'paused_at_checkpoint') ? (
+          {wf?.currentStage && wf.status === 'active' ? (
             <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
-              {wf.status === 'paused_at_checkpoint' ? 'Waiting for review' : `Running ${wf.currentStage.replace(/_/g, ' ')}`}
+              {`Running ${wf.currentStage.replace(/_/g, ' ')}`}
             </p>
           ) : item.description ? (
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">{item.description}</p>
           ) : null}
+          {wf?.updatedAt && (
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
+              Updated {formatUpdatedAt(wf.updatedAt)}
+            </p>
+          )}
           {(item.productArea || item.strategicTheme) && (
             <div className="flex flex-wrap gap-1 mt-1.5">
               {item.productArea && (
@@ -56,7 +84,7 @@ export function InitiativeCard({
                 </span>
               )}
               {item.strategicTheme && (
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400">
                   {item.strategicTheme}
                 </span>
               )}
@@ -69,22 +97,29 @@ export function InitiativeCard({
           {!isConfirmingDelete && (
             isActive ? (
               <button onClick={onResume}
-                className="text-xs px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-medium transition-colors">
+                className="text-xs px-3 py-1.5 rounded-lg border border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 font-medium transition-colors">
                 Continue →
               </button>
             ) : isCancelled ? (
               <button onClick={onResume}
-                className="text-xs px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 font-medium transition-colors">
+                className="text-xs px-3 py-1.5 rounded-lg border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 font-medium transition-colors">
                 Restart →
               </button>
             ) : isComplete ? (
               <button onClick={onResume}
-                className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:border-teal-300 hover:text-teal-600 dark:hover:text-teal-400 font-medium transition-colors">
+                className="text-xs px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 font-medium transition-colors">
                 View →
               </button>
+            ) : !canLaunch ? (
+              <span title="Only Product or Admin users can launch a workflow" className="cursor-not-allowed">
+                <button disabled
+                  className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-600 font-medium pointer-events-none">
+                  Launch →
+                </button>
+              </span>
             ) : (
               <button onClick={onLaunch} disabled={isAnalysing}
-                className="text-xs px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white font-medium transition-colors flex items-center gap-1.5">
+                className="text-xs px-3 py-1.5 rounded-lg border border-teal-300 dark:border-teal-700 text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20 disabled:opacity-60 font-medium transition-colors flex items-center gap-1.5">
                 {isAnalysing ? (
                   <>
                     <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">

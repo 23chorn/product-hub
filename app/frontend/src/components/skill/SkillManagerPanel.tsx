@@ -10,6 +10,8 @@ import { ToolViewer } from './ToolViewer';
 import { SkillCreateForm } from './SkillCreateForm';
 import { NewContextForm } from './NewContextForm';
 import { SkillManagerSidebar } from './SkillManagerSidebar';
+import { AirtableSyncPanel } from './AirtableSyncPanel';
+import { useContextKeeperStore } from '../../stores/contextKeeperStore';
 import {
   bumpPatch,
   type PanelSelection,
@@ -27,10 +29,12 @@ export function SkillManagerPanel() {
   const { closeSkillManager } = useSkillManagerStore();
   const { isDark } = useThemeStore();
   const { user, noAuth } = useAuthStore();
+  const { pendingCount: pendingProposalCount } = useContextKeeperStore();
 
   function canEdit(editRoles: string[] | null): boolean {
     if (noAuth || !user) return true;
     if (user.is_admin) return true;
+    if (user.roles.includes('view_only')) return false;
     if (editRoles === null) return true;
     if (editRoles.length === 0) return false;
     return editRoles.some(r => user.roles.includes(r));
@@ -397,10 +401,14 @@ export function SkillManagerPanel() {
           isLoading={isLoading}
           expanded={expanded}
           onToggle={toggle}
+          canCreate={canEdit(null)}
           contextFiles={contextFiles}
           selectedCtxIndex={selectedCtxIndex}
           onSelectContext={selectContextFile}
           onNewContext={() => { setSelection({ type: 'new_context' }); setExpanded((p) => ({ ...p, context: true })); }}
+          pendingProposalCount={pendingProposalCount}
+          isAirtableSyncSelected={selection?.type === 'airtable_sync'}
+          onSelectAirtableSync={() => { setSelection({ type: 'airtable_sync' }); setExpanded((p) => ({ ...p, context: true })); }}
           agentItems={agentItems}
           selectedSkillName={selectedSkillName}
           selectedAgentName={selectedAgentName}
@@ -469,6 +477,8 @@ export function SkillManagerPanel() {
                 if (skill) selectSkill(skill);
               }}
             />
+          ) : selection?.type === 'airtable_sync' ? (
+            <AirtableSyncPanel />
           ) : selection?.type === 'new_context' ? (
             <NewContextForm
               form={ctxCreateForm}

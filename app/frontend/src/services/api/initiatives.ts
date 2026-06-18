@@ -3,7 +3,7 @@ import type { AirtableItem, LocalInitiative } from '@pap/shared';
 import { API_BASE_URL } from './base';
 
 export const initiativesApi = {
-  async getInitiatives(): Promise<(AirtableItem & { workflow?: { id: string; status: string; currentStage: string | null; summary: string | null; pendingStage?: string | null; isDemo?: boolean } })[]> {
+  async getInitiatives(): Promise<(AirtableItem & { workflow?: { id: string; status: string; currentStage: string | null; summary: string | null; pendingStage?: string | null; pendingApprovals?: Array<{ stage: string; roles: string[] }>; isDemo?: boolean; updatedAt?: number } })[]> {
     const response = await axios.get(`${API_BASE_URL}/api/initiatives`);
     return response.data;
   },

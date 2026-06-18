@@ -10,6 +10,8 @@ import { isValidModelId } from '../utils/ai-provider';
 import { appConfig } from '../config/app-config';
 import { MOCK_SNAPSHOT_SEED } from '../../../../tests/fixtures/mock-airtable-data';
 import Logger from '../utils/logger';
+import { isViewOnly } from '../middleware/auth';
+import type { AuthRequest } from '../middleware/auth';
 
 const logger = new Logger('CONTEXT-ROUTES');
 const router = Router();
@@ -50,7 +52,10 @@ router.get('/status', (_req: Request, res: Response) => {
  * Fetch all Airtable items, compare against stored snapshots, and return material changes.
  * Updates the in-memory cachedChanges. Does NOT run the AI agent.
  */
-router.post('/check', async (_req: Request, res: Response) => {
+router.post('/check', async (req: AuthRequest, res: Response) => {
+  if (isViewOnly(req.user)) {
+    return res.status(403).json({ error: 'View-only accounts cannot sync Airtable', code: 'INSUFFICIENT_ROLE' });
+  }
   try {
     let client: AirtableClient;
     try {
@@ -75,7 +80,10 @@ router.post('/check', async (_req: Request, res: Response) => {
  * Run the Kira AI agent against the cached changes.
  * Creates a session tied to the 'context-keeper' system item, generates proposals, persists them.
  */
-router.post('/review', async (req: Request, res: Response) => {
+router.post('/review', async (req: AuthRequest, res: Response) => {
+  if (isViewOnly(req.user)) {
+    return res.status(403).json({ error: 'View-only accounts cannot run a context review', code: 'INSUFFICIENT_ROLE' });
+  }
   try {
     const { model }: { model?: string } = req.body;
 
@@ -133,7 +141,10 @@ router.get('/proposals', (_req: Request, res: Response) => {
  * Confirm (writes file + invalidates context cache) or dismiss a proposal.
  * Accepts an optional `proposedText` to use the user-edited version instead of the stored one.
  */
-router.patch('/proposal/:id', async (req: Request, res: Response) => {
+router.patch('/proposal/:id', async (req: AuthRequest, res: Response) => {
+  if (isViewOnly(req.user)) {
+    return res.status(403).json({ error: 'View-only accounts cannot confirm or dismiss proposals', code: 'INSUFFICIENT_ROLE' });
+  }
   try {
     const id = parseInt(req.params.id, 10);
     const { action, proposedText }: { action: 'confirm' | 'dismiss'; proposedText?: string } = req.body;

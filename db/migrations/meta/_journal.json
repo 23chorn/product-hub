@@ -36,6 +36,27 @@
       "when": 1750300000000,
       "tag": "0005_qa_role_and_stage_approvals",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1750400000000,
+      "tag": "0006_generic_story_decomp_qa_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1750400100000,
+      "tag": "0007_figma_design_stage_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1750400200000,
+      "tag": "0008_view_only_role",
+      "breakpoints": true
     }
   ]
 }

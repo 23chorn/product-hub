@@ -16,7 +16,7 @@ const PERSONA_DISPLAY: Record<string, { displayName: string; agentType: string; 
   critic: { displayName: 'Flint - Adversarial Reviewer', agentType: 'critic', skillName: 'critic' },
   'prototype-builder': { displayName: 'Nova - Prototype', agentType: 'prototype', skillName: 'prototype' },
   'ios-engineer': { displayName: 'Cole - iOS Engineer', agentType: 'ios_engineer', skillName: 'ios-engineer' },
-  'android-engineer': { displayName: 'Cole - Android Engineer', agentType: 'android_engineer', skillName: 'android-engineer' },
+  'android-engineer': { displayName: 'Dex - Android Engineer', agentType: 'android_engineer', skillName: 'android-engineer' },
   'backend-engineer': { displayName: 'Finn - Backend Engineer', agentType: 'backend_engineer', skillName: 'backend-engineer' },
   'web-engineer': { displayName: 'Remi - Web Engineer', agentType: 'web_engineer', skillName: 'web-engineer' },
   'qa-engineer': { displayName: 'Vera - QA Engineer', agentType: 'qa_engineer', skillName: 'qa_engineer' },

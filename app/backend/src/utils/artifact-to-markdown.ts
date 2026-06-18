@@ -60,7 +60,10 @@ function analystToMarkdown(d: Record<string, any>): string {
 
   if (d.conclusion) lines.push(`## Conclusion\n\n${d.conclusion}\n`);
 
-  if (Array.isArray(d.references) && d.references.length) {
+  if (d.web_search_enabled === false) {
+    lines.push(`---\n`);
+    lines.push(`*No web search was completed for this document. The information above is based on available training data only and has not been independently verified.*\n`);
+  } else if (Array.isArray(d.references) && d.references.length) {
     lines.push(`## References\n`);
     for (const ref of d.references) lines.push(`[${ref.id}] ${ref.title ?? ''} — ${ref.url ?? ''}`);
     lines.push('');

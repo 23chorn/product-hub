@@ -27,7 +27,10 @@ export function getEventCfg(eventType: string) {
 }
 
 export function formatTs(ts: number) {
-  return new Date(ts).toLocaleTimeString('en-GB', {
+  const d = new Date(ts);
+  const date = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+  const time = d.toLocaleTimeString('en-GB', {
     hour: '2-digit', minute: '2-digit', second: '2-digit',
   });
+  return `${date} ${time}`;
 }

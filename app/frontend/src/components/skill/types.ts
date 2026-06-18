@@ -51,6 +51,7 @@ export type PanelSelection =
   | { type: 'new_context' }
   | { type: 'new_skill' }
   | { type: 'new_agent' }
+  | { type: 'airtable_sync' }
   | null;
 
 export const DISCIPLINE_LABELS: Record<string, string> = {

@@ -51,6 +51,8 @@ export interface WorkflowStatus {
   completedStages: string[];
   pendingStage: string | null;
   currentSessionId: string | null;
+  productArea?: string;
+  strategicTheme?: string;
 }
 
 export interface WorkflowEvent {
@@ -165,10 +167,22 @@ export const eventStmts = {
 
 // ── Helper functions ───────────────────────────────────────────────────────────
 
+/**
+ * Strip the per-feature index from a stage name before looking up configured roles.
+ * Per-feature stages (story_decomposition_F1, story_decomposition_F2, ...) and their
+ * _qa siblings (story_decomposition_F1_qa, ...) all share one role configuration —
+ * the feature count varies per initiative, so role access can't be keyed per index.
+ * "story_decomposition_F3"    → "story_decomposition"
+ * "story_decomposition_F3_qa" → "story_decomposition_qa"
+ */
+export function normalizeStageForRoles(stage: string): string {
+  return stage.replace(/_F\d+/, '');
+}
+
 export function getStageRoles(stage: string): string[] {
   return db.prepare<[string], { role_name: string }>(
     'SELECT role_name FROM stage_roles WHERE stage = ?'
-  ).all(stage).map(r => r.role_name);
+  ).all(normalizeStageForRoles(stage)).map(r => r.role_name);
 }
 
 /** Serialize stage roles to a JSON string for storage in checkpoints.required_role. Returns null if no roles configured. */

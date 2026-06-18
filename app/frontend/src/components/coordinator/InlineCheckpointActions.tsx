@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { STAGE_LABELS } from '../../constants/stage-labels';
 import { parseCriticData } from '../../utils/coordinator-helpers';
 import { CriticQuestionForm } from '../artifact/CriticQuestionForm';
+import { ApproveConfirmModal } from '../artifact/ApproveConfirmModal';
 import { api } from '../../services/api';
 import { useAuthStore, canApprove, parseRequiredRoles, ROLE_LABELS } from '../../stores/authStore';
 import { useWorkflowStore } from '../../stores/workflowStore';
@@ -16,6 +17,7 @@ export function InlineCheckpointActions({
 }) {
   const requiredRoles = parseRequiredRoles(checkpoint.required_role);
   const [showRevise, setShowRevise] = useState(false);
+  const [showApproveConfirm, setShowApproveConfirm] = useState(false);
   const [showRejectConfirm, setShowRejectConfirm] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [loading, setLoading] = useState(false);
@@ -223,7 +225,7 @@ export function InlineCheckpointActions({
             {STAGE_LABELS[checkpoint.stage] ?? checkpoint.stage}:
           </span>
           <button
-            onClick={() => resolve('approved')}
+            onClick={() => setShowApproveConfirm(true)}
             disabled={loading}
             className="text-xs px-2.5 py-1 rounded-md bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white transition-colors"
           >
@@ -244,6 +246,15 @@ export function InlineCheckpointActions({
             Reject
           </button>
         </div>
+      )}
+
+      {/* Approve confirmation modal */}
+      {showApproveConfirm && (
+        <ApproveConfirmModal
+          loading={loading}
+          onCancel={() => setShowApproveConfirm(false)}
+          onConfirm={() => resolve('approved')}
+        />
       )}
 
       {/* Reject confirmation modal */}

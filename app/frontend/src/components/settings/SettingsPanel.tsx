@@ -20,11 +20,17 @@ interface Settings {
 const STAGE_LABELS: Record<string, string> = {
   analyst: 'Research Analyst',
   pm_prd: 'Product Manager — PRD',
+  prototype: 'Prototype',
+  figma_design: 'Figma Design',
   solution_architect: 'Solution Architect',
+  epic_feature_planner: 'Epic & Feature Planning',
   story_decomposition: 'Shard - Product Owner',
 };
 
-const STAGE_ORDER = ['analyst', 'pm_prd', 'solution_architect', 'epic_feature_planner', 'prototype'];
+const STAGE_ORDER = [
+  'analyst', 'pm_prd', 'prototype', 'figma_design',
+  'solution_architect', 'epic_feature_planner', 'story_decomposition',
+];
 const ALWAYS_ON = new Set(['curator']);
 
 type Tab = 'general' | 'pipeline' | 'quality' | 'access';
@@ -110,6 +116,7 @@ export function SettingsPanel() {
       setDirty(false);
       setDemoMode(draft.demo.enabled);
       toast.success('Settings saved');
+      closeSettings();
     } catch (err: any) {
       toast.error(err.response?.data?.error || 'Failed to save settings');
     } finally {

@@ -46,6 +46,15 @@ Do NOT include: architecture details, metric targets, story point counts, sprint
 ### Recent decisions entries
 One line per workflow. List only the most durable, non-obvious design choices as a comma-separated run-on. Do not explain the rationale — that lives in the artifact. Maximum one line per workflow.
 
+**Cap: 12 entries.** When your new line would make the section exceed 12, drop the oldest entries first. Propose this as a single `update` for the whole section containing the trimmed list plus the new line — never a bare `add` once the section is at cap.
+
+### Pruning rule — Active work
+This workflow's own item must never appear twice in an inconsistent state. Before adding or updating its "Active work" bullet, check whether the artifacts show the item has reached a terminal state (shipped, live, cancelled, or merged into another initiative):
+- **Still in flight** (spec complete, pre-development, blocked, in development): `update` the existing bullet (or `add` if it has none yet) with the current one-sentence status.
+- **Terminal** (the artifacts indicate it is now live/shipped): `remove` the "Active work" bullet entirely. If it belongs under "Platforms (Live today)", propose a separate one-line `add`/`update` there instead — do not describe the same fact in both sections.
+
+This rule only covers the item this workflow just touched. Do not prune unrelated "Active work" entries you have no fresh evidence about.
+
 ### Existing content
 When an existing `current-state.md` entry already describes an item in excessive detail, propose an `update` action that replaces it with the trimmed format above. Shrinking the file is always preferable to growing it.
 

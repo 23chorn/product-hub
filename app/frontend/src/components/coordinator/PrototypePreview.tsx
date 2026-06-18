@@ -7,13 +7,14 @@ export interface PrototypeData {
   screens: string[];
   entryScreen: string;
   files: Record<string, string>;
+  /** Which platform this was generated for — fixes the preview frame (no switcher). */
+  platform?: 'web' | 'mobile';
 }
 
-type DeviceFrame = 'tablet' | 'mobile' | 'desktop';
+type DeviceFrame = 'mobile' | 'desktop';
 
 const DEVICE_SIZES: Record<DeviceFrame, { width: string; height: string; label: string }> = {
   mobile:  { width: '375px',  height: '812px',  label: 'Mobile' },
-  tablet:  { width: '768px',  height: '1024px', label: 'Tablet' },
   desktop: { width: '1280px', height: '800px',  label: 'Desktop' },
 };
 
@@ -179,7 +180,10 @@ export function PrototypePreview({
   onClose: () => void;
   onUpdate: (updated: PrototypeData) => void;
 }) {
-  const [device, setDevice] = useState<DeviceFrame>('mobile');
+  // Fixed frame based on what platform this prototype was actually generated for —
+  // no switcher, since a mobile-shaped layout (bottom tab bar, 44px touch targets)
+  // doesn't make sense viewed in a desktop frame and vice versa.
+  const device: DeviceFrame = prototype.platform === 'web' ? 'desktop' : 'mobile';
   const [showCode, setShowCode] = useState(false);
   const [designSystem, setDesignSystem] = useState<DesignSystem | null>(null);
   const [feedback, setFeedback] = useState('');
@@ -258,22 +262,10 @@ export function PrototypePreview({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Device toggle */}
-          <div className="flex items-center bg-slate-100 dark:bg-slate-700 rounded-lg p-0.5">
-            {(Object.keys(DEVICE_SIZES) as DeviceFrame[]).map((d) => (
-              <button
-                key={d}
-                onClick={() => setDevice(d)}
-                className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
-                  device === d
-                    ? 'bg-white dark:bg-slate-500 text-slate-800 dark:text-white shadow dark:shadow-none'
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              >
-                {DEVICE_SIZES[d].label}
-              </button>
-            ))}
-          </div>
+          {/* Platform indicator — fixed, not a switcher (this prototype was only built for one platform) */}
+          <span className="px-2.5 py-1 text-xs rounded-md bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400">
+            {DEVICE_SIZES[device].label}
+          </span>
 
           {/* Code toggle */}
           <button

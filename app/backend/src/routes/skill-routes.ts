@@ -5,6 +5,7 @@ import {
 } from '../agents/skill-registry';
 import { syncPersonaMarkdownFromSkill } from '../utils/persona-file-sync';
 import { hasAnyUsers } from '../data/users';
+import { isViewOnly } from '../middleware/auth';
 import type { AuthRequest } from '../middleware/auth';
 
 export const skillRoutes = Router();
@@ -39,6 +40,7 @@ function canEditSkill(user: AuthRequest['user'], skillName: string): boolean {
   if (!hasAnyUsers()) return true;
   if (!user) return false;
   if (user.is_admin) return true;
+  if (isViewOnly(user)) return false;
   const roles = AGENT_EDIT_ROLES[skillName];
   if (roles === undefined) return true;   // unknown skill — unrestricted
   if (roles.length === 0) return false;   // admin only

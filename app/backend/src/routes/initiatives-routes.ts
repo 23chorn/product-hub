@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import db from '../data/database';
 import Logger from '../utils/logger';
+import { parseRoles } from '../agents/workflow-db';
 import type { AirtableItem, LocalInitiative } from '@pap/shared';
 
 const logger = new Logger('INITIATIVES');
@@ -51,7 +52,7 @@ function toLocalInitiative(row: InitiativeRow): LocalInitiative {
 const stmts = {
   list: db.prepare(
     `SELECT id, title, description, source, metadata, created_at, updated_at FROM items
-     WHERE source IN ('local', 'airtable') ORDER BY created_at DESC`
+     WHERE source IN ('local', 'airtable') AND status != 'archived' ORDER BY created_at DESC`
   ),
   get: db.prepare(
     `SELECT id, title, description, source, metadata, created_at, updated_at FROM items
@@ -82,10 +83,10 @@ router.get('/', (_req: Request, res: Response) => {
     const rows = stmts.list.all() as InitiativeRow[];
 
     // Batch-fetch latest workflow per item
-    const workflowMap = new Map<string, { id: string; status: string; current_stage: string | null; summary: string | null; policy_overrides: string }>();
-    const wfRows: { item_id: string; id: string; status: string; current_stage: string | null; summary: string | null; policy_overrides: string }[] = rows.length > 0
+    const workflowMap = new Map<string, { id: string; status: string; current_stage: string | null; summary: string | null; policy_overrides: string; updated_at: number }>();
+    const wfRows: { item_id: string; id: string; status: string; current_stage: string | null; summary: string | null; policy_overrides: string; updated_at: number }[] = rows.length > 0
       ? db.prepare(`
-          SELECT w.item_id, w.id, w.status, w.current_stage, w.summary, w.policy_overrides
+          SELECT w.item_id, w.id, w.status, w.current_stage, w.summary, w.policy_overrides, w.updated_at
           FROM workflows w
           INNER JOIN (
             SELECT item_id, MAX(created_at) as max_created
@@ -97,17 +98,20 @@ router.get('/', (_req: Request, res: Response) => {
     for (const wf of wfRows) workflowMap.set(wf.item_id, wf);
 
     const pendingStageMap = new Map<string, string>();
+    const pendingApprovalsMap = new Map<string, Array<{ stage: string; roles: string[] }>>();
     if (wfRows.length > 0) {
       const pendingRows = db.prepare(`
-        SELECT workflow_id, stage
+        SELECT workflow_id, stage, required_role
         FROM checkpoints
         WHERE status = 'pending' AND workflow_id IN (${wfRows.map(() => '?').join(',')})
-        ORDER BY created_at DESC
-      `).all(...wfRows.map(w => w.id)) as { workflow_id: string; stage: string }[];
+        ORDER BY created_at ASC
+      `).all(...wfRows.map(w => w.id)) as { workflow_id: string; stage: string; required_role: string | null }[];
       for (const cp of pendingRows) {
-        if (!pendingStageMap.has(cp.workflow_id)) {
-          pendingStageMap.set(cp.workflow_id, cp.stage);
-        }
+        // Most recently created pending checkpoint wins for the single-stage label
+        pendingStageMap.set(cp.workflow_id, cp.stage);
+        const approvals = pendingApprovalsMap.get(cp.workflow_id) ?? [];
+        approvals.push({ stage: cp.stage, roles: parseRoles(cp.required_role) });
+        pendingApprovalsMap.set(cp.workflow_id, approvals);
       }
     }
 
@@ -141,6 +145,7 @@ router.get('/', (_req: Request, res: Response) => {
       const pipelineStatus = wf ? pipelineMap.get(wf.id) : undefined;
       const isCancelled = wf ? cancelledSet.has(wf.id) : false;
       const pendingStage = wf ? pendingStageMap.get(wf.id) ?? null : null;
+      const pendingApprovals = wf ? pendingApprovalsMap.get(wf.id) ?? [] : [];
       const isDemo = (() => {
         if (!wf) return false;
         try {
@@ -153,7 +158,7 @@ router.get('/', (_req: Request, res: Response) => {
       return {
         ...toAirtableItem(r),
         source: r.source,
-        workflow: wf ? { id: wf.id, status: wf.status, currentStage: wf.current_stage, summary: wf.summary, pipelineStatus, isCancelled, isDemo, pendingStage } : undefined,
+        workflow: wf ? { id: wf.id, status: wf.status, currentStage: wf.current_stage, summary: wf.summary, pipelineStatus, isCancelled, isDemo, pendingStage, pendingApprovals, updatedAt: wf.updated_at } : undefined,
       };
     });
 

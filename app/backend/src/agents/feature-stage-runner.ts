@@ -12,6 +12,7 @@
 import type { AgentType } from '@pap/shared';
 import { logger, insertEvent } from './workflow-db';
 import { validateBacklogJson, validateQaTestsJson } from './tool-validators';
+import { isCancelRequested } from './workflow-cancel';
 
 /**
  * Merge all isolated feature artifacts (backlog_F1, backlog_F2, backlog_F3, ...) into
@@ -103,6 +104,17 @@ export async function runMultiAgentFeatureStage(
 
   try {
     const result = await runMultiAgentRefinement(workflowId, itemId, stage, featureIndex);
+
+    // Bail out if the workflow was cancelled while this multi-agent session was in
+    // flight. Without this check, a late-arriving result would create checkpoints
+    // and call pauseAtCheckpoint() below, which overwrites the cancelled workflow's
+    // status back to 'paused_at_checkpoint' — undoing the stop (see same guard in
+    // workflow-stage-runner.ts).
+    if (isCancelRequested(workflowId)) {
+      logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} result discarded — workflow ${workflowId} was cancelled mid-flight`);
+      return;
+    }
+
     const strippedBacklog = result.backlog.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
     const newFeature = JSON.parse(strippedBacklog);
 
@@ -144,19 +156,20 @@ export async function runMultiAgentFeatureStage(
       }
     }
 
-    // Create TWO checkpoints for two-stage approval:
-    // 1. Backlog checkpoint (PM role) — reviews stories, acceptance criteria, platform tags
-    // 2. QA Test Suite checkpoint (QA role) — reviews test coverage and quality
+    // Create TWO checkpoints for two-stage approval. Roles come from the stage_roles
+    // table (normalized to the base "story_decomposition" / "story_decomposition_qa"
+    // stage — see normalizeStageForRoles), so they're configurable per-deployment and
+    // apply uniformly regardless of how many features this initiative has.
     const { pauseAtCheckpoint } = await import('./workflow-router');
 
-    // Checkpoint 1: Backlog review (PM role)
-    await pauseAtCheckpoint(workflowId, stage, artifactId, undefined, undefined, 'pm');
-    logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} backlog checkpoint created (PM review)`);
+    // Checkpoint 1: Backlog review
+    await pauseAtCheckpoint(workflowId, stage, artifactId, undefined, undefined);
+    logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} backlog checkpoint created`);
 
-    // Checkpoint 2: QA test suite review (QA role)
+    // Checkpoint 2: QA test suite review
     if (qaArtifactId) {
-      await pauseAtCheckpoint(workflowId, `${stage}_qa`, qaArtifactId, undefined, undefined, 'qa');
-      logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} QA test suite checkpoint created (QA review)`);
+      await pauseAtCheckpoint(workflowId, `${stage}_qa`, qaArtifactId, undefined, undefined);
+      logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} QA test suite checkpoint created`);
     }
 
     logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} refinement complete — dual checkpoints created`);
@@ -224,6 +237,13 @@ export async function runMultiAgentFeatureRevision(
   let fullResponse = '';
   for await (const chunk of agent.streamResponse(systemPrompt, messages, undefined, undefined, maxTokens)) {
     fullResponse += chunk;
+  }
+
+  // Bail out if the workflow was cancelled while this revision was in flight —
+  // see same guard in runMultiAgentFeatureStage above.
+  if (isCancelRequested(workflowId)) {
+    logger.info(`[MULTI-AGENT REVISION] Feature ${featureNum} result discarded — workflow ${workflowId} was cancelled mid-flight`);
+    return;
   }
 
   // Parse revised backlog JSON

@@ -6,11 +6,24 @@
 import { Router, Request, Response } from 'express';
 import type { AuthRequest } from '../middleware/auth';
 import { getWorkflowStatus, getWorkflowEvents } from '../agents/workflow-router';
+import { isDemoMode } from '../demo/demo-mode';
 import db from '../data/database';
 import Logger from '../utils/logger';
 
 const logger = new Logger('WORKFLOW-QUERY-ROUTES');
 export const workflowQueryRoutes = Router();
+
+// A cancelled ("Stopped") workflow keeps any checkpoints it had open at cancel time —
+// they must never count toward "needs review" / "needs my approval".
+const NOT_CANCELLED_SQL = `NOT EXISTS (
+  SELECT 1 FROM workflow_events we WHERE we.workflow_id = w.id AND we.event_type = 'workflow_cancelled'
+)`;
+
+/** Excludes demo workflows from pending-approval queries while demo mode is switched off. */
+function demoExclusionSql(): string {
+  if (isDemoMode()) return '';
+  return `AND (w.policy_overrides IS NULL OR (w.policy_overrides NOT LIKE '%demo_mode%' AND w.policy_overrides NOT LIKE '%demo_auto_approve%'))`;
+}
 
 interface ArtifactRow {
   id: number;
@@ -64,6 +77,7 @@ workflowQueryRoutes.get('/list/all', (req: AuthRequest, res: Response) => {
         ? null  // admin sees all pending checkpoints
         : req.user.roles;
 
+      const demoClause = demoExclusionSql();
       let workflows;
       if (req.user.is_admin || !roleList?.length) {
         workflows = db.prepare(`
@@ -71,6 +85,7 @@ workflowQueryRoutes.get('/list/all', (req: AuthRequest, res: Response) => {
           FROM workflows w
           JOIN checkpoints c ON c.workflow_id = w.id AND c.status = 'pending'
           LEFT JOIN checkpoints approved ON approved.workflow_id = w.id AND approved.status = 'approved'
+          WHERE ${NOT_CANCELLED_SQL} ${demoClause}
           GROUP BY w.id
           ORDER BY w.created_at DESC
           LIMIT 50
@@ -83,6 +98,7 @@ workflowQueryRoutes.get('/list/all', (req: AuthRequest, res: Response) => {
           JOIN checkpoints c ON c.workflow_id = w.id AND c.status = 'pending'
             AND (c.required_role IS NULL OR c.required_role IN (${placeholders}))
           LEFT JOIN checkpoints approved ON approved.workflow_id = w.id AND approved.status = 'approved'
+          WHERE ${NOT_CANCELLED_SQL} ${demoClause}
           GROUP BY w.id
           ORDER BY w.created_at DESC
           LIMIT 50
@@ -190,10 +206,14 @@ workflowQueryRoutes.get('/:id/audit', (req: Request, res: Response) => {
 workflowQueryRoutes.get('/my-pending-count', (req: AuthRequest, res: Response) => {
   if (!req.user) return res.json({ count: 0 });
   try {
+    const demoClause = demoExclusionSql();
     let count: number;
     if (req.user.is_admin) {
       const row = db.prepare<[], { count: number }>(
-        `SELECT COUNT(DISTINCT workflow_id) as count FROM checkpoints WHERE status = 'pending'`
+        `SELECT COUNT(DISTINCT c.workflow_id) as count
+         FROM checkpoints c
+         JOIN workflows w ON w.id = c.workflow_id
+         WHERE c.status = 'pending' AND ${NOT_CANCELLED_SQL} ${demoClause}`
       ).get();
       count = row?.count ?? 0;
     } else {
@@ -201,8 +221,11 @@ workflowQueryRoutes.get('/my-pending-count', (req: AuthRequest, res: Response) =
       if (!roles.length) return res.json({ count: 0 });
       const placeholders = roles.map(() => '?').join(',');
       const row = db.prepare<string[], { count: number }>(
-        `SELECT COUNT(DISTINCT workflow_id) as count FROM checkpoints
-         WHERE status = 'pending' AND (required_role IS NULL OR required_role IN (${placeholders}))`
+        `SELECT COUNT(DISTINCT c.workflow_id) as count
+         FROM checkpoints c
+         JOIN workflows w ON w.id = c.workflow_id
+         WHERE c.status = 'pending' AND (c.required_role IS NULL OR c.required_role IN (${placeholders}))
+           AND ${NOT_CANCELLED_SQL} ${demoClause}`
       ).get(...roles);
       count = row?.count ?? 0;
     }

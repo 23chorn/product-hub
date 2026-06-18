@@ -6,6 +6,7 @@ import { invalidateContextCache } from '../agents/specialist-agent';
 import { clearAllContextCaches } from '../agents/agent-cache';
 import db from '../data/database';
 import { hasAnyUsers } from '../data/users';
+import { isViewOnly } from '../middleware/auth';
 import type { AuthRequest } from '../middleware/auth';
 
 const logger = new Logger('CONTEXT-FILES');
@@ -105,6 +106,7 @@ function canEditFile(user: AuthRequest['user'], editRoles: string[] | null): boo
   if (!hasAnyUsers()) return true;
   if (!user) return false;
   if (user.is_admin) return true;
+  if (isViewOnly(user)) return false;
   if (editRoles === null) return true;          // no restriction declared
   if (editRoles.length === 0) return false;     // explicitly locked to admins only
   return editRoles.some(r => user.roles.includes(r));
@@ -163,10 +165,17 @@ contextFileRouter.get('/', (_req: Request, res: Response) => {
 /**
  * POST / — create a new custom context file
  */
-contextFileRouter.post('/', (req: Request, res: Response) => {
+contextFileRouter.post('/', (req: AuthRequest, res: Response) => {
   const { label, description, content } = req.body;
   if (!label || typeof label !== 'string') {
     res.status(400).json({ error: 'label is required' });
+    return;
+  }
+
+  // New custom files have no edit_roles frontmatter yet, so they're treated as
+  // unrestricted (editRoles: null) — view_only is the only role this should block.
+  if (!canEditFile(req.user, null)) {
+    res.status(403).json({ error: 'You do not have permission to create context files', code: 'INSUFFICIENT_ROLE' });
     return;
   }
 

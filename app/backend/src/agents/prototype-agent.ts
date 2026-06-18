@@ -16,6 +16,7 @@ import * as fs from 'fs';
 import * as fsAsync from 'fs/promises';
 import * as path from 'path';
 import { streamAI, resolveModelId, type SystemPrompt, type TokenUsage } from '../utils/ai-provider';
+import type { AgentType } from '@pap/shared';
 import { loadLatestArtifactContent, saveLocalArtifact, resolveArtifactPath } from './artifact-helpers';
 import db from '../data/database';
 import Logger from '../utils/logger';
@@ -37,6 +38,8 @@ export interface PrototypeResult {
   screens: string[];
   entryScreen: string;
   files: Record<string, string>;
+  /** Which platform this prototype was generated for — determines the fixed preview frame. */
+  platform?: 'web' | 'mobile';
 }
 
 export type PrototypePlatform = 'web' | 'mobile' | 'both';
@@ -63,21 +66,6 @@ async function loadPersona(): Promise<string> {
 
 async function loadTemplate(): Promise<string> {
   return fsAsync.readFile(path.join(TEMPLATES_DIR, 'prototype.template.md'), 'utf-8');
-}
-
-async function loadProjectContext(): Promise<string> {
-  try {
-    const files = await fsAsync.readdir(CONTEXT_ROOT);
-    const mdFiles = files.filter(f => f.endsWith('.md') && f !== 'README.md').sort();
-    const sections: string[] = [];
-    for (const file of mdFiles) {
-      const content = await fsAsync.readFile(path.join(CONTEXT_ROOT, file), 'utf-8');
-      if (content.trim()) sections.push(`### ${file}\n${content}`);
-    }
-    return sections.length > 0 ? `## Project & Company Context\n\n${sections.join('\n\n')}` : '';
-  } catch {
-    return '';
-  }
 }
 
 /** Load local design system CSS files (fallback when Figma is not configured). */
@@ -539,7 +527,7 @@ export function resolveItemPlatform(itemId: string): PrototypePlatform {
 }
 
 /** Mobile-specific prompt instructions injected when generating a mobile prototype. */
-const MOBILE_PLATFORM_HINT = `## Platform: Mobile App
+export const MOBILE_PLATFORM_HINT = `## Platform: Mobile App
 
 Generate a **native mobile app** prototype, NOT a web layout. Apply these conventions:
 
@@ -552,7 +540,7 @@ Generate a **native mobile app** prototype, NOT a web layout. Apply these conven
 - **Forms**: Full-width inputs, large submit buttons pinned to the bottom of the screen.
 - **Screens**: Name them like iOS/Android screens — Home, Detail, Modal, Settings, etc.`;
 
-const WEB_PLATFORM_HINT = `## Platform: Web App
+export const WEB_PLATFORM_HINT = `## Platform: Web App
 
 Generate a **desktop/browser** prototype with web-native conventions:
 
@@ -562,6 +550,20 @@ Generate a **desktop/browser** prototype with web-native conventions:
 - **Data density**: Tables, data grids, and compact list rows are appropriate. Users are on wide screens with precise pointing.
 - **Forms**: Inline labels, compact inputs, form sections with clear headings.
 - **Screens**: Name them like web pages — Dashboard, List, Detail, Settings, etc.`;
+
+/**
+ * Pick the platform-specific prompt hint for a resolved prototype platform.
+ * 'both' defaults to the mobile hint — mobile is the company's primary channel
+ * (web is secondary per strategy.md), and there's no dual-variant UI today anyway.
+ */
+export function platformHintFor(platform: PrototypePlatform): string {
+  return platform === 'web' ? WEB_PLATFORM_HINT : MOBILE_PLATFORM_HINT;
+}
+
+/** Collapse the resolved item platform to the single frame the prototype is actually built for. */
+export function resolvedFramePlatform(platform: PrototypePlatform): 'web' | 'mobile' {
+  return platform === 'web' ? 'web' : 'mobile';
+}
 
 // ── Artifact persistence ───────────────────────────────────────────────────────
 
@@ -593,20 +595,28 @@ export async function* revisePrototype(
   `).get(workflowId);
   if (!workflow) throw new Error(`Workflow ${workflowId} not found`);
 
-  const [persona, template, localDesignSystem, projectContext] = await Promise.all([
+  const { SpecialistAgent } = await import('./specialist-agent');
+  const contextAgent = new SpecialistAgent('prototype-builder' as AgentType);
+
+  const [persona, template, localDesignSystem, scopedContext] = await Promise.all([
     loadPersona(),
     loadTemplate(),
     loadLocalDesignSystem(),
-    loadProjectContext(),
+    contextAgent.loadProjectContext('prototype'),
   ]);
 
   const figmaDesignSystem = await loadFigmaDesignSystem(() => {});
   const designSystemContext = figmaDesignSystem || localDesignSystem;
+  const projectContext = scopedContext ? `## Project & Company Context\n\n${scopedContext}` : '';
+  const itemPlatform = resolveItemPlatform(workflow.item_id);
+  const framePlatform = resolvedFramePlatform(itemPlatform);
+  const platformHint = platformHintFor(itemPlatform);
 
   const stable = [
     persona,
     '\n\n## Design System\n\n' + designSystemContext,
     projectContext ? '\n\n' + projectContext : '',
+    '\n\n' + platformHint,
     '\n\n## Output Template\n\n' + template,
   ].join('');
 
@@ -643,11 +653,11 @@ export async function* revisePrototype(
       screens: partial.screens ?? currentPrototype.screens,
       entryScreen: partial.entryScreen ?? currentPrototype.entryScreen,
       files: { ...currentPrototype.files, ...(partial.files ?? {}) },
+      platform: framePlatform,
     };
 
     logger.info(`Prototype revised: ${Object.keys(partial.files ?? {}).length} files changed`);
-    const platform = resolveItemPlatform(workflow.item_id);
-    const artifactType = platform === 'mobile' ? 'prototype_mobile' : platform === 'both' ? 'prototype_web' : 'prototype_web';
+    const artifactType = framePlatform === 'mobile' ? 'prototype_mobile' : 'prototype_web';
     await savePrototypeArtifact(workflow.item_id, merged, artifactType);
     await savePrototypeArtifact(workflow.item_id, merged, 'prototype');
     return merged;

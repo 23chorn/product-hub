@@ -79,6 +79,15 @@ export function requireAdmin(req: AuthRequest, res: Response, next: NextFunction
 }
 
 /**
+ * view_only is a hard-deny marker role: no approvals/rejections, no Studio edits,
+ * no Airtable sync, no new initiatives — regardless of any other role a user holds.
+ */
+export function isViewOnly(user: User | undefined): boolean {
+  if (!user) return false;
+  return !user.is_admin && user.roles.includes('view_only');
+}
+
+/**
  * Check whether the current user can approve a checkpoint with the given required roles.
  * Returns true if: no-auth mode, admin, no roles required, or user has any of the required roles.
  */
@@ -86,8 +95,17 @@ export function canApproveCheckpoint(user: User | undefined, requiredRoles: stri
   if (!hasAnyUsers()) return true;
   if (!user) return false;
   if (user.is_admin) return true;
+  if (isViewOnly(user)) return false;
   if (requiredRoles.length === 0) return true;
   return requiredRoles.some(r => user.roles.includes(r));
+}
+
+/** Only Product or Admin may launch a new workflow — other roles can review/approve but not kick off the pipeline. */
+export function canLaunchWorkflow(user: User | undefined): boolean {
+  if (!hasAnyUsers()) return true;
+  if (!user) return false;
+  if (user.is_admin) return true;
+  return user.roles.includes('product');
 }
 
 export { JWT_SECRET, COOKIE_NAME };

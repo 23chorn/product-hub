@@ -43,3 +43,4 @@ Citation rules:
 - Only include URLs that web search actually returned — never fabricate URLs.
 - If no source exists for a claim, write "[Unverified]" instead of a number.
 - Every inline [N] must appear in references; every references entry must be cited inline.
+- If you have no web search tool available in this session, omit "references" entirely (use `[]`) and do not use [N] markers — see your system prompt's citation policy for this case.

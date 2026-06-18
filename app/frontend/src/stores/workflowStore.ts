@@ -71,6 +71,8 @@ export interface WorkflowStatus {
   currentStage: string | null;
   completedStages: string[];
   pendingStage: string | null;
+  productArea?: string;
+  strategicTheme?: string;
 }
 
 export interface CoordinatorMessage {
@@ -122,6 +124,8 @@ interface WorkflowStoreState {
   completedStages: string[];
   pendingStage: string | null;
   checkpoints: WorkflowCheckpoint[];
+  productArea: string | null;
+  strategicTheme: string | null;
 
   // Coordinator chat messages
   coordinatorMessages: CoordinatorMessage[];
@@ -179,6 +183,8 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
   completedStages: [],
   pendingStage: null,
   checkpoints: [],
+  productArea: null,
+  strategicTheme: null,
 
   coordinatorMessages: [],
   addCoordinatorMessage: (msg) =>
@@ -256,7 +262,7 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
       return { studioOutput: next };
     }),
 
-  applyWorkflowStatus: ({ workflow, checkpoints, currentStage, completedStages, pendingStage, currentSessionId }: WorkflowStatus & { currentSessionId?: string | null }) => {
+  applyWorkflowStatus: ({ workflow, checkpoints, currentStage, completedStages, pendingStage, currentSessionId, productArea, strategicTheme }: WorkflowStatus & { currentSessionId?: string | null }) => {
     if (!workflow) {
       console.error('[workflowStore] applyWorkflowStatus called with undefined workflow');
       return;
@@ -273,6 +279,8 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
       completedStages,
       pendingStage,
       checkpoints: checkpoints ?? [],
+      productArea: productArea ?? null,
+      strategicTheme: strategicTheme ?? null,
       coordinatorMessages: cachedMessages,
       lastEventId: cachedLastEventId,
     });
@@ -289,6 +297,8 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
       completedStages: [],
       pendingStage: null,
       checkpoints: [],
+      productArea: null,
+      strategicTheme: null,
       isStreaming: false,
       planningPhase: 'idle',
       planningSessionId: null,

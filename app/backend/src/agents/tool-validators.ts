@@ -128,22 +128,35 @@ export function validateAnalystJson(input: Record<string, unknown>): string {
     }
   });
 
-  // references + citation check
-  const refs = reqArray(p, 'references', 'root', issues, 1);
-  refs?.forEach((r: any, i: number) => {
-    const lp = `references[${i}]`;
-    if (typeof r.id !== 'number') issues.push(`${lp}: "id" must be a number`);
-    req(r, 'title', lp, issues);
-    req(r, 'url', lp, issues);
-    if (r.url && FAKE_URL_RE.test(r.url)) {
-      issues.push(`${lp}: suspicious placeholder URL "${r.url}" — only include URLs returned by web search`);
-    }
-  });
+  // references + citation check — gated on whether web search was actually available.
+  // Forcing a reference when there's no way to find or verify one is exactly what
+  // pushes the model to fabricate a source, so when the caller marks
+  // web_search_enabled !== true (Bedrock/Ollama sessions), the rule flips: references
+  // must be EMPTY, and a non-empty array is flagged as fabricated and rejected.
+  const webSearchEnabled = input.web_search_enabled === true;
+  let refs: any[] | null;
+  if (webSearchEnabled) {
+    refs = reqArray(p, 'references', 'root', issues, 1);
+    refs?.forEach((r: any, i: number) => {
+      const lp = `references[${i}]`;
+      if (typeof r.id !== 'number') issues.push(`${lp}: "id" must be a number`);
+      req(r, 'title', lp, issues);
+      req(r, 'url', lp, issues);
+      if (r.url && FAKE_URL_RE.test(r.url)) {
+        issues.push(`${lp}: suspicious placeholder URL "${r.url}" — only include URLs returned by web search`);
+      }
+    });
 
-  // Inline citation check — executive_summary should reference at least one [N]
-  if (refs && refs.length > 0 && typeof p.executive_summary === 'string') {
-    if (!p.executive_summary.includes('[')) {
-      issues.push('executive_summary: no inline citations found (e.g. [1]) — every factual claim must be cited with an inline [N] reference');
+    // Inline citation check — executive_summary should reference at least one [N]
+    if (refs && refs.length > 0 && typeof p.executive_summary === 'string') {
+      if (!p.executive_summary.includes('[')) {
+        issues.push('executive_summary: no inline citations found (e.g. [1]) — every factual claim must be cited with an inline [N] reference');
+      }
+    }
+  } else {
+    refs = Array.isArray(p.references) ? p.references : [];
+    if (refs && refs.length > 0) {
+      issues.push('root: "references" must be an empty array — no web search was available this session, so any source here would be fabricated. Remove the "references" entries and any [N] inline citation markers.');
     }
   }
 

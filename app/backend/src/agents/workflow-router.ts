@@ -36,7 +36,7 @@ import Logger from '../utils/logger';
 import { CoordinatorAgent } from './coordinator-agent';
 import { CriticAgent } from './critic-agent';
 import { ContextCuratorAgent } from './curator-agent';
-import { workflowOps } from './workflow-db';
+import { workflowOps, rolesJson } from './workflow-db';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
 
@@ -137,13 +137,6 @@ const stmts = {
     ORDER BY s.created_at DESC LIMIT 1
   `),
 };
-
-function rolesJson(stage: string): string | null {
-  const rows = db.prepare<[string], { role_name: string }>(
-    'SELECT role_name FROM stage_roles WHERE stage = ?'
-  ).all(stage);
-  return rows.length > 0 ? JSON.stringify(rows.map(r => r.role_name)) : null;
-}
 
 // ── Workflow event logging ────────────────────────────────────────────────────
 
@@ -822,6 +815,20 @@ export function getWorkflowStatus(workflowId: string): import('./workflow-db').W
     }
   }
 
+  // Product Area / Theme live on the item's metadata (synced from Airtable), not the workflow row
+  let productArea: string | undefined;
+  let strategicTheme: string | undefined;
+  const itemRow = db.prepare<[string], { metadata: string | null }>(
+    'SELECT metadata FROM items WHERE id = ?'
+  ).get(workflow.item_id);
+  if (itemRow?.metadata) {
+    try {
+      const meta = JSON.parse(itemRow.metadata) as { productArea?: string; strategicTheme?: string };
+      productArea = meta.productArea;
+      strategicTheme = meta.strategicTheme;
+    } catch { /* ignore malformed metadata */ }
+  }
+
   return {
     workflow,
     checkpoints,
@@ -829,6 +836,8 @@ export function getWorkflowStatus(workflowId: string): import('./workflow-db').W
     completedStages,
     pendingStage: pendingCheckpoint?.stage ?? null,
     currentSessionId,
+    productArea,
+    strategicTheme,
   };
 }
 

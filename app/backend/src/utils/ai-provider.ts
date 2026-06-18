@@ -298,7 +298,13 @@ async function* streamWithAnthropic(
     for (const block of toolUseBlocks) {
       let result: string;
       try {
-        result = await executeTool(block.name, block.input);
+        // Tell the analyst validator whether web search was actually available this
+        // session — it relaxes the "references required" rule when it wasn't, instead
+        // of forcing the model to fabricate a source just to pass validation.
+        const toolInput = block.name === 'validate_analyst_json'
+          ? { ...block.input, web_search_enabled: options.webSearch === true }
+          : block.input;
+        result = await executeTool(block.name, toolInput);
       } catch (err: any) {
         result = `Tool execution failed: ${err.message}`;
         logger.warn(`[TOOL] ${block.name} failed: ${err.message}`);
@@ -536,7 +542,12 @@ async function* streamWithBedrock(
     for (const block of toolUseBlocks) {
       let resultText: string;
       try {
-        resultText = await executeTool(block.toolUse.name, block.toolUse.input);
+        // Bedrock never has web search available — tell the analyst validator so it
+        // doesn't force a fabricated reference just to pass validation.
+        const toolInput = block.toolUse.name === 'validate_analyst_json'
+          ? { ...block.toolUse.input, web_search_enabled: false }
+          : block.toolUse.input;
+        resultText = await executeTool(block.toolUse.name, toolInput);
       } catch (err: any) {
         resultText = `Tool error: ${err.message}`;
         logger.warn(`[TOOL/BEDROCK] ${block.toolUse.name} failed: ${err.message}`);

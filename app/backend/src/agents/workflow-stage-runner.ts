@@ -15,7 +15,7 @@ import { CoordinatorAgent } from './coordinator-agent';
 import { CriticAgent } from './critic-agent';
 import { ContextCuratorAgent } from './curator-agent';
 import { SpecialistAgent } from './specialist-agent';
-import { resolveAgentModel, type TokenUsage } from '../utils/ai-provider';
+import { resolveAgentModel, getActiveProvider, type TokenUsage } from '../utils/ai-provider';
 import { computeRevisionDiff } from '../utils/revision-diff';
 import { injectSprintEstimates } from './sprint-estimation';
 import {
@@ -27,7 +27,7 @@ import {
 } from './artifact-helpers';
 import { getActiveSkill } from './skill-registry';
 import { type ToolDefinition, getRegisteredTools } from './tool-registry';
-import { loadWorkflowArtifacts, loadLocalDesignSystem, loadFigmaDesignSystem, repairTruncatedJson, getFigmaFileKey, setFigmaFileKey, createFigmaFile } from './prototype-agent';
+import { loadWorkflowArtifacts, loadLocalDesignSystem, loadFigmaDesignSystem, repairTruncatedJson, getFigmaFileKey, setFigmaFileKey, createFigmaFile, resolveItemPlatform, platformHintFor, resolvedFramePlatform } from './prototype-agent';
 import {
   PROJECT_ROOT, logger, stmts, insertEvent,
   setCheckpointTokenUsage, loadGlobalPolicies, workflowOps, rolesJson,
@@ -315,6 +315,9 @@ export async function runAutonomousStage(
       const parts: string[] = [];
       if (designSystem) parts.push(`## Design System\n\n${designSystem}`);
       if (artifacts) parts.push(`## Workflow Artifacts\n\nUse these documents to understand what to prototype:\n\n${artifacts}`);
+      // Built for exactly one platform (mobile or web) — no dual-variant generation,
+      // since there's no UI to switch between two generated versions anyway.
+      parts.push(platformHintFor(resolveItemPlatform(itemId)));
       if (parts.length > 0) itemContext = addPlatformScope(parts.join('\n\n---\n\n'));
     } else if (stage === 'figma_design') {
       // Read design tokens from the Figma design system file via MCP
@@ -498,6 +501,24 @@ export async function runAutonomousStage(
       }
     }
 
+    // ── Analyst stage: enforce the no-fake-citations policy server-side ─────────
+    // The model is told not to include references without web search, but that's
+    // a prompt instruction, not a guarantee. Strip any references it added anyway
+    // whenever this session had no web search capability, and stamp the document
+    // with the actual (server-known) flag so the renderer can show an honest
+    // disclaimer instead of a references section.
+    if (stage === 'analyst') {
+      const webSearchEnabled = getActiveProvider() === 'anthropic';
+      try {
+        const parsed = JSON.parse(artifactContent);
+        if (!webSearchEnabled) parsed.references = [];
+        parsed.web_search_enabled = webSearchEnabled;
+        artifactContent = JSON.stringify(parsed, null, 2);
+      } catch {
+        logger.warn('Could not parse analyst artifact JSON to enforce web-search citation policy');
+      }
+    }
+
     // ── Feature-specific stage: merge with prior backlog ────────────────────────
     const { isFeatureStage, loadPartialBacklog: loadPartialBacklogForMerge } = await import('./feature-decomposition');
     if (isFeatureStage(stage)) {
@@ -535,10 +556,15 @@ export async function runAutonomousStage(
     const artifactId = await saveLocalArtifact(sessionId, stage, artifactContent, itemId, skillVersionId);
 
     // ── Push artifact link to Airtable (all stages that produce viewable artifacts) ──
+    // Airtable should only ever show the permanent link (Azure Wiki / ADO epic) — never
+    // a Product Hub in-app URL. tryWikiPush() below pushes the real link once the artifact
+    // is approved and synced. This only fires as a fallback when no wiki sync will ever
+    // happen for this deployment, so the field isn't left permanently empty.
     const pushArtifactLinkToAirtable = async () => {
       try {
         const { appConfig } = require('../config/app-config');
         if (appConfig.integrations.roadmap !== 'airtable') return;
+        if (appConfig.integrations.knowledgeBase === 'azure_wiki') return; // wiki push will supersede this
 
         const stageToFieldMap: Record<string, string> = {
           analyst: 'researchBriefLink',
@@ -555,7 +581,6 @@ export async function runAutonomousStage(
         ).get(itemId);
         if (!itemRow?.airtable_id) return;
 
-        // Build the local artifact URL (will be replaced by wiki URL if wiki sync happens)
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
         const localUrl = `${frontendUrl}/?artifact=${artifactId}`;
         const { pushLinksToAirtable } = await import('./ado-stage-push');
@@ -638,6 +663,22 @@ export async function runAutonomousStage(
       }
     }
 
+    // ── Special handling for prototype: stamp the resolved platform onto the artifact ──
+    // so the preview can render a fixed device frame instead of a switchable one.
+    if (stage === 'prototype') {
+      try {
+        const stripped = artifactContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+        const jsonStart = stripped.indexOf('{');
+        const parsed = JSON.parse(jsonStart > 0 ? stripped.slice(jsonStart) : stripped);
+        parsed.platform = resolvedFramePlatform(resolveItemPlatform(itemId));
+        artifactContent = JSON.stringify(parsed, null, 2);
+        await updateArtifactContent(artifactId, artifactContent);
+        logger.info(`Stamped platform "${parsed.platform}" onto prototype artifact`);
+      } catch (err: any) {
+        logger.warn(`Failed to stamp platform onto prototype artifact: ${err.message}`);
+      }
+    }
+
     // story_decomposition_F* reads existing ADO URLs for event metadata.
     let adoUrl: string | null = null;
     if (stage.match(/^story_decomposition_F\d+$/)) {
@@ -671,6 +712,15 @@ export async function runAutonomousStage(
       } catch (err: any) {
         logger.warn(`Failed to compute revision diff for "${stage}": ${err.message}`);
       }
+    }
+
+    // Bail out if the workflow was cancelled while this stage's call was in flight.
+    // The abort signal doesn't always interrupt an already-resolving stream in time,
+    // so without this check a late-arriving "success" would overwrite the cancelled
+    // workflow status with 'active'/'paused_at_checkpoint', undoing the stop.
+    if (isCancelRequested(workflowId)) {
+      logger.info(`Stage "${stage}" result discarded — workflow ${workflowId} was cancelled mid-flight`);
+      return;
     }
 
     // Log stage completion event with excerpt
@@ -1007,8 +1057,11 @@ export async function runAutonomousStage(
       setCheckpointTokenUsage(cpResult3.lastInsertRowid as number,
         { specialist: specialistTokenData, ...(criticTokenData ? { critic: criticTokenData } : {}) });
     }
+    // wiki_url is deliberately omitted here — tryWikiPush() above already inserted a
+    // separate 'wiki_synced' event with the same link, so including it again would
+    // render a duplicate link line in the chat narration (eventToMessage).
     insertEvent(workflowId, 'stage_completed', stage, `${stageLabel} complete.`,
-      { excerpt, artifact_id: artifactId, ...(wikiUrl ? { wiki_url: wikiUrl } : {}), ...(adoUrl ? { ado_url: adoUrl } : {}) });
+      { excerpt, artifact_id: artifactId, ...(adoUrl ? { ado_url: adoUrl } : {}) });
 
     if (autoApprove) {
       logger.info(`Autonomous stage "${stage}" complete (silent) — advancing to next stage`);

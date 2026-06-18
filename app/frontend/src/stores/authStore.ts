@@ -49,13 +49,31 @@ export function parseRequiredRoles(val: string | null | undefined): string[] {
   }
 }
 
+/**
+ * view_only is a hard-deny marker role: no approvals/rejections, no Studio edits,
+ * no Airtable sync, no new initiatives — regardless of any other role a user holds.
+ */
+export function isViewOnly(user: CurrentUser | null, noAuth: boolean): boolean {
+  if (noAuth || !user) return false;
+  return !user.is_admin && user.roles.includes('view_only');
+}
+
 /** Returns true if the current user can approve a checkpoint with the given required roles. */
 export function canApprove(user: CurrentUser | null, noAuth: boolean, requiredRoles: string[]): boolean {
   if (noAuth) return true;
   if (!user) return false;
   if (user.is_admin) return true;
+  if (isViewOnly(user, noAuth)) return false;
   if (requiredRoles.length === 0) return true;
   return requiredRoles.some(r => user.roles.includes(r));
+}
+
+/** Only Product or Admin may launch a new workflow — other roles can review/approve but not kick off the pipeline. */
+export function canLaunchWorkflow(user: CurrentUser | null, noAuth: boolean): boolean {
+  if (noAuth) return true;
+  if (!user) return false;
+  if (user.is_admin) return true;
+  return user.roles.includes('product');
 }
 
 export const ROLE_LABELS: Record<string, string> = {
@@ -63,4 +81,5 @@ export const ROLE_LABELS: Record<string, string> = {
   tech_lead: 'Tech Lead',
   design: 'Design',
   qa: 'QA',
+  view_only: 'View Only',
 };

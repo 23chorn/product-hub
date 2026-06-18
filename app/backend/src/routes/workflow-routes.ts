@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { initSSE, sseSend } from '../utils/sse';
 import { randomUUID } from 'crypto';
-import { canApproveCheckpoint } from '../middleware/auth';
+import { canApproveCheckpoint, canLaunchWorkflow } from '../middleware/auth';
 import type { AuthRequest } from '../middleware/auth';
 import {
   createWorkflow,
@@ -49,7 +49,11 @@ export const workflowRoutes = Router();
  * call needed here), then advances to stage 1. Returns JSON:
  *   { workflowId, stage, sessionId, complete, stages }
  */
-workflowRoutes.post('/start', async (req: Request, res: Response) => {
+workflowRoutes.post('/start', async (req: AuthRequest, res: Response) => {
+  if (!canLaunchWorkflow(req.user)) {
+    return res.status(403).json({ error: 'Only Product or Admin users can launch a workflow', code: 'INSUFFICIENT_ROLE' });
+  }
+
   let { itemId, goal, enrichedContext, stageSequence, policyOverrides, planningSessionId, kbQueries, productArea } = req.body as {
     itemId?: string;
     goal?: string;

@@ -60,7 +60,7 @@ const SAMPLE_USERS = [
     name: 'Vera Viewer',
     password: 'password123',
     is_admin: false,
-    roles: [],
+    roles: ['view_only'],
     slack_user_id: null,
   },
 ];

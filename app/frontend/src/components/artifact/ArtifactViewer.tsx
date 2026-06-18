@@ -18,6 +18,7 @@ import { PrototypePreview, type PrototypeData } from '../coordinator/PrototypePr
 import { convertArtifactToMarkdown, isDocumentArtifact, parseOpenQuestions, type OpenQuestion } from '../../utils/artifact-to-markdown';
 import { ArtifactSyncActions } from './ArtifactSyncActions';
 import { CriticReviewFlyout } from './CriticReviewFlyout';
+import { ApproveConfirmModal } from './ApproveConfirmModal';
 import { RejectConfirmModal } from './RejectConfirmModal';
 
 // Per-feature isolated backlog artifacts are saved as backlog_F1, backlog_F2, ... (see
@@ -34,6 +35,7 @@ export function ArtifactViewer() {
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [showReviseForm, setShowReviseForm] = useState(false);
+  const [showApproveConfirm, setShowApproveConfirm] = useState(false);
   const [showRejectConfirm, setShowRejectConfirm] = useState(false);
   const [showIssuesPanel, setShowIssuesPanel] = useState(false);
   const [resolveLoading, setResolveLoading] = useState(false);
@@ -128,6 +130,7 @@ export function ArtifactViewer() {
 
       setFeedback('');
       setShowReviseForm(false);
+      setShowApproveConfirm(false);
       setShowRejectConfirm(false);
       setViewingArtifactId(null);
     } catch (err: any) {
@@ -700,7 +703,7 @@ export function ArtifactViewer() {
                   )}
                   <div className="flex gap-2">
                     <button
-                      onClick={() => resolve('approved')}
+                      onClick={() => setShowApproveConfirm(true)}
                       disabled={resolveLoading}
                       className="flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white text-sm font-medium rounded-lg transition-colors"
                     >
@@ -727,6 +730,15 @@ export function ArtifactViewer() {
           )}
         </div>
       </div>
+
+      {/* Approve confirmation modal */}
+      {showApproveConfirm && (
+        <ApproveConfirmModal
+          loading={resolveLoading}
+          onCancel={() => setShowApproveConfirm(false)}
+          onConfirm={() => resolve('approved')}
+        />
+      )}
 
       {/* Reject confirmation modal */}
       {showRejectConfirm && (

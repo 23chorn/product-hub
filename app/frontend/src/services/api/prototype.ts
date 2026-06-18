@@ -22,14 +22,18 @@ export const prototypeApi = {
 
   async getPrototype(workflowId: string): Promise<{
     title: string; description: string; screens: string[];
-    entryScreen: string; files: Record<string, string>;
+    entryScreen: string; files: Record<string, string>; platform?: 'web' | 'mobile';
   } | null> {
     try {
       const response = await axios.get(`${API_BASE_URL}/api/workflow/${workflowId}/prototype`);
-      // Unwrap { platform, web?, mobile? } — prefer web, fall back to mobile
-      const raw = response.data as { platform: string; web?: unknown; mobile?: unknown };
+      // Unwrap { platform, web?, mobile? } — prefer web, fall back to mobile.
+      // The unwrapped object carries its own `.platform` field (stamped server-side),
+      // which is what the preview frame actually keys off — the wrapper's top-level
+      // `platform` can be 'both' and isn't what we want here.
+      type PrototypeVariant = { title: string; description: string; screens: string[]; entryScreen: string; files: Record<string, string>; platform?: 'web' | 'mobile' };
+      const raw = response.data as { platform: string; web?: PrototypeVariant; mobile?: PrototypeVariant };
       if (raw && (raw.web || raw.mobile)) {
-        return (raw.web ?? raw.mobile) as { title: string; description: string; screens: string[]; entryScreen: string; files: Record<string, string> };
+        return raw.web ?? raw.mobile ?? null;
       }
       return response.data;
     } catch {

@@ -10,12 +10,14 @@ export type WorkflowInfo = {
   isCancelled?: boolean;
   isDemo?: boolean;
   pendingStage?: string | null;
+  pendingApprovals?: Array<{ stage: string; roles: string[] }>;
+  updatedAt?: number;
 };
 
 export type EnrichedItem = AirtableItem & { source?: string; workflow?: WorkflowInfo };
 
 export type LaunchPhase = 'analyzing' | 'confirming' | 'launching';
-export type StatusFilter = 'all' | 'active' | 'review' | 'done' | 'new' | 'mine';
+export type StatusFilter = 'all' | 'active' | 'review' | 'done' | 'stopped' | 'new' | 'mine';
 
 /** A togglable pipeline stage as shown in the launch confirmation modal. */
 export interface StageOption {
@@ -30,6 +32,7 @@ export const STATUS_FILTERS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'active', label: 'Running' },
   { key: 'review', label: 'Needs review' },
   { key: 'done',   label: 'Done' },
+  { key: 'stopped', label: 'Stopped' },
   { key: 'new',    label: 'Not started' },
 ];
 
