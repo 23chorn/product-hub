@@ -2,7 +2,8 @@ import { Router, Request, Response } from 'express';
 import { initSSE, sseSend } from '../utils/sse';
 import * as fs from 'fs';
 import * as path from 'path';
-import { revisePrototype, loadLatestPrototype, repairTruncatedJson, type PrototypeResult } from '../agents/prototype-agent';
+import { revisePrototype, loadLatestPrototype, type PrototypeResult } from '../agents/prototype-agent';
+import { repairTruncatedJson } from '../utils/json-repair';
 import Logger from '../utils/logger';
 
 const PROTOTYPE_DIR = path.resolve(__dirname, '../../../../agents/templates/prototype');

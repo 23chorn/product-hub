@@ -47,45 +47,9 @@
     { "repo": "xcube-android", "changes_required": "New Chat tab; channel list fragment; message thread RecyclerView with DiffUtil; ticker card ViewHolder; WebSocket connection manager; deep-link handler", "notes": "Background message delivery via FCM for unread notifications (Phase 2); MVP is foreground-only" },
     { "repo": "xcube-data-infra", "changes_required": "New Cassandra cluster provisioning; Kafka topic: messages.archive; S3 bucket: xcube-message-archive with 7-year lifecycle policy; Athena table definition for compliance queries", "notes": "Separate from main RDS cluster; Cassandra on EC2 (3-node cluster) not Fargate" }
   ],
-  "system_diagram": "Mobile Client (iOS / Android)\n   ├── REST HTTPS → API Gateway → Channels Service (Node.js) → PostgreSQL RDS\n   └── WebSocket WSS → WS Gateway (Nginx) → Message Service (Node.js)\n                                                    ├── Redis Pub/Sub (fan-out to other pods)\n                                                    ├── Cassandra (message store)\n                                                    └── Moderation Service\n                                                            ├── Rule-based classifier (<5ms)\n                                                            └── LLM Classifier (~200ms async)\n                                                                    └── Human Review Queue (Slack)\nArchive Pipeline:\n   Cassandra → Debezium CDC → Kafka (messages.archive) → S3 (Parquet) → Athena (compliance)",
-  "data_flows": [
-    {
-      "name": "Message send and delivery",
-      "steps": [
-        "Client sends WebSocket frame: {type: 'send', channelId, content, tickerRef}",
-        "Message Service receives frame; runs rule-based moderation (<5ms)",
-        "If rule-based passes: write to Cassandra with moderation_status=approved",
-        "Publish message to Redis Pub/Sub topic ch:{channelId}",
-        "All Message Service pods subscribed to that topic push message frame to their connected clients",
-        "Async: LLM classifier evaluates for pump-and-dump signals; if flagged, status updated to pending and human review queue notified",
-        "Human reviewer approves or rejects; if approved, message retroactively delivered to clients who missed it"
-      ]
-    },
-    {
-      "name": "Ticker card real-time update",
-      "steps": [
-        "Client receives a message frame containing tickerCard with symbol",
-        "Message Service subscribes to Market Data WebSocket quote stream for that symbol",
-        "Every 15 seconds, Market Data emits a price update for the symbol",
-        "Message Service pushes ticker_update frame to all clients in the channel who have that ticker card visible"
-      ]
-    }
-  ],
   "infrastructure": {
     "hosting": "Message Service on existing AWS ECS Fargate cluster: 5 tasks × 1 vCPU / 2GB RAM; auto-scales to 20 at peak. Cassandra: 3-node EC2 cluster (r6g.xlarge) in us-east-1. Kafka: MSK (2 brokers). WS Gateway: 2 Nginx tasks on Fargate.",
-    "cost_estimate": "Cassandra EC2 (3× r6g.xlarge): ~$300/mo. Kafka MSK (2 brokers): ~$120/mo. S3 archive (7 years at 10GB/mo growth): ~$25/mo first year. ECS Message Service incremental: ~$60/mo. Total incremental: ~$505/mo for 10K users ($0.05/user/month).",
-    "deployment_pipeline": [
-      "Cassandra schema changes via schema migration tool (Cassandra Migrations) on deploy",
-      "ECS Fargate blue/green deployment via CodeDeploy for Message Service",
-      "Kafka topic creation via Terraform; MSK cluster changes gated behind manual approval in CI",
-      "LLM classifier prompt version-controlled in repo; updated without service restart"
-    ],
-    "failure_modes": [
-      { "mode": "Redis unavailable", "mitigation": "Message Service falls back to direct Cassandra write + read; fan-out disabled (messages persist but not real-time); PagerDuty alert" },
-      { "mode": "Cassandra node failure", "mitigation": "3-node cluster with RF=3; loss of 1 node is transparent; loss of 2 nodes triggers read-only mode; PagerDuty P1" },
-      { "mode": "Moderation LLM unavailable", "mitigation": "Rule-based classifier remains active; LLM stage skipped; messages delivered after rule-based pass; human review queue batched for catchup when LLM recovers" },
-      { "mode": "WebSocket pod crash", "mitigation": "Clients reconnect to any available pod within 5s (exponential backoff); Redis Pub/Sub subscription rebuilt on reconnect; message history loaded from Cassandra" }
-    ]
+    "cost_estimate": "Cassandra EC2 (3× r6g.xlarge): ~$300/mo. Kafka MSK (2 brokers): ~$120/mo. S3 archive (7 years at 10GB/mo growth): ~$25/mo first year. ECS Message Service incremental: ~$60/mo. Total incremental: ~$505/mo for 10K users ($0.05/user/month)."
   },
   "security_considerations": [
     "All WebSocket connections authenticated via JWT query parameter; connection rejected immediately if token invalid or expired",
@@ -122,26 +86,17 @@
       {
         "title": "Channel Management",
         "target_repos": ["xcube-api", "xcube-ios", "xcube-android"],
-        "data_contracts": ["channels table (PostgreSQL new)", "channel_members table (PostgreSQL new)", "Redis key: channel:{id}:unread:{userId}"],
-        "cross_repo_boundaries": "iOS/Android call REST /api/channels for CRUD; GET /api/channels returns sorted list by lastMessageAt with unread counts; POST /api/channels/:id/join is idempotent",
-        "technical_notes": "Channel membership uses PostgreSQL (RDS) for ACID guarantees on member_count. Unread tracking stored in Redis (ephemeral — reset on disconnect is acceptable). Channel discovery endpoint must paginate — no full-table scans.",
-        "risks": ["Public channel directory search requires pg_trgm index on name + topic; add before launch", "member_count can drift under concurrent joins — use SELECT FOR UPDATE or counter table"]
+        "technical_notes": "Channel membership uses PostgreSQL (RDS) for ACID guarantees on member_count. Unread tracking stored in Redis (ephemeral — reset on disconnect is acceptable). Channel discovery endpoint must paginate — no full-table scans."
       },
       {
         "title": "Real-time Text Messaging",
         "target_repos": ["xcube-api", "xcube-ios", "xcube-android"],
-        "data_contracts": ["messages table (Cassandra new)", "Redis Pub/Sub: ch:{channelId}", "Redis key: ratelimit:msg:{userId}", "WebSocket endpoint: /ws/chat"],
-        "cross_repo_boundaries": "iOS/Android connect WebSocket /ws/chat for real-time; REST GET /api/channels/:id/messages for history; Message Service fans out via Redis Pub/Sub across stateless pods",
-        "technical_notes": "WebSocket pods are stateless — each subscribes to Redis Pub/Sub topics for channels their connected clients have joined. Rate limit enforced at Message Service ingestion (30 msg/min per user). Cassandra partition key = channel_id; clustering DESC gives most-recent-first reads without sorting. TTL = 7 years per row.",
-        "risks": ["Cassandra partition hotspot if a single channel (e.g. #aapl-watchers at earnings) receives >10K msg/min — add sub-partitioning by hour if needed", "Redis Pub/Sub fan-out at 10K concurrent connections with 5 pods = 2K subs per pod × topic delivery — benchmark at load"]
+        "technical_notes": "WebSocket pods are stateless — each subscribes to Redis Pub/Sub topics for channels their connected clients have joined. Rate limit enforced at Message Service ingestion (30 msg/min per user). Cassandra partition key = channel_id; clustering DESC gives most-recent-first reads without sorting. TTL = 7 years per row."
       },
       {
         "title": "Live Ticker Card Sharing & Push Notifications",
         "target_repos": ["xcube-api", "xcube-ios", "xcube-android"],
-        "data_contracts": ["ticker_ref JSON field in messages (Cassandra)", "Market Data Service WebSocket: existing /ws/quotes", "Deep-link schema: xcube://instrument/{symbol}?orderprefill=market", "APNs (iOS) and FCM (Android) push payloads"],
-        "cross_repo_boundaries": "Message Service subscribes to existing Market Data WebSocket for ticker symbols in active cards; pushes ticker_update frames to chat clients every 15s; deep-link handled natively on iOS/Android; Notification Service fans out APNs/FCM on new message event",
-        "technical_notes": "Ticker card price updates pushed by Message Service to avoid N×M client polling. Message Service maintains active ticker subscriptions per channel and unsubscribes when no clients are viewing. Push notifications fan out via APNs (high-priority) and FCM (high-priority channel for Doze bypass). Muted channels excluded from fan-out at query time, not client-side.",
-        "risks": ["Message Service must unsubscribe from ticker quote stream when no clients viewing — subscription leaks accumulate over time", "APNs rate limit: max 30 pushes/second per device — batch fan-out for large channels"]
+        "technical_notes": "Ticker card price updates pushed by Message Service to avoid N×M client polling. Push notifications fan out via APNs (high-priority) and FCM (high-priority channel for Doze bypass). Muted channels excluded from fan-out at query time, not client-side."
       }
     ]
   }

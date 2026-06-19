@@ -48,7 +48,8 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   } = useWorkflowStore();
   const { agentModels } = useModelStore();
   const { isDemoMode: demoModeEnabled } = useSettingsStore();
-  const { realUser } = useAuthStore();
+  const { realUser, noAuth } = useAuthStore();
+  const isAdmin = noAuth || realUser?.is_admin;
   const bottomRef = useRef<HTMLDivElement>(null);
   const [stopping, setStopping] = useState(false);
   const [restarting, setRestarting] = useState(false);
@@ -153,6 +154,16 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
       setRestarting(false);
     } catch {
       setRestarting(false);
+    }
+  };
+
+  const handleRetryStage = async () => {
+    if (!activeWorkflow) return;
+    try {
+      const status = await api.retryWorkflowStage(activeWorkflow.id);
+      applyWorkflowStatus(status);
+    } catch (err) {
+      console.error('Failed to retry stage:', err);
     }
   };
 
@@ -313,6 +324,18 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
             )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+            {isAdmin && isWorkflowActive && !isComplete && (
+              <button
+                onClick={handleRetryStage}
+                title="Retry current stage from the beginning"
+                className="flex items-center gap-1 text-[11px] font-mono px-2 py-1 rounded border border-slate-300 dark:border-slate-700/50 text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-500 hover:border-amber-400 dark:hover:border-amber-700 transition-colors"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                retry
+              </button>
+            )}
             <button
               onClick={() => setShowAudit(true)}
               title="Activity — who reviewed each stage"

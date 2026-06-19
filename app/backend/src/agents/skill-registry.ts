@@ -157,7 +157,7 @@ const SEED_TOOL_DEFINITIONS: Record<string, string> = {
   solution_architect: JSON.stringify([
     {
       name: 'validate_architecture_json',
-      description: 'Validate your architecture JSON before returning it. Checks technology_decisions (including that alternatives are substantive), new_dependencies structure, data_model entities and ERD, api_surface endpoints, repository_impact, data_flows, infrastructure (cost_estimate, failure_modes), security_considerations, and the epic_features_enriched block required by story decomposition agents. Also scans for unresolved TBD decisions. Call after completing the full JSON object.',
+      description: 'Validate your architecture JSON before returning it. Checks technology_decisions (including that alternatives are substantive), new_dependencies structure, data_model entities and ERD, api_surface endpoints, repository_impact, infrastructure (hosting, cost_estimate), security_considerations, and the epic_features_enriched block required by story decomposition agents. Also scans for unresolved TBD decisions. Call after completing the full JSON object.',
       input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete architecture JSON string (may be wrapped in a ```json code block)' } }, required: ['json'] },
     },
     {

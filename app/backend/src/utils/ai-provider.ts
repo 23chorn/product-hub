@@ -15,6 +15,7 @@ import {
   modelMaxOutputTokens,
 } from './model-config';
 import Logger from './logger';
+import { repairTruncatedJson } from './json-repair';
 import { type ToolDefinition, executeTool } from '../agents/tool-registry';
 
 export type { ToolDefinition } from '../agents/tool-registry';
@@ -255,12 +256,21 @@ async function* streamWithAnthropic(
               currentBlock._partialJson += delta.partial_json ?? '';
             }
           } else if (event.type === 'content_block_stop') {
-            // Finalise tool_use input by parsing accumulated JSON
+            // Finalise tool_use input by parsing accumulated JSON. A max_tokens cutoff
+            // mid-stream leaves this truncated — attempt a structural repair (close the
+            // open string/braces) before giving up, so a near-complete draft isn't
+            // discarded entirely.
             if (currentBlock?.type === 'tool_use') {
+              const raw = currentBlock._partialJson || '{}';
               try {
-                currentBlock.input = JSON.parse(currentBlock._partialJson || '{}');
+                currentBlock.input = JSON.parse(raw);
               } catch {
-                currentBlock.input = {};
+                try {
+                  currentBlock.input = JSON.parse(repairTruncatedJson(raw));
+                  logger.warn(`[ANTHROPIC] Repaired truncated tool_use input for "${currentBlock.name}" (${raw.length} chars)`);
+                } catch {
+                  currentBlock.input = {};
+                }
               }
               delete currentBlock._partialJson;
             }
@@ -349,6 +359,16 @@ async function* streamWithAnthropic(
       validatorJson = String(validatorToolUse.input.json);
       validatorToolName = validatorToolUse.name;
       break;
+    }
+  }
+
+  // The inner json string can itself be truncated even when the outer tool-call
+  // wrapper repaired cleanly (the cutoff landed inside the nested document text).
+  if (validatorJson) {
+    try {
+      JSON.parse(validatorJson);
+    } catch {
+      validatorJson = repairTruncatedJson(validatorJson);
     }
   }
 
@@ -475,7 +495,18 @@ async function* streamWithBedrock(
             } else if (event.contentBlockStop !== undefined) {
               if (currentToolUse) {
                 let input: Record<string, unknown> = {};
-                try { input = JSON.parse(currentToolUse.inputJson || '{}'); } catch {}
+                const raw = currentToolUse.inputJson || '{}';
+                // A max_tokens cutoff mid-stream leaves this truncated — attempt a
+                // structural repair before giving up, so a near-complete draft isn't
+                // discarded entirely.
+                try {
+                  input = JSON.parse(raw);
+                } catch {
+                  try {
+                    input = JSON.parse(repairTruncatedJson(raw));
+                    logger.warn(`[BEDROCK] Repaired truncated tool_use input for "${currentToolUse.name}" (${raw.length} chars)`);
+                  } catch { /* leave input as {} */ }
+                }
                 assistantBlocks.push({ toolUse: { toolUseId: currentToolUse.toolUseId, name: currentToolUse.name, input } } as any);
                 currentToolUse = null;
               }
@@ -595,6 +626,16 @@ async function* streamWithBedrock(
       validatorJson = String(validatorToolUse.input.json);
       validatorToolName = validatorToolUse.name;
       break;
+    }
+  }
+
+  // The inner json string can itself be truncated even when the outer tool-call
+  // wrapper repaired cleanly (the cutoff landed inside the nested document text).
+  if (validatorJson) {
+    try {
+      JSON.parse(validatorJson);
+    } catch {
+      validatorJson = repairTruncatedJson(validatorJson);
     }
   }
 

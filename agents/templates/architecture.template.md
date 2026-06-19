@@ -30,15 +30,9 @@ Schema:
   "repository_impact": [
     { "repo": "repo-name", "changes_required": "What changes", "notes": "" }
   ],
-  "system_diagram": "ASCII diagram showing all components and data flow",
-  "data_flows": [
-    { "name": "Primary user journey name", "steps": ["Step 1: ...", "Step 2: ..."] }
-  ],
   "infrastructure": {
     "hosting": "Hosting topology description",
-    "cost_estimate": "Per-component cost estimates",
-    "deployment_pipeline": ["Step 1", "Step 2"],
-    "failure_modes": [{ "mode": "Failure scenario", "mitigation": "How it is mitigated" }]
+    "cost_estimate": "Per-component cost estimates"
   },
   "security_considerations": ["Security point 1", "Security point 2"],
   "new_dependencies": [
@@ -59,10 +53,7 @@ Schema:
       {
         "title": "Feature title (preserve exactly from epic_feature_planner output)",
         "target_repos": ["repo1", "repo2"],
-        "data_contracts": ["Entity or model created/modified"],
-        "cross_repo_boundaries": "How services communicate for this feature",
-        "technical_notes": "Implementation details that constrain story decomposition",
-        "risks": ["Technical risk or scalability concern"]
+        "technical_notes": "Implementation details that constrain story decomposition"
       }
     ]
   }
@@ -74,3 +65,4 @@ Rules:
 - For every repo in context/repos.md, include a repository_impact entry (use "No changes" if unaffected).
 - epic_features_enriched must reference the exact feature titles from the epic_feature_planner output.
 - new_dependencies: list every technology that does NOT already appear in context/tech-stack.md. If all choices reuse the existing stack, set this to an empty array `[]`. An empty array is a deliberate statement — it will be shown prominently to the PM reviewer as confirmation that no new dependencies are introduced.
+- This document is intentionally scoped down for reliability — keep every field concise (a few sentences, not essays). Diagrams, data-flow walkthroughs, deployment pipelines, and failure-mode tables are deferred for now and will be reintroduced once the stage is reliable at this smaller scope.

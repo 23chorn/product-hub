@@ -299,7 +299,6 @@ export function validateArchitectureJson(input: Record<string, unknown>): string
   const p = parsed;
   req(p, 'title', 'root', issues);
   req(p, 'overview', 'root', issues);
-  req(p, 'system_diagram', 'root', issues);
 
   // TBD scan across the whole document
   if (hasTBD(p)) {
@@ -397,38 +396,21 @@ export function validateArchitectureJson(input: Record<string, unknown>): string
     req(r, 'changes_required', lp, issues);
   });
 
-  // data_flows
-  const flows = reqArray(p, 'data_flows', 'root', issues, 1);
-  flows?.forEach((f: any, i: number) => {
-    const lp = `data_flows[${i}]`;
-    req(f, 'name', lp, issues);
-    const steps = f?.steps;
-    if (!Array.isArray(steps) || steps.length < 2) {
-      issues.push(`${lp}: "steps" must have at least 2 steps`);
-    }
-  });
-
-  // infrastructure
+  // infrastructure — scoped down to hosting + cost for now; deployment pipeline and
+  // failure-mode tables are deferred until this stage is reliable at the smaller scope.
   if (!p.infrastructure || typeof p.infrastructure !== 'object') {
     issues.push('root: "infrastructure" object is required');
   } else {
     const infra = p.infrastructure;
     req(infra, 'hosting', 'infrastructure', issues);
     req(infra, 'cost_estimate', 'infrastructure', issues);
-    if (!Array.isArray(infra.deployment_pipeline) || infra.deployment_pipeline.length === 0) {
-      issues.push('infrastructure: "deployment_pipeline" must be a non-empty array');
-    }
-    const fms = reqArray(infra, 'failure_modes', 'infrastructure', issues, 1);
-    fms?.forEach((fm: any, i: number) => {
-      req(fm, 'mode', `infrastructure.failure_modes[${i}]`, issues);
-      req(fm, 'mitigation', `infrastructure.failure_modes[${i}]`, issues);
-    });
   }
 
   // security_considerations
   reqArray(p, 'security_considerations', 'root', issues, 1);
 
-  // epic_features_enriched
+  // epic_features_enriched — kept lightweight (title, target_repos, technical_notes only)
+  // since story decomposition only needs a pointer into the relevant repos plus notes.
   if (!p.epic_features_enriched || typeof p.epic_features_enriched !== 'object') {
     issues.push('root: "epic_features_enriched" object is required — story decomposition agents depend on this field');
   } else {
@@ -438,16 +420,9 @@ export function validateArchitectureJson(input: Record<string, unknown>): string
     features?.forEach((f: any, i: number) => {
       const lp = `epic_features_enriched.features[${i}]`;
       req(f, 'title', lp, issues);
-      req(f, 'cross_repo_boundaries', lp, issues);
       req(f, 'technical_notes', lp, issues);
       if (!Array.isArray(f.target_repos) || f.target_repos.length === 0) {
         issues.push(`${lp}: "target_repos" must be a non-empty array`);
-      }
-      if (!Array.isArray(f.data_contracts) || f.data_contracts.length === 0) {
-        issues.push(`${lp}: "data_contracts" must be a non-empty array`);
-      }
-      if (!Array.isArray(f.risks) || f.risks.length === 0) {
-        issues.push(`${lp}: "risks" must be a non-empty array — document at least one technical risk per feature`);
       }
     });
   }

@@ -27,7 +27,8 @@ import {
 } from './artifact-helpers';
 import { getActiveSkill } from './skill-registry';
 import { type ToolDefinition, getRegisteredTools } from './tool-registry';
-import { loadWorkflowArtifacts, loadLocalDesignSystem, loadFigmaDesignSystem, repairTruncatedJson, getFigmaFileKey, setFigmaFileKey, createFigmaFile, resolveItemPlatform, platformHintFor, resolvedFramePlatform } from './prototype-agent';
+import { loadWorkflowArtifacts, loadLocalDesignSystem, loadFigmaDesignSystem, getFigmaFileKey, setFigmaFileKey, createFigmaFile, resolveItemPlatform, platformHintFor, resolvedFramePlatform } from './prototype-agent';
+import { repairTruncatedJson } from '../utils/json-repair';
 import {
   PROJECT_ROOT, logger, stmts, insertEvent,
   setCheckpointTokenUsage, loadGlobalPolicies, workflowOps, rolesJson,
@@ -51,6 +52,42 @@ import { getCoordinator, getCritic } from './workflow-agents';
 import { runBacklogMerge, runMultiAgentFeatureStage, runMultiAgentFeatureRevision } from './feature-stage-runner';
 
 // ── Autonomous stage execution ────────────────────────────────────────────────
+
+/**
+ * Detects and strips a known LLM failure mode where the entire response echoes
+ * itself twice in a single completion — most often seen on revision turns, where
+ * the prior draft already sits in context and the model re-states it in full
+ * before producing the "real" answer. Looks for the response's own opening line
+ * recurring partway through; if that split produces two near-equal, near-identical
+ * halves, only the first copy is kept. This runs before any JSON/markdown-specific
+ * parsing so it catches the duplication regardless of output format.
+ */
+function stripWholeResponseDuplication(text: string, stage: string): string {
+  const trimmed = text.trim();
+  if (trimmed.length < 200) return text;
+
+  const firstLineEnd = trimmed.indexOf('\n');
+  const anchor = (firstLineEnd > 10 ? trimmed.slice(0, firstLineEnd) : trimmed.slice(0, 40)).trim();
+  if (anchor.length < 8) return text;
+
+  const secondOccurrence = trimmed.indexOf(anchor, anchor.length + 1);
+  if (secondOccurrence === -1) return text;
+
+  const firstHalf = trimmed.slice(0, secondOccurrence);
+  const secondHalf = trimmed.slice(secondOccurrence);
+  // Guard against the anchor line coincidentally reappearing later in a legitimately
+  // long document — only treat as a true duplicate if the halves are near-equal length
+  // and match content once whitespace differences (missing/extra newlines at the glue
+  // point) are normalized away.
+  const lenRatio = secondHalf.length / firstHalf.length;
+  if (lenRatio < 0.85 || lenRatio > 1.15) return text;
+
+  const normalize = (s: string) => s.replace(/\s+/g, ' ').trim();
+  if (normalize(firstHalf) !== normalize(secondHalf)) return text;
+
+  logger.warn(`Stage "${stage}" response echoed the full document twice — stripping the duplicate copy (${trimmed.length} → ${firstHalf.length} chars)`);
+  return firstHalf.trimEnd();
+}
 
 /**
  * Run a specialist stage autonomously (no user interaction).
@@ -457,6 +494,8 @@ export async function runAutonomousStage(
 
     const elapsed = Math.round((Date.now() - startTime) / 1000);
     logger.info(`Autonomous stage "${stage}" LLM streaming complete (${elapsed}s, ${fullResponse.length} chars)`);
+
+    fullResponse = stripWholeResponseDuplication(fullResponse, stage);
 
     // Clean up LLM output before saving
     let artifactContent: string;

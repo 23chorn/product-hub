@@ -19,7 +19,7 @@ export const STAGE_MAX_OUTPUT_TOKENS: Record<string, number> = {
   analyst:              12_000,
   pm_prd:               12_000,
   epic_feature_planner: 16_000,
-  solution_architect:   16_000,
+  solution_architect:   32_000,  // heaviest stage: full data model/API surface/infra plus epic_features_enriched for every feature
   story_decomposition:  16_000,  // single feature backlog (epic + ~8 stories with prd_ref/technical detail)
   qa_engineer:          14_000,  // 10-15 test cases per feature with full test detail
   prototype:            64_000,
@@ -137,14 +137,14 @@ Key requirements:
     label: 'Architecture Document (Atlas)',
     format: `Produce a single valid JSON object wrapped in a \`\`\`json code block following the architecture output template injected into your system prompt. No prose before or after the JSON block.
 
+This stage is intentionally scoped down for reliability right now — fewer sections, written concisely. More sections (diagrams, data-flow walkthroughs, deployment/failure-mode detail) will be reintroduced once this smaller scope is solid. Do not add sections beyond the template.
+
 Key requirements:
-- **technology_decisions**: name specific products, versions, and pricing tiers. State alternatives and rationale for every decision. Include only platform keys that are in scope.
-- **data_model.entities**: full table with PKs, key fields, relationships, and notes. entity_relationship_diagram must be an ASCII string.
-- **api_surface**: every endpoint with method, path, request/response shapes, auth, and idempotency notes.
-- **system_diagram**: ASCII service diagram showing all components and data flow.
-- **data_flows**: 2–3 walkthroughs for primary user journeys.
-- **infrastructure**: hosting topology with per-component cost estimates, deployment steps, and failure modes.
-- **epic_features_enriched**: take the epic/phases/features from the prior stage and enrich each feature with target_repos, data_contracts, cross_repo_boundaries, technical_notes, and risks. Preserve the \`phases[]\` structure exactly — do not flatten. This field is consumed by the story decomposition agent.
+- **technology_decisions**: name specific products, versions, and pricing tiers. State alternatives and rationale for every decision, briefly. Include only platform keys that are in scope.
+- **data_model.entities**: table with PKs, key fields, relationships, and notes. entity_relationship_diagram must be an ASCII string.
+- **api_surface**: every endpoint with method, path, request/response shapes, auth, and idempotency notes — keep each note to one line.
+- **infrastructure**: hosting topology and per-component cost estimates only — no deployment pipeline or failure-mode table for now.
+- **epic_features_enriched**: take the epic/phases/features from the prior stage and enrich each feature with target_repos and a short technical_notes line. Preserve the \`phases[]\` structure exactly — do not flatten. This field is consumed by the story decomposition agent.
 
 If a context/tech-stack.md file was provided, align all choices with the existing stack and explain deviations. If no tech stack was provided, recommend specific technologies with tradeoffs.`,
   },

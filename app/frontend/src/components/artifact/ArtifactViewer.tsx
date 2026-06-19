@@ -489,9 +489,20 @@ export function ArtifactViewer() {
                               <svg className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
                               </svg>
-                              <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
-                                This artifact appears incomplete — the stage was likely interrupted mid-stream. Retry the stage to regenerate a complete output.
-                              </p>
+                              <div className="flex-1 space-y-2">
+                                <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
+                                  This artifact appears incomplete — the stage was likely interrupted mid-stream. Retry the stage to regenerate a complete output.
+                                </p>
+                                {pendingCheckpoint && hasApprovePermission && (
+                                  <button
+                                    onClick={rerunStage}
+                                    disabled={resolveLoading}
+                                    className="py-1.5 px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 text-white text-xs font-medium rounded-md transition-colors"
+                                  >
+                                    {resolveLoading ? 'Retrying...' : 'Retry Stage'}
+                                  </button>
+                                )}
+                              </div>
                             </div>
                             <pre className="text-xs font-mono text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-4 overflow-auto whitespace-pre-wrap break-words leading-relaxed">{content}</pre>
                           </div>
@@ -532,6 +543,26 @@ export function ArtifactViewer() {
                       );
                     })() : error ? (
                       <p className="text-sm text-red-500">{error}</p>
+                    ) : pendingCheckpoint ? (
+                      <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                        <svg className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                        </svg>
+                        <div className="flex-1 space-y-2">
+                          <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
+                            No content was produced for this stage — it likely hit an error or ran out of output budget. Retry to regenerate it from scratch.
+                          </p>
+                          {hasApprovePermission && (
+                            <button
+                              onClick={rerunStage}
+                              disabled={resolveLoading}
+                              className="py-1.5 px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 text-white text-xs font-medium rounded-md transition-colors"
+                            >
+                              {resolveLoading ? 'Retrying...' : 'Retry Stage'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     ) : (
                       <p className="text-sm text-slate-400 italic">No content available.</p>
                     )}

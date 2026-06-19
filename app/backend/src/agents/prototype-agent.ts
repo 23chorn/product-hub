@@ -16,6 +16,7 @@ import * as fs from 'fs';
 import * as fsAsync from 'fs/promises';
 import * as path from 'path';
 import { streamAI, resolveModelId, type SystemPrompt, type TokenUsage } from '../utils/ai-provider';
+import { repairTruncatedJson } from '../utils/json-repair';
 import type { AgentType } from '@pap/shared';
 import { loadLatestArtifactContent, saveLocalArtifact, resolveArtifactPath } from './artifact-helpers';
 import db from '../data/database';
@@ -468,38 +469,6 @@ export async function writeFigmaAnnotations(
     logger.warn(`Figma comment write error: ${msg}`);
     return { success: false, commentId: null };
   }
-}
-
-// ── JSON repair (for truncated model output) ───────────────────────────────────
-
-export function repairTruncatedJson(raw: string): string {
-  let s = raw.trim();
-  s = s.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-  try { JSON.parse(s); return s; } catch { /* needs repair */ }
-
-  let inString = false;
-  for (let i = 0; i < s.length; i++) {
-    if (s[i] === '\\') { i++; continue; }
-    if (s[i] === '"') inString = !inString;
-  }
-  if (inString) {
-    if (s.endsWith('\\')) s = s.slice(0, -1);
-    s += '"';
-  }
-  s = s.replace(/,\s*$/, '');
-
-  const stack: string[] = [];
-  inString = false;
-  for (let i = 0; i < s.length; i++) {
-    if (s[i] === '\\' && inString) { i++; continue; }
-    if (s[i] === '"') { inString = !inString; continue; }
-    if (inString) continue;
-    if (s[i] === '{') stack.push('}');
-    else if (s[i] === '[') stack.push(']');
-    else if (s[i] === '}' || s[i] === ']') stack.pop();
-  }
-  while (stack.length > 0) s += stack.pop();
-  return s;
 }
 
 // ── Platform resolution ────────────────────────────────────────────────────────
