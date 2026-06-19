@@ -49,7 +49,7 @@ export {
 import { setCancelController, clearCancelController, isCancelRequested } from './workflow-cancel';
 export { getCoordinator, getCritic, getCurator } from './workflow-agents';
 import { getCoordinator, getCritic } from './workflow-agents';
-import { runBacklogMerge, runMultiAgentFeatureStage, runMultiAgentFeatureRevision } from './feature-stage-runner';
+import { runBacklogMerge, runMultiAgentFeatureStage, runMultiAgentFeatureRevision, runMultiAgentFeatureQaRevision } from './feature-stage-runner';
 
 // ── Autonomous stage execution ────────────────────────────────────────────────
 
@@ -120,10 +120,20 @@ export async function runAutonomousStage(
   // Each feature runs a multi-agent collaborative session (platform-filtered participants).
   // When priorDraftContent is set (human revision or critic revision), use the targeted
   // single-agent revision path instead of re-running the full 3-phase pipeline.
-  const featureMatch = stage.match(/^story_decomposition_F(\d+)$/);
+  const featureMatch = stage.match(/^story_decomposition_F(\d+)(_qa)?$/);
   if (featureMatch) {
     const featureIndex = parseInt(featureMatch[1], 10) - 1;
-    if (priorDraftContent) {
+    const isQaStage = !!featureMatch[2];
+    if (isQaStage) {
+      // The QA checkpoint only ever gets a targeted revision (it's never generated on
+      // its own — the initial generation always produces stories + QA together via the
+      // unsuffixed stage, see runMultiAgentFeatureStage below).
+      if (priorDraftContent) {
+        await runMultiAgentFeatureQaRevision(sessionId, workflowId, stage, itemId, featureIndex, priorDraftContent, brief);
+      } else {
+        logger.error(`runAutonomousStage: "${stage}" requires priorDraftContent (QA checkpoints can only be revised, not generated directly)`);
+      }
+    } else if (priorDraftContent) {
       await runMultiAgentFeatureRevision(sessionId, workflowId, stage, itemId, featureIndex, priorDraftContent, brief);
     } else {
       await runMultiAgentFeatureStage(sessionId, workflowId, stage, itemId, featureIndex);

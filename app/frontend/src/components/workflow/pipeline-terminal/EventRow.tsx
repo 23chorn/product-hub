@@ -35,19 +35,24 @@ export function EventRow({ msg }: { msg: CoordinatorMessage }) {
 
   const lines = msg.content.split('\n').filter(Boolean);
   const title = lines[0] ?? '';
+  const urlLines = lines.slice(1).filter(l => l.startsWith('→ '));
   const detailLines = lines.slice(1).filter(l => !l.startsWith('→ '));
   const detail = detailLines.join(' ').slice(0, 120);
 
-  // Extract URL from line starting with →
-  // Handle both formats: "→ url" and "→ Label: url"
-  const urlLine = lines.find(l => l.startsWith('→ '))?.replace(/^→\s*/, '') ?? null;
-  const externalUrl = urlLine?.includes('https://')
-    ? urlLine.substring(urlLine.indexOf('https://'))
-    : urlLine;
+  // Extract every "→ url" / "→ Label: url" line — a feature refinement push can carry
+  // multiple distinct links (epic, feature, test plan), and all of them should render.
+  const parseUrlLine = (line: string) => {
+    const stripped = line.replace(/^→\s*/, '');
+    const labelMatch = stripped.match(/^([^:]+):\s*(https:\/\/.+)$/);
+    if (labelMatch) return { label: labelMatch[1].trim(), url: labelMatch[2].trim() };
+    return { label: null, url: stripped.includes('https://') ? stripped.slice(stripped.indexOf('https://')) : stripped };
+  };
+  const externalLinks = urlLines.map(parseUrlLine).filter(l => !!l.url);
+  const externalUrl = externalLinks[0]?.url ?? null;
   const adoStages = new Set(['epic_feature_planner']);
   const isFeatureStage = msg.stage?.startsWith('story_decomposition_F') ?? false;
   const isWikiLink = (msg.eventType === 'stage_completed' || msg.eventType === 'wiki_synced') && !!externalUrl && !adoStages.has(msg.stage ?? '') && !isFeatureStage;
-  const isAdoStageLink = (msg.eventType === 'stage_completed' || msg.eventType === 'ado_pushed') && !!externalUrl && (adoStages.has(msg.stage ?? '') || isFeatureStage);
+  const isAdoStageLink = (msg.eventType === 'stage_completed' || msg.eventType === 'ado_pushed') && externalLinks.length > 0 && (adoStages.has(msg.stage ?? '') || isFeatureStage);
   const isAdoLink = msg.eventType === 'board_synced' && !!externalUrl;
 
   return (
@@ -77,18 +82,25 @@ export function EventRow({ msg }: { msg: CoordinatorMessage }) {
           </a>
         )}
         {isAdoStageLink && (
-          <a
-            href={externalUrl!}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 mt-0.5 text-[11px] text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 font-mono underline underline-offset-2 transition-colors"
-          >
-            {msg.stage === 'epic_feature_planner'
-              ? 'Open in Azure Boards ↗'
-              : isFeatureStage
-              ? 'View Feature in Azure Boards ↗'
-              : 'Open in Azure DevOps ↗'}
-          </a>
+          <div className="flex flex-col gap-0.5 mt-0.5">
+            {externalLinks.map((link, i) => (
+              <a
+                key={i}
+                href={link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 font-mono underline underline-offset-2 transition-colors"
+              >
+                {link.label
+                  ? `${link.label} in Azure Boards ↗`
+                  : msg.stage === 'epic_feature_planner'
+                  ? 'Open in Azure Boards ↗'
+                  : isFeatureStage
+                  ? 'View Feature in Azure Boards ↗'
+                  : 'Open in Azure DevOps ↗'}
+              </a>
+            ))}
+          </div>
         )}
         {isAdoLink && (
           <a

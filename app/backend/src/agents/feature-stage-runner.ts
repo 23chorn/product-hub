@@ -294,3 +294,106 @@ export async function runMultiAgentFeatureRevision(
 
   logger.info(`[MULTI-AGENT REVISION] Feature ${featureNum} targeted revision complete (artifact ${artifactId})`);
 }
+
+/**
+ * Targeted single-agent revision for story_decomposition_F*_qa checkpoints.
+ *
+ * Mirrors runMultiAgentFeatureRevision above, but edits the QA test suite instead of
+ * the stories — Vera (QA Engineer) applies a SURGICAL EDIT to only the test cases
+ * flagged in the revision brief; every other test case for this feature is copied as-is.
+ */
+export async function runMultiAgentFeatureQaRevision(
+  sessionId: string,
+  workflowId: string,
+  stage: string,
+  itemId: string,
+  featureIndex: number,
+  priorDraft: string,
+  brief: string
+): Promise<void> {
+  const featureNum = featureIndex + 1;
+  // Vera resolves her persona from the unsuffixed feature stage during the original
+  // synthesis (synthesizeQaArtifact in multi-agent-refinement.ts) — match that here so
+  // a QA revision loads the exact same persona the initial generation used.
+  const baseStage = stage.replace(/_qa$/, '');
+  logger.info(`[MULTI-AGENT REVISION] Targeted QA revision for Feature ${featureNum} (stage: ${stage})`);
+
+  insertEvent(workflowId, 'stage_progress', stage,
+    `Revision mode: applying targeted changes to Feature ${featureNum} QA tests only…`);
+
+  const { SpecialistAgent } = await import('./specialist-agent');
+  const agent = new SpecialistAgent('qa-engineer' as AgentType);
+  const persona = await agent.loadPersona(baseStage);
+  const systemPrompt = await agent.buildSystemPrompt(persona, undefined, undefined, true, baseStage);
+
+  const revisionDirective =
+    `You are performing a SURGICAL EDIT of the Feature ${featureNum} QA test suite above. Apply ONLY the targeted changes described in the revision brief at the top of this conversation.\n\n` +
+    `Rules — apply strictly:\n` +
+    `- Modify ONLY the test cases (TC-F${featureNum}-*) explicitly mentioned in the feedback.\n` +
+    `- Copy all other test cases for Feature ${featureNum} EXACTLY as-is.\n` +
+    `- Do NOT add new test cases unless the feedback explicitly requests it.\n` +
+    `- Do NOT restructure, reorder, rename, or rewrite any field not mentioned in the feedback.\n` +
+    `- Preserve the exact JSON schema for every test case.\n` +
+    `- Return the complete Feature ${featureNum} QA test suite JSON — only the flagged test cases will differ from the prior draft.`;
+
+  const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
+    { role: 'user', content: brief },
+    { role: 'assistant', content: '```json\n' + priorDraft + '\n```' },
+    { role: 'user', content: revisionDirective },
+  ];
+
+  const { STAGE_MAX_OUTPUT_TOKENS } = await import('./stage-metadata');
+  const maxTokens = STAGE_MAX_OUTPUT_TOKENS['qa_engineer'] ?? 14_000;
+
+  let fullResponse = '';
+  for await (const chunk of agent.streamResponse(systemPrompt, messages, undefined, undefined, maxTokens)) {
+    fullResponse += chunk;
+  }
+
+  if (isCancelRequested(workflowId)) {
+    logger.info(`[MULTI-AGENT REVISION] Feature ${featureNum} QA result discarded — workflow ${workflowId} was cancelled mid-flight`);
+    return;
+  }
+
+  const stripped = fullResponse.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+  const jsonStart = stripped.indexOf('{');
+  const jsonContent = jsonStart > 0 ? stripped.slice(jsonStart) : stripped;
+
+  let revisedQaTests: any;
+  try {
+    revisedQaTests = JSON.parse(jsonContent);
+  } catch (err: any) {
+    logger.error(`[MULTI-AGENT REVISION] Invalid JSON from QA revision: ${err.message}`);
+    throw new Error(`QA revision produced invalid JSON: ${err.message}`);
+  }
+
+  const qaValidation = JSON.parse(validateQaTestsJson({ json: JSON.stringify(revisedQaTests) }));
+  if (!qaValidation.valid && Array.isArray(qaValidation.issues) && qaValidation.issues.length > 0) {
+    logger.warn(`[MULTI-AGENT REVISION] QA validation issues for Feature ${featureNum}: ${qaValidation.issues.join(' | ')}`);
+    insertEvent(workflowId, 'validation_warning', stage,
+      `Revised QA test suite quality check flagged ${qaValidation.issues.length} issue(s) for Feature ${featureNum}`,
+      { issues: qaValidation.issues });
+  }
+
+  const { saveLocalArtifact, saveDiffArtifact } = await import('./artifact-helpers');
+  const { computeRevisionDiff } = await import('../utils/revision-diff');
+  const artifactContent = JSON.stringify(revisedQaTests, null, 2);
+  const artifactId = await saveLocalArtifact(sessionId, 'qa_tests', artifactContent, itemId, null);
+
+  try {
+    const diffText = computeRevisionDiff(priorDraft, artifactContent, `Feature ${featureNum} QA Tests`);
+    const diffArtifactId = await saveDiffArtifact(itemId, stage, diffText, sessionId, 'qa-engineer');
+    if (diffArtifactId) logger.info(`[MULTI-AGENT REVISION] QA diff artifact saved (id: ${diffArtifactId})`);
+  } catch (err: any) {
+    logger.warn(`[MULTI-AGENT REVISION] Failed to save QA diff: ${err.message}`);
+  }
+
+  const { pauseAtCheckpoint } = await import('./workflow-router');
+  pauseAtCheckpoint(workflowId, stage, artifactId, sessionId, { revision_mode: true, feature: featureNum });
+
+  insertEvent(workflowId, 'stage_completed', stage,
+    `Targeted QA revision applied for Feature ${featureNum} — only affected test cases modified. Ready for review.`,
+    { artifact_id: artifactId });
+
+  logger.info(`[MULTI-AGENT REVISION] Feature ${featureNum} QA targeted revision complete (artifact ${artifactId})`);
+}

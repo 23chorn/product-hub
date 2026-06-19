@@ -17,16 +17,21 @@ interface WorkflowEvent {
 export function eventToMessage(event: WorkflowEvent): { role: 'coordinator'; content: string; timestamp: number; eventType: string; stage?: string } | null {
   let content = event.summary;
 
-  // stage_completed / ado_pushed — append external URL for direct linking
+  // stage_completed / ado_pushed — append external URLs for direct linking.
+  // A feature refinement push can carry up to three distinct links (epic, feature,
+  // test plan) — emit one "→ Label: url" line per link present so all of them render,
+  // not just whichever happened to be checked first.
   if ((event.event_type === 'stage_completed' || event.event_type === 'ado_pushed') && event.details) {
     try {
       const details = JSON.parse(event.details);
       if (details.wiki_url) {
         content = `${content}\n→ ${details.wiki_url}`;
-      } else if (details.feature_url && details.test_plan_url) {
-        content = `${content}\n→ View Feature: ${details.feature_url}\n→ View Test Plan: ${details.test_plan_url}`;
-      } else if (details.feature_url) {
-        content = `${content}\n→ View Feature: ${details.feature_url}`;
+      } else if (details.epic_url || details.feature_url || details.test_plan_url) {
+        const lines: string[] = [];
+        if (details.epic_url) lines.push(`→ View Epic: ${details.epic_url}`);
+        if (details.feature_url) lines.push(`→ View Feature: ${details.feature_url}`);
+        if (details.test_plan_url) lines.push(`→ View Test Plan: ${details.test_plan_url}`);
+        content = `${content}\n${lines.join('\n')}`;
       } else if (details.ado_url) {
         content = `${content}\n→ ${details.ado_url}`;
       }

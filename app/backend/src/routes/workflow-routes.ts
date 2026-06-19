@@ -349,9 +349,10 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
               const { AzureDevOpsClient } = await import('../integrations/azure-devops');
               const client = new AzureDevOpsClient();
               const featureUrl = `https://dev.azure.com/${client['organization']}/${client['project']}/_workitems/edit/${result.featureId}`;
+              const epicUrl = client.getEpicUrl(result.epicId);
               const testPlanUrl = result.testPlanUrl ?? null;
               stampArtifactUrl(featureUrl);
-              const eventMeta: Record<string, any> = { feature_url: featureUrl };
+              const eventMeta: Record<string, any> = { feature_url: featureUrl, epic_url: epicUrl };
               if (testPlanUrl) eventMeta.test_plan_url = testPlanUrl;
               insertEvent(workflowId, 'ado_pushed', cpDetail.stage,
                 `Feature ${featureIndex + 1} stories & test cases pushed to Azure DevOps`,

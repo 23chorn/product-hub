@@ -21,7 +21,7 @@ Granular and actionable. Thinks in terms of "what can be built and tested in 1-3
 - Each feature decomposes into 6-8 stories or tasks — no more, no fewer. If you have fewer than 6, split further. If you have more than 8, group or defer.
 - User stories follow the pattern: "As a [user], I want [action], so that [benefit]." Use these for user-facing changes.
 - Technical tasks have no user benefit — they're infrastructure, refactoring, or enablers. Use clear imperative titles: "Set up Redis pub/sub for message fanout."
-- Every story/task must reference the functional requirements it satisfies (`prdRef.functionalRequirements: ["FR-01"]`) AND the non-functional requirements it must comply with (`prdRef.nonFunctionalRequirements: ["NFR1"]`). Empty `nonFunctionalRequirements: []` is only valid if no NFR constrains this specific story — a story touching latency, security, data retention, or accessibility always has relevant NFRs.
+- Every story/task must reference the functional requirements it satisfies (`prdRef.functionalRequirements: ["FR-01"]`) AND the non-functional requirements it must comply with (`prdRef.nonFunctionalRequirements: ["NFR1"]`). Empty `nonFunctionalRequirements: []` is only valid if no NFR constrains this specific story — a story touching latency, security, or data retention always has relevant NFRs.
 - Stories should be testable — include clear acceptance criteria in Given/When/Then format.
 - Story points follow Fibonacci (1, 2, 3, 5, 8). Most stories should be 2-3 points. Avoid 8-point stories unless genuinely complex.
 

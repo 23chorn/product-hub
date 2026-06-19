@@ -422,7 +422,7 @@ The \`platform\` value must be exactly one of: \`backend\`, \`web\`, \`ios\`, \`
    - What user-facing behavior will be hard to verify?
    - What user-visible edge cases need coverage (validation messages, blocked actions, ambiguous states)?
    - What test data or environments are needed to exercise those user flows?
-3. Propose test case categories grounded in user flows (happy path, validation/error messaging, edge cases the user can hit, accessibility) — not backend/API contract categories
+3. Propose test case categories grounded in user flows (happy path, validation/error messaging, edge cases the user can hit) — not backend/API contract categories
 
 **Output Format:**
 Plain text list of concerns and recommendations. Example:
@@ -805,7 +805,7 @@ Requirements:
 - story_ref must match a user-facing story_id from the final story list
 - prd_ref must list the functional requirement ID(s) (e.g. "FR-01") this test verifies — copy from the referenced story's prd_ref
 - type must be exactly one of: happy_path, negative, edge, boundary, security, performance — at least one negative-type case is required, and at least 20% of cases should be negative/edge
-- tags must be a non-empty array using only: @smoke, @regression, @negative, @edge, @security, @accessibility, @performance — tag at least one critical happy-path case @smoke
+- tags must be a non-empty array using only: @smoke, @regression, @negative, @edge, @security, @performance — tag at least one critical happy-path case @smoke
 - automation_notes must be specific enough for a QA engineer to implement the test (UI selector, user action, mock of the backend dependency — not an API contract assertion)
 - Include ONLY the JSON artifact in your response (no explanatory text before or after)
 `;

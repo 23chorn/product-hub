@@ -170,7 +170,7 @@ const SEED_TOOL_DEFINITIONS: Record<string, string> = {
   qa_engineer: JSON.stringify([
     {
       name: 'validate_qa_tests_json',
-      description: 'Validate your QA test suite JSON before returning it. Checks test case IDs (TC-F?-??? format), uniqueness, type (happy_path/negative/edge/boundary/security/performance), priority, Given/When/Then scenario completeness, tag validity (@smoke/@regression/@negative/@edge/@security/@accessibility/@performance), vague Then clauses, that at least one critical test is @smoke tagged, and that ≥20% of tests are negative paths. Call after completing the full JSON.',
+      description: 'Validate your QA test suite JSON before returning it. Checks test case IDs (TC-F?-??? format), uniqueness, type (happy_path/negative/edge/boundary/security/performance), priority, Given/When/Then scenario completeness, tag validity (@smoke/@regression/@negative/@edge/@security/@performance), vague Then clauses, that at least one critical test is @smoke tagged, and that ≥20% of tests are negative paths. Call after completing the full JSON.',
       input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete QA test suite JSON string (may be wrapped in a ```json code block)' } }, required: ['json'] },
     },
   ]),

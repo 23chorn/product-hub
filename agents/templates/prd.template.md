@@ -27,7 +27,7 @@ Schema:
     ]
   },
   "non_functional_requirements": [
-    { "id": "NFR1", "category": "Performance|Scalability|Security|Accessibility|Data retention|Availability", "requirement": "Specific measurable threshold", "priority": "Must|Should|Nice-to-have" }
+    { "id": "NFR1", "category": "Performance|Scalability|Security|Data retention|Availability", "requirement": "Specific measurable threshold", "priority": "Must|Should|Nice-to-have" }
   ],
   "functional_requirements": [
     { "id": "FR1", "requirement": "The system shall…" }

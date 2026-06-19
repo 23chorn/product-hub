@@ -763,7 +763,7 @@ const TC_ID_RE = /^TC-F\d+-\d{3}$/;
 const VALID_TEST_TYPES = new Set(['happy_path', 'negative', 'edge', 'boundary', 'security', 'performance']);
 const VALID_PRIORITIES = new Set(['critical', 'high', 'medium', 'low']);
 const VAGUE_THEN = /\bshould work\s*(correctly)?\b|\bshould function\b|\bshould be fine\b|\bshould succeed\b/i;
-const VALID_TAGS = new Set(['@smoke', '@regression', '@negative', '@edge', '@security', '@accessibility', '@performance']);
+const VALID_TAGS = new Set(['@smoke', '@regression', '@negative', '@edge', '@security', '@performance']);
 
 export function validateQaTestsJson(input: Record<string, unknown>): string {
   const { parsed, issues } = parseJson(input);
