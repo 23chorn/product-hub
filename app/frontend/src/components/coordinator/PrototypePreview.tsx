@@ -104,7 +104,7 @@ function buildSrcdoc(
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7/babel.min.js" crossorigin="anonymous"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; }
 html, body, #root { margin: 0; padding: 0; width: 100%; height: 100%; }
@@ -149,7 +149,7 @@ ${combinedCss}
   var compiled;
   try {
     compiled = Babel.transform(preamble + '\\n' + raw + mountSuffix, {
-      presets: ['react', ['typescript', { allExtensions: true, isTSX: true }]],
+      presets: ['react', 'typescript'],
       filename: 'prototype.tsx',
     }).code;
   } catch (e) {

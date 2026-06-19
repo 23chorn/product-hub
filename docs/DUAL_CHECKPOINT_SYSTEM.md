@@ -104,7 +104,7 @@ If QA requests changes after stories are approved:
 
 ```
 ✓ Stories approved by Alice Admin
-⚠ QA tests require revision — Quinn QA requested changes
+⚠ Quinn QA requested changes to QA Tests
 ⚠ story_decomposition_F1 approval invalidated — refinement will regenerate both stories and QA tests
 ↻ Revision mode: applying targeted changes to Feature 1 stories only…
 ✓ Multi-agent collaborative refinement complete for Feature 1
@@ -149,7 +149,7 @@ stage_started: Multi-agent collaborative refinement for Feature 2
 ```
 stage_completed: Multi-agent collaborative refinement complete for Feature 1
 checkpoint_approved: Stories approved by Alice Admin
-checkpoint_revised: QA tests require revision — Quinn QA requested changes
+checkpoint_revised: Quinn QA requested changes to QA Tests
 checkpoint_invalidated: story_decomposition_F1 approval invalidated — refinement will regenerate both
 stage_progress: Revision mode: applying targeted changes to Feature 1 stories only…
 stage_completed: Multi-agent collaborative refinement complete for Feature 1
@@ -167,7 +167,7 @@ stage_completed: Multi-agent collaborative refinement complete for Feature 1
 **Event Log:**
 ```
 stage_completed: Multi-agent collaborative refinement complete for Feature 1
-checkpoint_revised: Stories require revision — Alice Admin requested changes
+checkpoint_revised: Alice Admin requested changes to Stories
 stage_progress: Revision mode: applying targeted changes to Feature 1 stories only…
 stage_completed: Multi-agent collaborative refinement complete for Feature 1
 [New checkpoints created for both stories and QA]

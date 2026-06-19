@@ -30,6 +30,7 @@ import { notifyWorkflowComplete } from '../utils/slack-notifier';
 import { pushItemStatusToAirtable } from './ado-stage-push';
 import { WorkflowRow, CheckpointRow, WorkflowStatus, WorkflowEvent } from './workflow-types';
 export type { WorkflowRow, CheckpointRow, WorkflowStatus, WorkflowEvent } from './workflow-types';
+import { parseDecompositionMetadata, findWaveForStage, type DecompositionMetadata } from './feature-decomposition';
 export { propagateFeedback, reiterateFromStage, retryCurrentStage, restartWorkflow } from './workflow-mutations';
 export { deleteWorkflow } from './workflow-lifecycle';
 import Logger from '../utils/logger';
@@ -298,9 +299,23 @@ async function advanceStageCore(workflowId: string): Promise<{ stage: string; se
 
   if (sequence.length === 0) throw new Error(`Workflow ${workflowId} has no stages defined`);
 
-  const currentIndex = workflow.current_stage !== null
+  const decompMeta = parseDecompositionMetadata(workflow.decomposition_metadata);
+
+  let currentIndex = workflow.current_stage !== null
     ? sequence.indexOf(workflow.current_stage)
     : -1;
+
+  // If current_stage is the representative member of a multi-member wave, jump to the
+  // position of that wave's LAST member (by sequence order) before advancing — otherwise
+  // +1 would land on a sibling wave member instead of the true next stage.
+  if (workflow.current_stage) {
+    const currentWave = findWaveForStage(decompMeta, workflow.current_stage);
+    if (currentWave && currentWave.length > 1) {
+      const lastMemberIdx = Math.max(...currentWave.map(s => sequence.indexOf(s)).filter(i => i >= 0));
+      if (lastMemberIdx > currentIndex) currentIndex = lastMemberIdx;
+    }
+  }
+
   const nextIndex = currentIndex + 1;
 
   if (nextIndex >= sequence.length) {
@@ -499,71 +514,101 @@ No changes needed to tech-stack.md or process.md — those remain accurate as wr
     solution_architect: 'Atlas is writing the architecture sections, API surface, and data model.',
     prototype:          'Nova is generating the prototype screens and file map from the workflow artifacts.',
   };
-  insertEvent(workflowId, 'stage_started', nextStage,
-    STAGE_NARRATION[nextStage] ?? `Starting ${nextStage}...`);
 
-  let stageMap = STAGE_SESSION_MAP[nextStage];
-  if (!stageMap) stageMap = { mode: 'analyst' as AppMode, agentType: 'analyst' as AgentType };
-  const session = sessionManager.createSpecialistSession(workflow.item_id, stageMap.mode, stageMap.agentType);
-  logger.info(`Created ${stageMap.mode} session ${session.id} for stage "${nextStage}"`);
+  // Creates a session, generates a brief, and fires the autonomous specialist run as a
+  // background task for ONE stage. Shared by the single-stage path and each member of a
+  // multi-member wave below — every wave member gets its own session/brief/run/safety-net,
+  // exactly like a standalone stage would.
+  const kickoffMemberStage = async (memberStage: string): Promise<void> => {
+    insertEvent(workflowId, 'stage_started', memberStage,
+      STAGE_NARRATION[memberStage] ?? `Starting ${memberStage}...`);
 
-  insertEvent(workflowId, 'stage_progress', nextStage, stageProgressBriefing(nextStage));
-  const brief = _wfPolicyOverrides.demo_mode === 'true' || _isDemoAutoApprove
-    ? `## Goal\nDemo mode — running with fixture data.\n\n## Output required\nSee fixture.`
-    : await getCoordinator().generateStageBrief(workflowId, nextStage);
-  sessionManager.updateWorkflow(session.id, workflowId, brief);
-  insertEvent(workflowId, 'stage_progress', nextStage, stageProgressBriefReceived(nextStage));
+    let stageMap = STAGE_SESSION_MAP[memberStage];
+    if (!stageMap) stageMap = { mode: 'analyst' as AppMode, agentType: 'analyst' as AgentType };
+    const session = sessionManager.createSpecialistSession(workflow.item_id, stageMap.mode, stageMap.agentType);
+    logger.info(`Created ${stageMap.mode} session ${session.id} for stage "${memberStage}"`);
 
-  const shouldAutoApprove = SILENT_STAGES.has(nextStage) || _isDemoAutoApprove;
+    insertEvent(workflowId, 'stage_progress', memberStage, stageProgressBriefing(memberStage));
+    const memberBrief = _wfPolicyOverrides.demo_mode === 'true' || _isDemoAutoApprove
+      ? `## Goal\nDemo mode — running with fixture data.\n\n## Output required\nSee fixture.`
+      : await getCoordinator().generateStageBrief(workflowId, memberStage);
+    sessionManager.updateWorkflow(session.id, workflowId, memberBrief);
+    insertEvent(workflowId, 'stage_progress', memberStage, stageProgressBriefReceived(memberStage));
 
-  // Fire the autonomous specialist run as a background task.
-  // It will collect the full output, store an artifact, then create the checkpoint.
-  workflowOps.runAutonomousStage(session.id, workflowId, nextStage, workflow.item_id, brief, shouldAutoApprove)
-    .catch(err => {
-      logger.error(`Autonomous stage "${nextStage}" background task failed: ${err.message}`);
-      // Safety net: if runAutonomousStage's inner try/catch didn't create a checkpoint,
-      // create one here so the workflow doesn't get stuck in 'active' forever.
-      try {
-        const wf = stmts.getWorkflow.get(workflowId);
-        if (wf && wf.status === 'active') {
-          const now = Date.now();
-          insertEvent(workflowId, 'error', nextStage,
-            `Stage "${nextStage}" failed unexpectedly: ${err.message}`,
-            { error: err.message });
+    const shouldAutoApprove = SILENT_STAGES.has(memberStage) || _isDemoAutoApprove;
 
-          // Try to recover the artifact that may have been saved before the error.
-          // This mirrors the logic in workflow-lifecycle.ts stale recovery.
-          let artifactId: number | null = null;
-          const artifactType = STAGE_ARTIFACT_TYPE[nextStage];
-          if (stageMap && artifactType) {
-            const latestArtifact = db.prepare<[string, string, string], { id: number }>(
-              `SELECT a.id FROM artifacts a
-               JOIN sessions s ON a.session_id = s.id
-               WHERE s.item_id = (SELECT item_id FROM workflows WHERE id = ?)
-                 AND s.mode = ?
-                 AND a.type = ?
-               ORDER BY a.created_at DESC LIMIT 1`
-            ).get(workflowId, stageMap.mode, artifactType);
-            artifactId = latestArtifact?.id ?? null;
-            if (artifactId) {
-              logger.info(`Safety net: recovered artifact ${artifactId} for failed stage "${nextStage}"`);
-            }
-          }
+    // Fire the autonomous specialist run as a background task.
+    // It will collect the full output, store an artifact, then create the checkpoint.
+    workflowOps.runAutonomousStage(session.id, workflowId, memberStage, workflow.item_id, memberBrief, shouldAutoApprove)
+      .catch(err => {
+        logger.error(`Autonomous stage "${memberStage}" background task failed: ${err.message}`);
+        createSafetyNetCheckpoint(workflowId, memberStage, stageMap, err.message);
+      });
+  };
 
-          stmts.insertCheckpoint.run(
-            workflowId, nextStage, artifactId, 'pending',
-            JSON.stringify({ error: err.message, autonomous: true, safety_net: true }),
-            rolesJson(nextStage), now
-          );
-          stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
-          logger.info(`Safety net: created error checkpoint for stuck workflow ${workflowId}${artifactId ? ` with artifact ${artifactId}` : ''}`);
-        }
-      } catch (inner) {
-        logger.error(`Safety net checkpoint creation also failed: ${(inner as Error).message}`);
-      }
-    });
+  const nextWave = findWaveForStage(decompMeta, nextStage) ?? [nextStage];
+
+  if (nextWave.length > 1) {
+    insertEvent(workflowId, 'stage_started', nextStage,
+      `Starting ${nextWave.length} features in parallel: ${nextWave.map(s => s.replace('story_decomposition_', 'F')).join(', ')}`);
+    await Promise.all(nextWave.map(memberStage => kickoffMemberStage(memberStage)));
+  } else {
+    await kickoffMemberStage(nextStage);
+  }
 
   return { stage: nextStage, sessionId: null };
+}
+
+/**
+ * Safety net: if runAutonomousStage's inner try/catch didn't create a checkpoint for a
+ * failed stage, create one here so the workflow doesn't get stuck in 'active' forever.
+ * Shared by the single-stage kickoff path and every member of a multi-member wave, so one
+ * failing wave member gets its own visible error checkpoint instead of silently wedging
+ * the whole wave (siblings still complete and create their own checkpoints normally).
+ */
+function createSafetyNetCheckpoint(
+  workflowId: string,
+  stage: string,
+  stageMap: { mode: AppMode; agentType: AgentType } | undefined,
+  errorMessage: string
+): void {
+  try {
+    const wf = stmts.getWorkflow.get(workflowId);
+    if (!wf || wf.status !== 'active') return;
+    const now = Date.now();
+    insertEvent(workflowId, 'error', stage,
+      `Stage "${stage}" failed unexpectedly: ${errorMessage}`,
+      { error: errorMessage });
+
+    // Try to recover the artifact that may have been saved before the error.
+    // This mirrors the logic in workflow-lifecycle.ts stale recovery.
+    let artifactId: number | null = null;
+    const artifactType = STAGE_ARTIFACT_TYPE[stage];
+    if (stageMap && artifactType) {
+      const latestArtifact = db.prepare<[string, string, string], { id: number }>(
+        `SELECT a.id FROM artifacts a
+         JOIN sessions s ON a.session_id = s.id
+         WHERE s.item_id = (SELECT item_id FROM workflows WHERE id = ?)
+           AND s.mode = ?
+           AND a.type = ?
+         ORDER BY a.created_at DESC LIMIT 1`
+      ).get(workflowId, stageMap.mode, artifactType);
+      artifactId = latestArtifact?.id ?? null;
+      if (artifactId) {
+        logger.info(`Safety net: recovered artifact ${artifactId} for failed stage "${stage}"`);
+      }
+    }
+
+    stmts.insertCheckpoint.run(
+      workflowId, stage, artifactId, 'pending',
+      JSON.stringify({ error: errorMessage, autonomous: true, safety_net: true }),
+      rolesJson(stage), now
+    );
+    stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
+    logger.info(`Safety net: created error checkpoint for stuck workflow ${workflowId}${artifactId ? ` with artifact ${artifactId}` : ''}`);
+  } catch (inner) {
+    logger.error(`Safety net checkpoint creation also failed: ${(inner as Error).message}`);
+  }
 }
 
 // Register advanceStage for late-binding (breaks circular dep with runAutonomousStage)
@@ -702,6 +747,26 @@ function isCheckpointGroupFullyApproved(workflowId: string, stage: string): bool
 }
 
 /**
+ * Check if every member of the wave containing `stage` has its OWN {backlog, qa}
+ * checkpoint pair fully approved. Used to gate advanceStage() for wave-grouped
+ * story_decomposition_F* stages — distinct from isCheckpointGroupFullyApproved(),
+ * which only checks ONE feature's own pair (used to gate that feature's ADO push).
+ *
+ * For workflows with no wave metadata (pre-dating this feature) or for a stage that
+ * isn't part of any multi-member wave, this degrades to exactly
+ * isCheckpointGroupFullyApproved(workflowId, stage) — i.e. every existing stage type
+ * and every old workflow is unaffected.
+ */
+function isWaveFullyApproved(workflowId: string, stage: string): boolean {
+  const workflow = stmts.getWorkflow.get(workflowId);
+  if (!workflow) return false;
+  const decompMeta = parseDecompositionMetadata(workflow.decomposition_metadata);
+  const wave = findWaveForStage(decompMeta, getBaseStage(stage));
+  const members = wave ?? [getBaseStage(stage)];
+  return members.every(memberStage => isCheckpointGroupFullyApproved(workflowId, memberStage));
+}
+
+/**
  * Invalidate all approved checkpoints in a group when one is revised.
  * This ensures that if stories are approved but QA requests changes,
  * the story approval is cleared since the refinement will regenerate both.
@@ -722,23 +787,38 @@ function invalidateCheckpointGroupApprovals(workflowId: string, stage: string, e
 }
 
 /**
+ * Result of resolveCheckpoint() — two independent completion signals so callers can
+ * gate per-feature side effects separately from whole-workflow advancement:
+ *   - ownGroupComplete: this checkpoint's own feature pair (backlog+QA) is fully
+ *     approved. Drives per-feature side effects like pushFeatureToADO().
+ *   - waveComplete: the ENTIRE WAVE containing this stage (all concurrent sibling
+ *     features, if any) has each had its own pair fully approved. Drives
+ *     advanceStage(). For non-wave stages (every stage type that existed before
+ *     parallel waves, and feature stages in workflows with no wave metadata), this
+ *     is always identical to ownGroupComplete — zero behavior change for those.
+ */
+export interface ResolveCheckpointResult {
+  ownGroupComplete: boolean;
+  waveComplete: boolean;
+}
+
+/**
  * Resolve a checkpoint after human review.
- * - approved: if all sibling checkpoints in the group are also approved, workflow can advance
+ * - approved: if all sibling checkpoints in the group are also approved, the feature's
+ *   own work is complete; if the whole wave is also fully approved, the workflow can advance
  * - rejected: workflow stays active but intervention is needed
  * - revised: invalidates any approved sibling checkpoints and rolls back for full stage re-run
  *
- * Returns `canAdvance` — true only when this resolution completed the checkpoint's group
- * (e.g. for dual-checkpoint story_decomposition_F* stages, true only on whichever of the
- * PM/QA checkpoints is approved *last*). Callers must only call advanceStage() / fire
- * stage-completion side effects (like pushing a feature to ADO) when this is true — calling
- * them after the first-of-two approval lets advanceStage() race ahead of the still-pending
- * sibling checkpoint and skip a stage.
+ * Callers must only fire per-feature side effects (like pushing a feature to ADO) when
+ * `ownGroupComplete` is true, and must only call advanceStage() when `waveComplete` is
+ * true — calling advanceStage() while wave siblings are still pending lets it race ahead
+ * and skip stages whose checkpoints haven't actually been reviewed yet.
  */
 export function resolveCheckpoint(
   checkpointId: number,
   status: 'approved' | 'rejected' | 'revised',
   feedback?: string
-): boolean {
+): ResolveCheckpointResult {
   const checkpoint = stmts.getCheckpoint.get(checkpointId);
   if (!checkpoint) throw new Error(`Checkpoint not found: ${checkpointId}`);
   if (checkpoint.status !== 'pending') {
@@ -761,28 +841,34 @@ export function resolveCheckpoint(
     stmts.updateCheckpoint.run(status, feedback ?? null, checkpoint.coordinator_action, now, checkpointId);
     stmts.updateWorkflowStageAndStatus.run(prevStage, 'active', now, checkpoint.workflow_id);
     logger.info(`Checkpoint ${checkpointId} revised — workflow ${checkpoint.workflow_id} will rerun stage "${baseStage}"`);
-    return false;
+    return { ownGroupComplete: false, waveComplete: false };
   } else if (status === 'approved') {
     // Mark this checkpoint as approved
     stmts.updateCheckpoint.run(status, feedback ?? null, checkpoint.coordinator_action, now, checkpointId);
 
-    // Check if all checkpoints in the group are now approved
-    if (isCheckpointGroupFullyApproved(checkpoint.workflow_id, checkpoint.stage)) {
-      // All approvals obtained — workflow can advance
-      stmts.updateWorkflowStatus.run('active', now, checkpoint.workflow_id);
-      logger.info(`Checkpoint ${checkpointId} approved — all checkpoints in group approved, workflow ${checkpoint.workflow_id} can advance`);
-      return true;
-    } else {
+    // Check if all checkpoints in this feature's own group are now approved
+    const ownGroupComplete = isCheckpointGroupFullyApproved(checkpoint.workflow_id, checkpoint.stage);
+    if (!ownGroupComplete) {
       // Still waiting on sibling checkpoint(s) — keep workflow paused
       logger.info(`Checkpoint ${checkpointId} approved — workflow ${checkpoint.workflow_id} remains paused pending sibling checkpoint approval`);
-      return false;
+      return { ownGroupComplete: false, waveComplete: false };
     }
+
+    // This feature's own pair is done — check if the whole wave (if any) is also done
+    const waveComplete = isWaveFullyApproved(checkpoint.workflow_id, checkpoint.stage);
+    if (waveComplete) {
+      stmts.updateWorkflowStatus.run('active', now, checkpoint.workflow_id);
+      logger.info(`Checkpoint ${checkpointId} approved — wave fully approved, workflow ${checkpoint.workflow_id} can advance`);
+    } else {
+      logger.info(`Checkpoint ${checkpointId} approved — feature's own pair complete, but wave sibling(s) still pending; workflow ${checkpoint.workflow_id} remains paused`);
+    }
+    return { ownGroupComplete: true, waveComplete };
   } else {
     // rejected — set workflow back to active for intervention
     stmts.updateCheckpoint.run(status, feedback ?? null, checkpoint.coordinator_action, now, checkpointId);
     stmts.updateWorkflowStatus.run('active', now, checkpoint.workflow_id);
     logger.info(`Checkpoint ${checkpointId} ${status} — workflow ${checkpoint.workflow_id} active`);
-    return false;
+    return { ownGroupComplete: false, waveComplete: false };
   }
 }
 
@@ -803,7 +889,18 @@ export function getWorkflowStatus(workflowId: string): import('./workflow-db').W
       .map(c => c.stage)
   )];
 
-  const pendingCheckpoint = checkpoints.find(c => c.status === 'pending');
+  const pendingCheckpoints = checkpoints.filter(c => c.status === 'pending');
+  const pendingCheckpoint = pendingCheckpoints[0];
+  const pendingStages = [...new Set(pendingCheckpoints.map(c => c.stage))];
+
+  // Full membership of the wave the current stage belongs to (or just [currentStage]
+  // for non-wave / legacy workflows) — lets the UI show every concurrently-running
+  // feature as in-progress instead of just one.
+  const decompMeta = parseDecompositionMetadata(workflow.decomposition_metadata);
+  let inProgressStages: string[] = [];
+  if (workflow.current_stage && workflow.status === 'active') {
+    inProgressStages = findWaveForStage(decompMeta, workflow.current_stage) ?? [workflow.current_stage];
+  }
 
   // Look up the active specialist session for the current stage
   let currentSessionId: string | null = null;
@@ -835,6 +932,8 @@ export function getWorkflowStatus(workflowId: string): import('./workflow-db').W
     currentStage: workflow.current_stage,
     completedStages,
     pendingStage: pendingCheckpoint?.stage ?? null,
+    pendingStages,
+    inProgressStages,
     currentSessionId,
     productArea,
     strategicTheme,

@@ -41,6 +41,7 @@ agents/
   templates/ Output templates (research, prd, backlog, architecture, prototype)
   config.yaml  User identity and preferences (gitignored)
 context/     Project context files loaded into every agent system prompt
+  behaviour/ xCube Docs from Azure Wiki — current implementation reference for PRD and story phases
 db/          SQLite database (product-ops.db, gitignored) + schema.ts (Drizzle schema) + migrations/
 ```
 

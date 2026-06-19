@@ -36,6 +36,8 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
     currentStage,
     completedStages,
     pendingStage,
+    pendingStages,
+    inProgressStages,
     checkpoints,
     productArea,
     strategicTheme,
@@ -159,7 +161,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
 
   const statuses: StageStatus[] = stageSequence.map(s =>
-    deriveStageStatus(s, currentStage, completedStages, pendingStage, activeWorkflow.status)
+    deriveStageStatus(s, currentStage, completedStages, pendingStage, activeWorkflow.status, inProgressStages, pendingStages)
   );
 
   // Group coordinator messages by stage (null stage → 'general')
@@ -184,7 +186,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   // Stages to show in the event log (exclude stages with no events yet if pending)
   // Also inject QA checkpoint stages right after their parent refinement stages
   const baseActiveStages = stageSequence.filter(s => {
-    const status = deriveStageStatus(s, currentStage, completedStages, pendingStage, activeWorkflow.status);
+    const status = deriveStageStatus(s, currentStage, completedStages, pendingStage, activeWorkflow.status, inProgressStages, pendingStages);
     return status !== 'pending' || eventsByStage.has(s);
   });
 

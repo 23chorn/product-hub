@@ -5,7 +5,7 @@
  * into feature-specific stages with checkpoints after each feature.
  */
 
-import db from '../data/database';
+import db, { getPolicies } from '../data/database';
 import { stmts, insertEvent, logger } from './workflow-db';
 import { loadLatestArtifactContent } from './artifact-helpers';
 import * as fs from 'fs';
@@ -33,6 +33,175 @@ export function flattenFeatures(epicJson: any): any[] {
     );
   }
   return Array.isArray(epicJson.features) ? epicJson.features : [];
+}
+
+/** Default max concurrent feature refinements per wave — overridable via the
+ * `max_parallel_features` global policy. */
+export const DEFAULT_MAX_PARALLEL_FEATURES = 3;
+
+/**
+ * Read the configured max parallel features from the global policies table
+ * (rule_key: 'max_parallel_features'), falling back to DEFAULT_MAX_PARALLEL_FEATURES
+ * when unset or malformed. Clamped to [1, 6] to bound worst-case concurrent LLM load
+ * (each feature's refinement stage already fans out to ~6 agents internally).
+ */
+export function resolveMaxParallelFeatures(): number {
+  const rows = getPolicies('global');
+  const row = rows.find(r => r.rule_key === 'max_parallel_features');
+  if (!row) return DEFAULT_MAX_PARALLEL_FEATURES;
+  let n: number;
+  try {
+    const parsed = JSON.parse(row.rule_value);
+    n = typeof parsed === 'number' ? parsed : parseInt(String(parsed), 10);
+  } catch {
+    n = parseInt(row.rule_value, 10);
+  }
+  if (!Number.isFinite(n) || n < 1) return DEFAULT_MAX_PARALLEL_FEATURES;
+  return Math.min(n, 6);
+}
+
+/**
+ * Resolve each feature's `dependsOn` (array of exact title strings from the LLM) into
+ * 0-based indices into the SAME flattened array `flattenFeatures()` produces — the
+ * canonical order F1, F2, F3... is assigned from.
+ *
+ * Defensive: a title that doesn't match any feature (typo, paraphrase, hallucination)
+ * is dropped with a warning — never throws, never drops the FEATURE itself, only the
+ * unresolved edge (degrades that one reference to "independent"). A feature
+ * referencing itself is also dropped with a warning (self-dependency is always invalid).
+ */
+export function resolveFeatureDependencies(
+  flatFeatures: any[]
+): { resolvedByIndex: Map<number, number[]>; warnings: string[] } {
+  const titleToIndex = new Map<string, number>();
+  flatFeatures.forEach((f, i) => {
+    if (typeof f?.title === 'string' && f.title.trim()) {
+      titleToIndex.set(f.title.trim().toLowerCase(), i);
+    }
+  });
+
+  const resolvedByIndex = new Map<number, number[]>();
+  const warnings: string[] = [];
+
+  flatFeatures.forEach((f, i) => {
+    const rawDeps: unknown[] = Array.isArray(f?.dependsOn) ? f.dependsOn : [];
+    const resolved: number[] = [];
+    for (const depTitle of rawDeps) {
+      if (typeof depTitle !== 'string' || !depTitle.trim()) continue;
+      const depIdx = titleToIndex.get(depTitle.trim().toLowerCase());
+      if (depIdx === undefined) {
+        warnings.push(`Feature "${f?.title}" depends on unresolved title "${depTitle}" — treated as independent`);
+        continue;
+      }
+      if (depIdx === i) {
+        warnings.push(`Feature "${f?.title}" lists itself as a dependency — ignored`);
+        continue;
+      }
+      resolved.push(depIdx);
+    }
+    resolvedByIndex.set(i, [...new Set(resolved)]);
+  });
+
+  return { resolvedByIndex, warnings };
+}
+
+/**
+ * Topologically layer features into "waves" using Kahn's algorithm by layers, then
+ * split any layer wider than `maxConcurrency` into sequential sub-batches — each
+ * batch becomes its own wave (simplest model: every wave is an independently
+ * advanceable unit, no "part of a bigger family" special-casing elsewhere).
+ *
+ * Each returned wave is a list of 0-based feature indices that can run concurrently:
+ * no member depends on another member of the same wave, and every prerequisite for
+ * every member was satisfied by an earlier wave.
+ *
+ * Cycle handling: if a cycle is detected among any remaining features, this function
+ * does NOT drop those features. It degrades the entire remaining (cyclic) group to
+ * fully sequential single-member waves, in original index order, appended after all
+ * acyclic features have been layered. Every feature index 0..N-1 appears in exactly
+ * one wave, exactly once — never silently dropped.
+ */
+export function computeFeatureWaves(
+  dependsOnIndices: number[][],
+  maxConcurrency: number
+): { waves: number[][]; hadCycle: boolean; cycleMembers: number[] } {
+  const n = dependsOnIndices.length;
+  const inDegree = new Array(n).fill(0);
+  const dependents: number[][] = Array.from({ length: n }, () => []); // reverse edges
+
+  for (let i = 0; i < n; i++) {
+    const deps = (dependsOnIndices[i] ?? []).filter(d => d >= 0 && d < n && d !== i);
+    inDegree[i] = deps.length;
+    for (const d of deps) dependents[d].push(i);
+  }
+
+  const waves: number[][] = [];
+  const resolved = new Array(n).fill(false);
+  let remaining = n;
+
+  while (remaining > 0) {
+    // Layer = every unresolved node with in-degree 0 right now
+    const layer: number[] = [];
+    for (let i = 0; i < n; i++) {
+      if (!resolved[i] && inDegree[i] === 0) layer.push(i);
+    }
+
+    if (layer.length === 0) {
+      // Cycle detected among all remaining nodes — break it by falling back to fully
+      // sequential single-member waves over the remaining indices, in original order.
+      const cycleMembers: number[] = [];
+      for (let i = 0; i < n; i++) if (!resolved[i]) cycleMembers.push(i);
+      for (const i of cycleMembers) {
+        waves.push([i]);
+        resolved[i] = true;
+      }
+      return { waves, hadCycle: true, cycleMembers };
+    }
+
+    // Cap this layer's concurrency: split into sequential batches of <= maxConcurrency,
+    // each batch becomes its OWN wave.
+    layer.sort((a, b) => a - b); // deterministic order matching F-key order
+    for (let start = 0; start < layer.length; start += maxConcurrency) {
+      waves.push(layer.slice(start, start + maxConcurrency));
+    }
+
+    for (const i of layer) {
+      resolved[i] = true;
+      remaining--;
+      for (const dependent of dependents[i]) inDegree[dependent]--;
+    }
+  }
+
+  return { waves, hadCycle: false, cycleMembers: [] };
+}
+
+/** Shape persisted into workflows.decomposition_metadata after feature injection. */
+export interface DecompositionMetadata {
+  feature_count?: number;
+  max_parallel_features?: number;
+  waves?: string[][];
+  had_dependency_cycle?: boolean;
+}
+
+/** Parse decomposition_metadata, returning {} if absent/malformed (e.g. pre-existing workflows). */
+export function parseDecompositionMetadata(raw: string | null | undefined): DecompositionMetadata {
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw) as DecompositionMetadata;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Find the wave (array of stage names) that contains `stageName`, or null if not
+ * found — including for workflows with no wave metadata at all (pre-dating this
+ * feature), in which case the caller should treat the stage as its own wave-of-one
+ * (today's pre-existing sequential behavior).
+ */
+export function findWaveForStage(metadata: DecompositionMetadata, stageName: string | null): string[] | null {
+  if (!stageName || !metadata.waves) return null;
+  return metadata.waves.find(w => w.includes(stageName)) ?? null;
 }
 
 /**
@@ -85,15 +254,30 @@ export async function injectFeatureDecompositionStages(workflowId: string): Prom
     return 0;
   }
 
-  // Replace story_decomposition with feature-specific collaborative refinement stages
-  // Each story_decomposition_F* stage runs a multi-agent workflow (platform-filtered participants)
-  // Also remove standalone qa_engineer and tech_refinement stages (now embedded in the multi-agent workflow)
-  const featureStages: string[] = [];
-  for (let i = 0; i < featureCount; i++) {
-    featureStages.push(`story_decomposition_F${i + 1}`);
+  // Replace story_decomposition with feature-specific collaborative refinement stages.
+  // Each story_decomposition_F* stage runs a multi-agent workflow (platform-filtered participants).
+  // Independent features are grouped into concurrent "waves" (bounded by maxConcurrency) using
+  // each feature's resolved dependsOnIndices (stamped by the epic_feature_planner post-processing
+  // step in workflow-stage-runner.ts); features with no dependency data default to fully independent.
+  const dependsOnIndices: number[][] = allFeatures.map(f =>
+    Array.isArray(f?.dependsOnIndices) ? f.dependsOnIndices : []
+  );
+  const maxConcurrency = resolveMaxParallelFeatures();
+  const { waves, hadCycle, cycleMembers } = computeFeatureWaves(dependsOnIndices, maxConcurrency);
+
+  if (hadCycle) {
+    const cycleLabels = cycleMembers.map(i => `F${i + 1}`).join(', ');
+    logger.warn(`[FEATURE DECOMP] Dependency cycle detected among features [${cycleLabels}] for workflow ${workflowId} — running them sequentially instead of in parallel`);
+    insertEvent(workflowId, 'validation_warning', 'epic_feature_planner',
+      `Dependency cycle detected among ${cycleMembers.length} feature(s) — running them sequentially instead of in parallel`,
+      { cycle_members: cycleMembers.map(i => `F${i + 1}`) });
   }
 
-  // Build new sequence: replace story_decomposition with per-feature F* stages + final merge
+  // Translate index-waves into stage-name waves, contiguous in stage_sequence order.
+  const waveStageGroups: string[][] = waves.map(wave => wave.map(i => `story_decomposition_F${i + 1}`));
+  const featureStages: string[] = waveStageGroups.flat();
+
+  // Build new sequence: replace story_decomposition with wave-ordered F* stages + final merge
   const newSequence = [
     ...sequence.slice(0, storyDecompIndex),
     ...featureStages,
@@ -108,9 +292,26 @@ export async function injectFeatureDecompositionStages(workflowId: string): Prom
     WHERE id = ?
   `).run(JSON.stringify(newSequence), Date.now(), workflowId);
 
-  logger.info(`[FEATURE DECOMP] Injected ${featureCount} feature stages into workflow ${workflowId}: ${featureStages.join(', ')}`);
+  // Persist wave membership so advanceStageCore / checkpoint logic know which stage
+  // names were kicked off together and must all complete before advancing past them.
+  const existingMeta = parseDecompositionMetadata(workflow.decomposition_metadata);
+  const decompositionMetadata: DecompositionMetadata = {
+    ...existingMeta,
+    feature_count: featureCount,
+    max_parallel_features: maxConcurrency,
+    waves: waveStageGroups,
+    had_dependency_cycle: hadCycle,
+  };
+  db.prepare(`
+    UPDATE workflows
+    SET decomposition_metadata = ?, updated_at = ?
+    WHERE id = ?
+  `).run(JSON.stringify(decompositionMetadata), Date.now(), workflowId);
+
+  const waveSummary = waveStageGroups.map(w => `[${w.join(', ')}]`).join(' → ');
+  logger.info(`[FEATURE DECOMP] Injected ${featureCount} feature stages as ${waveStageGroups.length} wave(s) into workflow ${workflowId}: ${waveSummary}`);
   insertEvent(workflowId, 'stage_progress', 'epic_feature_planner',
-    `Injected ${featureCount} feature stages: ${featureStages.join(', ')} — each will be reviewed separately`);
+    `Injected ${featureCount} feature stages across ${waveStageGroups.length} wave(s) — up to ${maxConcurrency} run concurrently: ${waveSummary}`);
 
   return featureCount;
 }

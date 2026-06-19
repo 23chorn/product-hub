@@ -506,7 +506,8 @@ export function repairTruncatedJson(raw: string): string {
 
 /**
  * Read productArea from items.metadata and map to a prototype platform.
- * productArea values from Airtable e.g. "Web", "Mobile", "iOS", "Android", "Web, Mobile".
+ * productArea values from Airtable e.g. "Web", "Mobile", "iOS", "Android", "Web, Mobile",
+ * or an array of tags e.g. ["Mobile App"].
  */
 export function resolveItemPlatform(itemId: string): PrototypePlatform {
   const row = db.prepare<[string], { metadata: string | null }>(
@@ -514,8 +515,9 @@ export function resolveItemPlatform(itemId: string): PrototypePlatform {
   ).get(itemId);
   if (!row?.metadata) return 'web';
   try {
-    const meta = JSON.parse(row.metadata) as { productArea?: string };
-    const area = (meta.productArea ?? '').toLowerCase();
+    const meta = JSON.parse(row.metadata) as { productArea?: string | string[] };
+    const rawArea = meta.productArea;
+    const area = (Array.isArray(rawArea) ? rawArea.join(' ') : rawArea ?? '').toLowerCase();
     const hasWeb = /web|browser|desktop/.test(area);
     const hasMobile = /mobile|ios|android|app/.test(area);
     if (hasWeb && hasMobile) return 'both';

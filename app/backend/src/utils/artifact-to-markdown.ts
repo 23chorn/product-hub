@@ -256,11 +256,83 @@ function architectureToMarkdown(d: Record<string, any>): string {
   return lines.join('\n');
 }
 
+function figmaDesignToMarkdown(d: Record<string, any>): string {
+  const lines: string[] = [];
+  lines.push(`# ${d.title ?? 'Figma Mockup Plan'}\n`);
+
+  const statusBadge = d.figma_write_status === 'created' ? '✅ Written to Figma'
+    : d.figma_write_status === 'annotated' ? '📝 Design brief posted — awaiting designer edits'
+    : d.figma_write_status === 'reviewed' ? '✅ Designer review complete'
+    : d.figma_write_status === 'partial' ? '⚠️ Partially written'
+    : '🕐 Planned (write deferred)';
+  lines.push(`**Status:** ${statusBadge}\n`);
+  if (d.figma_file_url) lines.push(`**Mockup file:** ${d.figma_file_url}\n`);
+  if (d.source_design_system) lines.push(`**Design system:** \`${d.source_design_system}\`\n`);
+
+  const dt = d.design_tokens_extracted;
+  if (dt) {
+    if (Array.isArray(dt.design_gaps) && dt.design_gaps.length) {
+      lines.push(`## ⚠ Design Gaps (${dt.design_gaps.length})\n`);
+      lines.push(`> The following components or tokens are missing from the design system and must be created before production handoff.\n`);
+      for (const gap of dt.design_gaps) lines.push(`- ${gap}`);
+      lines.push('');
+    }
+
+    if (Array.isArray(dt.colors) && dt.colors.length) {
+      lines.push(`## Design Tokens — Colors\n`);
+      lines.push(tableHeader('Token', 'Value', 'Usage'));
+      for (const c of dt.colors) lines.push(row(c.name ?? '', c.value ?? '', c.usage ?? ''));
+      lines.push('');
+    }
+
+    if (Array.isArray(dt.typography) && dt.typography.length) {
+      lines.push(`## Design Tokens — Typography\n`);
+      lines.push(tableHeader('Style', 'Family', 'Size', 'Weight', 'Usage'));
+      for (const t of dt.typography) lines.push(row(t.name ?? '', t.font_family ?? '', t.size ?? '', t.weight ?? '', t.usage ?? ''));
+      lines.push('');
+    }
+
+    if (Array.isArray(dt.components) && dt.components.length) {
+      lines.push(`## Components Used\n`);
+      lines.push(tableHeader('Component', 'Node ID', 'Variants'));
+      for (const c of dt.components) lines.push(row(c.name ?? '', c.node_id ?? '', Array.isArray(c.variants) ? c.variants.join(', ') : ''));
+      lines.push('');
+    }
+  }
+
+  if (Array.isArray(d.screens_created) && d.screens_created.length) {
+    lines.push(`## Screens (${d.screens_created.length})\n`);
+    for (const s of d.screens_created) {
+      lines.push(`### ${s.name ?? 'Screen'}`);
+      if (s.frame_url) lines.push(`[Open in Figma](${s.frame_url})\n`);
+      if (s.description) lines.push(`${s.description}\n`);
+      if (Array.isArray(s.prd_journeys) && s.prd_journeys.length) {
+        lines.push(`**Covers journeys:** ${s.prd_journeys.join(', ')}\n`);
+      }
+      if (s.layout_notes) lines.push(`**Layout:** ${s.layout_notes}\n`);
+      if (Array.isArray(s.interactions) && s.interactions.length) {
+        lines.push(`**Interactions:**`);
+        for (const i of s.interactions) {
+          const note = i.notes ? ` — ${i.notes}` : '';
+          lines.push(`- ${i.trigger ?? ''} → ${i.target_screen ?? ''}${note}`);
+        }
+        lines.push('');
+      }
+    }
+  }
+
+  if (d.navigation_flow) lines.push(`## Navigation Flow\n\n\`\`\`\n${d.navigation_flow}\n\`\`\`\n`);
+  if (d.notes) lines.push(`## Notes\n\n${d.notes}\n`);
+
+  return lines.join('\n');
+}
+
 const CONVERTERS: Record<string, (d: Record<string, any>) => string> = {
   analyst:      analystToMarkdown,
   research:     analystToMarkdown,
   prd:          prdToMarkdown,
   architecture: architectureToMarkdown,
+  figma_design: figmaDesignToMarkdown,
 };
 
 /**

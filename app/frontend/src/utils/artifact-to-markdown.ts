@@ -350,6 +350,10 @@ export function convertArtifactToMarkdown(artifactType: string, content: string)
     console.warn(`[artifact-to-markdown] No converter for type "${artifactType}"`);
     return null;
   }
+  // If the content is already markdown (doesn't start with a JSON object), return as-is
+  if (!content.trimStart().startsWith('{')) {
+    return content;
+  }
   try {
     console.log(`[artifact-to-markdown] Converting ${artifactType} (${content.length} chars)`);
 

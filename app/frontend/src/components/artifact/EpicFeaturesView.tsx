@@ -15,6 +15,8 @@ interface EpicFeature {
   acceptanceCriteria?: string[];
   prdRef?: PrdRef;
   deferredTo?: string | null;
+  dependsOn?: string[];          // exact titles of prerequisite features, from the planner
+  dependsOnIndices?: number[];   // resolved indices (server post-processing) — not used for display
   // legacy flat format
   phase?: string;
 }
@@ -122,6 +124,18 @@ function FeatureCard({ feature, idx }: { feature: EpicFeature; idx: number }) {
               {feature.deferredTo && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 flex-shrink-0">
                   → {feature.deferredTo}
+                </span>
+              )}
+              {(feature.dependsOn?.length ?? 0) > 0 ? (
+                <span
+                  className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 flex-shrink-0"
+                  title={`Cannot start until: ${feature.dependsOn!.join(', ')}`}
+                >
+                  Sequential — after {feature.dependsOn!.join(', ')}
+                </span>
+              ) : (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-teal-50 dark:bg-teal-900/20 text-teal-600 dark:text-teal-400 flex-shrink-0">
+                  Parallel
                 </span>
               )}
               {hasDetail && (

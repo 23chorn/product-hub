@@ -42,8 +42,22 @@ export const STAGE_ARTIFACT_LABEL: Record<string, string> = {
   pm_prd: 'PRD',
   epic_feature_planner: 'Epic & Features',
   solution_architect: 'Architecture Document',
+  prototype: 'Prototype',
   figma_design: 'Figma Mockups',
+  story_decomposition: 'Stories',
+  backlog_merge: 'Backlog',
 };
+
+/**
+ * Resolve a checkpoint's stage to the artifact label used in approval/rejection/revision
+ * event messages (e.g. "Research Brief approved by Chris"). Handles the dynamic per-feature
+ * stages (story_decomposition_F3, story_decomposition_F3_qa) that have no static entry above.
+ */
+export function checkpointArtifactLabel(stage: string): string {
+  if (stage.endsWith('_qa')) return 'QA Tests';
+  if (/^story_decomposition_F\d+$/.test(stage)) return 'Stories';
+  return STAGE_ARTIFACT_LABEL[stage] ?? stage;
+}
 
 // Internal labels used for event messages and logging
 export const STAGE_LABELS_INTERNAL: Record<string, string> = {
@@ -101,6 +115,7 @@ Key requirements:
 - **Feature-level acceptance criteria**: 3-5 testable conditions per feature (outcome-focused, not story-level)
 - **PRD traceability**: Each feature must reference which FRs and user journeys it satisfies
 - **Out of scope section**: Explicitly list what's NOT being built or is deferred
+- **Dependency tagging**: Every feature must include a \`dependsOn\` array — exact titles of features it cannot start before (empty array if independent). Default to independent; only tag a dependency when truly blocking. No circular dependencies.
 - **NO user stories**: You are forbidden from writing "As a user, I want..." stories
 - **NO technical tasks**: You are forbidden from referencing implementation details (databases, APIs, repos)
 

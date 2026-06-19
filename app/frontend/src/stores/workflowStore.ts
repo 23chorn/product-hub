@@ -71,6 +71,8 @@ export interface WorkflowStatus {
   currentStage: string | null;
   completedStages: string[];
   pendingStage: string | null;
+  pendingStages?: string[];
+  inProgressStages?: string[];
   productArea?: string;
   strategicTheme?: string;
 }
@@ -123,6 +125,8 @@ interface WorkflowStoreState {
   stageSequence: string[];
   completedStages: string[];
   pendingStage: string | null;
+  pendingStages: string[];
+  inProgressStages: string[];
   checkpoints: WorkflowCheckpoint[];
   productArea: string | null;
   strategicTheme: string | null;
@@ -182,6 +186,8 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
   stageSequence: [],
   completedStages: [],
   pendingStage: null,
+  pendingStages: [],
+  inProgressStages: [],
   checkpoints: [],
   productArea: null,
   strategicTheme: null,
@@ -262,7 +268,7 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
       return { studioOutput: next };
     }),
 
-  applyWorkflowStatus: ({ workflow, checkpoints, currentStage, completedStages, pendingStage, currentSessionId, productArea, strategicTheme }: WorkflowStatus & { currentSessionId?: string | null }) => {
+  applyWorkflowStatus: ({ workflow, checkpoints, currentStage, completedStages, pendingStage, pendingStages, inProgressStages, currentSessionId, productArea, strategicTheme }: WorkflowStatus & { currentSessionId?: string | null }) => {
     if (!workflow) {
       console.error('[workflowStore] applyWorkflowStatus called with undefined workflow');
       return;
@@ -278,6 +284,8 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
       stageSequence,
       completedStages,
       pendingStage,
+      pendingStages: pendingStages ?? (pendingStage ? [pendingStage] : []),
+      inProgressStages: inProgressStages ?? (currentStage ? [currentStage] : []),
       checkpoints: checkpoints ?? [],
       productArea: productArea ?? null,
       strategicTheme: strategicTheme ?? null,
@@ -296,6 +304,8 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
       stageSequence: [],
       completedStages: [],
       pendingStage: null,
+      pendingStages: [],
+      inProgressStages: [],
       checkpoints: [],
       productArea: null,
       strategicTheme: null,

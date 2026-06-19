@@ -20,10 +20,12 @@ export function deriveStageStatus(
   currentStage: string | null,
   completedStages: string[],
   pendingStage: string | null,
-  workflowStatus: string
+  workflowStatus: string,
+  inProgressStages: string[] = [],
+  pendingStages: string[] = []
 ): StageStatus {
-  if (pendingStage === stageName) return 'at-checkpoint';
-  if (currentStage === stageName && workflowStatus === 'active') return 'in-progress';
+  if (pendingStages.includes(stageName) || pendingStage === stageName) return 'at-checkpoint';
+  if ((inProgressStages.includes(stageName) || currentStage === stageName) && workflowStatus === 'active') return 'in-progress';
   if (completedStages.includes(stageName)) return 'complete';
   return 'pending';
 }

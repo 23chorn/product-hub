@@ -40,6 +40,7 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
             "userJourneys": ["Trading · Share trade idea"]
           },
           "deferredTo": null,
+          "dependsOn": [],
           "stories": []
         }
       ]
@@ -91,6 +92,11 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
   - `nonFunctionalRequirements`: NFR IDs this feature must satisfy (e.g. `["NFR1", "NFR3"]`). Include any NFR that constrains this feature's behaviour, performance, or compliance. Empty array if none apply.
   - `userJourneys`: Journey names from the PRD this feature supports
 - **deferredTo**: If this feature was scoped for this phase but is being moved out, note the target phase. Otherwise `null`.
+- **dependsOn**: Array of EXACT feature titles (copy-pasted, case-sensitive) from elsewhere in this epic that this feature cannot start until they are done — i.e. building or changing this feature requires the depended-on feature's behavior or contract to already be settled. Empty array `[]` if this feature has no prerequisites and can be built in parallel with any other feature.
+  - Reference features by their exact `title` string, including ones in earlier phases.
+  - Do NOT invent IDs (no "F1", "F2") — titles only. The system resolves titles to IDs after generation.
+  - Most features should have an EMPTY `dependsOn`. Only mark a dependency when a change to the other feature would force rework of this one (shared data contract, shared UI surface, sequential user journey step). Two features that merely live in the same phase are NOT automatically dependent.
+  - Never depend on a feature in a LATER phase, and never create a circular dependency (A depends on B, B depends on A) — if you find yourself doing this, the features are too tightly coupled and should be merged into one feature instead.
 - **stories**: MUST be an empty array `[]`. User stories are added later by the story decomposition agent.
 
 ### Out of Scope
@@ -110,6 +116,7 @@ List anything explicitly NOT being built, or deferred to a later phase. Prevents
 7. **MVP DISCIPLINE** — MVP is the minimum to validate the hypothesis. Most features belong in Phase 1+.
 8. **PHASE LABELS** — Must be exactly "MVP", "Phase 1", "Phase 2", "Phase 3". No TBD or missing values.
 9. **ACCEPTANCE CRITERIA** — Feature-level only. 3-5 per feature. Testable and outcome-focused.
+10. **DEPENDENCY DISCIPLINE** — Default every feature's `dependsOn` to `[]`. Only add a prerequisite when truly blocking. Over-tagging dependencies defeats parallel delivery; under-tagging risks rework. When in doubt, leave it empty.
 
 ---
 
@@ -145,6 +152,7 @@ List anything explicitly NOT being built, or deferred to a later phase. Prevents
             "userJourneys": ["Trading · Share trade idea"]
           },
           "deferredTo": null,
+          "dependsOn": [],
           "stories": []
         },
         {
@@ -163,6 +171,7 @@ List anything explicitly NOT being built, or deferred to a later phase. Prevents
             "userJourneys": ["Social · Join community"]
           },
           "deferredTo": null,
+          "dependsOn": [],
           "stories": []
         },
         {
@@ -181,6 +190,7 @@ List anything explicitly NOT being built, or deferred to a later phase. Prevents
             "userJourneys": ["Trading · Share trade idea"]
           },
           "deferredTo": null,
+          "dependsOn": ["Real-time Message Delivery"],
           "stories": []
         }
       ]
@@ -206,6 +216,7 @@ List anything explicitly NOT being built, or deferred to a later phase. Prevents
             "userJourneys": []
           },
           "deferredTo": null,
+          "dependsOn": [],
           "stories": []
         },
         {
@@ -224,6 +235,7 @@ List anything explicitly NOT being built, or deferred to a later phase. Prevents
             "userJourneys": ["Social · Stay updated"]
           },
           "deferredTo": null,
+          "dependsOn": ["Real-time Message Delivery"],
           "stories": []
         }
       ]

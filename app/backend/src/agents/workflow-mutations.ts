@@ -14,13 +14,14 @@ import {
   STAGE_SESSION_MAP, STAGE_LABELS_INTERNAL, STAGE_ARTIFACT_TYPE,
   stageProgressWorking,
 } from './stage-metadata';
-import { loadArtifactContentById, loadLatestArtifactContent, resolveArtifactPath } from './artifact-helpers';
+import { loadArtifactContentById, loadLatestArtifactContent, resolveArtifactPath, isJsonArtifactContent } from './artifact-helpers';
 import {
   logger, stmts, insertEvent, workflowOps,
 } from './workflow-db';
 import {
   runAutonomousStage, getCoordinator, SILENT_STAGES, clearCancelFlag,
 } from './workflow-stage-runner';
+import { parseDecompositionMetadata, findWaveForStage } from './feature-decomposition';
 
 function stageSession(stage: string): { mode: AppMode; agentType: AgentType } {
   return STAGE_SESSION_MAP[stage] ?? { mode: 'analyst' as AppMode, agentType: 'analyst' as AgentType };
@@ -40,9 +41,19 @@ export async function propagateFeedback(checkpointId: number, feedback: string):
 
   // Load the full prior artifact — passed as the assistant turn in the conversation thread.
   // Use the async loader so MongoDB-backed artifacts are fetched correctly.
-  const priorDraft = checkpoint.artifact_id
+  let priorDraft = checkpoint.artifact_id
     ? (await loadArtifactContentById(checkpoint.artifact_id)) ?? undefined
     : undefined;
+
+  // Every artifact is stored as JSON. If this came back as something else, the primary
+  // store (mongo/disk) was unreadable and readArtifactRow fell back to the wiki's markdown
+  // mirror — not the canonical draft. Threading that in as the specialist's "previous
+  // response" makes it think the document format changed, which derails the revision.
+  // Treat it as no-prior-draft instead so it gets a clean from-scratch brief.
+  if (priorDraft && !isJsonArtifactContent(priorDraft)) {
+    logger.warn(`propagateFeedback: artifact ${checkpoint.artifact_id} content is not JSON (likely wiki fallback) — generating a from-scratch revision brief instead of threading it as the prior draft`);
+    priorDraft = undefined;
+  }
 
   // Build the revision brief (instructions only — prior draft goes into the message thread)
   const brief = priorDraft
@@ -130,9 +141,16 @@ export async function reiterateFromStage(
   // story_decomposition_F* stages save as 'backlog' type (not keyed to stage name).
   const isFeatureDecompStage = /^story_decomposition_F\d+$/.test(fromStage);
   const artifactTypeForLoad = isFeatureDecompStage ? 'backlog' : STAGE_ARTIFACT_TYPE[fromStage];
-  const priorDraft = artifactTypeForLoad
+  let priorDraft = artifactTypeForLoad
     ? (await loadLatestArtifactContent(workflow.item_id, artifactTypeForLoad)) ?? undefined
     : undefined;
+
+  // See propagateFeedback() above — guard against the wiki's markdown mirror leaking
+  // through as the "prior draft" when mongo/disk content is unreadable.
+  if (priorDraft && !isJsonArtifactContent(priorDraft)) {
+    logger.warn(`reiterateFromStage: artifact content for stage "${fromStage}" is not JSON (likely wiki fallback) — generating a from-scratch brief instead of threading it as the prior draft`);
+    priorDraft = undefined;
+  }
   const brief = briefOverride
     ? briefOverride
     : priorDraft
@@ -158,6 +176,10 @@ export async function reiterateFromStage(
  * Retry the current stage of an active workflow that appears stuck.
  * Only allowed when status is 'active' and there's a current_stage set.
  * Re-generates the stage brief and starts a fresh specialist session.
+ *
+ * If current_stage belongs to a multi-member wave (concurrent feature refinement),
+ * every member of the wave is retried — not just the representative stage stored in
+ * current_stage — so a stuck wave doesn't leave its other in-flight features behind.
  */
 export async function retryCurrentStage(workflowId: string): Promise<{ stage: string }> {
   const workflow = stmts.getWorkflow.get(workflowId);
@@ -170,34 +192,39 @@ export async function retryCurrentStage(workflowId: string): Promise<{ stage: st
   }
 
   const stage = workflow.current_stage;
+  const decompMeta = parseDecompositionMetadata(workflow.decomposition_metadata);
+  const wave = findWaveForStage(decompMeta, stage) ?? [stage];
 
-  logger.info(`Retrying stuck stage "${stage}" for workflow ${workflowId}`);
-  insertEvent(workflowId, 'stage_progress', stage,
-    stageProgressWorking(stage));
+  for (const memberStage of wave) {
+    logger.info(`Retrying stuck stage "${memberStage}" for workflow ${workflowId}`);
+    insertEvent(workflowId, 'stage_progress', memberStage,
+      stageProgressWorking(memberStage));
 
-  // Dismiss any pending checkpoint for this stage (and its QA companion checkpoint,
-  // e.g. story_decomposition_F1 + story_decomposition_F1_qa) so the UI clears
-  const now = Date.now();
-  db.prepare(`
-    UPDATE checkpoints SET status = 'revised', resolved_at = ?
-    WHERE workflow_id = ? AND (stage = ? OR stage = ?) AND status = 'pending'
-  `).run(now, workflowId, stage, `${stage}_qa`);
+    // Dismiss any pending checkpoint for this stage (and its QA companion checkpoint,
+    // e.g. story_decomposition_F1 + story_decomposition_F1_qa) so the UI clears
+    const now = Date.now();
+    db.prepare(`
+      UPDATE checkpoints SET status = 'revised', resolved_at = ?
+      WHERE workflow_id = ? AND (stage = ? OR stage = ?) AND status = 'pending'
+    `).run(now, workflowId, memberStage, `${memberStage}_qa`);
 
-  // Reset workflow status to active on this stage
-  stmts.updateWorkflowStageAndStatus.run(stage, 'active', now, workflowId);
+    // Generate a fresh brief
+    const brief = await getCoordinator().generateStageBrief(workflowId, memberStage);
 
-  // Generate a fresh brief
-  const brief = await getCoordinator().generateStageBrief(workflowId, stage);
+    // Create a new specialist session
+    const stageMap = stageSession(memberStage);
+    const session = sessionManager.createSpecialistSession(workflow.item_id, stageMap.mode, stageMap.agentType);
+    sessionManager.updateWorkflow(session.id, workflowId, brief);
 
-  // Create a new specialist session
-  const stageMap = stageSession(stage);
-  const session = sessionManager.createSpecialistSession(workflow.item_id, stageMap.mode, stageMap.agentType);
-  sessionManager.updateWorkflow(session.id, workflowId, brief);
+    const shouldAutoApprove = SILENT_STAGES.has(memberStage);
 
-  const shouldAutoApprove = SILENT_STAGES.has(stage);
+    runAutonomousStage(session.id, workflowId, memberStage, workflow.item_id, brief, shouldAutoApprove)
+      .catch(err => logger.error(`Retry re-run for stage "${memberStage}" failed: ${err.message}`));
+  }
 
-  runAutonomousStage(session.id, workflowId, stage, workflow.item_id, brief, shouldAutoApprove)
-    .catch(err => logger.error(`Retry re-run for stage "${stage}" failed: ${err.message}`));
+  // Reset workflow status to active on the representative stage (current_stage already
+  // points at it — same convention advanceStageCore uses for multi-member waves).
+  stmts.updateWorkflowStageAndStatus.run(stage, 'active', Date.now(), workflowId);
 
   return { stage };
 }

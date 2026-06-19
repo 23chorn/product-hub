@@ -24,6 +24,7 @@ export interface WorkflowRow {
   current_stage: string | null;
   stage_sequence: string;    // JSON string[]
   policy_overrides: string;  // JSON Record<string,string>
+  decomposition_metadata: string | null;  // JSON DecompositionMetadata (feature wave membership)
   created_at: number;
   updated_at: number;
 }
@@ -50,6 +51,8 @@ export interface WorkflowStatus {
   currentStage: string | null;
   completedStages: string[];
   pendingStage: string | null;
+  pendingStages: string[];       // every pending checkpoint's stage (multiple when a wave is mid-review)
+  inProgressStages: string[];    // every stage currently running concurrently (the active wave, or [currentStage])
   currentSessionId: string | null;
   productArea?: string;
   strategicTheme?: string;

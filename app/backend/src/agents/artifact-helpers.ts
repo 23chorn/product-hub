@@ -378,6 +378,24 @@ export async function saveDiffArtifact(
 // ── Content loaders (async — fetches from wiki or disk) ───────────────────────
 
 /**
+ * True if `content` parses as JSON (optionally wrapped in a ```json fence). Every workflow
+ * artifact is stored as JSON by design — this is used to detect when a loaded "prior draft"
+ * is actually the wiki's markdown mirror leaking through readArtifactRow's last-resort
+ * fallback (mongo/disk content unreadable), rather than the canonical artifact. Feeding that
+ * markdown to a specialist as its own "previous response" during a revision confuses it about
+ * the expected output format.
+ */
+export function isJsonArtifactContent(content: string): boolean {
+  const stripped = content.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '').trim();
+  try {
+    JSON.parse(stripped);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Load content for a specific artifact by DB row ID.
  */
 export async function loadArtifactContentById(artifactId: number): Promise<string | null> {

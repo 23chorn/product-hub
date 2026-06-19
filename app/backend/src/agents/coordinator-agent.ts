@@ -198,9 +198,9 @@ ${policyLines}`;
       if (itemRow?.metadata) {
         try {
           const meta = JSON.parse(itemRow.metadata) as Record<string, unknown>;
-          if (typeof meta.productArea === 'string' && meta.productArea.trim()) {
-            productAreaScope = meta.productArea.trim();
-          }
+          const rawArea = meta.productArea;
+          const area = Array.isArray(rawArea) ? rawArea.join(', ').trim() : typeof rawArea === 'string' ? rawArea.trim() : '';
+          if (area) productAreaScope = area;
         } catch { /* malformed metadata — ignore */ }
       }
     }

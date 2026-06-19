@@ -206,9 +206,9 @@ export async function runAutonomousStage(
       const itemRow = db.prepare<[string], { metadata: string | null }>('SELECT metadata FROM items WHERE id = ?').get(itemId);
       if (itemRow?.metadata) {
         const meta = JSON.parse(itemRow.metadata) as Record<string, unknown>;
-        if (typeof meta.productArea === 'string' && meta.productArea.trim()) {
-          productAreaScope = meta.productArea.trim();
-        }
+        const rawArea = meta.productArea;
+        const area = Array.isArray(rawArea) ? rawArea.join(', ').trim() : typeof rawArea === 'string' ? rawArea.trim() : '';
+        if (area) productAreaScope = area;
       }
     } catch { /* malformed metadata — ignore */ }
 
@@ -441,13 +441,15 @@ export async function runAutonomousStage(
                 lastProgressTime = now;
               }
             }
-            // Heartbeat: still on same section and been silent for 45s — prove the stage is alive
-            if (now - lastProgressTime > 45_000) {
-              const elapsedSec = Math.round((now - startTime) / 1000);
-              insertEvent(workflowId, 'stage_progress', stage,
-                stageProgressHeartbeat(stage, elapsedSec, fullResponse.length));
-              lastProgressTime = now;
-            }
+          }
+          // Heartbeat: no progress event fired in the last 45s — prove the stage is alive.
+          // Applies to every stage, including prototype (whose file-count tracker can stay
+          // silent for a long time while the model writes the JSON preamble).
+          if (now - lastProgressTime > 45_000) {
+            const elapsedSec = Math.round((now - startTime) / 1000);
+            insertEvent(workflowId, 'stage_progress', stage,
+              stageProgressHeartbeat(stage, elapsedSec, fullResponse.length));
+            lastProgressTime = now;
           }
         }
       }
@@ -642,22 +644,59 @@ export async function runAutonomousStage(
       }
     }
 
-    // ── Special handling for epic_feature_planner: ensure features have empty stories arrays ──
+    // ── Special handling for epic_feature_planner: ensure empty stories arrays, and
+    // resolve each feature's dependsOn (title references) into stable dependsOnIndices
+    // using the same flatten order F-keys are assigned from downstream. ──
     if (stage === 'epic_feature_planner') {
       const stripped = artifactContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
       const jsonStart = stripped.indexOf('{');
       const jsonContent = jsonStart > 0 ? stripped.slice(jsonStart) : stripped;
       try {
         const parsed = JSON.parse(jsonContent);
-        if (parsed.features && Array.isArray(parsed.features)) {
-          parsed.features = parsed.features.map((f: any) => ({
-            ...f,
-            stories: f.stories ?? [],
+        const { flattenFeatures, resolveFeatureDependencies } = await import('./feature-decomposition');
+
+        // Ensure stories: [] on every feature (phased or legacy) — the legacy block
+        // only ever handled the flat shape; phased output was previously left untouched.
+        const ensureStories = (f: any) => ({ ...f, stories: f.stories ?? [] });
+        if (Array.isArray(parsed.phases)) {
+          parsed.phases = parsed.phases.map((p: any) => ({
+            ...p,
+            features: Array.isArray(p.features) ? p.features.map(ensureStories) : [],
           }));
+        } else if (Array.isArray(parsed.features)) {
+          parsed.features = parsed.features.map(ensureStories);
         }
+
+        const flatFeatures = flattenFeatures(parsed);
+        const { resolvedByIndex, warnings } = resolveFeatureDependencies(flatFeatures);
+
+        // Stamp dependsOnIndices back onto each feature in its original nested location,
+        // by position — flattenFeatures()'s order is stable for a given parsed JSON.
+        let flatIdx = 0;
+        const stampDeps = (f: any) => {
+          const resolved = resolvedByIndex.get(flatIdx) ?? [];
+          flatIdx++;
+          return { ...f, dependsOnIndices: resolved };
+        };
+        if (Array.isArray(parsed.phases)) {
+          parsed.phases = parsed.phases.map((p: any) => ({
+            ...p,
+            features: Array.isArray(p.features) ? p.features.map(stampDeps) : [],
+          }));
+        } else if (Array.isArray(parsed.features)) {
+          parsed.features = parsed.features.map(stampDeps);
+        }
+
+        if (warnings.length > 0) {
+          logger.warn(`[epic_feature_planner] Dependency resolution warnings: ${warnings.join(' | ')}`);
+          insertEvent(workflowId, 'validation_warning', stage,
+            `${warnings.length} feature dependency reference(s) could not be resolved — treated as independent`,
+            { warnings });
+        }
+
         artifactContent = JSON.stringify(parsed, null, 2);
         await updateArtifactContent(artifactId, artifactContent);
-        logger.info(`Updated artifact in-place for stage "${stage}"`);
+        logger.info(`Updated artifact in-place for stage "${stage}" (dependencies resolved)`);
       } catch (err: any) {
         logger.warn(`Failed to parse JSON for ${stage}: ${err.message}`);
       }
@@ -1082,6 +1121,8 @@ export async function runAutonomousStage(
     } else {
       stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
       logger.info(`Autonomous stage "${stage}" complete — checkpoint created, workflow paused`);
+      const titleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(itemId);
+      if (titleRow) notifyCheckpointPending(titleRow.title, stage);
     }
   } catch (err: any) {
     // Graceful exit when user cancelled — no error checkpoint needed
