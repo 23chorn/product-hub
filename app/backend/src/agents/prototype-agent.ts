@@ -19,6 +19,7 @@ import { streamAI, resolveModelId, type SystemPrompt, type TokenUsage } from '..
 import { repairTruncatedJson } from '../utils/json-repair';
 import type { AgentType } from '@pap/shared';
 import { loadLatestArtifactContent, saveLocalArtifact, resolveArtifactPath } from './artifact-helpers';
+import { readProductArea } from './item-metadata';
 import db from '../data/database';
 import Logger from '../utils/logger';
 
@@ -492,22 +493,12 @@ export async function writeFigmaAnnotations(
  * or an array of tags e.g. ["Mobile App"].
  */
 export function resolveItemPlatform(itemId: string): PrototypePlatform {
-  const row = db.prepare<[string], { metadata: string | null }>(
-    'SELECT metadata FROM items WHERE id = ?'
-  ).get(itemId);
-  if (!row?.metadata) return 'web';
-  try {
-    const meta = JSON.parse(row.metadata) as { productArea?: string | string[] };
-    const rawArea = meta.productArea;
-    const area = (Array.isArray(rawArea) ? rawArea.join(' ') : rawArea ?? '').toLowerCase();
-    const hasWeb = /web|browser|desktop/.test(area);
-    const hasMobile = /mobile|ios|android|app/.test(area);
-    if (hasWeb && hasMobile) return 'both';
-    if (hasMobile) return 'mobile';
-    return 'web';
-  } catch {
-    return 'web';
-  }
+  const area = (readProductArea(itemId) ?? '').toLowerCase();
+  const hasWeb = /web|browser|desktop/.test(area);
+  const hasMobile = /mobile|ios|android|app/.test(area);
+  if (hasWeb && hasMobile) return 'both';
+  if (hasMobile) return 'mobile';
+  return 'web';
 }
 
 /** Mobile-specific prompt instructions injected when generating a mobile prototype. */

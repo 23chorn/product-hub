@@ -17,7 +17,6 @@ import { ContextCuratorAgent } from './curator-agent';
 import { SpecialistAgent } from './specialist-agent';
 import { resolveAgentModel, getActiveProvider, type TokenUsage } from '../utils/ai-provider';
 import { computeRevisionDiff } from '../utils/revision-diff';
-import { injectSprintEstimates } from './sprint-estimation';
 import {
   STAGE_SESSION_MAP, STAGE_MAX_OUTPUT_TOKENS, STAGE_ARTIFACT_TYPE,
   STAGE_ARTIFACT_LABEL, stageProgressHeartbeat, stageProgressReview, stageProgressReviewComplete, stageProgressRevision, stageProgressSection, stageProgressWorking,
@@ -28,13 +27,14 @@ import {
 import { getActiveSkill } from './skill-registry';
 import { type ToolDefinition, getRegisteredTools } from './tool-registry';
 import { loadWorkflowArtifacts, loadLocalDesignSystem, loadFigmaDesignSystem, getFigmaFileKey, setFigmaFileKey, createFigmaFile, resolveItemPlatform, platformHintFor, resolvedFramePlatform } from './prototype-agent';
-import { repairTruncatedJson } from '../utils/json-repair';
+import { repairTruncatedJson, stripJsonFence, extractFirstJsonObject } from '../utils/json-repair';
+import { readProductArea } from './item-metadata';
 import {
   PROJECT_ROOT, logger, stmts, insertEvent,
   setCheckpointTokenUsage, loadGlobalPolicies, workflowOps, rolesJson,
   type StageTokenData,
 } from './workflow-db';
-import { isDemoMode, getDemoFixture, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
+import { isDemoMode, isDemoWorkflow, getDemoFixture, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
 import { notifyCheckpointPending } from '../utils/slack-notifier';
 
 // Cancel registry, silent-stage set, and agent singletons live in dedicated
@@ -52,6 +52,28 @@ import { getCoordinator, getCritic } from './workflow-agents';
 import { runBacklogMerge, runMultiAgentFeatureStage, runMultiAgentFeatureRevision, runMultiAgentFeatureQaRevision } from './feature-stage-runner';
 
 // ── Autonomous stage execution ────────────────────────────────────────────────
+
+// Airtable column that should receive each stage's artifact link. Stages absent here
+// have no Airtable link column (their links flow through ADO instead). Used by both the
+// fallback push and the post-wiki-sync push below.
+const STAGE_AIRTABLE_LINK_FIELD: Record<string, string> = {
+  analyst: 'researchBriefLink',
+  pm_prd: 'prdLink',
+  solution_architect: 'technicalDesignLink',
+  figma_design: 'figmaDesignLink',
+};
+
+// Short display labels for stage-completion event copy (e.g. "Research draft complete").
+// Deliberately terser than STAGE_ARTIFACT_LABEL (which is the full document title) — kept
+// separate so event narration stays concise.
+const STAGE_EVENT_LABEL: Record<string, string> = {
+  analyst: 'Research',
+  pm_prd: 'PRD',
+  epic_feature_planner: 'Epic & Features',
+  solution_architect: 'Architecture',
+  prototype: 'Prototype',
+  figma_design: 'Figma Design',
+};
 
 /**
  * Detects and strips a known LLM failure mode where the entire response echoes
@@ -88,6 +110,200 @@ function stripWholeResponseDuplication(text: string, stage: string): string {
   logger.warn(`Stage "${stage}" response echoed the full document twice — stripping the duplicate copy (${trimmed.length} → ${firstHalf.length} chars)`);
   return firstHalf.trimEnd();
 }
+
+/**
+ * Create the checkpoint representing a completed stage's output, attaching specialist/critic
+ * token usage and any figma file link extracted from the artifact. Consolidates checkpoint
+ * creation that previously diverged slightly across the critic-approved, critic-exhausted, and
+ * non-critic paths — e.g. the figma_design file link was only attached on two of the three.
+ */
+function createStageCheckpoint(
+  workflowId: string,
+  stage: string,
+  artifactId: number | null,
+  artifactContent: string,
+  opts: {
+    sessionId: string;
+    status: 'approved' | 'pending';
+    autoApprove: boolean;
+    criticDetails?: Record<string, unknown>;
+    diffArtifactId?: number | null;
+    specialistTokenData: StageTokenData['specialist'] | null;
+    criticTokenData?: StageTokenData['critic'] | null;
+  }
+): number {
+  let figmaFileUrl: string | undefined;
+  if (stage === 'figma_design') {
+    try {
+      figmaFileUrl = JSON.parse(stripJsonFence(artifactContent)).figma_file_url || undefined;
+    } catch { /* ignore */ }
+  }
+
+  const metadata = {
+    session_id: opts.sessionId,
+    autonomous: true,
+    auto_approved: opts.autoApprove,
+    ...(opts.criticDetails ? { critic: opts.criticDetails } : {}),
+    ...(opts.diffArtifactId ? { diff_artifact_id: opts.diffArtifactId } : {}),
+    ...(figmaFileUrl ? { figma_file_url: figmaFileUrl } : {}),
+  };
+
+  const now = Date.now();
+  const cpResult = stmts.insertCheckpoint.run(
+    workflowId, stage, artifactId, opts.status,
+    JSON.stringify(metadata),
+    opts.status === 'pending' ? rolesJson(stage) : null, now
+  );
+  const checkpointId = cpResult.lastInsertRowid as number;
+  if (opts.specialistTokenData) {
+    setCheckpointTokenUsage(checkpointId,
+      { specialist: opts.specialistTokenData, ...(opts.criticTokenData ? { critic: opts.criticTokenData } : {}) });
+  }
+  return checkpointId;
+}
+
+/**
+ * Either auto-advance the workflow past the stage just completed, or pause and notify the
+ * approvers — the finish-the-stage logic that previously diverged across the critic-approved,
+ * critic-exhausted, and non-critic paths. On auto-advance failure, always leaves behind a
+ * pending checkpoint carrying the error so a human has something actionable to act on, rather
+ * than a workflow paused with no checkpoint at all (a gap two of the three original paths had).
+ */
+function finishStage(
+  workflowId: string,
+  itemId: string,
+  stage: string,
+  autoApprove: boolean,
+  logLabel: string
+): void {
+  if (autoApprove) {
+    logger.info(`${logLabel} — auto-advancing (demo mode)`);
+    workflowOps.advanceStage(workflowId).catch((err: any) => {
+      if (err.message?.startsWith('WORKFLOW_COMPLETE')) {
+        logger.info(`Workflow ${workflowId} completed after auto-advance chain through "${stage}"`);
+        return;
+      }
+      logger.error(`Auto-advance after "${stage}" failed: ${err.message}`);
+      const now = Date.now();
+      stmts.insertCheckpoint.run(
+        workflowId, stage, null, 'pending',
+        JSON.stringify({ error: `Auto-advance failed: ${err.message}`, autonomous: true }),
+        rolesJson(stage), now
+      );
+      stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
+    });
+  } else {
+    stmts.updateWorkflowStatus.run('paused_at_checkpoint', Date.now(), workflowId);
+    logger.info(`${logLabel} — paused for human review`);
+    const titleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(itemId);
+    if (titleRow) notifyCheckpointPending(titleRow.title, stage);
+  }
+}
+
+interface ItemContextParams {
+  itemId: string;
+  workflowId: string;
+  stage: string;
+  goalText: string | null;
+  addPlatformScope: (base: string) => string;
+  figmaBypass: boolean;
+}
+
+/**
+ * Per-stage builders for the "itemContext" injected into each specialist's brief —
+ * the prior stage's artifact(s), formatted for that specialist's needs. Keyed by
+ * stage name and looked up by runAutonomousStage; a stage with no entry here (e.g.
+ * the critic) simply gets no itemContext. Feature-specific stages (story_decomposition_F1,
+ * qa_engineer_F1, etc.) never reach this dispatch — they're routed to the multi-agent
+ * pipeline, or rejected by the STAGE_SESSION_MAP check earlier in runAutonomousStage,
+ * before itemContext is ever built.
+ */
+const ITEM_CONTEXT_BUILDERS: Record<string, (params: ItemContextParams) => Promise<string | undefined>> = {
+  async analyst({ goalText, addPlatformScope }) {
+    if (!goalText) return undefined;
+    return addPlatformScope(`## THIS IS YOUR RESEARCH TOPIC\nThe task below defines exactly what to research. The company context above is background only — your output must be about this specific goal, NOT about the company's existing products.\n\n**Goal:** ${goalText}`);
+  },
+
+  async pm_prd({ itemId, goalText, addPlatformScope }) {
+    const analystContent = await loadLatestArtifactContent(itemId, 'analyst');
+    const parts: string[] = [];
+    if (analystContent) parts.push(`**Research Brief (use as background for the PRD):**\n\n${analystContent}`);
+
+    const { loadRelevantBehaviourDocs } = await import('./behaviour-context');
+    const behaviourDocs = await loadRelevantBehaviourDocs(`${goalText ?? ''} ${analystContent ?? ''}`);
+    if (behaviourDocs) parts.push(behaviourDocs);
+
+    return parts.length > 0 ? addPlatformScope(parts.join('\n\n---\n\n')) : undefined;
+  },
+
+  async epic_feature_planner({ itemId, addPlatformScope }) {
+    const prdContent = await loadLatestArtifactContent(itemId, 'prd');
+    if (!prdContent) return undefined;
+    return addPlatformScope(`**PRD Document (use as source of functional requirements to decompose into epic and features):**\n\n${prdContent}`);
+  },
+
+  async solution_architect({ itemId, addPlatformScope }) {
+    const parts: string[] = [];
+    const prdContent = await loadLatestArtifactContent(itemId, 'prd');
+    if (prdContent) parts.push(`**PRD Document (use as source of requirements for the architecture):**\n\n${prdContent}`);
+
+    const techStackPath = path.join(PROJECT_ROOT, 'context', 'tech-stack.md');
+    let techStackNote = '';
+    try {
+      const techStack = fs.readFileSync(techStackPath, 'utf-8');
+      techStackNote = `**Existing Tech Stack (align your architecture with this):**\n\n${techStack}`;
+    } catch {
+      techStackNote = `**Note:** No existing tech stack document found at context/tech-stack.md. You should recommend technology choices with tradeoffs for each decision.`;
+    }
+    parts.push(techStackNote);
+    return addPlatformScope(parts.join('\n\n---\n\n'));
+  },
+
+  async prototype({ itemId, addPlatformScope }) {
+    // Deliberately no design system context here — the prototype stage builds a
+    // generic, brand-neutral wireframe (see prototype-builder persona), not a
+    // branded mock. Real design tokens are only loaded later for figma_design.
+    const artifacts = await loadWorkflowArtifacts(itemId);
+    const parts: string[] = [];
+    if (artifacts) parts.push(`## Workflow Artifacts\n\nUse these documents to understand the change being prototyped:\n\n${artifacts}`);
+    // Built for exactly one platform (mobile or web) — no dual-variant generation,
+    // since there's no UI to switch between two generated versions anyway.
+    parts.push(platformHintFor(resolveItemPlatform(itemId)));
+    return parts.length > 0 ? addPlatformScope(parts.join('\n\n---\n\n')) : undefined;
+  },
+
+  async figma_design({ itemId, workflowId, stage, addPlatformScope, figmaBypass }) {
+    // Read design tokens from the Figma design system file via MCP
+    const figma = await loadFigmaDesignSystem((msg) => {
+      insertEvent(workflowId, 'stage_progress', stage, msg.trim());
+    });
+    const designSystem = figma || await loadLocalDesignSystem();
+    const [prdContent, protoContent] = await Promise.all([
+      loadLatestArtifactContent(itemId, 'prd'),
+      loadLatestArtifactContent(itemId, 'prototype'),
+    ]);
+    const parts: string[] = [];
+    if (designSystem) parts.push(`## Design System\n\n${designSystem}`);
+    if (prdContent) parts.push(`## PRD\n\nUse this to identify user journeys each screen must cover:\n\n${prdContent}`);
+    if (protoContent) parts.push(`## Prototype\n\nUse this as a reference for the screens and navigation flows to visualise:\n\n${protoContent}`);
+    if (!figmaBypass) {
+      let mockupFile = getFigmaFileKey(itemId);
+      if (!mockupFile) {
+        const item = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(itemId);
+        const fileName = item ? `${item.title} — Mockups` : 'Initiative Mockups';
+        insertEvent(workflowId, 'stage_progress', stage, `Creating Figma file "${fileName}"...`);
+        const created = await createFigmaFile(fileName);
+        if (created) {
+          setFigmaFileKey(itemId, created);
+          mockupFile = created;
+          insertEvent(workflowId, 'stage_progress', stage, `Figma file created: ${created}`);
+        }
+      }
+      if (mockupFile) parts.push(`## Target Figma File\n\nCreate mockup frames in Figma file key: \`${mockupFile}\`\nFile URL: https://www.figma.com/file/${mockupFile}/`);
+    }
+    return parts.length > 0 ? addPlatformScope(parts.join('\n\n---\n\n')) : undefined;
+  },
+};
 
 /**
  * Run a specialist stage autonomously (no user interaction).
@@ -224,9 +440,9 @@ export async function runAutonomousStage(
     const policyOverrides: Record<string, string> = workflow?.policy_overrides
       ? JSON.parse(workflow.policy_overrides)
       : {};
-    const isDemoWorkflow = policyOverrides.demo_mode === 'true' || policyOverrides.demo_auto_approve === 'true';
+    const isDemo = isDemoWorkflow(policyOverrides);
 
-    logger.info(`[DEMO CHECK] Stage "${stage}" - isDemoWorkflow: ${isDemoWorkflow}, policyOverrides: ${JSON.stringify(policyOverrides)}`);
+    logger.info(`[DEMO CHECK] Stage "${stage}" - isDemoWorkflow: ${isDemo}, policyOverrides: ${JSON.stringify(policyOverrides)}`);
 
     // Admin-only global setting: when on, figma_design still produces the full screens/tokens/notes
     // overview, but never auto-creates or writes to a Figma file — a human pastes their own link instead.
@@ -234,7 +450,7 @@ export async function runAutonomousStage(
     const figmaBypass = figmaBypassPolicy === 'true' || figmaBypassPolicy === (true as any);
 
     let demoFixture: string | null = null;
-    if (isDemoWorkflow) {
+    if (isDemo) {
       demoFixture = getDemoFixture(stage) ?? null;
       logger.info(`[DEMO FIXTURE] Stage "${stage}" - fixture ${demoFixture ? 'LOADED' : 'NOT FOUND'} (${demoFixture?.length ?? 0} chars)`);
     }
@@ -248,16 +464,7 @@ export async function runAutonomousStage(
     const goalText = goalMatch ? goalMatch[1].trim() : null;
 
     // ── Extract productArea from item metadata ───────────────────────────────────
-    let productAreaScope: string | null = null;
-    try {
-      const itemRow = db.prepare<[string], { metadata: string | null }>('SELECT metadata FROM items WHERE id = ?').get(itemId);
-      if (itemRow?.metadata) {
-        const meta = JSON.parse(itemRow.metadata) as Record<string, unknown>;
-        const rawArea = meta.productArea;
-        const area = Array.isArray(rawArea) ? rawArea.join(', ').trim() : typeof rawArea === 'string' ? rawArea.trim() : '';
-        if (area) productAreaScope = area;
-      }
-    } catch { /* malformed metadata — ignore */ }
+    const productAreaScope = readProductArea(itemId);
 
     // Helper to add platform scope constraint to item context
     const addPlatformScope = (base: string): string => {
@@ -267,138 +474,13 @@ export async function runAutonomousStage(
     };
 
     // Build item context: for analyst, the goal itself is the primary context.
-    // For later stages, inject the previous stage's artifact.
+    // For later stages, inject the previous stage's artifact via a per-stage builder
+    // (ITEM_CONTEXT_BUILDERS above). story_decomposition_F*/qa_engineer_F* stages never
+    // reach here — see that map's doc comment for why no feature-specific case is needed.
     let itemContext: string | undefined;
-    if (stage === 'analyst') {
-      if (goalText) {
-        itemContext = addPlatformScope(`## THIS IS YOUR RESEARCH TOPIC\nThe task below defines exactly what to research. The company context above is background only — your output must be about this specific goal, NOT about the company's existing products.\n\n**Goal:** ${goalText}`);
-      }
-    } else if (stage === 'pm_prd') {
-      const analystContent = await loadLatestArtifactContent(itemId, 'analyst');
-      const parts: string[] = [];
-      if (analystContent) parts.push(`**Research Brief (use as background for the PRD):**\n\n${analystContent}`);
-
-      const { loadRelevantBehaviourDocs } = await import('./behaviour-context');
-      const behaviourDocs = await loadRelevantBehaviourDocs(`${goalText ?? ''} ${analystContent ?? ''}`);
-      if (behaviourDocs) parts.push(behaviourDocs);
-
-      if (parts.length > 0) itemContext = addPlatformScope(parts.join('\n\n---\n\n'));
-    } else if (stage === 'epic_feature_planner') {
-      const prdContent = await loadLatestArtifactContent(itemId, 'prd');
-      if (prdContent) {
-        itemContext = addPlatformScope(`**PRD Document (use as source of functional requirements to decompose into epic and features):**\n\n${prdContent}`);
-      }
-    } else if (stage === 'solution_architect') {
-      const parts: string[] = [];
-      const prdContent = await loadLatestArtifactContent(itemId, 'prd');
-      if (prdContent) parts.push(`**PRD Document (use as source of requirements for the architecture):**\n\n${prdContent}`);
-
-      const techStackPath = path.join(PROJECT_ROOT, 'context', 'tech-stack.md');
-      let techStackNote = '';
-      try {
-        const techStack = fs.readFileSync(techStackPath, 'utf-8');
-        techStackNote = `**Existing Tech Stack (align your architecture with this):**\n\n${techStack}`;
-      } catch {
-        techStackNote = `**Note:** No existing tech stack document found at context/tech-stack.md. You should recommend technology choices with tradeoffs for each decision.`;
-      }
-      parts.push(techStackNote);
-      itemContext = addPlatformScope(parts.join('\n\n---\n\n'));
-    }
-
-    // ── Feature-specific story decomposition ─────────────────────────────────────
-    const { parseFeatureStage, loadPartialBacklog } = await import('./feature-decomposition');
-    const featureIndex = parseFeatureStage(stage);
-    if (featureIndex !== null) {
-      const parts: string[] = [];
-      const [prdContent, archContent] = await Promise.all([
-        loadLatestArtifactContent(itemId, 'prd'),
-        loadLatestArtifactContent(itemId, 'architecture'),
-      ]);
-
-      // Load epic/features structure (try enriched first, then fallback to base)
-      let epicFeaturesContent = await loadLatestArtifactContent(itemId, 'epic_features_enriched');
-      if (!epicFeaturesContent) {
-        epicFeaturesContent = await loadLatestArtifactContent(itemId, 'epic_features');
-      }
-
-      if (!epicFeaturesContent) {
-        throw new Error(`No epic_features artifact found for feature-specific stage ${stage}`);
-      }
-
-      // Parse to get the target feature — flattenFeatures handles both phases[] and legacy features[]
-      const cleaned = epicFeaturesContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-      const jsonStart = cleaned.indexOf('{');
-      const jsonContent = jsonStart > 0 ? cleaned.slice(jsonStart) : cleaned;
-      const epicFeatures = JSON.parse(jsonContent);
-
-      const { flattenFeatures } = await import('./feature-decomposition');
-      const allEpicFeatures = flattenFeatures(epicFeatures);
-      if (featureIndex >= allEpicFeatures.length) {
-        throw new Error(`Feature index ${featureIndex} out of range for ${stage} (${allEpicFeatures.length} features total)`);
-      }
-
-      const targetFeature = allEpicFeatures[featureIndex];
-
-      // Load prior partial backlog (if exists)
-      const priorBacklog = await loadPartialBacklog(itemId);
-
-      // Build feature-specific context
-      if (prdContent) parts.push(`**PRD Document (use for FR traceability):**\n\n${prdContent}`);
-      if (archContent) parts.push(`**Architecture Document (reference specific components and APIs):**\n\n${archContent}`);
-      parts.push(`**Epic & Features Structure:**\n\n${epicFeaturesContent}`);
-
-      parts.push(`\n---\n\n**YOUR TASK:**\n\nDecompose ONLY the following feature into 6-8 stories or technical tasks. Do NOT decompose other features.\n\n**Feature to decompose:** ${targetFeature.title}\n**Phase:** ${targetFeature.phase}\n**Description:** ${targetFeature.description}\n**Acceptance Criteria:**\n${targetFeature.acceptanceCriteria?.map((ac: string, i: number) => `${i + 1}. ${ac}`).join('\n')}\n\n**Technical Context (from architect):**\n${targetFeature.technical ? JSON.stringify(targetFeature.technical, null, 2) : 'N/A'}`);
-
-      parts.push(`\n**Output format:**\n\nReturn the FULL backlog JSON structure (epic + all features), but ONLY populate stories for Feature ${featureIndex + 1} (${targetFeature.title}).\n\nFor other features, include them with their metadata but leave \`stories: []\` empty.`);
-
-      if (priorBacklog) {
-        parts.push(`\n**Prior work (preserve these):**\n\nThe following features have already been decomposed. Copy their stories exactly as-is:\n\n\`\`\`json\n${priorBacklog}\n\`\`\``);
-      }
-
-      itemContext = parts.join('\n\n');
-    } else if (stage === 'prototype') {
-      // Deliberately no design system context here — the prototype stage builds a
-      // generic, brand-neutral wireframe (see prototype-builder persona), not a
-      // branded mock. Real design tokens are only loaded later for figma_design.
-      // Load prior workflow artifacts (research, PRD, architecture) as reference
-      const artifacts = await loadWorkflowArtifacts(itemId);
-      const parts: string[] = [];
-      if (artifacts) parts.push(`## Workflow Artifacts\n\nUse these documents to understand the change being prototyped:\n\n${artifacts}`);
-      // Built for exactly one platform (mobile or web) — no dual-variant generation,
-      // since there's no UI to switch between two generated versions anyway.
-      parts.push(platformHintFor(resolveItemPlatform(itemId)));
-      if (parts.length > 0) itemContext = addPlatformScope(parts.join('\n\n---\n\n'));
-    } else if (stage === 'figma_design') {
-      // Read design tokens from the Figma design system file via MCP
-      const figma = await loadFigmaDesignSystem((msg) => {
-        insertEvent(workflowId, 'stage_progress', stage, msg.trim());
-      });
-      const designSystem = figma || await loadLocalDesignSystem();
-      // Load PRD and prototype outputs as reference for screen planning
-      const [prdContent, protoContent] = await Promise.all([
-        loadLatestArtifactContent(itemId, 'prd'),
-        loadLatestArtifactContent(itemId, 'prototype'),
-      ]);
-      const parts: string[] = [];
-      if (designSystem) parts.push(`## Design System\n\n${designSystem}`);
-      if (prdContent) parts.push(`## PRD\n\nUse this to identify user journeys each screen must cover:\n\n${prdContent}`);
-      if (protoContent) parts.push(`## Prototype\n\nUse this as a reference for the screens and navigation flows to visualise:\n\n${protoContent}`);
-      if (!figmaBypass) {
-        let mockupFile = getFigmaFileKey(itemId);
-        if (!mockupFile) {
-          const item = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(itemId);
-          const fileName = item ? `${item.title} — Mockups` : 'Initiative Mockups';
-          insertEvent(workflowId, 'stage_progress', stage, `Creating Figma file "${fileName}"...`);
-          const created = await createFigmaFile(fileName);
-          if (created) {
-            setFigmaFileKey(itemId, created);
-            mockupFile = created;
-            insertEvent(workflowId, 'stage_progress', stage, `Figma file created: ${created}`);
-          }
-        }
-        if (mockupFile) parts.push(`## Target Figma File\n\nCreate mockup frames in Figma file key: \`${mockupFile}\`\nFile URL: https://www.figma.com/file/${mockupFile}/`);
-      }
-      if (parts.length > 0) itemContext = addPlatformScope(parts.join('\n\n---\n\n'));
+    const itemContextBuilder = ITEM_CONTEXT_BUILDERS[stage];
+    if (itemContextBuilder) {
+      itemContext = await itemContextBuilder({ itemId, workflowId, stage, goalText, addPlatformScope, figmaBypass });
     }
 
     const systemPrompt = await agent.buildSystemPrompt(persona, undefined, itemContext, true, stage);
@@ -522,37 +604,18 @@ export async function runAutonomousStage(
       }
     } else {
       // Strip code fences, skip any preamble before {, pretty-print
-      const stripped = fullResponse.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-      const jsonStart = stripped.indexOf('{');
-      const jsonContent = jsonStart > 0 ? stripped.slice(jsonStart) : stripped;
+      const jsonContent = stripJsonFence(fullResponse);
       try {
         artifactContent = JSON.stringify(JSON.parse(jsonContent), null, 2);
       } catch (firstErr: any) {
-        // If parse fails due to extra content after JSON, extract just the first complete object
-        if (firstErr.message && firstErr.message.includes('after JSON')) {
+        // If parse failed because the model appended trailing content after a valid object
+        // (or echoed its answer twice), recover just the first complete object. Falls back to
+        // the raw content for any other parse error.
+        const jsonOnly = firstErr.message?.includes('after JSON')
+          ? extractFirstJsonObject(jsonContent)
+          : null;
+        if (jsonOnly) {
           logger.warn(`Extra content after JSON detected in stage "${stage}", extracting first complete object`);
-          // String/escape-aware brace counter — a naive count breaks on any stray "{" or "}"
-          // inside a quoted string value (e.g. a PRD field describing template syntax), which
-          // previously caused this extraction to fail and fall back to the full raw response
-          // (both copies, when the model echoed its answer twice) being saved as the artifact.
-          let braceCount = 0;
-          let end = 0;
-          let inString = false;
-          let escaped = false;
-          for (let i = 0; i < jsonContent.length; i++) {
-            const ch = jsonContent[i];
-            if (escaped) { escaped = false; continue; }
-            if (ch === '\\' && inString) { escaped = true; continue; }
-            if (ch === '"') { inString = !inString; continue; }
-            if (inString) continue;
-            if (ch === '{') braceCount++;
-            else if (ch === '}') braceCount--;
-            if (braceCount === 0) {
-              end = i + 1;
-              break;
-            }
-          }
-          const jsonOnly = jsonContent.slice(0, end);
           try {
             artifactContent = JSON.stringify(JSON.parse(jsonOnly), null, 2);
             logger.info(`Successfully extracted and parsed JSON object (${jsonOnly.length} chars)`);
@@ -583,39 +646,7 @@ export async function runAutonomousStage(
       }
     }
 
-    // ── Feature-specific stage: merge with prior backlog ────────────────────────
-    const { isFeatureStage, loadPartialBacklog: loadPartialBacklogForMerge } = await import('./feature-decomposition');
-    if (isFeatureStage(stage)) {
-      // Parse the new backlog output
-      const stripped = artifactContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-      const jsonStart = stripped.indexOf('{');
-      const jsonContent = jsonStart > 0 ? stripped.slice(jsonStart) : stripped;
-
-      try {
-        const newBacklog = JSON.parse(jsonContent);
-        const priorBacklog = await loadPartialBacklogForMerge(itemId);
-
-        if (priorBacklog) {
-          // Merge: copy stories from new into the cumulative structure
-          const prior = JSON.parse(priorBacklog);
-          for (let i = 0; i < prior.features.length; i++) {
-            if (newBacklog.features[i] && newBacklog.features[i].stories && newBacklog.features[i].stories.length > 0) {
-              prior.features[i].stories = newBacklog.features[i].stories;
-            }
-          }
-          artifactContent = await injectSprintEstimates(prior);
-        } else {
-          // First feature — just apply sprint estimates
-          artifactContent = await injectSprintEstimates(newBacklog);
-        }
-      } catch (err: any) {
-        logger.error(`Failed to merge feature backlog for ${stage}: ${err.message}`);
-      }
-    }
-
-    // Feature-specific stages (story_decomposition_F1, F2, etc.) use 'backlog' as artifact type;
-    // all other stages use the STAGE_ARTIFACT_TYPE map.
-    const artifactType = isFeatureStage(stage) ? 'backlog' : (STAGE_ARTIFACT_TYPE[stage] ?? stage);
+    const artifactType = STAGE_ARTIFACT_TYPE[stage] ?? stage;
 
     const artifactId = await saveLocalArtifact(sessionId, stage, artifactContent, itemId, skillVersionId);
 
@@ -630,14 +661,7 @@ export async function runAutonomousStage(
         if (appConfig.integrations.roadmap !== 'airtable') return;
         if (appConfig.integrations.knowledgeBase === 'azure_wiki') return; // wiki push will supersede this
 
-        const stageToFieldMap: Record<string, string> = {
-          analyst: 'researchBriefLink',
-          pm_prd: 'prdLink',
-          solution_architect: 'technicalDesignLink',
-          figma_design: 'figmaDesignLink',
-        };
-
-        const airtableField = stageToFieldMap[stage];
+        const airtableField = STAGE_AIRTABLE_LINK_FIELD[stage];
         if (!airtableField) return; // Stage doesn't have an Airtable column
 
         const itemRow = db.prepare<[string], { airtable_id: string | null }>(
@@ -661,8 +685,7 @@ export async function runAutonomousStage(
     // ── Special handling for figma_design: write design brief to Figma as a comment ──
     if (stage === 'figma_design' && !figmaBypass) {
       try {
-        const cleaned = artifactContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-        const parsed = JSON.parse(cleaned);
+        const parsed = JSON.parse(stripJsonFence(artifactContent));
         const fileKey = getFigmaFileKey(itemId);
         const screens = Array.isArray(parsed.screens_created) ? parsed.screens_created : [];
 
@@ -710,9 +733,7 @@ export async function runAutonomousStage(
     // resolve each feature's dependsOn (title references) into stable dependsOnIndices
     // using the same flatten order F-keys are assigned from downstream. ──
     if (stage === 'epic_feature_planner') {
-      const stripped = artifactContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-      const jsonStart = stripped.indexOf('{');
-      const jsonContent = jsonStart > 0 ? stripped.slice(jsonStart) : stripped;
+      const jsonContent = stripJsonFence(artifactContent);
       try {
         const parsed = JSON.parse(jsonContent);
         const { flattenFeatures, resolveFeatureDependencies } = await import('./feature-decomposition');
@@ -770,37 +791,13 @@ export async function runAutonomousStage(
     // would default to 'web' for a demo item with no productArea metadata, clobbering it.
     if (stage === 'prototype' && demoFixture === null) {
       try {
-        const stripped = artifactContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-        const jsonStart = stripped.indexOf('{');
-        const parsed = JSON.parse(jsonStart > 0 ? stripped.slice(jsonStart) : stripped);
+        const parsed = JSON.parse(stripJsonFence(artifactContent));
         parsed.platform = resolvedFramePlatform(resolveItemPlatform(itemId));
         artifactContent = JSON.stringify(parsed, null, 2);
         await updateArtifactContent(artifactId, artifactContent);
         logger.info(`Stamped platform "${parsed.platform}" onto prototype artifact`);
       } catch (err: any) {
         logger.warn(`Failed to stamp platform onto prototype artifact: ${err.message}`);
-      }
-    }
-
-    // story_decomposition_F* reads existing ADO URLs for event metadata.
-    let adoUrl: string | null = null;
-    if (stage.match(/^story_decomposition_F\d+$/)) {
-      try {
-        const { appConfig } = require('../config/app-config');
-        if (appConfig.integrations.workItems === 'ado') {
-          const { parseFeatureStage } = await import('./feature-decomposition');
-          const featureIndex = parseFeatureStage(stage);
-          if (featureIndex !== null) {
-            const featureMapping = db.prepare<[string, string], { ado_url: string }>(
-              `SELECT ado_url FROM ado_work_item_map
-               WHERE workflow_id = ? AND ado_type = 'feature' AND local_key = ?
-               LIMIT 1`
-            ).get(workflowId, `F${featureIndex + 1}`);
-            if (featureMapping) adoUrl = featureMapping.ado_url;
-          }
-        }
-      } catch (err: any) {
-        logger.error(`Failed to get feature URL for ${stage}: ${err.message}`);
       }
     }
 
@@ -828,17 +825,10 @@ export async function runAutonomousStage(
 
     // Log stage completion event with excerpt
     const excerpt = fullResponse.slice(0, 200).replace(/\n+/g, ' ').trim();
-    // Map stage names to display labels (including dynamic feature stages)
-    let stageLabel = stage;
-    if (stage === 'analyst') stageLabel = 'Research';
-    else if (stage === 'pm_prd') stageLabel = 'PRD';
-    else if (stage === 'epic_feature_planner') stageLabel = 'Epic & Features';
-    else if (stage === 'solution_architect') stageLabel = 'Architecture';
-    else if (stage === 'prototype') stageLabel = 'Prototype';
-    else if (stage === 'figma_design') stageLabel = 'Figma Design';
-    else if (stage.match(/^story_decomposition_F\d+$/)) stageLabel = 'Shard - Product Owner';
+    // Map stage names to short display labels for event copy
+    const stageLabel = STAGE_EVENT_LABEL[stage] ?? stage;
 
-    const isAdoHandledStage = stage === 'epic_feature_planner' || /^story_decomposition_F\d+$/.test(stage);
+    const isAdoHandledStage = stage === 'epic_feature_planner';
     let wikiUrl: string | null = null;
 
     const tryWikiPush = async (): Promise<string | null> => {
@@ -851,13 +841,7 @@ export async function runAutonomousStage(
 
         // Mirror the link back to Airtable columns, same as epicLink/testPlanLink
         // already do after the ADO-handled stages (ado-stage-push.ts).
-        const stageToFieldMap: Record<string, string> = {
-          analyst: 'researchBriefLink',
-          pm_prd: 'prdLink',
-          solution_architect: 'technicalDesignLink',
-          figma_design: 'figmaDesignLink',
-        };
-        const airtableField = stageToFieldMap[stage];
+        const airtableField = STAGE_AIRTABLE_LINK_FIELD[stage];
         if (airtableField && appConfig.integrations.roadmap === 'airtable') {
           const itemRow = db.prepare<[string], { airtable_id: string | null }>(
             'SELECT airtable_id FROM items WHERE id = ?'
@@ -887,7 +871,7 @@ export async function runAutonomousStage(
     // Skip critic when a demo fixture was used — fixture content is pre-approved
     if (isSpecialistStage && criticEnabled && !skipCritic && demoFixture === null) {
       insertEvent(workflowId, 'stage_completed', stage, `${stageLabel} draft complete.`,
-        { excerpt, artifact_id: artifactId, ...(wikiUrl ? { wiki_url: wikiUrl } : {}), ...(adoUrl ? { ado_url: adoUrl } : {}) });
+        { excerpt, artifact_id: artifactId, ...(wikiUrl ? { wiki_url: wikiUrl } : {}) });
 
       // Brief pause before critic to reduce back-to-back API rate limit pressure
       await demoSleep(8_000);
@@ -954,47 +938,18 @@ export async function runAutonomousStage(
 
       if (review.verdict === 'approve') {
         wikiUrl = await tryWikiPush();
-        const now = Date.now();
-        const checkpointStatusCritic = autoApprove ? 'approved' : 'pending';
-        let figmaFileUrl: string | undefined;
-        if (stage === 'figma_design') {
-          try {
-            const cleaned = artifactContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-            figmaFileUrl = JSON.parse(cleaned).figma_file_url || undefined;
-          } catch { /* ignore */ }
-        }
-        const cpResult = stmts.insertCheckpoint.run(
-          workflowId, stage, artifactId, checkpointStatusCritic,
-          JSON.stringify({ session_id: sessionId, autonomous: true, critic: criticDetails, auto_approved: autoApprove, ...(diffArtifactId ? { diff_artifact_id: diffArtifactId } : {}), ...(figmaFileUrl ? { figma_file_url: figmaFileUrl } : {}) }),
-          checkpointStatusCritic === 'pending' ? rolesJson(stage) : null, now
-        );
-        if (specialistTokenData) {
-          setCheckpointTokenUsage(cpResult.lastInsertRowid as number,
-            { specialist: specialistTokenData, ...(criticTokenData ? { critic: criticTokenData } : {}) });
-        }
+        const checkpointStatusCritic: 'approved' | 'pending' = autoApprove ? 'approved' : 'pending';
+        createStageCheckpoint(workflowId, stage, artifactId, artifactContent, {
+          sessionId, status: checkpointStatusCritic, autoApprove, criticDetails,
+          diffArtifactId, specialistTokenData, criticTokenData,
+        });
         const minorCount = review.issues.filter(i => i.severity === 'minor').length;
         const approveMsg = minorCount > 0
           ? `Quality review passed with ${minorCount} minor note${minorCount > 1 ? 's' : ''} (resolved internally). Approve to proceed.`
           : 'Quality review passed — no issues found. Approve to proceed.';
         insertEvent(workflowId, 'critic_verdict', stage, approveMsg, criticDetails);
 
-        if (autoApprove) {
-          logger.info(`Inline critic approved "${stage}" — auto-advancing (demo mode)`);
-          workflowOps.advanceStage(workflowId).catch(err => {
-            if (err.message?.startsWith('WORKFLOW_COMPLETE')) {
-              logger.info(`Workflow ${workflowId} completed after critic auto-approve chain through "${stage}"`);
-            } else {
-              logger.error(`Auto-advance after critic-approved stage "${stage}" failed: ${err.message}`);
-              const now2 = Date.now();
-              stmts.updateWorkflowStatus.run('paused_at_checkpoint', now2, workflowId);
-            }
-          });
-        } else {
-          stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
-          logger.info(`Inline critic approved "${stage}" for workflow ${workflowId} — paused for human review`);
-          const titleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(itemId);
-          if (titleRow) notifyCheckpointPending(titleRow.title, stage);
-        }
+        finishStage(workflowId, itemId, stage, autoApprove, `Inline critic approved "${stage}" for workflow ${workflowId}`);
         return;
       }
 
@@ -1042,38 +997,21 @@ export async function runAutonomousStage(
         : '';
 
       wikiUrl = await tryWikiPush();
-      const now = Date.now();
-      const cpResult2 = stmts.insertCheckpoint.run(
-        workflowId, stage, artifactId, autoApprove ? 'approved' : 'pending',
-        JSON.stringify({ session_id: sessionId, autonomous: true, critic: criticDetails, auto_approved: autoApprove, ...(diffArtifactId ? { diff_artifact_id: diffArtifactId } : {}) }),
-        autoApprove ? null : rolesJson(stage), now
-      );
-      if (specialistTokenData) {
-        setCheckpointTokenUsage(cpResult2.lastInsertRowid as number,
-          { specialist: specialistTokenData, ...(criticTokenData ? { critic: criticTokenData } : {}) });
-      }
+      createStageCheckpoint(workflowId, stage, artifactId, artifactContent, {
+        sessionId, status: autoApprove ? 'approved' : 'pending', autoApprove, criticDetails,
+        diffArtifactId, specialistTokenData, criticTokenData,
+      });
 
       if (autoApprove) {
         insertEvent(workflowId, 'critic_verdict', stage,
           `Quality review noted issues — advancing automatically (demo mode): ${issuesSummary}.`,
           criticDetails);
-        logger.info(`Inline critic exhausted revisions for "${stage}" — auto-advancing (demo mode)`);
-        workflowOps.advanceStage(workflowId).catch(err => {
-          if (!err.message?.startsWith('WORKFLOW_COMPLETE')) {
-            logger.error(`Auto-advance after exhausted revisions "${stage}" failed: ${err.message}`);
-            const now2 = Date.now();
-            stmts.updateWorkflowStatus.run('paused_at_checkpoint', now2, workflowId);
-          }
-        });
       } else {
-        stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
         insertEvent(workflowId, 'critic_verdict', stage,
           `Quality review still has unresolved issues after ${MAX_INLINE_REVISIONS} revision(s): ${issuesSummary}.${questionsSummary} How would you like to proceed?`,
           criticDetails);
-        logger.info(`Inline critic exhausted revisions for "${stage}" — pausing for human input`);
-        const titleRowRevised = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(itemId);
-        if (titleRowRevised) notifyCheckpointPending(titleRowRevised.title, stage);
       }
+      finishStage(workflowId, itemId, stage, autoApprove, `Inline critic exhausted revisions for "${stage}"`);
       return;
     }
 
@@ -1081,7 +1019,7 @@ export async function runAutonomousStage(
     // Demonstrates the revise → auto-revise → approve flow without any LLM calls.
     if (demoFixture !== null && stage === 'pm_prd') {
       insertEvent(workflowId, 'stage_completed', stage, `${stageLabel} draft complete.`,
-        { excerpt, artifact_id: artifactId, ...(wikiUrl ? { wiki_url: wikiUrl } : {}), ...(adoUrl ? { ado_url: adoUrl } : {}) });
+        { excerpt, artifact_id: artifactId, ...(wikiUrl ? { wiki_url: wikiUrl } : {}) });
       await demoSleep(600);
       insertEvent(workflowId, 'stage_progress', stage, stageProgressReview(stage));
       await demoSleep(1_800);
@@ -1113,83 +1051,30 @@ export async function runAutonomousStage(
         reviewed_stage: stage,
       };
       wikiUrl = await tryWikiPush();
-      const now = Date.now();
-      const checkpointStatusMock = autoApprove ? 'approved' : 'pending';
-      stmts.insertCheckpoint.run(
-        workflowId, stage, artifactId, checkpointStatusMock,
-        JSON.stringify({ session_id: sessionId, autonomous: true, critic: approveDetails, auto_approved: autoApprove }),
-        checkpointStatusMock === 'pending' ? rolesJson(stage) : null, now
-      );
+      createStageCheckpoint(workflowId, stage, artifactId, artifactContent, {
+        sessionId, status: autoApprove ? 'approved' : 'pending', autoApprove, criticDetails: approveDetails,
+        diffArtifactId, specialistTokenData, criticTokenData,
+      });
       insertEvent(workflowId, 'critic_verdict', stage,
         'Quality review passed — no issues found. Approve to proceed.', approveDetails);
 
-      if (autoApprove) {
-        logger.info(`[DEMO] Mock PRD critic approved — auto-advancing`);
-        workflowOps.advanceStage(workflowId).catch(err => {
-          if (err.message?.startsWith('WORKFLOW_COMPLETE')) {
-            logger.info(`Workflow ${workflowId} completed after demo PRD critic`);
-          } else {
-            logger.error(`Auto-advance after demo PRD critic failed: ${err.message}`);
-            stmts.updateWorkflowStatus.run('paused_at_checkpoint', Date.now(), workflowId);
-          }
-        });
-      } else {
-        stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
-        const titleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(itemId);
-        if (titleRow) notifyCheckpointPending(titleRow.title, stage);
-        logger.info(`[DEMO] Mock PRD critic approved — checkpoint pending human review`);
-      }
+      finishStage(workflowId, itemId, stage, autoApprove, '[DEMO] Mock PRD critic approved');
       return;
     }
 
     // ── Non-critic path (critic disabled or non-specialist stage) ─────────────
     wikiUrl = await tryWikiPush();
-    const checkpointStatus = autoApprove ? 'approved' : 'pending';
-    const now = Date.now();
-    let figmaFileUrlNoCritic: string | undefined;
-    if (stage === 'figma_design') {
-      try {
-        const cleaned = artifactContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-        figmaFileUrlNoCritic = JSON.parse(cleaned).figma_file_url || undefined;
-      } catch { /* ignore */ }
-    }
-    const cpResult3 = stmts.insertCheckpoint.run(
-      workflowId, stage, artifactId, checkpointStatus,
-      JSON.stringify({ session_id: sessionId, autonomous: true, auto_approved: autoApprove, ...(diffArtifactId ? { diff_artifact_id: diffArtifactId } : {}), ...(figmaFileUrlNoCritic ? { figma_file_url: figmaFileUrlNoCritic } : {}) }),
-      checkpointStatus === 'pending' ? rolesJson(stage) : null, now
-    );
-    if (specialistTokenData) {
-      setCheckpointTokenUsage(cpResult3.lastInsertRowid as number,
-        { specialist: specialistTokenData, ...(criticTokenData ? { critic: criticTokenData } : {}) });
-    }
+    createStageCheckpoint(workflowId, stage, artifactId, artifactContent, {
+      sessionId, status: autoApprove ? 'approved' : 'pending', autoApprove,
+      diffArtifactId, specialistTokenData, criticTokenData,
+    });
     // wiki_url is deliberately omitted here — tryWikiPush() above already inserted a
     // separate 'wiki_synced' event with the same link, so including it again would
     // render a duplicate link line in the chat narration (eventToMessage).
     insertEvent(workflowId, 'stage_completed', stage, `${stageLabel} complete.`,
-      { excerpt, artifact_id: artifactId, ...(adoUrl ? { ado_url: adoUrl } : {}) });
+      { excerpt, artifact_id: artifactId });
 
-    if (autoApprove) {
-      logger.info(`Autonomous stage "${stage}" complete (silent) — advancing to next stage`);
-      workflowOps.advanceStage(workflowId).catch(err => {
-        if (err.message?.startsWith('WORKFLOW_COMPLETE')) {
-          logger.info(`Workflow ${workflowId} completed after silent chain through "${stage}"`);
-        } else {
-          logger.error(`Auto-advance after silent stage "${stage}" failed: ${err.message}`);
-          const now2 = Date.now();
-          stmts.insertCheckpoint.run(
-            workflowId, stage, null, 'pending',
-            JSON.stringify({ error: `Auto-advance failed: ${err.message}`, autonomous: true }),
-            rolesJson(stage), now2
-          );
-          stmts.updateWorkflowStatus.run('paused_at_checkpoint', now2, workflowId);
-        }
-      });
-    } else {
-      stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
-      logger.info(`Autonomous stage "${stage}" complete — checkpoint created, workflow paused`);
-      const titleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(itemId);
-      if (titleRow) notifyCheckpointPending(titleRow.title, stage);
-    }
+    finishStage(workflowId, itemId, stage, autoApprove, `Autonomous stage "${stage}" complete`);
   } catch (err: any) {
     // Graceful exit when user cancelled — no error checkpoint needed
     if (err?.name === 'AbortError' || isCancelRequested(workflowId)) {

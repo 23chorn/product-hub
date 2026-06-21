@@ -25,7 +25,8 @@ import {
   saveCriticArtifact, loadLatestArtifactForItem,
 } from './artifact-helpers';
 import { deleteWorkflow as deleteWorkflowImpl, recoverStaleWorkflows as recoverStaleWorkflowsImpl, startStaleRecoveryTimer } from './workflow-lifecycle';
-import { isDemoMode, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
+import { isDemoMode, isDemoWorkflow, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
+import { readItemMetadata, coerceProductArea } from './item-metadata';
 import { notifyWorkflowComplete, notifyCheckpointPending } from '../utils/slack-notifier';
 import { pushItemStatusToAirtable } from './ado-stage-push';
 import { WorkflowRow, CheckpointRow, WorkflowStatus, WorkflowEvent } from './workflow-types';
@@ -417,10 +418,9 @@ async function advanceStageCore(workflowId: string): Promise<{ stage: string; se
     let diffCount: number;
     let reasoning: string | null;
 
-    const workflowPolicies = JSON.parse(workflow.policy_overrides ?? '{}');
-    const isDemoWorkflow = workflowPolicies.demo_mode === 'true' || workflowPolicies.demo_auto_approve === 'true';
+    const isDemo = isDemoWorkflow(workflow.policy_overrides);
 
-    if (isDemoWorkflow) {
+    if (isDemo) {
       await demoSleep(DEMO_STAGE_DELAY_MS['curator'] ?? 1500);
       diffCount = 3;
       reasoning = `## Curator review — In-App Messaging & Trade Chat
@@ -896,18 +896,9 @@ export function getWorkflowStatus(workflowId: string): WorkflowStatus {
   }
 
   // Product Area / Theme live on the item's metadata (synced from Airtable), not the workflow row
-  let productArea: string | undefined;
-  let strategicTheme: string | undefined;
-  const itemRow = db.prepare<[string], { metadata: string | null }>(
-    'SELECT metadata FROM items WHERE id = ?'
-  ).get(workflow.item_id);
-  if (itemRow?.metadata) {
-    try {
-      const meta = JSON.parse(itemRow.metadata) as { productArea?: string; strategicTheme?: string };
-      productArea = meta.productArea;
-      strategicTheme = meta.strategicTheme;
-    } catch { /* ignore malformed metadata */ }
-  }
+  const meta = readItemMetadata(workflow.item_id);
+  const productArea = coerceProductArea(meta?.productArea) ?? undefined;
+  const strategicTheme = typeof meta?.strategicTheme === 'string' ? meta.strategicTheme : undefined;
 
   return {
     workflow,

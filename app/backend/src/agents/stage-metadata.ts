@@ -271,6 +271,36 @@ export function progressHeartbeatLine(label: string, elapsedSec: number, written
   return `${label} — ${elapsedSec}s elapsed, ${kChars}k chars drafted`;
 }
 
+/**
+ * Drain a single LLM text stream into one string, firing `onHeartbeat` at most once
+ * per `intervalMs` while it's still streaming. Consolidates the identical
+ * accumulate-and-throttle loop used by the single-stream synthesis and revision paths
+ * (multi-agent-refinement.ts, feature-stage-runner.ts). The caller decides what a
+ * heartbeat does (insertEvent, touchWorkflow, etc.) — this only owns the timing.
+ *
+ * Not used by the multiplexed parallel-phase loop (runPhaseInParallel), whose heartbeat
+ * is shared across several concurrent streams, nor by runAutonomousStage's loop, which
+ * interleaves section-detection progress with the heartbeat.
+ */
+export async function collectStreamWithHeartbeat(
+  stream: AsyncIterable<string>,
+  onHeartbeat: (elapsedSec: number, writtenChars: number) => void,
+  intervalMs = 12_000
+): Promise<string> {
+  let full = '';
+  const start = Date.now();
+  let lastHeartbeat = start;
+  for await (const chunk of stream) {
+    full += chunk;
+    const now = Date.now();
+    if (now - lastHeartbeat > intervalMs) {
+      lastHeartbeat = now;
+      onHeartbeat(Math.round((now - start) / 1000), full.length);
+    }
+  }
+  return full;
+}
+
 export function stageProgressHeartbeat(stage: string, elapsedSec: number, writtenChars: number): string {
   const target = stageProgressTarget(stage);
   const verb = stage === 'prototype' ? 'Still generating' : 'Still writing';

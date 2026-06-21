@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import db from '../data/database';
 import Logger from '../utils/logger';
 import { parseRoles } from '../agents/workflow-db';
+import { isDemoWorkflow } from '../demo/demo-mode';
 import type { AirtableItem, LocalInitiative } from '@pap/shared';
 
 const logger = new Logger('INITIATIVES');
@@ -146,15 +147,7 @@ router.get('/', (_req: Request, res: Response) => {
       const isCancelled = wf ? cancelledSet.has(wf.id) : false;
       const pendingStage = wf ? pendingStageMap.get(wf.id) ?? null : null;
       const pendingApprovals = wf ? pendingApprovalsMap.get(wf.id) ?? [] : [];
-      const isDemo = (() => {
-        if (!wf) return false;
-        try {
-          const policies = JSON.parse(wf.policy_overrides ?? '{}') as Record<string, string>;
-          return policies.demo_mode === 'true' || policies.demo_auto_approve === 'true';
-        } catch {
-          return false;
-        }
-      })();
+      const isDemo = isDemoWorkflow(wf?.policy_overrides);
       return {
         ...toAirtableItem(r),
         source: r.source,

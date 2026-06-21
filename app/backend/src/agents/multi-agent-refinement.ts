@@ -11,10 +11,12 @@
  */
 
 import { logger, insertEvent, touchWorkflow } from './workflow-db';
-import { getDemoFixture, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
+import { getDemoFixture, demoSleep, DEMO_STAGE_DELAY_MS, isDemoWorkflow } from '../demo/demo-mode';
 import { loadLatestArtifactContent } from './artifact-helpers';
 import { SpecialistAgent } from './specialist-agent';
-import { progressHeartbeatLine } from './stage-metadata';
+import { progressHeartbeatLine, collectStreamWithHeartbeat, STAGE_MAX_OUTPUT_TOKENS } from './stage-metadata';
+import { stripJsonFence, parseJsonLoose } from '../utils/json-repair';
+import { readProductArea } from './item-metadata';
 import type { AgentType } from '@pap/shared';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -56,30 +58,18 @@ export interface ProductAreaScope {
  */
 export function resolveProductAreaScope(itemId: string): ProductAreaScope {
   const unscoped: ProductAreaScope = { area: null, hasWeb: true, hasIOS: true, hasAndroid: true };
-  try {
-    const row = db
-      .prepare<[string], { metadata: string | null }>('SELECT metadata FROM items WHERE id = ?')
-      .get(itemId);
-    if (!row?.metadata) return unscoped;
-    const meta = JSON.parse(row.metadata) as Record<string, unknown>;
+  const area = readProductArea(itemId);
+  if (!area) return unscoped;
 
-    // productArea may be a string or an array of strings
-    const rawArea = meta.productArea;
-    const area = Array.isArray(rawArea) ? rawArea.join(', ').trim() : typeof rawArea === 'string' ? rawArea.trim() : '';
-    if (!area) return unscoped;
+  const lower = area.toLowerCase();
+  const hasWeb = /web|browser|desktop/.test(lower);
+  const hasIOS = /\bmobile\b|\bios\b/.test(lower);
+  const hasAndroid = /\bmobile\b|\bandroid\b/.test(lower);
 
-    const lower = area.toLowerCase();
-    const hasWeb = /web|browser|desktop/.test(lower);
-    const hasIOS = /\bmobile\b|\bios\b/.test(lower);
-    const hasAndroid = /\bmobile\b|\bandroid\b/.test(lower);
+  // No recognised platform signal — treat as unscoped (all platforms allowed)
+  if (!hasWeb && !hasIOS && !hasAndroid) return { area, hasWeb: true, hasIOS: true, hasAndroid: true };
 
-    // No recognised platform signal — treat as unscoped (all platforms allowed)
-    if (!hasWeb && !hasIOS && !hasAndroid) return { area, hasWeb: true, hasIOS: true, hasAndroid: true };
-
-    return { area, hasWeb, hasIOS, hasAndroid };
-  } catch {
-    return unscoped;
-  }
+  return { area, hasWeb, hasIOS, hasAndroid };
 }
 
 /**
@@ -92,18 +82,16 @@ function resolveRefinementParticipants(itemId: string): RefinementParticipant[] 
   if (!scope.area) return PARTICIPANTS;
 
   return PARTICIPANTS.filter(p => {
-    if (p.name === 'Shard - Product Owner' || p.name === 'Vera' || p.name === 'Finn') return true;
-    if (p.name === 'Remi') return scope.hasWeb;
-    if (p.name === 'Cole') return scope.hasIOS;
-    if (p.name === 'Dex') return scope.hasAndroid;
-    return true;
+    if (p.agentType === 'web-engineer') return scope.hasWeb;
+    if (p.agentType === 'ios-engineer') return scope.hasIOS;
+    if (p.agentType === 'android-engineer') return scope.hasAndroid;
+    return true; // facilitator, QA, and backend are always included
   });
 }
 
-/** Loosely parse a JSON artifact that may be wrapped in a ```json code fence. */
-function parseJsonLoose(raw: string): any | null {
-  const cleaned = raw.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-  try { return JSON.parse(cleaned); } catch { return null; }
+/** Find a participant by agentType rather than display name, so a persona rename can't silently break routing. */
+function findParticipant(participants: RefinementParticipant[], agentType: AgentType): RefinementParticipant | undefined {
+  return participants.find(p => p.agentType === agentType);
 }
 
 /**
@@ -250,10 +238,10 @@ export async function runMultiAgentRefinement(
   // demo and real workflows are distinguished consistently across all stage types.
   const workflow = db.prepare('SELECT policy_overrides FROM workflows WHERE id = ?').get(workflowId) as { policy_overrides: string | null } | undefined;
   const policyOverrides: Record<string, string> = workflow?.policy_overrides ? JSON.parse(workflow.policy_overrides) : {};
-  const isDemoWorkflow = policyOverrides.demo_mode === 'true' || policyOverrides.demo_auto_approve === 'true';
-  logger.info(`[MULTI-AGENT] Demo mode check result: ${isDemoWorkflow}`);
+  const isDemo = isDemoWorkflow(policyOverrides);
+  logger.info(`[MULTI-AGENT] Demo mode check result: ${isDemo}`);
 
-  if (isDemoWorkflow) {
+  if (isDemo) {
     logger.info(`[MULTI-AGENT] Demo mode enabled — returning fixture for ${stage}`);
     const fixture = getDemoFixture(stage);
 
@@ -356,8 +344,7 @@ export async function runMultiAgentRefinement(
   let relevantScreens: FigmaScreenRef[] = [];
   if (figmaContent) {
     try {
-      const cleaned = figmaContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-      const figmaDesign = JSON.parse(cleaned);
+      const figmaDesign = JSON.parse(stripJsonFence(figmaContent));
       const allScreens: FigmaScreenRef[] = Array.isArray(figmaDesign.screens_created) ? figmaDesign.screens_created : [];
       const journeySet = new Set(journeys.map(j => j.toLowerCase()));
       relevantScreens = journeySet.size > 0
@@ -437,15 +424,16 @@ Any story whose UI surfaces one of these screens must cite the screen's frame_ur
   insertEvent(workflowId, 'stage_progress', stage,
     `Phase 3: Synthesize — merging backlog and extracting QA test suite in parallel...`);
 
+  const qaParticipant = findParticipant(activeParticipants, 'qa-engineer');
   const veraOutputs = {
-    draft:   drafts.get('Vera') ?? '',
-    refine1: refined1.get('Vera') ?? '',
-    refine2: refined2.get('Vera') ?? '',
+    draft:   qaParticipant ? drafts.get(qaParticipant.name) ?? '' : '',
+    refine1: qaParticipant ? refined1.get(qaParticipant.name) ?? '' : '',
+    refine2: qaParticipant ? refined2.get(qaParticipant.name) ?? '' : '',
   };
 
   const [rawBacklog, rawQaTests] = await Promise.all([
     synthesizeFinalArtifact(workflowId, stage, featureBrief, refined2),
-    synthesizeQaArtifact(workflowId, stage, featureBrief, featureNum, veraOutputs, refined2),
+    synthesizeQaArtifact(workflowId, stage, featureBrief, featureNum, veraOutputs, refined2, activeParticipants),
   ]);
 
   const { backlog, qaTests } = enforcePlatformScope(rawBacklog, rawQaTests, platformScope);
@@ -511,8 +499,12 @@ async function runPhaseInParallel(
       results.set(participant.name, fullResponse.trim());
       logger.info(`[MULTI-AGENT] ${phaseName} | ${participant.name} complete (${fullResponse.length} chars)`);
     } catch (err: any) {
+      // Deliberately don't store anything for this participant — an entry here would
+      // flow verbatim into every downstream prompt and the final synthesis as if it
+      // were real contribution text, rather than being recognized as a failure.
+      // Omitting it just means this participant's section is absent from "All
+      // Drafts"/"All Outputs", the same as a platform-excluded participant today.
       logger.error(`[MULTI-AGENT] ${phaseName} | ${participant.name} failed: ${err.message}`);
-      results.set(participant.name, `[ERROR: ${err.message}]`);
     }
   });
 
@@ -533,7 +525,7 @@ function buildDraftPrompts(
   return participants.map(participant => {
     let prompt = `${featureBrief}\n\n`;
 
-    if (participant.name === 'Shard - Product Owner') {
+    if (participant.agentType === 'story-decomposition') {
       // Product Lead: Draft initial stories
       prompt += `
 **Your Role:** You are the **Product Lead and Facilitator** of this refinement session.
@@ -575,7 +567,7 @@ Return a JSON structure (use F${featureNum} for all story IDs):
 
 The \`platform\` value must be exactly one of: \`backend\`, \`web\`, \`ios\`, \`android\`.
 `;
-    } else if (participant.name === 'Vera') {
+    } else if (participant.agentType === 'qa-engineer') {
       // QA Engineer: Testability concerns
       prompt += `
 **Your Role:** You are the **QA Engineer** in this refinement session. Your suite covers user-facing flows (web/iOS/Android) — backend-only/API-only stories are a different specialist's concern and won't get dedicated test cases from you.
@@ -595,9 +587,9 @@ Plain text list of concerns and recommendations. Example:
 `;
     } else {
       // Engineers: Technical needs
-      const platformFocus = participant.name === 'Finn' ? 'Backend APIs, data models, authentication'
-        : participant.name === 'Remi' ? 'Frontend components, state management, forms'
-        : participant.name === 'Cole' ? 'iOS native implementation (Swift/SwiftUI), offline support, APNs push notifications, Apple platform patterns'
+      const platformFocus = participant.agentType === 'backend-engineer' ? 'Backend APIs, data models, authentication'
+        : participant.agentType === 'web-engineer' ? 'Frontend components, state management, forms'
+        : participant.agentType === 'ios-engineer' ? 'iOS native implementation (Swift/SwiftUI), offline support, APNs push notifications, Apple platform patterns'
         : 'Android native implementation (Kotlin/Jetpack Compose), offline support, FCM push notifications, Material Design patterns';
 
       prompt += `
@@ -645,7 +637,7 @@ function buildRefineRound1Prompts(
   return participants.map(participant => {
     let prompt = `${featureBrief}\n\n**All Drafts from Phase 1:**\n\n${allDrafts}\n\n`;
 
-    if (participant.name === 'Shard - Product Owner') {
+    if (participant.agentType === 'story-decomposition') {
       prompt += `
 **Phase 2.1 Task — Incorporate Feedback:**
 1. Review the technical concerns from Finn, Remi, Cole (iOS), and Dex (Android)
@@ -656,7 +648,7 @@ function buildRefineRound1Prompts(
 
 **Output Format:** Same JSON structure as Phase 1, but with technical_acceptance_criteria added.
 `;
-    } else if (participant.name === 'Vera') {
+    } else if (participant.agentType === 'qa-engineer') {
       prompt += `
 **Phase 2.1 Task — Testability Review:**
 1. Review Shard - Product Owner's story breakdown and each story's acceptance criteria
@@ -706,7 +698,7 @@ function buildRefineRound2Prompts(
   return participants.map(participant => {
     let prompt = `${featureBrief}\n\n**All Round 1 Outputs:**\n\n${allRefined1}\n\n`;
 
-    if (participant.name === 'Shard - Product Owner') {
+    if (participant.agentType === 'story-decomposition') {
       prompt += `
 **Phase 2.2 Task — Final Polish & Conflict Resolution:**
 1. Review all Round 1 feedback
@@ -830,33 +822,18 @@ Merge all contributions into a single JSON artifact following the backlog templa
     stage
   );
 
-  let finalArtifact = '';
-  const synthesisStart = Date.now();
-  let lastHeartbeat = synthesisStart;
-  const HEARTBEAT_INTERVAL_MS = 12_000;
-
   // Single feature output (not accumulated), but story count + prd_ref/technical detail
   // can still exceed 8k — use the shared ceiling so this stays in sync with the revision flow.
-  const { STAGE_MAX_OUTPUT_TOKENS } = await import('./stage-metadata');
   const maxTokens = STAGE_MAX_OUTPUT_TOKENS['story_decomposition'] ?? 16_000;
 
-  for await (const chunk of facilitator.streamResponse(
-    systemPrompt,
-    [{ role: 'user', content: synthesisPrompt }],
-    undefined,
-    undefined,
-    maxTokens
-  )) {
-    finalArtifact += chunk;
-    const now = Date.now();
-    if (now - lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
+  const finalArtifact = await collectStreamWithHeartbeat(
+    facilitator.streamResponse(systemPrompt, [{ role: 'user', content: synthesisPrompt }], undefined, undefined, maxTokens),
+    (elapsedSec, chars) => {
       touchWorkflow(workflowId);
-      const elapsedSec = Math.round((now - synthesisStart) / 1000);
       insertEvent(workflowId, 'stage_progress', stage,
-        progressHeartbeatLine('Phase 3: Synthesize backlog — merging contributions', elapsedSec, finalArtifact.length));
-      lastHeartbeat = now;
-    }
-  }
+        progressHeartbeatLine('Phase 3: Synthesize backlog — merging contributions', elapsedSec, chars));
+    },
+  );
 
   return finalArtifact.trim();
 }
@@ -899,9 +876,11 @@ async function synthesizeQaArtifact(
   featureBrief: string,
   featureNum: number,
   veraOutputs: { draft: string; refine1: string; refine2: string },
-  refined2: Map<string, string>
+  refined2: Map<string, string>,
+  participants: RefinementParticipant[]
 ): Promise<string> {
-  const shardFinalStories = refined2.get('Shard - Product Owner') ?? '';
+  const facilitator = findParticipant(participants, 'story-decomposition');
+  const shardFinalStories = (facilitator ? refined2.get(facilitator.name) : undefined) ?? '';
 
   const synthesisPrompt = `
 ${featureBrief}
@@ -983,30 +962,15 @@ Requirements:
   const systemPrompt = await vera.buildSystemPrompt(persona, undefined, undefined, true, stage);
 
   // Use qa_engineer token limit from stage metadata (14k — comfortable headroom for the 10-15 test case cap)
-  const { STAGE_MAX_OUTPUT_TOKENS } = await import('./stage-metadata');
   const maxTokens = STAGE_MAX_OUTPUT_TOKENS['qa_engineer'] ?? 14_000;
 
-  let output = '';
-  const synthesisStart = Date.now();
-  let lastHeartbeat = synthesisStart;
-  for await (const chunk of vera.streamResponse(
-    systemPrompt,
-    [{ role: 'user', content: synthesisPrompt }],
-    undefined,
-    undefined,
-    maxTokens
-  )) {
-    output += chunk;
-    const now = Date.now();
-    if (now - lastHeartbeat > 12_000) {
-      lastHeartbeat = now;
-      const elapsedSec = Math.round((now - synthesisStart) / 1000);
-      // Tagged to the QA sub-stage (not the base story stage) so this progress shows
-      // up in the QA section of the event log instead of bleeding into Refinement.
-      insertEvent(workflowId, 'stage_progress', `${stage}_qa`,
-        progressHeartbeatLine('Phase 3: Synthesize QA tests — extracting test suite', elapsedSec, output.length));
-    }
-  }
+  const output = await collectStreamWithHeartbeat(
+    vera.streamResponse(systemPrompt, [{ role: 'user', content: synthesisPrompt }], undefined, undefined, maxTokens),
+    // Tagged to the QA sub-stage (not the base story stage) so this progress shows
+    // up in the QA section of the event log instead of bleeding into Refinement.
+    (elapsedSec, chars) => insertEvent(workflowId, 'stage_progress', `${stage}_qa`,
+      progressHeartbeatLine('Phase 3: Synthesize QA tests — extracting test suite', elapsedSec, chars)),
+  );
 
   return output.trim();
 }

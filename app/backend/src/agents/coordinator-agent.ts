@@ -8,6 +8,7 @@ import { appConfig } from '../config/app-config';
 import { getKnowledgeBaseProvider } from '../integrations/knowledge-base';
 import { STAGE_LABELS_BRIEF, STAGE_OUTPUT_FORMATS, stageGoal, stageNotDecide } from './stage-metadata';
 import { getActiveSkill, listSkills } from './skill-registry';
+import { readProductArea } from './item-metadata';
 import Logger from '../utils/logger';
 import type { CriticIssue } from './critic-agent';
 import { buildPlanningSystemPrompt } from './coordinator-prompts';
@@ -190,20 +191,7 @@ ${policyLines}`;
     );
 
     // Resolve productArea from item metadata (set at workflow start from Airtable)
-    let productAreaScope: string | null = null;
-    if (workflow?.item_id) {
-      const itemRow = db
-        .prepare<[string], { metadata: string | null }>('SELECT metadata FROM items WHERE id = ?')
-        .get(workflow.item_id);
-      if (itemRow?.metadata) {
-        try {
-          const meta = JSON.parse(itemRow.metadata) as Record<string, unknown>;
-          const rawArea = meta.productArea;
-          const area = Array.isArray(rawArea) ? rawArea.join(', ').trim() : typeof rawArea === 'string' ? rawArea.trim() : '';
-          if (area) productAreaScope = area;
-        } catch { /* malformed metadata — ignore */ }
-      }
-    }
+    const productAreaScope = workflow?.item_id ? readProductArea(workflow.item_id) : null;
 
     const stageFormat = this.resolveStageFormat(stage);
     const outputLabel = stageFormat.label;

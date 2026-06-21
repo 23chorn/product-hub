@@ -56,6 +56,24 @@ const DEMO_FIXTURE_FILES: Record<string, string> = {
   figma_design:          'figma-design.json',
 };
 
+/**
+ * Whether a specific workflow is a demo run, decided from its policy_overrides
+ * (demo_mode or demo_auto_approve). Accepts either the raw policy_overrides JSON
+ * string or an already-parsed object. Unlike isDemoMode() — which reads the global
+ * demo toggle for UI visibility — this is the per-workflow signal that gates fixture
+ * substitution and must drive real workflow behavior.
+ */
+export function isDemoWorkflow(policyOverrides: string | Record<string, unknown> | null | undefined): boolean {
+  if (!policyOverrides) return false;
+  let parsed: Record<string, unknown>;
+  if (typeof policyOverrides === 'string') {
+    try { parsed = JSON.parse(policyOverrides); } catch { return false; }
+  } else {
+    parsed = policyOverrides;
+  }
+  return parsed.demo_mode === 'true' || parsed.demo_auto_approve === 'true';
+}
+
 export function isDemoMode(): boolean {
   try {
     const row = db.prepare(
