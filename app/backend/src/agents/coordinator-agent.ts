@@ -636,27 +636,4 @@ Return exactly:
     }
   }
 
-  /**
-   * Stream a coordinator response for a workflow session.
-   * Token logging is handled internally by streamAI().
-   */
-  async *streamResponse(
-    workflowId: string,
-    userMessage: string,
-    model?: string,
-    onTokens?: (usage: TokenUsage) => void
-  ): AsyncGenerator<string, void, unknown> {
-    const resolvedModel = resolveAgentModel('coordinator');
-    const systemPrompt  = this.buildSystemPrompt(workflowId);
-
-    logger.info(`Coordinator responding for workflow ${workflowId} via model ${resolvedModel}`);
-
-    yield* streamAI(
-      resolvedModel,
-      systemPrompt,
-      [{ role: 'user', content: userMessage }],
-      undefined,
-      { onTokens }
-    );
-  }
 }

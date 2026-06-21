@@ -1,20 +1,19 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useMemo, useState } from 'react';
 import { useWorkflowStore } from '../../stores/workflowStore';
 import { useModelStore } from '../../stores/modelStore';
-import { useSettingsStore } from '../../stores/settingsStore';
 import { useAuthStore } from '../../stores/authStore';
 import { api } from '../../services/api';
 import { deriveStageStatus } from '../../utils/stage-tracker-helpers';
 import { StageRow } from './StageRow';
+import { tryParseEpicFeatures } from '../artifact/EpicFeaturesView';
 import { STAGE_LABELS, STAGE_SHORT_LABELS } from '../../constants/stage-labels';
 import type { StageStatus, CoordinatorMessage } from '../../stores/workflowStore';
-import { PipelineStatusSection } from './PipelineStatusSection';
-import { DemoProjectSection } from './DemoProjectSection';
 import { DancingCreature } from './pipeline-terminal/DancingCreature';
 import { StageGroupHeader } from './pipeline-terminal/StageGroupHeader';
 import { EventRow } from './pipeline-terminal/EventRow';
 import { CheckpointRow, isStaleRecoveryCheckpoint } from './pipeline-terminal/CheckpointRow';
 import { AuditTrailPanel } from './AuditTrailPanel';
+import { RestartConfirmModal } from './RestartConfirmModal';
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -47,28 +46,19 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
     setViewingArtifactId,
   } = useWorkflowStore();
   const { agentModels } = useModelStore();
-  const { isDemoMode: demoModeEnabled } = useSettingsStore();
   const { realUser, noAuth } = useAuthStore();
   const isAdmin = noAuth || realUser?.is_admin;
   const bottomRef = useRef<HTMLDivElement>(null);
   const [stopping, setStopping] = useState(false);
   const [restarting, setRestarting] = useState(false);
-  const [demoConfigured, setDemoConfigured] = useState<boolean>(false);
+  const [showRestartConfirm, setShowRestartConfirm] = useState(false);
   const [generalExpanded, setGeneralExpanded] = useState(false);
   const [crExpanded, setCrExpanded] = useState(false);
   const [showAudit, setShowAudit] = useState(false);
   const [artifacts, setArtifacts] = useState<Array<{ id: number; type: string; stage: string | null; created_at: number }>>([]);
-
-  // Demo sections only show when demo mode is enabled in settings AND DEMO_PROJECT_PATH is configured
-  const isDemoMode = demoModeEnabled && demoConfigured;
-
-  // Check once whether the demo pipeline is configured
-  useEffect(() => {
-    if (!activeWorkflow) return;
-    api.getDemoRunStatus(activeWorkflow.id)
-      .then(s => setDemoConfigured(s.configured))
-      .catch(() => {});
-  }, [activeWorkflow?.id]);
+  // 0-based feature index → "<initiative> — <phase>" label, mirroring the epic title the
+  // backend actually creates in ADO (feature-decomposition.ts), so it matches what reviewers see there.
+  const [featureEpicLabels, setFeatureEpicLabels] = useState<string[]>([]);
 
   useEffect(() => {
     setStopping(false);
@@ -92,6 +82,42 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
       return () => clearInterval(interval);
     }
   }, [activeWorkflow?.id, activeWorkflow?.status]);
+
+  // Latest epic_features artifact id — used as the effect dependency below so the
+  // content fetch only re-runs when a new epic_features artifact actually appears
+  // (e.g. on first creation or a revision), not on every artifacts poll tick.
+  const epicFeaturesArtifactId = useMemo(() => {
+    const matches = artifacts.filter(a => a.type === 'epic_features');
+    if (matches.length === 0) return null;
+    return matches.reduce((latest, a) => (a.created_at > latest.created_at ? a : latest), matches[0]).id;
+  }, [artifacts]);
+
+  // Resolve which epic/phase each feature belongs to, for the "Refinement - F1" stage rows.
+  useEffect(() => {
+    if (!epicFeaturesArtifactId) {
+      setFeatureEpicLabels([]);
+      return;
+    }
+    api.getArtifactContent(epicFeaturesArtifactId)
+      .then(({ content }) => {
+        const parsed = tryParseEpicFeatures(content);
+        if (!parsed) {
+          setFeatureEpicLabels([]);
+          return;
+        }
+        const labels: string[] = [];
+        if (parsed.phases && parsed.phases.length > 0) {
+          for (const phase of parsed.phases) {
+            const epicTitle = `${parsed.epic.title} — ${phase.label}`;
+            for (const _feature of phase.features ?? []) labels.push(epicTitle);
+          }
+        } else if (parsed.features) {
+          for (const _feature of parsed.features) labels.push(parsed.epic.title);
+        }
+        setFeatureEpicLabels(labels);
+      })
+      .catch(() => setFeatureEpicLabels([]));
+  }, [epicFeaturesArtifactId]);
 
   // Auto-scroll event log
   useEffect(() => {
@@ -124,7 +150,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
       return false;
     }
   })();
-  const canRestartDemo = !!realUser?.is_admin && isDemoWorkflow;
+  const canRestartDemo = !!isAdmin && isDemoWorkflow;
   const lastTerminalEvent = [...coordinatorMessages]
     .reverse()
     .find(m => m.eventType === 'workflow_cancelled' || m.eventType === 'workflow_complete');
@@ -152,6 +178,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
       setArtifacts([]);
       applyWorkflowStatus(status);
       setRestarting(false);
+      setShowRestartConfirm(false);
     } catch {
       setRestarting(false);
     }
@@ -201,14 +228,33 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
     return status !== 'pending' || eventsByStage.has(s);
   });
 
-  // Inject QA checkpoint stages after refinement stages
+  // story_decomposition_F*_qa is never a literal stage_sequence member (it's a synthetic
+  // sub-stage tracked only via its checkpoint), so it has no entry in `statuses`. Derive its
+  // status from the checkpoint directly, falling back to "in-progress" while its parent
+  // feature stage is active and revising/regenerating — otherwise a QA revision in flight
+  // has no checkpoint yet and no recognizable status, so it silently reads as 'pending' and
+  // can vanish from the list entirely.
+  const deriveQaSubStageStatus = (qaStage: string): StageStatus => {
+    if (checkpoints.some(c => c.stage === qaStage && c.status === 'pending')) return 'at-checkpoint';
+    if (checkpoints.some(c => c.stage === qaStage && c.status === 'approved')) return 'complete';
+    const baseStage = qaStage.replace(/_qa$/, '');
+    const baseInProgress = (inProgressStages.includes(baseStage) || currentStage === baseStage) && activeWorkflow.status === 'active';
+    return baseInProgress ? 'in-progress' : 'pending';
+  };
+
+  // Inject QA checkpoint stages after refinement stages — QA sub-stages only exist
+  // for the per-feature multi-agent refinement stages (story_decomposition_F<n>), so
+  // skip every other stage to avoid showing a bogus "QA Tests — initialising…" row
+  // under whichever stage happens to be in progress.
+  const FEATURE_REFINEMENT_STAGE_RE = /^story_decomposition_F\d+$/;
   const activeStages: string[] = [];
   for (const stage of baseActiveStages) {
     activeStages.push(stage);
-    // Check if there's a QA checkpoint for this refinement stage
-    const qaCheckpoint = checkpoints.find(c => c.stage === `${stage}_qa` && c.status === 'pending');
-    if (qaCheckpoint) {
-      activeStages.push(`${stage}_qa`);
+    if (!FEATURE_REFINEMENT_STAGE_RE.test(stage)) continue;
+    const qaStage = `${stage}_qa`;
+    const qaStatus = deriveQaSubStageStatus(qaStage);
+    if (qaStatus !== 'pending' || eventsByStage.has(qaStage)) {
+      activeStages.push(qaStage);
     }
   }
 
@@ -248,6 +294,8 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
               const checkpoint = checkpoints.find(c => c.stage === stageName && c.status === 'pending');
               const latestApproved = checkpoints.filter(c => c.stage === stageName && c.status === 'approved').at(-1);
               const completedAt = latestApproved?.resolved_at ?? latestApproved?.created_at ?? null;
+              const featureMatch = stageName.match(/^story_decomposition_F(\d+)$/);
+              const epicLabel = featureMatch ? featureEpicLabels[parseInt(featureMatch[1], 10) - 1] : undefined;
               return (
                 <StageRow
                   key={stageName}
@@ -261,18 +309,12 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                   agentModel={agentModels[stageName]}
                   onViewArtifact={setViewingArtifactId}
                   isLast={idx === stageSequence.length - 1}
+                  epicLabel={epicLabel}
                   compact
                 />
               );
             })}
           </div>
-
-          {/* Post-completion: code + test pipeline (demo-only) */}
-          {isComplete && isDemoMode && (
-            <div className="px-2 pb-3">
-              <PipelineStatusSection workflowId={activeWorkflow.id} />
-            </div>
-          )}
         </div>
 
         {/* Creature lives outside the scrollable area */}
@@ -396,8 +438,15 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
           {/* Per-stage sections */}
           {activeStages.map(stageName => {
             const stageIdx = stageSequence.indexOf(stageName);
-            const status = stageIdx >= 0 ? statuses[stageIdx] : 'pending';
+            // A synthetic "_qa" sub-stage (see deriveQaSubStageStatus above) has no
+            // stage_sequence entry of its own — derive its status from its checkpoint/parent
+            // instead of the (nonexistent) statuses[] slot.
+            const isQaSubStage = stageIdx === -1 && stageName.endsWith('_qa');
+            const status = isQaSubStage ? deriveQaSubStageStatus(stageName) : (stageIdx >= 0 ? statuses[stageIdx] : 'pending');
             const msgs = eventsByStage.get(stageName) ?? [];
+            // Each section (a refinement stage and its QA sub-stage) hosts its own
+            // independent checkpoint card, keyed to its own exact stage name — the QA
+            // approval no longer gets folded into its parent refinement stage's card.
             const isAtCheckpoint = status === 'at-checkpoint';
 
             const pendingCp = checkpoints.find(c => c.stage === stageName && c.status === 'pending');
@@ -466,9 +515,9 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                   {isCancelled ? 'workflow stopped' : 'workflow complete'}
                 </div>
                 <div className="flex items-center gap-2">
-                  {isComplete && (
+                  {isComplete && isAdmin && (
                     <button
-                      onClick={handleRestart}
+                      onClick={() => setShowRestartConfirm(true)}
                       disabled={restarting}
                       className="flex items-center gap-1.5 text-[11px] font-mono font-semibold px-2.5 py-1 rounded border border-teal-400 dark:border-teal-600 text-teal-700 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
@@ -485,9 +534,6 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                   )}
                 </div>
               </div>
-
-              {/* Terminal output (demo-only) */}
-              {isDemoMode && <DemoProjectSection workflowId={activeWorkflow.id} />}
             </div>
           )}
 
@@ -642,6 +688,15 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
 
       {showAudit && (
         <AuditTrailPanel workflowId={activeWorkflow.id} onClose={() => setShowAudit(false)} />
+      )}
+
+      {showRestartConfirm && (
+        <RestartConfirmModal
+          isDemo={canRestartDemo}
+          loading={restarting}
+          onCancel={() => setShowRestartConfirm(false)}
+          onConfirm={handleRestart}
+        />
       )}
     </div>
   );

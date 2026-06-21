@@ -98,13 +98,6 @@ export interface WorkflowEvent {
 
 export type StageStatus = 'pending' | 'in-progress' | 'at-checkpoint' | 'complete' | 'skipped' | 'rejected';
 
-export interface StageInfo {
-  name: string;
-  status: StageStatus;
-  completedAt?: number;
-  sessionId?: string | null;
-}
-
 // ── Store ─────────────────────────────────────────────────────────────────────
 
 interface WorkflowStoreState {

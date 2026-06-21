@@ -1,7 +1,7 @@
 {
   "epic": {
     "title": "In-App Messaging & Trade Chat",
-    "description": "Add real-time channel-based chat so users can discuss trades and market ideas without leaving the xCube app. Includes live ticker card sharing, content moderation, and MiFID II-compliant message retention."
+    "description": "Add real-time channel-based chat so users can discuss trades and market ideas without leaving the xCube app. Includes live ticker card sharing, push notifications, content moderation, and MiFID II-compliant message retention."
   },
   "features": [
     {
@@ -277,13 +277,73 @@
               "prd_ref": "FR-04"
             }
           ]
+        },
+        {
+          "story_id": "F2.S2",
+          "title": "See messages from other channel members appear instantly",
+          "as_a": "Jamie — Casual Community Investor",
+          "i_want": "see new messages from other members appear in the thread without refreshing",
+          "so_that": "I can follow a fast-moving conversation about a stock as it happens",
+          "acceptance_criteria": [
+            "Given another member sends a message in a channel I have open, When the message is delivered, Then it appears in my thread within 500ms without me refreshing or scrolling",
+            "Given multiple members post messages in quick succession, When each message arrives, Then they render in the correct chronological order",
+            "Given I am viewing the thread when a message arrives, When the message renders, Then the thread auto-scrolls to reveal it only if I was already scrolled to the bottom"
+          ],
+          "technical_acceptance_criteria": [
+            "Backend: WebSocket broadcasts message_created to every subscriber of the channel's Redis Pub/Sub topic",
+            "Backend: Message ordering relies on the Cassandra clustering key (created_at DESC) so fan-out preserves send order",
+            "Web: New messages append via the WebSocket event handler, not polling",
+            "iOS: Auto-scroll only triggers when the user's scroll position is within 50px of the bottom",
+            "Android: RecyclerView uses stable item IDs to avoid re-render flicker on append"
+          ],
+          "platform": ["backend", "web", "ios", "android"],
+          "estimated_points": 5,
+          "depends_on": ["F2.S1"],
+          "technical_notes": "Reuses the same Redis Pub/Sub fan-out as F2.S1's send path — this story covers the receive/render side only",
+          "test_cases": [
+            {
+              "id": "TC-F2.S2-001",
+              "scenario": {
+                "given": ["User A and User B are both members of the same channel", "Both have the channel thread open"],
+                "when": ["User A sends message 'Market looking bullish today'"],
+                "then": ["User B sees the message appear in their thread within 500ms", "Message shows User A as the sender", "Timestamp matches send time"]
+              },
+              "type": "happy_path",
+              "priority": "critical",
+              "story_ref": "F2.S2",
+              "prd_ref": "FR-04"
+            },
+            {
+              "id": "TC-F2.S2-002",
+              "scenario": {
+                "given": ["Load test environment with 5,000 simulated concurrent WebSocket connections"],
+                "when": ["1,000 messages are sent across 50 channels using a load test tool"],
+                "then": ["p50 latency is less than 100ms", "p95 latency is less than 500ms", "No message loss occurs"]
+              },
+              "type": "edge_case",
+              "priority": "critical",
+              "story_ref": "F2.S2",
+              "prd_ref": "NFR-01"
+            },
+            {
+              "id": "TC-F2.S2-003",
+              "scenario": {
+                "given": ["User has scrolled up to read older messages"],
+                "when": ["A new message arrives from another member"],
+                "then": ["Thread does NOT auto-scroll away from the user's current position", "An unread divider or 'jump to latest' affordance appears instead"]
+              },
+              "type": "edge_case",
+              "priority": "medium",
+              "story_ref": "F2.S2"
+            }
+          ]
         }
       ]
     },
     {
       "key": "F3",
-      "title": "Live Ticker Card Sharing & Push Notifications",
-      "description": "Users can embed live-updating ticker price cards directly into any message, and receive push notifications for channel activity. Phase 1 engagement layer built on the MVP messaging foundation.",
+      "title": "Live Ticker Card Sharing",
+      "description": "Users can embed live-updating ticker price cards directly into any message. Phase 1 engagement layer built on the MVP messaging foundation.",
       "phase": "Phase 1",
       "stories": [
         {
@@ -358,9 +418,17 @@
               "story_ref": "F3.S1"
             }
           ]
-        },
+        }
+      ]
+    },
+    {
+      "key": "F4",
+      "title": "Push Notifications for Channel Activity",
+      "description": "Users receive push notifications for new messages in joined channels when the app is backgrounded, with per-channel muting controls. Phase 1 engagement layer built on the MVP messaging foundation.",
+      "phase": "Phase 1",
+      "stories": [
         {
-          "story_id": "F3.S2",
+          "story_id": "F4.S1",
           "title": "Receive push notifications for channel messages",
           "as_a": "Jamie — Casual Community Investor",
           "i_want": "get a push notification when someone posts in a channel I follow",
@@ -384,7 +452,7 @@
           "technical_notes": "Notification service must respect APNs rate limits (max 30 pushes/second per device); batch fan-out for large channels",
           "test_cases": [
             {
-              "id": "TC-F3.S2-001",
+              "id": "TC-F4.S1-001",
               "scenario": {
                 "given": ["User Jamie has joined 'options-trading' channel", "Push notifications are enabled"],
                 "when": ["Alex posts a message to the channel"],
@@ -392,10 +460,11 @@
               },
               "type": "happy_path",
               "priority": "critical",
-              "story_ref": "F3.S2"
+              "story_ref": "F4.S1",
+              "prd_ref": "FR-12"
             },
             {
-              "id": "TC-F3.S2-002",
+              "id": "TC-F4.S1-002",
               "scenario": {
                 "given": ["Jamie receives a push notification for 'crypto-news' channel"],
                 "when": ["Jamie taps the notification"],
@@ -403,10 +472,11 @@
               },
               "type": "happy_path",
               "priority": "critical",
-              "story_ref": "F3.S2"
+              "story_ref": "F4.S1",
+              "prd_ref": "FR-12"
             },
             {
-              "id": "TC-F3.S2-003",
+              "id": "TC-F4.S1-003",
               "scenario": {
                 "given": ["Jamie has muted the 'penny-stocks' channel"],
                 "when": ["A message is posted to 'penny-stocks'"],
@@ -414,10 +484,11 @@
               },
               "type": "happy_path",
               "priority": "high",
-              "story_ref": "F3.S2"
+              "story_ref": "F4.S1",
+              "prd_ref": "FR-13"
             },
             {
-              "id": "TC-F3.S2-004",
+              "id": "TC-F4.S1-004",
               "scenario": {
                 "given": ["Channel has 50,000 members", "A message is posted"],
                 "when": ["Notification service fans out to all eligible members"],
@@ -425,7 +496,131 @@
               },
               "type": "edge_case",
               "priority": "medium",
-              "story_ref": "F3.S2"
+              "story_ref": "F4.S1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "F5",
+      "title": "Content Moderation",
+      "description": "Messages are automatically checked against a rule-based blocklist and an async LLM classifier before and after delivery; flagged messages are held for human moderator review. Phase 1 compliance layer required before opening channels beyond the validation cohort.",
+      "phase": "Phase 1",
+      "stories": [
+        {
+          "story_id": "F5.S1",
+          "title": "Auto-flag messages containing blocked content or pump-and-dump signals",
+          "as_a": "Compliance Officer",
+          "i_want": "every message checked against a blocklist and pump-and-dump pattern detector before it reaches channel members",
+          "so_that": "the firm meets FCA/SEC review obligations without slowing down legitimate conversation",
+          "acceptance_criteria": [
+            "Given a message matches a blocked keyword or a pump-and-dump pattern (same ticker mentioned more than 10 times in 5 minutes), When it is submitted, Then it is held in the moderation queue and not delivered to channel members",
+            "Given a message contains no blocked content, When it passes the rule-based check, Then it is delivered to channel members within the existing 500ms latency budget",
+            "Given the rule-based check runs, When evaluating message content, Then the added latency does not exceed 5ms at p95"
+          ],
+          "technical_acceptance_criteria": [
+            "Backend: Stage 1 synchronous rule-based check (blocklist + velocity) runs inline in the message-send path and completes in <5ms at p95",
+            "Backend: Held messages are written to Cassandra with moderation_status='pending' and excluded from Redis fan-out",
+            "Backend: Stage 2 async LLM classifier (Claude Haiku) re-evaluates held and passed messages within ~200ms and updates moderation_status"
+          ],
+          "platform": ["backend"],
+          "estimated_points": 5,
+          "depends_on": ["F2.S1"],
+          "technical_notes": "Two-stage pipeline per the architecture doc: synchronous rule-based gate, then async LLM classification targeting >92% precision on the pump-and-dump corpus (NFR-05)",
+          "test_cases": [
+            {
+              "id": "TC-F5.S1-001",
+              "scenario": {
+                "given": ["User posts a message with no blocked content"],
+                "when": ["Message passes the rule-based check"],
+                "then": ["Message is delivered to channel members within 500ms", "moderation_status is set to 'approved'"]
+              },
+              "type": "happy_path",
+              "priority": "high",
+              "story_ref": "F5.S1",
+              "prd_ref": "FR-08"
+            },
+            {
+              "id": "TC-F5.S1-002",
+              "scenario": {
+                "given": ["User posts a message containing a known blocked keyword"],
+                "when": ["Message is submitted"],
+                "then": ["Message is held with moderation_status='pending'", "Message is not delivered to channel members", "Message is added to the moderator review queue"]
+              },
+              "type": "bad_path",
+              "priority": "critical",
+              "story_ref": "F5.S1",
+              "prd_ref": "FR-09"
+            },
+            {
+              "id": "TC-F5.S1-003",
+              "scenario": {
+                "given": ["Ticker $XYZ has been mentioned 9 times across a channel in the last 5 minutes"],
+                "when": ["A 10th message mentioning $XYZ is submitted"],
+                "then": ["Velocity threshold trips", "Message is held for review", "Subsequent $XYZ messages from the same window are also held until reviewed"]
+              },
+              "type": "edge_case",
+              "priority": "high",
+              "story_ref": "F5.S1"
+            }
+          ]
+        },
+        {
+          "story_id": "F5.S2",
+          "title": "Moderator reviews and resolves flagged messages",
+          "as_a": "Community Moderator",
+          "i_want": "review messages held by the moderation pipeline and approve or reject them",
+          "so_that": "legitimate messages are released quickly and confirmed violations are kept off the platform",
+          "acceptance_criteria": [
+            "Given a message is held in the moderation queue, When a moderator opens the review queue, Then they see the message content, sender, channel, and flag reason",
+            "Given a moderator approves a held message, When the decision is saved, Then the message is delivered to channel members with its original send timestamp",
+            "Given a moderator rejects a held message, When the decision is saved, Then the message is permanently withheld and the sender's violation count increments",
+            "Given a user accumulates 3 confirmed violations within a rolling 30-day window, When the 3rd is confirmed, Then the user automatically receives a 7-day suspension"
+          ],
+          "technical_acceptance_criteria": [
+            "Backend: GET /api/moderation/queue returns held messages ordered by created_at, with a 24-hour first-review SLA tracked",
+            "Backend: POST /api/moderation/:messageId/resolve accepts {decision: approved|rejected} and updates moderation_status, triggering fan-out on approval",
+            "Web: Moderation queue UI lists flag reason and supports one-tap approve/reject"
+          ],
+          "platform": ["backend", "web"],
+          "estimated_points": 5,
+          "depends_on": ["F5.S1"],
+          "technical_notes": "Internal moderator tool — web only; no mobile moderator UI planned for Phase 1",
+          "test_cases": [
+            {
+              "id": "TC-F5.S2-001",
+              "scenario": {
+                "given": ["A message is held with flag reason 'blocked keyword'"],
+                "when": ["Moderator opens the review queue"],
+                "then": ["Message content, sender, channel, and flag reason are all visible", "Approve and Reject actions are available"]
+              },
+              "type": "happy_path",
+              "priority": "high",
+              "story_ref": "F5.S2"
+            },
+            {
+              "id": "TC-F5.S2-002",
+              "scenario": {
+                "given": ["A held message is a false positive"],
+                "when": ["Moderator taps Approve"],
+                "then": ["Message is delivered to channel members", "Message displays with its original send timestamp, not the approval time"]
+              },
+              "type": "happy_path",
+              "priority": "high",
+              "story_ref": "F5.S2",
+              "prd_ref": "FR-09"
+            },
+            {
+              "id": "TC-F5.S2-003",
+              "scenario": {
+                "given": ["A user has 2 confirmed violations in the last 30 days"],
+                "when": ["Moderator confirms (rejects) a 3rd held message from that user"],
+                "then": ["Violation count increments to 3", "User automatically receives a 7-day suspension", "Suspension is logged to the audit trail"]
+              },
+              "type": "edge_case",
+              "priority": "high",
+              "story_ref": "F5.S2"
             }
           ]
         }

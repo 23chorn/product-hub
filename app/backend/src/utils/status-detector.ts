@@ -61,6 +61,12 @@ export async function detectStatusChanges(airtableClient: AirtableClient): Promi
       }
     }
 
+    // Production milestone for stats: mark the linked local item shipped the first
+    // time we observe its Airtable Status as 'Shipped'.
+    if (newStatus === 'Shipped') {
+      contextStore.markShipped(item.id);
+    }
+
     // Always update snapshot regardless of whether status changed
     contextStore.upsertSnapshot(item.id, title, newStatus);
   }

@@ -22,9 +22,11 @@ Rules:
 - **files** is a flat key-value map: file path (string) → file content (string)
 - `/App.tsx` is the entry point — it must render the current screen based on a `useState<string>` router
 - `/styles.css` must NOT import design-tokens.css or design-system-utilities.css — they are injected automatically; only add custom CSS that Tailwind can't handle
-- All components use TypeScript (.tsx) and Tailwind classes from the design system
+- All components use TypeScript (.tsx) and only the neutral wireframe palette described in your system prompt — no brand/design-system colors
+- No emoji anywhere — not as icons, not in mock data, not in labels or copy. Use plain glyphs, initials, or labeled boxes instead
 - Include `/data/mock-data.ts` with realistic domain data (not lorem ipsum)
-- Maximum 8 screens, 15 files total
+- Scope to only the screen(s) affected by the change, plus before/after states for any transition — not the full app
+- Maximum 4 screens, 10 files total
 - No external dependencies, no fetch calls, no react-router
 - Every screen must accept `navigate: (screen: string) => void` as a prop
 - Screens must be ordered: `screens[0]` is the entry point shown on load

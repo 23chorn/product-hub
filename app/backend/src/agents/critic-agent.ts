@@ -132,12 +132,13 @@ The PRD document is provided above in the Reference Documents section. Use it to
 Focus on:
 - Are stories independently deliverable — or do hidden dependencies exist?
 - Are circular dependencies present (CRITICAL)?
-- Are ACs testable by a QA engineer, or do they require judgement calls?
+- Are ACs independently testable — describing a specific, observable outcome rather than a subjective judgement call?
 - Are effort scores internally consistent across similar-complexity stories?
 - Are stories covering significant integration work underestimated?
 - Does every PRD functional requirement have a corresponding story — or has scope been silently dropped?
 - Are platform tags accurate — does a "web-only" story hide backend work?
 - Do phase tags contradict the PRD's Out of Scope section (CRITICAL)?
+- Is there a story or AC about accessibility (screen reader support, TalkBack, VoiceOver, voice control, etc.) that isn't explicitly required by the PRD? Out of scope for this product — flag as MAJOR.
 
 `;
 

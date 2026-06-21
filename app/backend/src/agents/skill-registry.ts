@@ -162,7 +162,7 @@ const SEED_TOOL_DEFINITIONS: Record<string, string> = {
     },
     {
       name: 'get_domain_skill_context',
-      description: 'Retrieve development context for a domain skill by name (e.g. "payments-dev"). Use this to look up service-specific patterns, API contracts, or conventions before making technology decisions.',
+      description: 'Retrieve development context for a configured domain skill by name. Only call this with a skill name explicitly listed as available in your briefing — never guess a name. Use it to look up service-specific patterns, API contracts, or conventions before making technology decisions.',
       input_schema: { type: 'object', properties: { skill_name: { type: 'string', description: 'The domain skill name to look up' } }, required: ['skill_name'] },
     },
   ]),
@@ -183,7 +183,7 @@ const SEED_TOOL_DEFINITIONS: Record<string, string> = {
     },
     {
       name: 'get_domain_skill_context',
-      description: 'Retrieve development context for a domain skill by name (e.g. "payments-qa"). Use this to look up service-specific testing patterns or dev conventions when writing acceptance criteria.',
+      description: 'Retrieve development context for a configured domain skill by name. Only call this with a skill name explicitly listed as available in your briefing — never guess a name. Use it to look up service-specific testing patterns or dev conventions when writing acceptance criteria.',
       input_schema: { type: 'object', properties: { skill_name: { type: 'string', description: 'The domain skill name to look up' } }, required: ['skill_name'] },
     },
   ]),

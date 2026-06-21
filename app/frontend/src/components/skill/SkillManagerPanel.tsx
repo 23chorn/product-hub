@@ -49,7 +49,7 @@ export function SkillManagerPanel() {
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
   // Section expand state — all collapsed by default
-  const [expanded, setExpanded] = useState({ context: false, agents: false, skills: false, tools: false });
+  const [expanded, setExpanded] = useState({ context: false, behaviour: false, agents: false, skills: false, tools: false });
   const toggle = (key: keyof typeof expanded) =>
     setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
 
@@ -59,6 +59,14 @@ export function SkillManagerPanel() {
   const [ctxIsSaving, setCtxIsSaving] = useState(false);
   const [ctxVersions, setCtxVersions] = useState<Array<{ id: number; file_name: string; content: string; created_at: number }>>([]);
   const [ctxVersionsLoading, setCtxVersionsLoading] = useState(false);
+
+  // Behaviour doc editing state
+  const [behaviourFiles, setBehaviourFiles] = useState<ContextFile[]>([]);
+  const [behEditContent, setBehEditContent] = useState('');
+  const [behSavedContent, setBehSavedContent] = useState('');
+  const [behIsSaving, setBehIsSaving] = useState(false);
+  const [behVersions, setBehVersions] = useState<Array<{ id: number; file_name: string; content: string; created_at: number }>>([]);
+  const [behVersionsLoading, setBehVersionsLoading] = useState(false);
 
   // Skill view state
   const [versionHistory, setVersionHistory] = useState<SkillVersion[]>([]);
@@ -154,12 +162,14 @@ export function SkillManagerPanel() {
     const load = async () => {
       setIsLoading(true);
       try {
-        const [{ files }, skillList, personaList] = await Promise.all([
+        const [{ files }, { files: behFiles }, skillList, personaList] = await Promise.all([
           api.getContextFiles(),
+          api.getBehaviourFiles(),
           api.getSkills(),
           api.getPersonas(),
         ]);
         setContextFiles(files);
+        setBehaviourFiles(behFiles.map((f) => ({ ...f, hasTemplate: false, stages: null })));
         setAllSkills(skillList);
         setPersonas(personaList);
       } catch {
@@ -171,19 +181,21 @@ export function SkillManagerPanel() {
     load();
   }, []);
 
-  // Cmd/Ctrl+S saves context file
+  // Cmd/Ctrl+S saves the currently open context or behaviour doc
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
         if (selection?.type === 'context' && ctxEditContent !== ctxSavedContent && !ctxIsSaving) {
           handleContextSave();
+        } else if (selection?.type === 'behaviour' && behEditContent !== behSavedContent && !behIsSaving) {
+          handleBehaviourSave();
         }
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [selection, ctxEditContent, ctxSavedContent, ctxIsSaving]);
+  }, [selection, ctxEditContent, ctxSavedContent, ctxIsSaving, behEditContent, behSavedContent, behIsSaving]);
 
   const selectContextFile = (index: number, file: ContextFile) => {
     setSelection({ type: 'context', index });
@@ -218,6 +230,40 @@ export function SkillManagerPanel() {
       showToast('Save failed', false);
     } finally {
       setCtxIsSaving(false);
+    }
+  };
+
+  const selectBehaviourFile = (index: number, file: ContextFile) => {
+    setSelection({ type: 'behaviour', index });
+    setBehEditContent(file.content);
+    setBehSavedContent(file.content);
+    setBehVersions([]);
+    textareaRef.current?.focus();
+    setBehVersionsLoading(true);
+    api.getBehaviourFileVersions(file.fileName)
+      .then(({ versions }) => setBehVersions(versions))
+      .catch(() => {})
+      .finally(() => setBehVersionsLoading(false));
+  };
+
+  const handleBehaviourSave = async () => {
+    if (selection?.type !== 'behaviour') return;
+    const file = behaviourFiles[selection.index];
+    if (!file) return;
+    setBehIsSaving(true);
+    try {
+      await api.saveBehaviourFile(file.fileName, behEditContent);
+      setBehSavedContent(behEditContent);
+      setBehaviourFiles((prev) =>
+        prev.map((f, i) => (i === selection.index ? { ...f, content: behEditContent } : f))
+      );
+      const { versions } = await api.getBehaviourFileVersions(file.fileName);
+      setBehVersions(versions);
+      showToast('Saved');
+    } catch {
+      showToast('Save failed', false);
+    } finally {
+      setBehIsSaving(false);
     }
   };
 
@@ -365,6 +411,7 @@ export function SkillManagerPanel() {
 
   const selectedSkillName = selection?.type === 'skill' ? selection.skill.skill_name : null;
   const selectedCtxIndex = selection?.type === 'context' ? selection.index : null;
+  const selectedBehaviourIndex = selection?.type === 'behaviour' ? selection.index : null;
   const selectedToolName = selection?.type === 'tool' ? selection.tool.name : null;
   const selectedAgentName = selection?.type === 'new_agent' ? createForm.skill_name : null;
 
@@ -374,7 +421,7 @@ export function SkillManagerPanel() {
       <header className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4 flex items-center justify-between flex-shrink-0">
         <div>
           <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Agent Studio</h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Manage project context, agent personas, skills, and tools</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Manage project context, behaviour docs, agent personas, skills, and tools</p>
         </div>
         <div className="flex items-center space-x-3">
           {toast && (
@@ -409,6 +456,9 @@ export function SkillManagerPanel() {
           pendingProposalCount={pendingProposalCount}
           isAirtableSyncSelected={selection?.type === 'airtable_sync'}
           onSelectAirtableSync={() => { setSelection({ type: 'airtable_sync' }); setExpanded((p) => ({ ...p, context: true })); }}
+          behaviourFiles={behaviourFiles}
+          selectedBehaviourIndex={selectedBehaviourIndex}
+          onSelectBehaviour={selectBehaviourFile}
           agentItems={agentItems}
           selectedSkillName={selectedSkillName}
           selectedAgentName={selectedAgentName}
@@ -453,6 +503,22 @@ export function SkillManagerPanel() {
                 const f = contextFiles[(selection as { type: 'context'; index: number }).index];
                 if (f?.templateContent) setCtxEditContent(f.templateContent);
               }}
+            />
+          ) : selection?.type === 'behaviour' && behaviourFiles[selection.index] ? (
+            <ContextFileEditor
+              file={behaviourFiles[selection.index]}
+              editContent={behEditContent}
+              savedContent={behSavedContent}
+              isSaving={behIsSaving}
+              versions={behVersions}
+              versionsLoading={behVersionsLoading}
+              textareaRef={textareaRef}
+              canEdit={canEdit(behaviourFiles[selection.index].editRoles)}
+              onChange={setBehEditContent}
+              onSave={handleBehaviourSave}
+              onRevert={() => setBehEditContent(behSavedContent)}
+              onRestoreVersion={(content) => { setBehEditContent(content); showToast('Version restored — save to apply'); }}
+              onLoadTemplate={() => {}}
             />
           ) : selection?.type === 'skill' ? (
             <SkillViewer

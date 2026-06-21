@@ -21,10 +21,7 @@ Right-size the output based on scope. Use the **minimum structure** that fits th
       "userJourney": "Journey · Step"
     },
     "technical": {
-      "constraints": ["string"],
-      "affectedComponents": ["string"],
-      "dataChanges": "string | null",
-      "apiChanges": "string | null"
+      "notes": "Meaningful technical direction only — what needs to be built and any real constraint. Not a full spec; exact endpoints, schemas, and components are worked out later. null if nothing notable yet."
     },
     "effort": 3
   }
@@ -120,3 +117,5 @@ Rules:
 - Each story needs 2–4 acceptance criteria, each independently testable
 - effort: Fibonacci estimate (1, 2, 3, 5, 8) reflecting total delivery effort including implementation, automated/manual testing, and code review. 1 = trivial change with minimal test surface, 2 = simple CRUD with straightforward test cases, 3 = moderate feature with several test scenarios, 5 = complex feature with integration tests and edge cases, 8 = large cross-cutting change with significant test coverage required. Stories that would score above 8 must be decomposed into smaller stories first.
 - phase: use "MVP" for must-have, "Phase 2" for next iteration
+- technical.notes: meaningful direction only, not a full implementation spec — detail can be added over time as the story is picked up
+- Do not write accessibility-specific acceptance criteria or stories (screen reader support, TalkBack, VoiceOver, voice control, etc.) — out of scope for this product unless the PRD explicitly calls for it

@@ -13,7 +13,7 @@ import {
   type PersonaFile,
 } from './types';
 
-type SectionKey = 'context' | 'agents' | 'skills' | 'tools';
+type SectionKey = 'context' | 'behaviour' | 'agents' | 'skills' | 'tools';
 
 interface SkillManagerSidebarProps {
   isLoading: boolean;
@@ -29,6 +29,10 @@ interface SkillManagerSidebarProps {
   pendingProposalCount: number;
   isAirtableSyncSelected: boolean;
   onSelectAirtableSync: () => void;
+  // Behaviour docs
+  behaviourFiles: ContextFile[];
+  selectedBehaviourIndex: number | null;
+  onSelectBehaviour: (index: number, file: ContextFile) => void;
   // Agents
   agentItems: AgentItem[];
   selectedSkillName: string | null;
@@ -70,6 +74,9 @@ export function SkillManagerSidebar({
   pendingProposalCount,
   isAirtableSyncSelected,
   onSelectAirtableSync,
+  behaviourFiles,
+  selectedBehaviourIndex,
+  onSelectBehaviour,
   agentItems,
   selectedSkillName,
   selectedAgentName,
@@ -187,6 +194,47 @@ export function SkillManagerSidebar({
               </button>
             );
           })}
+
+          {/* ── Behaviour Docs ──────────────────────── */}
+          <SectionHeader
+            label="Behaviour Docs"
+            count={behaviourFiles.length}
+            isOpen={expanded.behaviour}
+            onToggle={() => onToggle('behaviour')}
+          />
+          {expanded.behaviour && (
+            behaviourFiles.length === 0 ? (
+              <div className="px-4 pb-2 text-xs text-slate-400">No behaviour docs found in context/behaviour/features</div>
+            ) : (
+              behaviourFiles.map((file, i) => {
+                const editable = canEdit(file.editRoles);
+                return (
+                  <button
+                    key={file.fileName}
+                    onClick={() => onSelectBehaviour(i, file)}
+                    className={`w-full text-left px-4 py-2 border-b border-slate-100 dark:border-slate-700/40 transition-colors ${
+                      selectedBehaviourIndex === i
+                        ? 'bg-teal-50 dark:bg-teal-900/20 border-l-2 border-l-teal-500'
+                        : 'hover:bg-slate-50 dark:hover:bg-slate-700/30 border-l-2 border-l-transparent'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${file.content ? 'bg-green-500' : 'bg-slate-300 dark:bg-slate-600'}`} />
+                        <span className="text-sm text-slate-800 dark:text-slate-200 truncate">{file.label}</span>
+                      </div>
+                      {!editable && (
+                        <svg className="w-3 h-3 text-slate-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                        </svg>
+                      )}
+                    </div>
+                    <div className="text-xs text-slate-400 mt-0.5 pl-3.5">{file.description}</div>
+                  </button>
+                );
+              })
+            )
+          )}
 
           {/* ── Agents ──────────────────────────────── */}
           <SectionHeader

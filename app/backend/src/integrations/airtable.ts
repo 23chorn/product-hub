@@ -143,6 +143,51 @@ export class AirtableClient {
   }
 
   /**
+   * Create a brand-new Airtable record. Used by Discovery Mode promotion —
+   * the only path today that creates new Airtable records rather than syncing existing ones.
+   */
+  async createItem(fields: Partial<AirtableItem>): Promise<AirtableItem> {
+    if (isMockMode()) {
+      const mockId = `recMOCKDISCOVERY${Date.now()}`;
+      logger.info(`[MOCK] createItem -> ${mockId}`);
+      return {
+        id: mockId,
+        initiative: fields.initiative ?? '',
+        description: fields.description ?? '',
+        status: fields.status ?? 'Discovery',
+        businessValue: fields.businessValue ?? 5,
+        priorityScore: fields.priorityScore ?? 0,
+        estimate: fields.estimate ?? 'M',
+        confidence: fields.confidence ?? 0.5,
+        owner: fields.owner ?? '',
+        researchBriefLink: '',
+        prdLink: '',
+        technicalDesignLink: '',
+        epicLink: '',
+        testPlanLink: '',
+        figmaDesignLink: '',
+        azureEpicId: '',
+        azureFeatureIds: '',
+        azureStoryIds: '',
+        createdAt: new Date().toISOString(),
+      };
+    }
+    try {
+      logger.debug('Creating item', fields);
+      const response = await axios.post(
+        this.baseUrl,
+        { fields: this.transformToAirtableFields(fields) },
+        { headers: this.headers },
+      );
+      logger.info(`Created Airtable record ${response.data.id}`);
+      return this.transformRecord(response.data);
+    } catch (error) {
+      logger.error('Failed to create Airtable item', error);
+      handleIntegrationError(error, 'Airtable');
+    }
+  }
+
+  /**
    * Update item with PRD link
    */
   async linkPRD(recordId: string, prdLink: string): Promise<void> {

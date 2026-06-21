@@ -94,9 +94,19 @@
         "technical_notes": "WebSocket pods are stateless — each subscribes to Redis Pub/Sub topics for channels their connected clients have joined. Rate limit enforced at Message Service ingestion (30 msg/min per user). Cassandra partition key = channel_id; clustering DESC gives most-recent-first reads without sorting. TTL = 7 years per row."
       },
       {
-        "title": "Live Ticker Card Sharing & Push Notifications",
+        "title": "Live Ticker Card Sharing",
         "target_repos": ["xcube-api", "xcube-ios", "xcube-android"],
-        "technical_notes": "Ticker card price updates pushed by Message Service to avoid N×M client polling. Push notifications fan out via APNs (high-priority) and FCM (high-priority channel for Doze bypass). Muted channels excluded from fan-out at query time, not client-side."
+        "technical_notes": "Ticker card price updates pushed by Message Service to avoid N×M client polling — same WebSocket stream as trade execution. Card rendering batches updates to a max of 1/second per card."
+      },
+      {
+        "title": "Push Notifications for Channel Activity",
+        "target_repos": ["xcube-api", "xcube-ios", "xcube-android"],
+        "technical_notes": "Push notifications fan out via APNs (high-priority) and FCM (high-priority channel for Doze bypass). Muted channels excluded from fan-out at query time, not client-side. Fan-out batches to respect the 30 pushes/sec/device APNs ceiling for large channels."
+      },
+      {
+        "title": "Content Moderation",
+        "target_repos": ["xcube-api"],
+        "technical_notes": "Two-stage pipeline: Stage 1 synchronous rule-based check (blocklist + velocity) inline in the message-send path, <5ms at p95. Stage 2 async LLM classifier (Claude Haiku) re-evaluates within ~200ms and updates moderation_status. Held messages excluded from Redis fan-out until a moderator resolves them via the review queue."
       }
     ]
   }

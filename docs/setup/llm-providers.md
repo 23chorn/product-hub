@@ -1,6 +1,6 @@
 # LLM Provider Setup
 
-The agent supports three LLM providers selectable via the `AI_PROVIDER` environment variable. See also [LLM Cost Tiers](../development/llm-cost-tiers.md) for a cost comparison.
+The agent supports three LLM providers selectable via the `AI_PROVIDER` environment variable.
 
 ## Providers
 
@@ -43,7 +43,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 | Model | Speed | Cost |
 |-------|-------|------|
 | claude-haiku-4-5-20251001 | Fast | Low (~$0.001/run) |
-| claude-sonnet-4-6 | Balanced | Medium (~$0.01/run) |
+| claude-sonnet-4-5-20250929 | Balanced | Medium (~$0.01/run) |
 | claude-opus-4-6 | Slow | High (~$0.10/run) |
 
 Prompt caching is enabled automatically for Anthropic — repeated system prompts (agent persona + project context) are cached, cutting input-token cost by ~90% after the first request in a session.
@@ -76,7 +76,7 @@ Prompt caching works on Bedrock using `CachePointType.DEFAULT` markers. Token lo
 Change `AI_PROVIDER` in `.env` and restart the server. The startup log confirms the active provider and available models:
 
 ```
-🤖 AI provider: anthropic | models: claude-haiku-4-5-20251001, claude-sonnet-4-6, claude-opus-4-6
+🤖 AI provider: anthropic | models: claude-haiku-4-5-20251001, claude-sonnet-4-5-20250929, claude-opus-4-6
 ```
 
 The model dropdown in the UI header always reflects the current provider's model list.

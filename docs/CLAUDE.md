@@ -75,6 +75,10 @@ Single SQLite file at `db/product-ops.db` via `better-sqlite3` (synchronous). Sc
 | `change_requests` | Post-completion CRs with impact assessment and status |
 | `cr_artifact_versions` | Links CRs to new artifact versions and their parents |
 | `ado_work_item_map` | Maps local backlog keys (F1, F1.S1) to ADO work item IDs |
+| `discovery_sources` | Uploaded source documents (interviews, app store reviews, competitor notes) for Discovery Mode |
+| `discovery_runs` | One row per Scout batch run, tracks status and source set |
+| `discovery_opportunities` | Opportunity drafts surfaced by a run, reviewed/promoted/dismissed by a PM |
+| `discovery_opportunity_sources` | Many-to-many evidence trail: which sources informed which opportunity |
 
 ### Coordinator workflow (the only mode)
 
@@ -82,16 +86,16 @@ Default pipeline: `['analyst', 'pm_prd', 'epic_feature_planner', 'story_decompos
 
 1. User types a goal → Coordinator reads `company.md`, `strategy.md`, `current-state.md` first. Emits `COORDINATOR_READY` (max 3 rounds) with enriched context JSON.
 2. User toggles stages → `POST /api/workflow/start` → `advanceStage()`.
-3. **Specialist stages** (analyst, pm_prd, epic_feature_planner): `runAutonomousStage()` streams output, saves artifact. Inline critic auto-revises up to 2× via conversation threading (`[user: brief, assistant: prior draft, user: revision directive]`). Creates `pending` checkpoint for human review.
+3. **Specialist stages** (analyst, pm_prd, epic_feature_planner): `runAutonomousStage()` streams output, saves artifact. Inline critic auto-revises once via conversation threading (`[user: brief, assistant: prior draft, user: revision directive]`), then hands any remaining issues to the human. Creates `pending` checkpoint for human review.
 4. Human review: **Approve** → next stage; **Revise** → rerun with feedback; **Reject** → ends. Feedback classified: output correction → specialist revision; scope change → confirm before proceeding; upstream gap → offer redo from earlier stage.
-5. **Multi-agent refinement stages** (story_decomposition_F1/F2/F3): `runMultiAgentRefinement()` coordinates a dynamic team (Shard=Product, Vera=QA, Finn=Backend always present; Remi=Web, iOS/Android engineers included only when `productArea` warrants it). Stories accumulated across features. `pushFeatureToADO()` adds stories to existing ADO features, creates epic-level test plan (cumulative across F1/F2/F3). Duplicate prevention via `ado_work_item_map`.
+5. **Multi-agent refinement stages** (story_decomposition_F1/F2/F3): `runMultiAgentRefinement()` coordinates a dynamic team (Shard=Product, Vera=QA, Finn=Backend always present; Remi=Web, iOS/Android engineers included only when `productArea` warrants it). `resolveProductAreaScope()` also drives a backstop: `filterBacklogStoriesByScope()`/`filterQaTestCasesByStoryIds()` in `multi-agent-refinement.ts` strip any story/test case that lands outside the resolved platform scope even if the model ignored the brief's instruction — applied on first generation and on every surgical revision (`feature-stage-runner.ts`). Stories accumulated across features. `pushFeatureToADO()` adds stories to existing ADO features, creates epic-level test plan (cumulative across F1/F2/F3). Duplicate prevention via `ado_work_item_map`.
 6. Curator runs automatically, writes `context_diffs`, workflow completes.
 7. After completion: redo from any stage with feedback.
 
 #### Key agent files
 | File | Role |
 |------|------|
-| `agents/coordinator-agent.ts` | Planning sessions, stage briefs, mid-workflow chat, CR briefs |
+| `agents/coordinator-agent.ts` | Planning sessions, stage briefs, CR briefs |
 | `agents/critic-agent.ts` | Single-shot review. Stage-specific rules via `buildStageInstructions(stage)` |
 | `agents/specialist-agent.ts` | Persona loading, context injection, template injection, streaming |
 | `agents/workflow-router.ts` | Core state machine: `createWorkflow()`, `advanceStage()`, checkpoint management |
@@ -99,10 +103,12 @@ Default pipeline: `['analyst', 'pm_prd', 'epic_feature_planner', 'story_decompos
 | `agents/workflow-stage-runner.ts` | `runAutonomousStage()` — fire-and-forget background runner |
 | `agents/multi-agent-refinement.ts` | Multi-agent collaborative story refinement orchestrator — dynamic participant list based on productArea |
 | `agents/feature-decomposition.ts` | ADO push: `pushEpicAndFeaturesToADO()`, `pushFeatureToADO()` |
-| `agents/stage-metadata.ts` | Stage constants: maps, labels, token limits, `stageGoal()`, `stageNotDecide()` |
+| `agents/stage-metadata.ts` | Stage constants: maps, labels, token limits, `stageGoal()`, `stageNotDecide()`, `progressHeartbeatLine()` |
 | `agents/workflow-mutations.ts` | `propagateFeedback()`, `reiterateFromStage()`, `retryCurrentStage()` |
 | `agents/change-request.ts` | CR lifecycle: create, assess impact (SSE), execute targeted stages |
-| `agents/prototype-agent.ts` | Prototype generation from workflow artifacts + design system tokens |
+| `agents/prototype-agent.ts` | Prototype generation from workflow artifacts (no design system tokens — see Prototype & Figma design stages) |
+| `agents/discovery-agent.ts` | `runDiscovery()` — one-shot Scout batch run over uploaded sources, outside the staged workflow machinery |
+| `agents/behaviour-context.ts` | `loadRelevantBehaviourDocs()` — keyword-matches `context/behaviour/` Gherkin docs into the PRD stage |
 | `utils/model-config.ts` | All model/pricing config and cost estimation |
 
 #### When adding a new stage
@@ -139,22 +145,39 @@ Users can edit specialist outputs during review (pencil icon → textarea). **Cm
 Post-completion targeted changes without full reruns. Flow: create CR → assess impact (Coordinator SSE, determines `affected_stages`) → user confirms stages → execute (conversation threading via `reiterateFromStage()`). Key file: `agents/change-request.ts`.
 
 ### ADO sync
-- **Epic Feature Planner** → `pushEpicAndFeaturesToADO()`: creates epic + feature shells, saves mappings (`epic`, `F1`–`F3`)
+- **Epic Feature Planner** → `pushEpicAndFeaturesToADO()`: creates epic + feature shells, saves mappings (`epic`, `F1`–`F3`). Also attaches hyperlinks to each created epic pointing back at the Research/PRD/Solution Architecture wiki pages (via `loadLatestArtifactWikiUrl()`) and the Figma file URL (parsed from the `figma_design` artifact), when those exist — best-effort, logged on failure.
 - **Story Decomposition** → `pushFeatureToADO()`: adds stories to existing features with user story format, Given/When/Then ACs, technical ACs (with `<hr>` separator), platform tags, story points as `Microsoft.VSTS.Scheduling.Effort`
 - **Legacy pm_backlog** → `pushBacklogToAdo()`: creates full Epic→Feature→Story hierarchy; subsequent pushes use diff-based `updateBacklog()`
 - Story type configurable via `AZURE_DEVOPS_STORY_TYPE` env var (default: "User Story")
+
+### Prototype & Figma design stages (optional, run after the core pipeline)
+Both are narrow by design — neither attempts full-app coverage:
+- **Prototype (Nova)** — a low-fidelity wireframe of *only* the screen(s) directly affected by the change (plus a before/after pair for transitions/state changes), built from a small set of generic, reusable, brand-neutral components (`agents/personas/prototype-builder.md`). Deliberately does **not** load design system tokens (`workflow-stage-runner.ts` skips `loadFigmaDesignSystem()`/`loadLocalDesignSystem()` for this stage) — visual fidelity is out of scope until the Figma design stage.
+- **Figma Design (Luma)** — produces a concise JSON design brief (`agents/templates/figma-design.template.md`) for a *human* designer to act on in Figma, not a pixel-precise spec and not an automated Figma API write. `figma_write_status` is always `"planned"` in the artifact today; the persona describes later stamping to `"annotated"`/`"created"`/`"reviewed"` and posting the brief as a Figma file comment, but that integration isn't implemented in this codebase yet — treat those states as aspirational until wired up.
+
+### Discovery Mode (Scout)
+A separate, lighter-weight flow for surfacing candidate opportunities before they become initiatives — sits outside the staged workflow/checkpoint machinery entirely (no per-stage approval model, just a direct LLM call).
+- **Entry point**: "Discovery" button in the app header → full-screen modal (`DiscoveryScreen.tsx`), two panes: source documents (left) and the opportunity feed (right).
+- **Sources**: PM manually adds source documents (`user_interview`, `app_store_review`, `play_store_review`, `competitor_note`, `other`) — stored in `discovery_sources`. API-fed ingestion is a planned origin (`origin: 'api'`) but not implemented yet; today everything is `origin: 'manual'`.
+- **Run**: `POST /api/discovery/run` (Product/Admin only) calls `runDiscovery()` in `agents/discovery-agent.ts` — loads the `discovery-scout` persona + `discovery.template.md`, the selected sources, and a capped snapshot of the current active backlog (60 items, biases Scout away from re-pitching in-flight work), then makes one `streamAI()` call (model: `discovery` in `model-config.ts`, currently `claude-sonnet-4-5-20250929`). Output is parsed with a loose JSON parser (`parseJsonLoose()` — handles unquoted keys, truncation, trailing prose) since this stage has no structural validator tool.
+- **Review**: opportunities persist to `discovery_opportunities` with an evidence trail (`discovery_opportunity_sources`) cross-validated against the sources actually fed into the run (a hallucinated `sourceId` is silently dropped, not trusted). A PM can dismiss an opportunity or promote it.
+- **Promote**: `POST /api/discovery/opportunities/:id/promote` (Product/Admin only) requires `ROADMAP_INTEGRATION=airtable` — creates a new Airtable record via `AirtableClient.createItem()` (the only path that creates, rather than syncs, an Airtable record), then a local "shadow item" (`source='airtable'`) so the promoted idea flows into the normal initiative/pipeline-launch UI unchanged.
+- Routes: `app/backend/src/routes/discovery-routes.ts` → `/api/discovery/*`. Schema: migration `0009_discovery_mode.sql`.
 
 ### Agent patterns
 - **Pattern A (Specialist)** — document-producing agents (Analyst, PM, Architect, Prototype). Extend `SpecialistAgent`. Persona files are markdown with YAML frontmatter stripped before injection.
 - **Pattern B (plain class)** — orchestration/review agents (Coordinator, Critic, Curator). Load persona via `readFileSync`, use `streamAI()`.
 
 ### Per-stage JSON validators (`agents/tool-registry.ts`)
-Each specialist stage has a structural validator registered as a tool the agent calls before returning output. Validators check field presence, array minimums, character/word limits, format constraints, and flag TBD/vague language. Key validators:
+Each specialist stage has a structural validator registered as a tool the agent calls before returning output. Validators check field presence, array minimums, character/word limits, format constraints, and flag TBD/vague language. Current validators:
 - `validate_analyst_json` — title, market_size sub-fields, ≥2 competitive entries, inline [N] citations, no placeholder URLs
 - `validate_prd_json` — personas, journeys (steps ≥2), success_metrics (primary/secondary/counter), NFR measurability, FR count 10–20
 - `validate_architecture_json` — recursive TBD scan, technology_decisions (alternatives must be substantive, not "None"/"N/A"), `new_dependencies` structure validation, data_model, api_surface, epic_features_enriched
-- `validate_gtm_strategy_json` — Moore positioning template, segment enums, headline ≤8 words, exactly 3 phases
-- `validate_feature_marketing_json` — 3 name variants, value_proposition ≤20 words, app_store ≤170 chars, exactly 5 FAQ entries
+- `validate_backlog_json` — story_id format (`F1.S2`), required fields (as_a/i_want/so_that), acceptance criteria count bounds (2–5)
+- `validate_epic_features_json` — epic/feature shape from the Epic Feature Planner stage
+- `validate_qa_tests_json` — test case shape and story_ref linkage for the QA suite
+
+There is no validator for `prototype`, `figma_design`, or `discovery` — those stages produce free-form JSON parsed loosely rather than schema-checked. GTM Strategy and Feature Marketing validators (and their personas, `gtm.md`/`marketer.md`) were retired — those stages aren't in the active pipeline; see `agents/TEMPLATE-CHANGELOG.md` for the rationale and reinstatement criteria.
 
 `syncSeedSkillTools()` in `skill-registry.ts` auto-bumps skill version on server start when tool names differ from the seed — existing installs pick up renamed validators without manual migration.
 
@@ -192,6 +215,11 @@ stages: [solution_architect, story_decomposition, tech_refinement, qa_engineer]
 
 Example files (tracked but gitignored in prod): `api-contracts.example.md`, `integrations.example.md`, `db-schema.example.md`, `repos.example.md`.
 
+### Behaviour docs (`context/behaviour/`)
+A separate corpus from the canonical `context/*.md` files — `.feature` (Gherkin) docs describing how existing features currently behave in production (business rules, screen flows, validation), plus a `feature-map.json` search index (`keywords` per entry). Only injected into the `pm_prd` stage: `loadRelevantBehaviourDocs()` (`agents/behaviour-context.ts`) tokenizes the initiative goal + research brief, scores `feature-map.json` entries by keyword overlap, and injects the top 4 matching `.feature` files' full content — not the whole corpus, since it can run 100+ KB across many docs and most PRDs concern one or two feature areas. Returns `''` (no-op) when no `feature-map.json`/features exist, e.g. a fresh project with no imported behaviour corpus.
+
+Editable from the UI: Agent Studio (Skill Manager) has a "Behaviour" section alongside "Context" for browsing/editing `.feature` files, backed by `app/backend/src/routes/behaviour-file-routes.ts` (`/api/behaviour-files`) — same versioning pattern as `context-file-routes.ts`, namespaced as `behaviour/<fileName>` in `context_file_versions` so it can't collide with `context/*.md` names. Saving a file regenerates `feature-map.json` from disk so the search index never drifts from an edited doc.
+
 ### Output templates (`agents/templates/`)
 `research.template.md`, `prd.template.md`, `architecture.template.md`, `backlog.template.md`. Read from disk per-stage (no caching), so UI edits take effect immediately on the next run.
 
@@ -204,9 +232,11 @@ Configured via `app/backend/src/config/app-config.ts`:
 - `KNOWLEDGE_BASE_INTEGRATION=notion|gitbook|azure_wiki|none` — `azure_wiki` auto-publishes analyst/PRD/architecture/prototype/figma_design drafts to the ADO wiki (`tryWikiPush()` in `workflow-stage-runner.ts`); independent of `WORK_ITEMS_INTEGRATION`, reuses the same `AZURE_DEVOPS_*` credentials. Once an artifact is wiki-synced, its `external_system` flips to `azure_wiki` permanently and all future reads (including previews) come from the wiki, not Mongo/disk.
 
 ### Demo
-`POST /api/demo/webhook/trigger` launches a full pipeline without coordinator planning, cycling through 4 sample initiatives. Set `DEMO_FIXTURE_THEME=price-alerts` (default) or `messaging`. Fixtures in `app/backend/src/demo/fixtures/`; system auto-falls back to base theme if themed fixture missing. `USE_MOCK_DATA=true` bypasses Airtable for local dev.
+`POST /api/demo/webhook/trigger` launches a full pipeline without coordinator planning, cycling through 4 sample initiatives (In-App Messaging, Onboarding Redesign, Portfolio Analytics, Social Trading — all "TradeEasy"). `USE_MOCK_DATA=true` bypasses Airtable for local dev.
 
-**Fixture format**: All fixtures are `.json` files. The `messaging/` subdirectory contains theme-specific overrides for `analyst.json`, `prd.json`, `architecture.json`, `gtm-strategy.json`, `feature-marketing.json`. Common fixtures (backlog, qa-tests, prototype, epic-features) are shared across themes. Demo artifacts flow through the same `saveLocalArtifact()` path as real LLM outputs — MongoDB is attempted first; falls back to disk if unavailable.
+Fixture content for `getDemoFixture()` (`demo-mode.ts`) always loads from `app/backend/src/demo/fixtures/messaging/` — that's the only fixture set present today. `DEMO_FIXTURE_THEME` is still read in a couple of places (`workflow-router.ts`, `ws-demo-handler.ts`, `settings-routes.ts`) for labeling/display, but doesn't change which fixture files `demo-mode.ts` actually serves.
+
+**Fixture format**: All fixtures are `.json` files. The `messaging/` subdirectory contains theme-specific overrides for `analyst.json`, `prd.json`, `architecture.json`, `figma-design.json`. Common fixtures (backlog, qa-tests, prototype, epic-features) are shared across themes. Demo artifacts flow through the same `saveLocalArtifact()` path as real LLM outputs — MongoDB is attempted first; falls back to disk if unavailable.
 
 ### Artifact storage (`app/backend/src/data/mongo-client.ts`)
 Specialist-stage JSON artifacts are stored in locally hosted MongoDB (`docker-compose.yml` at project root). The `artifacts` SQLite table tracks the storage location via `external_system='mongodb'` and `external_path=<ObjectId>`. Disk fallback is automatic when MongoDB is unreachable (`serverSelectionTimeoutMS: 3000`).
@@ -220,4 +250,3 @@ To start MongoDB locally: `docker compose up -d`. Set `MONGODB_URI` and `MONGODB
 ### Misc
 - **Airtable formula**: use `NOT({Field})` not `{Field} = BLANK()` for link fields (Airtable returns SERVER_ERROR for the latter)
 - **Context cache**: `invalidateContextCache()` in `specialist-agent.ts` — called automatically after context file saves
-- **Claude Code Studio**: WS at `/ws/ai-coding` — spawns `claude --print` CLI, streams stdout. Both WS servers use `noServer: true` with manual upgrade routing.

@@ -5,7 +5,6 @@ import * as path from 'path';
 import db from '../data/database';
 import { DATA_DIR } from '../data/database';
 import { createWorkflow, advanceStage } from '../agents/workflow-router';
-import { runDemoScript, getDemoProjectPath } from '../demo/demo-runner';
 import { getArtifactCollection } from '../data/mongo-client';
 import { ObjectId } from 'mongodb';
 import Logger from '../utils/logger';
@@ -259,9 +258,11 @@ async function cleanupPreviousDemoRuns(): Promise<void> {
   logger.info('[DEMO CLEANUP] Complete');
 }
 
-// Demo webhook stage sequence. story_decomposition_F1/F2/F3 run multi-agent refinement per feature;
-// they are injected at workflow execution time based on the epic_feature_planner output feature count.
-const CORE_STAGES = ['analyst', 'pm_prd', 'prototype', 'figma_design', 'solution_architect', 'epic_feature_planner', 'story_decomposition_F1', 'story_decomposition_F2', 'story_decomposition_F3'];
+// Demo webhook stage sequence. 'story_decomposition' is a placeholder — once the
+// epic_feature_planner checkpoint is approved, injectFeatureDecompositionStages()
+// (see feature-decomposition.ts) replaces it with the actual story_decomposition_F1..FN
+// stages based on the real feature count from the epic_features artifact.
+const CORE_STAGES = ['analyst', 'pm_prd', 'prototype', 'figma_design', 'solution_architect', 'epic_feature_planner', 'story_decomposition'];
 
 function buildDemoStages(): string[] {
   return [...CORE_STAGES, 'curator'];
@@ -306,23 +307,6 @@ demoWebhookRoutes.post('/demo/webhook/trigger', async (req: Request, res: Respon
       // Human review stages are enabled — user must manually approve each checkpoint
       const stages = buildDemoStages();
       const workflow = createWorkflow(itemId, goal, stages, { demo_mode: 'true' });
-
-      // When the workflow completes, run Claude Code CLI on the tradeeasy-demo repo
-      // to implement the feature on a fresh branch and run Playwright tests.
-      // Gated by DEMO_CODE_PIPELINE_ENABLED=true so core-flow testing skips this.
-      if (process.env.DEMO_CODE_PIPELINE_ENABLED === 'true' && getDemoProjectPath()) {
-        const pollAndRun = () => {
-          const wf = db.prepare('SELECT status FROM workflows WHERE id = ?').get(workflow.id) as any;
-          if (wf?.status === 'complete') {
-            runDemoScript(workflow.id).catch((err: Error) =>
-              logger.error(`Demo runner failed for ${workflow.id}: ${err.message}`)
-            );
-          } else if (wf?.status !== 'failed') {
-            setTimeout(pollAndRun, 10_000);
-          }
-        };
-        setTimeout(pollAndRun, 30_000);
-      }
 
       advanceStage(workflow.id).catch((err: Error) =>
         logger.error(`advanceStage failed for demo webhook workflow ${workflow.id}`, err)

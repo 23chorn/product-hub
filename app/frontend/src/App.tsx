@@ -6,16 +6,20 @@ import { ToastContainer } from './components/toast/ToastContainer';
 import { CoordinatorChat } from './components/coordinator';
 import { ArtifactViewer } from './components/artifact';
 import { SkillManagerPanel } from './components/skill/SkillManagerPanel';
+import { DiscoveryScreen } from './components/discovery/DiscoveryScreen';
 import { SettingsPanel } from './components/settings/SettingsPanel';
 import { QuickTicketPanel } from './components/ticket/QuickTicketPanel';
+import { StatsDashboardPanel } from './components/stats/StatsDashboardPanel';
 import { LoginPage } from './pages/LoginPage';
 import { useModelStore } from './stores/modelStore';
 import { useDecisionLogStore } from './stores/decisionLogStore';
 import { useSkillManagerStore } from './stores/skillManagerStore';
+import { useDiscoveryStore } from './stores/discoveryStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { useConfigStore } from './stores/configStore';
 import { useWorkflowStore } from './stores/workflowStore';
-import { useAuthStore, ROLE_LABELS } from './stores/authStore';
+import { useStatsStore } from './stores/statsStore';
+import { useAuthStore, ROLE_LABELS, canViewStats } from './stores/authStore';
 import { api } from './services/api';
 
 function DemoToast({ title, onDismiss }: { title: string; onDismiss: () => void }) {
@@ -40,7 +44,9 @@ function App() {
   const { setAvailableModels, setAgentModels } = useModelStore();
   const { isOpen: isDLOpen } = useDecisionLogStore();
   const { isOpen: isSMOpen, openSkillManager } = useSkillManagerStore();
+  const { isOpen: isDiscoveryOpen, openDiscovery } = useDiscoveryStore();
   const { isOpen: isSettingsOpen, openSettings, closeSettings, setDemoMode } = useSettingsStore();
+  const { isOpen: isStatsOpen, openStats } = useStatsStore();
   const { setConfig } = useConfigStore();
   const { activeWorkflow, viewingArtifactId } = useWorkflowStore();
   const { user, realUser, noAuth, loading: authLoading, setUser, setNoAuth, setLoading: setAuthLoading, logout: authLogout, impersonating, impersonate, stopImpersonating } = useAuthStore();
@@ -166,6 +172,15 @@ function App() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {/* Discovery Button */}
+            <button
+              onClick={openDiscovery}
+              className="flex items-center px-3 py-1.5 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-700/70 hover:border-slate-400 dark:hover:border-slate-500 transition-colors shadow-sm"
+              title="Open Discovery"
+            >
+              Discovery
+            </button>
+
             {/* Agent Studio Button */}
             <button
               onClick={openSkillManager}
@@ -174,6 +189,17 @@ function App() {
             >
               Studio
             </button>
+
+            {/* Stats Dashboard Button */}
+            {canViewStats(user, noAuth) && (
+              <button
+                onClick={openStats}
+                className="flex items-center px-3 py-1.5 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-700/70 hover:border-slate-400 dark:hover:border-slate-500 transition-colors shadow-sm"
+                title="Open Stats Dashboard"
+              >
+                Stats
+              </button>
+            )}
 
             {/* Settings Button */}
             <button
@@ -316,6 +342,20 @@ function App() {
         {isSMOpen && (
           <div className="absolute inset-0 z-50 p-3">
             <SkillManagerPanel />
+          </div>
+        )}
+
+        {/* Discovery Modal Overlay */}
+        {isDiscoveryOpen && (
+          <div className="absolute inset-0 z-50 p-3">
+            <DiscoveryScreen />
+          </div>
+        )}
+
+        {/* Stats Dashboard Modal Overlay */}
+        {isStatsOpen && (
+          <div className="absolute inset-0 z-50 p-3">
+            <StatsDashboardPanel />
           </div>
         )}
 

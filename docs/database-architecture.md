@@ -43,6 +43,10 @@ WAL mode is enabled (`journal_mode = WAL`) for non-blocking reads during writes.
 | `pipeline_runs` | CI/CD pipeline execution records. Enables the PipelineStatus UI to display real results. |
 | `context_change_proposals` | (Legacy) AI-proposed context edits — superseded by `context_diffs`. |
 | `item_status_snapshots` | Tracks last-known Airtable status per initiative for change detection. |
+| `discovery_sources` | Uploaded source documents (interviews, app store reviews, competitor notes) for Discovery Mode. |
+| `discovery_runs` | One row per Scout batch run; tracks status and source set. |
+| `discovery_opportunities` | Opportunity drafts surfaced by a run, reviewed/promoted/dismissed by a PM. |
+| `discovery_opportunity_sources` | Many-to-many evidence trail: which sources informed which opportunity. |
 
 ### Migration pattern
 

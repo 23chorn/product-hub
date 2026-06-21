@@ -1,8 +1,9 @@
 /**
  * Demo Mode — returns static fixture content per stage instead of calling the LLM.
  *
- * Enable via DEMO_MODE=true in .env. Useful for testing the workflow pipeline,
- * UI animations, and approval flow without incurring LLM costs.
+ * Enabled via the "Demo mode enabled" toggle in Settings (demo_mode_enabled policy).
+ * Useful for testing the workflow pipeline, UI animations, and approval flow
+ * without incurring LLM costs.
  *
  * Fixture theme: In-App Messaging & Trade Chat (xCube)
  */
@@ -60,16 +61,11 @@ export function isDemoMode(): boolean {
     const row = db.prepare(
       `SELECT rule_value FROM policies WHERE scope = 'global' AND rule_key = 'demo_mode_enabled'`
     ).get() as { rule_value: string } | undefined;
-    if (row) {
-      console.log(`[DEMO MODE] Policy found: demo_mode_enabled = ${row.rule_value}`);
-      return row.rule_value === 'true';
-    }
+    return row?.rule_value === 'true';
   } catch (err: any) {
     console.log(`[DEMO MODE] Policy query failed: ${err.message}`);
+    return false;
   }
-  const envMode = process.env.DEMO_MODE === 'true';
-  console.log(`[DEMO MODE] Env var DEMO_MODE = ${process.env.DEMO_MODE} (returns ${envMode})`);
-  return envMode;
 }
 
 /**
@@ -138,9 +134,17 @@ export const DEMO_STAGE_DELAY_MS: Record<string, number> = {
   epic_feature_planner:     2_000,
   solution_architect:       2_500,
   story_decomposition:      2_000,
-  story_decomposition_F1:   8_000,  // extra time so the multi-agent animation is visible
-  story_decomposition_F2:   2_000,
-  story_decomposition_F3:   2_000,
+  // Wave 1 — F1/F2/F3 are kicked off together (independent features, no dependsOn) and
+  // kept at the SAME delay so the UI visibly shows all three animating concurrently
+  // instead of one finishing long before its wave-mates.
+  story_decomposition_F1:   7_000,
+  story_decomposition_F2:   7_000,
+  story_decomposition_F3:   7_000,
+  // Wave 2 — F4/F5 are independent too, but the default max_parallel_features=3 concurrency
+  // cap spills them into a second batch. Shorter and equal so this smaller wave also reads
+  // as visibly parallel rather than sequential.
+  story_decomposition_F4:   4_000,
+  story_decomposition_F5:   4_000,
   prototype:                3_000,
   figma_design:             2_500,
   curator:                  1_500,

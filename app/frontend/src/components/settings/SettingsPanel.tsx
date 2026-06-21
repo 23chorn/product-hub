@@ -14,7 +14,7 @@ interface Settings {
   pipeline: { enabledStages: Record<string, boolean>; figmaBypassMode: boolean };
   qualityGates: { requireCriticReview: boolean; autoApproveCritic: boolean };
   integrations: { slackWebhookUrl: string | null };
-  demo: { enabled: boolean; projectPath: string | null; fixtureTheme: string };
+  demo: { enabled: boolean };
 }
 
 const STAGE_LABELS: Record<string, string> = {
@@ -201,7 +201,7 @@ export function SettingsPanel() {
                   description="When enabled, workflows use static fixture data instead of live LLM calls — useful for testing the pipeline UI and approval flow without API costs."
                 />
                 <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
-                  <FieldRow label="Demo mode enabled" hint="Overrides the DEMO_MODE environment variable. Takes effect on the next workflow run.">
+                  <FieldRow label="Demo mode enabled" hint="Auto-launches a sample demo initiative on the Home screen and hides it from pending-approval counts when off.">
                     <Toggle
                       checked={draft.demo.enabled}
                       onChange={v => patch('demo', { enabled: v })}

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
@@ -12,7 +12,6 @@ import { api } from '../../services/api';
 import { eventToMessage } from '../../utils/event-to-message';
 import { ChangeRequestSection } from './ChangeRequestSection';
 import { PipelineTerminalView } from '../workflow/PipelineTerminalView';
-import { MidWorkflowMessageInput } from './MidWorkflowMessageInput';
 
 export function CoordinatorChat() {
   const {
@@ -24,7 +23,6 @@ export function CoordinatorChat() {
     lastEventId, setLastEventId,
   } = useWorkflowStore();
 
-  const [reply, setReply] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [showDiffPanel, setShowDiffPanel] = useState(false);
   const [, setStageStale] = useState(false);
@@ -44,15 +42,6 @@ export function CoordinatorChat() {
   const [revisingStage, setRevisingStage] = useState<string | null>(null);
   const [lastActivityMs, setLastActivityMs] = useState(() => Date.now());
   const lastEventTimeRef = useRef(Date.now());
-
-  const replyRef = useRef<HTMLTextAreaElement>(null);
-
-  const autoResize = useCallback(() => {
-    const el = replyRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
-  }, []);
 
   const hasWorkflow = activeWorkflow !== null;
   const isComplete = activeWorkflow?.status === 'complete';
@@ -140,8 +129,6 @@ export function CoordinatorChat() {
 
         if (!cancelled && events.length > 0) {
           for (const event of events) {
-            if (event.event_type === 'user_input' || event.event_type === 'cos_response') continue;
-
             const msg = eventToMessage(event);
             if (!msg) continue;
 
@@ -224,11 +211,7 @@ export function CoordinatorChat() {
     api.getWorkflowEvents(activeWorkflow.id).then(({ events }) => {
       const msgs: Array<CoordinatorMessage> = [];
       for (const event of events) {
-        if (event.event_type === 'user_input') {
-          msgs.push({ role: 'human', content: event.summary, timestamp: event.created_at });
-        } else if (event.event_type === 'cos_response') {
-          msgs.push({ role: 'coordinator', content: event.summary, timestamp: event.created_at });
-        } else if (event.event_type === 'stage_progress') {
+        if (event.event_type === 'stage_progress') {
           // On replay, collapse progress events — only keep the latest one per stage
           let lastIdx = -1;
           for (let j = msgs.length - 1; j >= 0; j--) { if (msgs[j].isProgress) { lastIdx = j; break; } }
@@ -261,42 +244,12 @@ export function CoordinatorChat() {
     return () => clearInterval(t);
   }, [hasWorkflow, planningPhase, isComplete, isAtCheckpoint]);
 
-  // ── Mid-workflow message to the coordinator ───────────────────────────────
-  async function handleSendReply(e: React.FormEvent) {
-    e.preventDefault();
-    if (!reply.trim() || isStreaming || !activeWorkflow) return;
-    const message = reply.trim();
-    setReply('');
-    if (replyRef.current) replyRef.current.style.height = 'auto';
-    setError(null);
-    setIsStreaming(true);
-
-    addCoordinatorMessage({ role: 'human', content: message, timestamp: Date.now() });
-    addCoordinatorMessage({ role: 'coordinator', content: '', timestamp: Date.now() });
-
-    try {
-      await api.sendWorkflowMessage(
-        activeWorkflow.id,
-        message,
-        (chunk) => appendToLastCoordinatorMessage(chunk),
-        (_fullContent) => { setIsStreaming(false); },
-        (err) => { setError(err); setIsStreaming(false); }
-      );
-    } catch (err: any) {
-      setError(err.message ?? 'Failed to send message');
-      setIsStreaming(false);
-    }
-  }
-
   // ── Render ────────────────────────────────────────────────────────────────
 
   const rawGoal = activeWorkflow?.goal.includes('\n\n[Coordinator context]\n\n')
     ? activeWorkflow.goal.split('\n\n[Coordinator context]\n\n')[0]
     : activeWorkflow?.goal;
   const displayGoal = activeWorkflow?.summary || rawGoal;
-
-  // Mid-workflow message is available (collapsed by default) until the run completes.
-  const showMidWorkflowToggle = hasWorkflow && !isComplete;
 
   return (
     <div className="flex flex-col h-full">
@@ -434,22 +387,8 @@ export function CoordinatorChat() {
         </div>
       )}
 
-      {/* Mid-workflow: collapsed "Message coordinator" toggle */}
-      {showMidWorkflowToggle && (
-        <MidWorkflowMessageInput
-          reply={reply}
-          onReplyChange={setReply}
-          isStreaming={isStreaming}
-          error={error}
-          onClearError={() => setError(null)}
-          onSubmit={handleSendReply}
-          textareaRef={replyRef}
-          onAutoResize={autoResize}
-        />
-      )}
-
-      {/* Error display when no input is visible */}
-      {error && !showMidWorkflowToggle && (
+      {/* Error display */}
+      {error && (
         <div className="border-t border-slate-200 dark:border-slate-700 px-4 py-2 flex items-center gap-2 text-xs text-red-600 dark:text-red-400 flex-shrink-0">
           {error}
           <button onClick={() => setError(null)} className="ml-auto text-slate-400 hover:text-slate-600">✕</button>

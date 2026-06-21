@@ -440,6 +440,22 @@ export async function loadLatestArtifactContent(itemId: string, artifactType: st
 }
 
 /**
+ * Look up the Azure Wiki URL for the most recent artifact of a given type for an item.
+ * Cheap, sync, column-only read — does not load artifact content. Returns null if the
+ * artifact doesn't exist yet or was never synced to the wiki.
+ */
+export function loadLatestArtifactWikiUrl(itemId: string, artifactType: string): string | null {
+  const row = db.prepare<[string, string], { wiki_url: string | null }>(`
+    SELECT a.wiki_url
+    FROM artifacts a
+    JOIN sessions s ON a.session_id = s.id
+    WHERE s.item_id = ? AND a.type = ?
+    ORDER BY a.created_at DESC LIMIT 1
+  `).get(itemId, artifactType);
+  return row?.wiki_url ?? null;
+}
+
+/**
  * Update artifact content — writes to the primary store (MongoDB or disk).
  * If a wiki mirror exists for this artifact, best-effort refreshes it too (as Draft) —
  * a wiki push failure must not block saving the primary content.

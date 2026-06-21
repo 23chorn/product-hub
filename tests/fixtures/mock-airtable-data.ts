@@ -164,13 +164,6 @@ export const MOCK_SNAPSHOT_SEED: { airtableId: string; title: string; status: st
   { airtableId: 'recMOCK006', title: 'Instant Deposits',             status: 'Discovery' },
 ];
 
-export const MOCK_ITEMS_NEEDING_PRD = MOCK_ITEMS.filter(
-  item =>
-    (item.status === 'Discovery' || item.status === 'Ready') &&
-    !item.prdLink &&
-    item.requiresDevWork === 'Yes'
-);
-
 export const MOCK_ITEMS_NEEDING_BACKLOG = MOCK_ITEMS.filter(
   item => item.status === 'In Progress' && item.prdLink && !item.epicLink
 );

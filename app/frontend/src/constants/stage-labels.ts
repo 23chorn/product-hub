@@ -1,14 +1,13 @@
+import { STAGE_PERSONAS, stagePersonaLabel } from '@pap/shared';
+
+// Derived from the canonical STAGE_PERSONAS map (@pap/shared) so this stays in
+// sync with the backend's event-log labels instead of keeping its own copy.
 const STAGE_LABELS_BASE: Record<string, string> = {
-  analyst:              'Analyst — Sage',
-  pm_prd:               'Product Requirements — Rex',
-  epic_feature_planner: 'Epic & Feature Planning — Apex',
-  solution_architect:   'Architect — Atlas',
-  story_decomposition:  'Shard - Product Owner — Vera, Finn, Remi & Cole',
-  qa_engineer:          'QA Engineer — Vera',
-  prototype:            'Prototype — Nova',
-  figma_design:         'Figma Design — Luma',
-  critic:               'Critic — Flint',
-  curator:              'Curator — Ivy',
+  ...Object.fromEntries(
+    Object.keys(STAGE_PERSONAS).map(stage => [stage, stagePersonaLabel(stage)!])
+  ),
+  // System stages with no dedicated specialist persona
+  backlog_merge: 'Backlog Merge',
 };
 
 // Proxy to handle dynamic feature stages (story_decomposition_F1, F2, etc.)
@@ -44,16 +43,19 @@ export const STAGE_LABELS: Record<string, string> = new Proxy(STAGE_LABELS_BASE,
   }
 });
 
-// Stages available for user toggle at workflow start (order matters)
+// Stages available for user toggle at workflow start (order matters).
+// `label` uses the canonical STAGE_PERSONAS text where it fits; two entries below
+// (epic_feature_planner, story_decomposition) use deliberately shorter copy for
+// the toggle UI and are kept as explicit overrides rather than derived.
 export const TOGGLEABLE_STAGES: Array<{ key: string; label: string; short: string }> = [
-  { key: 'analyst',              label: 'Analyst — Sage',               short: 'Sage · Analyst' },
-  { key: 'pm_prd',               label: 'Requirements — Rex',           short: 'Rex · PM' },
-  { key: 'prototype',            label: 'Prototype — Nova',             short: 'Nova · Prototype' },
-  { key: 'figma_design',         label: 'Figma Design — Luma',          short: 'Luma · Figma' },
-  { key: 'solution_architect',   label: 'Architect — Atlas',            short: 'Atlas · Architect' },
+  { key: 'analyst',              label: stagePersonaLabel('analyst')!,             short: 'Sage · Analyst' },
+  { key: 'pm_prd',               label: stagePersonaLabel('pm_prd')!,              short: 'Rex · PM' },
+  { key: 'prototype',            label: stagePersonaLabel('prototype')!,           short: 'Nova · Prototype' },
+  { key: 'figma_design',         label: stagePersonaLabel('figma_design')!,        short: 'Luma · Figma' },
+  { key: 'solution_architect',   label: stagePersonaLabel('solution_architect')!,  short: 'Atlas · Architect' },
   { key: 'epic_feature_planner', label: 'Epic & Features — Apex',       short: 'Apex · Features' },
   { key: 'story_decomposition',  label: 'Shard - Product Owner',              short: 'Multi-Agent · Refinement' },
-  { key: 'curator',              label: 'Curator — Ivy',                short: 'Ivy · Curator' },
+  { key: 'curator',              label: stagePersonaLabel('curator')!,             short: 'Ivy · Curator' },
 ];
 
 const STAGE_SHORT_LABELS_BASE: Record<string, string> = {

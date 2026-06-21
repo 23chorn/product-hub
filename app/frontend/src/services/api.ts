@@ -15,8 +15,11 @@ import { prototypeApi } from './api/prototype';
 import { ticketsApi } from './api/tickets';
 import { demoApi } from './api/demo';
 import { usersApi } from './api/users';
+import { discoveryApi } from './api/discovery';
+import { statsApi } from './api/stats';
 
 export type { SkillVersion } from './api/types';
+export type { StatsDashboard } from './api/stats';
 
 export const api = {
   ...configApi,
@@ -30,4 +33,6 @@ export const api = {
   ...ticketsApi,
   ...demoApi,
   ...usersApi,
+  ...discoveryApi,
+  ...statsApi,
 };

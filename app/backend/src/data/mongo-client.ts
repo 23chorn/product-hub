@@ -65,15 +65,6 @@ function resetConnection(): void {
   _available = true;
 }
 
-export async function closeMongoDb(): Promise<void> {
-  if (_client) {
-    await _client.close();
-    _client = null;
-    _db = null;
-    _connectPromise = null;
-    _available = true;
-  }
-}
 
 // ── Collection accessor ───────────────────────────────────────────────────────
 

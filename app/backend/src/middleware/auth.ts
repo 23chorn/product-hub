@@ -2,7 +2,9 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { hasAnyUsers, getUserById } from '../data/users';
 import type { User } from '../data/users';
+import Logger from '../utils/logger';
 
+const logger = new Logger('AUTH');
 const JWT_SECRET = process.env.JWT_SECRET || 'pap-local-dev-secret-change-in-production';
 const COOKIE_NAME = 'pap_token';
 
@@ -52,6 +54,7 @@ export function authMiddleware(req: AuthRequest, res: Response, next: NextFuncti
     const payload = jwt.verify(token, JWT_SECRET) as unknown as { sub: number };
     const user = getUserById(payload.sub);
     if (!user) {
+      logger.warn(`Rejected request from ${req.ip} — token valid but user ${payload.sub} no longer exists (${req.method} ${req.originalUrl})`);
       clearAuthCookie(res);
       res.status(401).json({ error: 'User not found', code: 'UNAUTHENTICATED' });
       return;
@@ -59,7 +62,8 @@ export function authMiddleware(req: AuthRequest, res: Response, next: NextFuncti
     req.user = user;
     req.isAuthenticated = true;
     next();
-  } catch {
+  } catch (err: any) {
+    logger.warn(`Rejected request from ${req.ip} — ${err?.name ?? 'invalid token'} (${req.method} ${req.originalUrl})`);
     clearAuthCookie(res);
     res.status(401).json({ error: 'Session expired', code: 'UNAUTHENTICATED' });
   }
@@ -76,6 +80,18 @@ export function requireAdmin(req: AuthRequest, res: Response, next: NextFunction
     return;
   }
   next();
+}
+
+/**
+ * Require admin access or a specific named role. Must be used after authMiddleware.
+ * In no-auth mode (no users), passes through.
+ */
+export function requireRole(roleName: string) {
+  return (req: AuthRequest, res: Response, next: NextFunction): void => {
+    if (!hasAnyUsers()) return next();
+    if (req.user?.is_admin || req.user?.roles.includes(roleName)) return next();
+    res.status(403).json({ error: `${roleName} access required` });
+  };
 }
 
 /**

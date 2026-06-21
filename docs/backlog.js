@@ -2,16 +2,16 @@
 /**
  * backlog.js — read a feature backlog JSON for Claude Code
  *
- * The final feature file (e.g. story_decomposition_F3.json) accumulates all
- * previous features, so it is the complete backlog. Pass that file.
+ * Each feature is decomposed in isolation, then the backlog_merge stage combines
+ * them into one final "backlog" artifact containing every feature. Pass that file.
  *
  * Usage:
- *   node backlog.js F3.json              # summary table of all matching stories
- *   node backlog.js F3.json F1           # matching stories in Feature 1 only
- *   node backlog.js F3.json F1.S3        # single story as markdown
- *   node backlog.js F3.json --json       # raw JSON of all matching stories
- *   node backlog.js F3.json --json F1    # raw JSON of Feature 1's matching stories
- *   node backlog.js F3.json --json F1.S3 # raw JSON of one story
+ *   node backlog.js backlog.json              # summary table of all matching stories
+ *   node backlog.js backlog.json F1           # matching stories in Feature 1 only
+ *   node backlog.js backlog.json F1.S3        # single story as markdown
+ *   node backlog.js backlog.json --json       # raw JSON of all matching stories
+ *   node backlog.js backlog.json --json F1    # raw JSON of Feature 1's matching stories
+ *   node backlog.js backlog.json --json F1.S3 # raw JSON of one story
  */
 
 // ── Platform filter ────────────────────────────────────────────────────────────
@@ -25,7 +25,7 @@ const fs = require('fs');
 const [,, filePath, arg1, arg2] = process.argv;
 
 if (!filePath) {
-  console.error('Usage: node backlog.js <F3.json> [F1 | F1.S3 | --json] [F1 | F1.S3]');
+  console.error('Usage: node backlog.js <backlog.json> [F1 | F1.S3 | --json] [F1 | F1.S3]');
   process.exit(1);
 }
 

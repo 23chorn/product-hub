@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { validateAnalystJson } from '../../app/backend/src/agents/tool-validators';
 
-/** Parse a validator's stringified result. */
+/** Parse a validator's stringified result. Assumes web search was available, matching validAnalyst's fixture (real-looking references + inline citations). */
 function run(json: unknown): { valid: boolean; issues?: string[] } {
-  return JSON.parse(validateAnalystJson({ json: typeof json === 'string' ? json : JSON.stringify(json) }));
+  return JSON.parse(validateAnalystJson({
+    json: typeof json === 'string' ? json : JSON.stringify(json),
+    web_search_enabled: true,
+  }));
 }
 
 const validAnalyst = {
@@ -43,7 +46,7 @@ describe('validateAnalystJson', () => {
 
   it('strips markdown code fences before parsing', () => {
     const fenced = '```json\n' + JSON.stringify(validAnalyst) + '\n```';
-    expect(JSON.parse(validateAnalystJson({ json: fenced })).valid).toBe(true);
+    expect(JSON.parse(validateAnalystJson({ json: fenced, web_search_enabled: true })).valid).toBe(true);
   });
 
   it('flags missing required root fields', () => {

@@ -122,40 +122,6 @@ workflowQueryRoutes.get('/list/all', (req: AuthRequest, res: Response) => {
   }
 });
 
-// Pipeline demo data — QA test cases + workflow summary for the pipeline status panel
-workflowQueryRoutes.get('/:id/pipeline-demo', (req: Request, res: Response) => {
-  const fs = require('fs') as typeof import('fs');
-  const { id } = req.params;
-  try {
-    const wf = db.prepare<[string], { goal: string; summary: string | null }>(
-      'SELECT goal, summary FROM workflows WHERE id = ?'
-    ).get(id);
-    if (!wf) return res.status(404).json({ error: 'Workflow not found' });
-
-    const artifact = db.prepare<[string], { file_path: string }>(
-      `SELECT a.file_path FROM artifacts a
-       JOIN sessions s ON a.session_id = s.id
-       WHERE s.workflow_id = ? AND a.type = 'qa_tests'
-       ORDER BY a.created_at DESC LIMIT 1`
-    ).get(id);
-
-    let testCases: unknown[] = [];
-    if (artifact?.file_path && fs.existsSync(artifact.file_path)) {
-      try {
-        const parsed = JSON.parse(fs.readFileSync(artifact.file_path, 'utf-8'));
-        testCases = parsed.test_cases ?? [];
-      } catch { /* use empty */ }
-    }
-
-    res.json({
-      summary: wf.summary ?? wf.goal.split('\n')[0].slice(0, 80),
-      testCases,
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 /**
  * GET /api/workflow/:id/checkpoints
  * Returns all checkpoints for the workflow, each enriched with artifact metadata

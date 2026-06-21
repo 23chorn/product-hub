@@ -1,21 +1,22 @@
 # Backlog Ticket Schema
 
-Work items are delivered as a **single accumulated JSON file** — the last stage to complete contains all features. Each stage appends its feature to the file, so `story_decomposition_F3.json` holds F1, F2, and F3. This document describes every field so a Claude Code instance can parse the artifact and map it accurately to implementation work.
+Each feature is decomposed and stored in isolation (`backlog_F1`, `backlog_F2`, ...), then a final `backlog_merge` stage combines them into one `backlog` artifact containing every feature. This document describes every field so a Claude Code instance can parse the artifact and map it accurately to implementation work.
 
 ---
 
 ## File Layout
 
-Each `story_decomposition_F*` stage produces its own artifact file, accumulating all previous features:
+Each `story_decomposition_F*` stage produces its own isolated artifact (that feature only); the `backlog_merge` stage then produces the final combined artifact:
 
 ```
 data/sessions/{itemId}/
-  story_decomposition_F1/artifacts/{timestamp}-story_decomposition_F1.json  ← F1 only
-  story_decomposition_F2/artifacts/{timestamp}-story_decomposition_F2.json  ← F1 + F2
-  story_decomposition_F3/artifacts/{timestamp}-story_decomposition_F3.json  ← F1 + F2 + F3 (complete)
+  story_decomposition_F1/artifacts/{timestamp}-backlog_F1.json  ← F1 only
+  story_decomposition_F2/artifacts/{timestamp}-backlog_F2.json  ← F2 only
+  story_decomposition_F3/artifacts/{timestamp}-backlog_F3.json  ← F3 only
+  backlog_merge/artifacts/{timestamp}-backlog.json              ← F1 + F2 + F3 merged (complete)
 ```
 
-**Pass the last file produced** (F3, or F2 if only two features ran). It contains the full backlog.
+**Pass the final merged file** (artifact type `backlog`, produced by `backlog_merge`). It contains the full backlog.
 
 ---
 
@@ -31,7 +32,7 @@ data/sessions/{itemId}/
 | Field      | Type            | Description |
 |------------|-----------------|-------------|
 | `epic`     | object          | The overarching initiative — maps to an ADO Epic work item |
-| `features` | array of object | All features in the epic, in order (F1, F2, F3). The last file produced contains all of them. |
+| `features` | array of object | All features in the epic, in order (F1, F2, F3). The merged `backlog` artifact contains all of them. |
 
 ---
 
@@ -175,7 +176,7 @@ Cross-feature dependencies (e.g. F2.S1 depending on F1.S4) are also expressed vi
 
 ## Working with the Backlog in Claude Code
 
-Pass the last feature file (complete backlog). Use `backlog.js` (in this `docs/` folder) to slice it.
+Pass the final merged backlog file. Use `backlog.js` (in this `docs/` folder) to slice it.
 
 ### Platform filter
 
@@ -191,30 +192,30 @@ Set this before running. Each team gets their own copy of the script set to thei
 
 ```bash
 # Summary table — all matching stories across all features
-node docs/backlog.js F3.json
+node docs/backlog.js backlog.json
 
 # Matching stories in one feature only
-node docs/backlog.js F3.json F1
+node docs/backlog.js backlog.json F1
 
 # A single story as markdown (platform filter ignored)
-node docs/backlog.js F3.json F1.S3
+node docs/backlog.js backlog.json F1.S3
 
 # Raw JSON of all matching stories
-node docs/backlog.js F3.json --json
+node docs/backlog.js backlog.json --json
 
 # Raw JSON of one feature's matching stories
-node docs/backlog.js F3.json --json F1
+node docs/backlog.js backlog.json --json F1
 
 # Raw JSON of one story
-node docs/backlog.js F3.json --json F1.S3
+node docs/backlog.js backlog.json --json F1.S3
 ```
 
 ### Recommended workflow
 
 1. Set `PLATFORM` in the script to your stream (`'web'` or `'backend'`)
-2. Run `node docs/backlog.js F3.json > context.md` to capture all your stories as markdown
+2. Run `node docs/backlog.js backlog.json > context.md` to capture all your stories as markdown
 3. Open your repo in Claude Code and pass the context: `claude "Implement these stories in dependency order" < context.md`
-4. Or work feature-by-feature: `node docs/backlog.js F3.json F1 | claude "Implement Feature 1 stories"`
+4. Or work feature-by-feature: `node docs/backlog.js backlog.json F1 | claude "Implement Feature 1 stories"`
 5. Follow `depends_on` ordering — stories are pre-sorted but cross-stream dependencies (e.g. backend API must exist before web story) are explicit in the field
 
 The full file contains everything Claude Code needs. Use feature key filtering (`F1`, `F2`, `F3`) to scope a session to one feature at a time.

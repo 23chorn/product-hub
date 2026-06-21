@@ -541,6 +541,38 @@ export async function pushEpicAndFeaturesToADO(
   // to each other in ADO) are still identifiable as one initiative.
   const initiativeTag = buildInitiativeTag(epicFeatures.epic.title);
 
+  // Reference links back to the docs this epic was built from (Research, PRD, Solution
+  // Architecture wiki pages + the Figma file) — already produced earlier in the pipeline,
+  // so they're available now and get attached to every epic created below for easy reference.
+  const { loadLatestArtifactWikiUrl } = await import('./artifact-helpers');
+  const referenceLinks: Array<{ url: string; comment: string }> = [];
+  const researchWikiUrl = loadLatestArtifactWikiUrl(workflow.item_id, 'analyst');
+  if (researchWikiUrl) referenceLinks.push({ url: researchWikiUrl, comment: 'Research Brief' });
+  const prdWikiUrl = loadLatestArtifactWikiUrl(workflow.item_id, 'prd');
+  if (prdWikiUrl) referenceLinks.push({ url: prdWikiUrl, comment: 'PRD' });
+  const architectureWikiUrl = loadLatestArtifactWikiUrl(workflow.item_id, 'architecture');
+  if (architectureWikiUrl) referenceLinks.push({ url: architectureWikiUrl, comment: 'Solution Architecture' });
+  const figmaDesignContent = await loadLatestArtifactContent(workflow.item_id, 'figma_design');
+  if (figmaDesignContent) {
+    try {
+      const figmaCleaned = figmaDesignContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+      const figmaFileUrl = JSON.parse(figmaCleaned).figma_file_url;
+      if (figmaFileUrl) referenceLinks.push({ url: figmaFileUrl, comment: 'Figma Mockups' });
+    } catch {
+      logger.warn('[EPIC PUSH] figma_design artifact present but not parseable for figma_file_url — skipping link');
+    }
+  }
+
+  const attachReferenceLinks = async (epicId: number): Promise<void> => {
+    for (const link of referenceLinks) {
+      try {
+        await client.addHyperlinkToWorkItem(epicId, link.url, link.comment);
+      } catch (err: any) {
+        logger.warn(`[EPIC PUSH] Failed to attach "${link.comment}" link to epic #${epicId}: ${err.message}`);
+      }
+    }
+  };
+
   // New phases[] format: create one ADO epic per phase, features nested under it.
   // Legacy format: create a single ADO epic for the whole initiative.
   const featureIds: number[] = [];
@@ -568,6 +600,7 @@ export async function pushEpicAndFeaturesToADO(
       });
       const phaseEpicId = phaseEpic.id!;
       if (firstEpicId === null) firstEpicId = phaseEpicId;
+      await attachReferenceLinks(phaseEpicId);
 
       const phaseKey = `epic_${phase.label.toLowerCase().replace(/\s+/g, '_')}`;
       const phaseEpicUrl = client.getEpicUrl(phaseEpicId);
@@ -609,6 +642,7 @@ export async function pushEpicAndFeaturesToADO(
       tags: initiativeTag,
     });
     firstEpicId = epic.id!;
+    await attachReferenceLinks(firstEpicId);
     const epicUrl = client.getEpicUrl(firstEpicId);
     db.prepare(`
       INSERT INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, title, created_at)

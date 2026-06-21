@@ -7,7 +7,7 @@
  */
 
 import db from '../data/database';
-import { CoordinatorAgent } from './coordinator-agent';
+import { getCoordinator } from './workflow-agents';
 import {
   reiterateFromStage,
   getWorkflowStatus,
@@ -88,9 +88,6 @@ const stmts = {
   getLatestCRVersion: db.prepare<[number, string], { version: number }>(
     'SELECT MAX(version) as version FROM cr_artifact_versions WHERE change_request_id = ? AND stage = ?'
   ),
-  getArtifactVersionsForArtifact: db.prepare<[number], { change_request_id: number; version: number; stage: string }>(
-    'SELECT change_request_id, version, stage FROM cr_artifact_versions WHERE artifact_id = ?'
-  ),
   insertEvent: db.prepare(`
     INSERT INTO workflow_events (workflow_id, event_type, stage, summary, details, created_at)
     VALUES (?, ?, ?, ?, ?, ?)
@@ -109,14 +106,6 @@ function insertEvent(
     details ? JSON.stringify(details) : null,
     Date.now()
   );
-}
-
-// ── Coordinator singleton ────────────────────────────────────────────────────
-
-let _coordinator: CoordinatorAgent | null = null;
-function getCoordinator(): CoordinatorAgent {
-  if (!_coordinator) _coordinator = new CoordinatorAgent();
-  return _coordinator;
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -440,16 +429,4 @@ export function completeChangeRequest(crId: number, workflowId: string): void {
   );
 
   logger.info(`CR #${crId} completed`);
-}
-
-/**
- * Get CR artifact version info for a given artifact ID.
- * Used by the frontend to display version badges.
- */
-export function getArtifactVersionInfo(artifactId: number): {
-  change_request_id: number;
-  version: number;
-  stage: string;
-} | undefined {
-  return stmts.getArtifactVersionsForArtifact.get(artifactId);
 }

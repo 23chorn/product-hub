@@ -50,21 +50,3 @@ export interface WorkflowEvent {
   details: string | null;
   created_at: number;
 }
-
-export interface StageTokenData {
-  specialist: {
-    model: string;
-    inputTokens: number;
-    outputTokens: number;
-    cacheReadTokens: number;
-    cacheWriteTokens: number;
-    searchCount: number;
-  };
-  critic?: {
-    model: string;
-    inputTokens: number;
-    outputTokens: number;
-    cacheReadTokens: number;
-    cacheWriteTokens: number;
-  };
-}

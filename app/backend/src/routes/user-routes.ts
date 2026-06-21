@@ -6,9 +6,16 @@ import {
 import { authMiddleware, requireAdmin } from '../middleware/auth';
 import type { AuthRequest } from '../middleware/auth';
 import db from '../data/database';
+import Logger from '../utils/logger';
 
+const logger = new Logger('USER-ROUTES');
 const router = Router();
 router.use(authMiddleware, requireAdmin);
+
+/** Identifies the admin performing a mutation, for audit logging. */
+function actor(req: AuthRequest): string {
+  return req.user ? `${req.user.id} (${req.user.username})` : 'system';
+}
 
 /** GET /api/users — list all users */
 router.get('/', (_req: AuthRequest, res: Response) => {
@@ -26,6 +33,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
   }
   try {
     const user = await createUser({ username: username.trim(), email: email?.trim() || null, name: name.trim(), password, is_admin, slack_user_id, roles });
+    logger.info(`User ${user.id} (${user.username}) created by ${actor(req)}`);
     res.status(201).json({ user });
   } catch (err: any) {
     if (err.message?.includes('UNIQUE')) {
@@ -50,6 +58,7 @@ router.put('/stage-roles', (req: AuthRequest, res: Response) => {
   const { stage, role_name } = req.body as { stage?: string; role_name?: string };
   if (!stage || !role_name) return res.status(400).json({ error: 'stage and role_name are required' });
   addStageRole(stage, role_name);
+  logger.info(`Stage role "${role_name}" added to stage "${stage}" by ${actor(req)}`);
   res.json({ ok: true });
 });
 
@@ -58,6 +67,7 @@ router.post('/stage-roles', (req: AuthRequest, res: Response) => {
   const { stage, role_name } = req.body as { stage?: string; role_name?: string };
   if (!stage || !role_name) return res.status(400).json({ error: 'stage and role_name are required' });
   addStageRole(stage, role_name);
+  logger.info(`Stage role "${role_name}" added to stage "${stage}" by ${actor(req)}`);
   res.json({ ok: true });
 });
 
@@ -66,6 +76,7 @@ router.delete('/stage-roles', (req: AuthRequest, res: Response) => {
   const { stage, role_name } = req.body as { stage?: string; role_name?: string };
   if (!stage || !role_name) return res.status(400).json({ error: 'stage and role_name are required' });
   removeStageRole(stage, role_name);
+  logger.info(`Stage role "${role_name}" removed from stage "${stage}" by ${actor(req)}`);
   res.json({ ok: true });
 });
 
@@ -76,6 +87,7 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
   const { username, name, email, password, is_admin, slack_user_id, roles } = req.body;
   const user = await updateUser(id, { username, name, email, password, is_admin, slack_user_id, roles });
   if (!user) return res.status(404).json({ error: 'User not found' });
+  logger.info(`User ${user.id} (${user.username}) updated by ${actor(req)}${password ? ' [password changed]' : ''}`);
   res.json({ user });
 });
 
@@ -86,6 +98,7 @@ router.delete('/:id', (req: AuthRequest, res: Response) => {
   if (req.user?.id === id) return res.status(400).json({ error: 'Cannot delete your own account' });
   const ok = deleteUser(id);
   if (!ok) return res.status(404).json({ error: 'User not found' });
+  logger.info(`User ${id} deleted by ${actor(req)}`);
   res.json({ ok: true });
 });
 

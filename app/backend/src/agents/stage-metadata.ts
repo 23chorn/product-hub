@@ -1,4 +1,4 @@
-import type { AppMode, AgentType } from '@pap/shared';
+import { STAGE_PERSONAS, stagePersonaLabel, type AppMode, type AgentType } from '@pap/shared';
 
 // ── Stage → specialist session mapping ────────────────────────────────────────
 
@@ -36,7 +36,9 @@ export const STAGE_ARTIFACT_TYPE: Record<string, string> = {
   figma_design:         'figma_design',
 };
 
-// Human-readable labels for stage names (used for revision diffs and events)
+// Human-readable labels for stage names (used for revision diffs and events).
+// Also the canonical source for Slack notification labels (see slack-notifier.ts)
+// — add new stages here so notifications don't fall back to the raw stage key.
 export const STAGE_ARTIFACT_LABEL: Record<string, string> = {
   analyst: 'Research Brief',
   pm_prd: 'PRD',
@@ -46,6 +48,10 @@ export const STAGE_ARTIFACT_LABEL: Record<string, string> = {
   figma_design: 'Figma Mockups',
   story_decomposition: 'Stories',
   backlog_merge: 'Backlog',
+  qa_engineer: 'QA Tests',
+  curator: 'Context Update',
+  tech_refinement: 'Tech Refinement',
+  critic: 'Critic Review',
 };
 
 /**
@@ -59,27 +65,18 @@ export function checkpointArtifactLabel(stage: string): string {
   return STAGE_ARTIFACT_LABEL[stage] ?? stage;
 }
 
-// Internal labels used for event messages and logging
-export const STAGE_LABELS_INTERNAL: Record<string, string> = {
-  analyst:              'Analyst — Sage',
-  pm_prd:               'Requirements — Rex',
-  epic_feature_planner: 'Epic & Feature Planning — Apex',
-  solution_architect:   'Architect — Atlas',
-  prototype:            'Prototype — Nova',
-  figma_design:         'Figma Design — Luma',
-  critic:               'Critic — Flint',
-  curator:              'Curator — Ivy',
-};
+// Internal labels used for event messages and logging.
+// Derived from the canonical STAGE_PERSONAS map (@pap/shared) so this stays in
+// sync with the frontend's stage labels instead of keeping its own copy.
+export const STAGE_LABELS_INTERNAL: Record<string, string> = Object.fromEntries(
+  Object.keys(STAGE_PERSONAS).map(stage => [stage, stagePersonaLabel(stage)!])
+);
 
-// Brief labels used in coordinator stage briefing
-export const STAGE_LABELS_BRIEF: Record<string, string> = {
-  analyst:              'Research Brief (Sage)',
-  pm_prd:               'PRD (Rex)',
-  epic_feature_planner: 'Epic & Features (Apex)',
-  solution_architect:   'Architecture Document (Atlas)',
-  prototype:            'Prototype (Nova)',
-  figma_design:         'Figma Mockups (Luma)',
-};
+// Brief labels used in coordinator stage briefing — artifact noun + persona first name.
+const BRIEF_STAGES = ['analyst', 'pm_prd', 'epic_feature_planner', 'solution_architect', 'prototype', 'figma_design'] as const;
+export const STAGE_LABELS_BRIEF: Record<string, string> = Object.fromEntries(
+  BRIEF_STAGES.map(stage => [stage, `${STAGE_ARTIFACT_LABEL[stage]} (${STAGE_PERSONAS[stage].persona})`])
+);
 
 // ── Per-stage output format specifications ────────────────────────────────────
 
@@ -151,19 +148,19 @@ If a context/tech-stack.md file was provided, align all choices with the existin
 
   prototype: {
     label: 'Prototype (Nova)',
-    format: `Generate an interactive React prototype demonstrating the key user journeys from the PRD and architecture document. The output is a JSON file-map rendered in-browser via Sandpack. The prototype should cover the primary screens and user flows described in the PRD — not implement full backend logic, but show realistic UI interactions and navigation. Focus on fidelity to the approved product design, not on inventing new features.`,
+    format: `Generate a low-fidelity wireframe prototype of ONLY the screen(s) directly affected by this change — typically the main screen plus a before/after pair if the change involves a transition or state change. Do not build out the full app or unrelated user journeys. The output is a JSON file-map rendered in-browser via Sandpack, built from a small set of generic, reusable components (not the brand design system) so reviewers focus on layout and flow rather than visual polish. Keep icons and visuals deliberately plain — this stage is about layout and user flow, not detail.`,
   },
 
   figma_design: {
     label: 'Figma Mockups (Luma)',
-    format: `Read design tokens from the Figma design system file, then produce a JSON artifact describing the screen mockups to be created in the target Figma file.
+    format: `Produce a concise JSON design brief a human designer can act on directly — not a full design spec.
 
 Key requirements:
-- **design_tokens_extracted**: List the key tokens you found (colors, typography, spacing, components). Flag any gaps as design_gaps.
-- **screens_created**: 3–8 screens covering the primary PRD user journeys. Each screen must reference the PRD journey it satisfies, list the design system tokens it uses, and describe interactions that link to other screens.
-- **figma_write_status**: Set to "planned" if FIGMA_MOCKUP_FILE is not configured; "created" if frames were written via the Figma REST API; "partial" if some frames were written.
+- **screens_created**: 3–8 screens covering the primary PRD user journeys. Each screen must reference the PRD journey it satisfies, give the designer the few layout notes that matter, and describe interactions that link to other screens.
+- **design_gaps**: Flag any component or pattern these screens need that doesn't exist in the design system yet. Empty array if none.
+- **figma_write_status**: Always "planned" — later steps stamp this automatically once the brief is posted or a designer marks it reviewed.
 - **navigation_flow**: ASCII diagram showing screen-to-screen navigation.
-- **notes**: Summarise the design approach, any gaps, and whether the Figma write was executed or deferred.
+- **notes**: One or two sentences on anything the designer needs to resolve themselves.
 
 Follow the output template injected into your system prompt for the exact JSON schema.`,
   },
@@ -212,8 +209,8 @@ export function stageGoal(stage: string, goal: string): string {
     pm_prd:               `Produce a complete PRD that translates research findings into clear product requirements and success criteria for: ${goal}`,
     epic_feature_planner: `Decompose the PRD requirements into a clear epic and feature structure (2-8 features) with feature-level acceptance criteria and phase labels for: ${goal}`,
     solution_architect:   `Produce a cross-platform architecture document covering technology decisions, data model, API surface, repository impact across all repos, and cross-platform contracts — to serve as the technical reference for epic planning and story decomposition for: ${goal}`,
-    prototype:            `Produce an interactive React prototype that demonstrates the key user journeys from the PRD and architecture document for: ${goal}`,
-    figma_design:         `Read design tokens from the Figma design system and produce a JSON artifact describing the screen mockups to be created in the target Figma file for: ${goal}`,
+    prototype:            `Produce a focused, low-fidelity wireframe of the screen(s) where this change occurs (plus before/after states if there's a transition), built from generic reusable components rather than branded visuals, for: ${goal}`,
+    figma_design:         `Produce a concise screen-by-screen design brief a human designer can use to build the mockups in Figma for: ${goal}`,
   };
   const outputLabel = STAGE_LABELS_BRIEF[stage] ?? stage;
   return STAGE_GOAL[stage] ?? `Produce the required ${outputLabel} for: ${goal}`;
@@ -225,7 +222,7 @@ export function stageProgressTarget(stage: string): string {
     pm_prd: 'the PRD',
     epic_feature_planner: 'the epic and feature breakdown',
     solution_architect: 'the Architecture Document',
-    prototype: 'the prototype screens and file map',
+    prototype: 'the prototype wireframe and file map',
     figma_design: 'the Figma mockup plan',
   };
   return target[stage] ?? `the ${STAGE_ARTIFACT_LABEL[stage] ?? stage}`;
@@ -257,13 +254,27 @@ export function stageProgressSection(stage: string, section: string, index?: num
   return `Writing ${section} in ${target}...`;
 }
 
+/**
+ * Build a periodic "still working" progress line from an elapsed time + character count.
+ * Shared by every long-running streaming loop (single-specialist and multi-agent) so a
+ * stage proves it's alive between structural progress events (section/phase changes).
+ *
+ * Below ~200 chars the model has likely produced no visible text yet (tool calls,
+ * web search, extended thinking) — reporting "0k chars drafted" there reads as stuck
+ * even though real work is happening, so say so honestly instead of printing a zero.
+ */
+export function progressHeartbeatLine(label: string, elapsedSec: number, writtenChars: number): string {
+  if (writtenChars < 200) {
+    return `${label} — ${elapsedSec}s elapsed, preparing before drafting begins...`;
+  }
+  const kChars = Math.max(1, Math.round(writtenChars / 1000));
+  return `${label} — ${elapsedSec}s elapsed, ${kChars}k chars drafted`;
+}
+
 export function stageProgressHeartbeat(stage: string, elapsedSec: number, writtenChars: number): string {
   const target = stageProgressTarget(stage);
-  if (stage === 'prototype') {
-    const fileCount = Math.max(1, Math.round(writtenChars / 1000));
-    return `Still generating ${target} — ${elapsedSec}s elapsed, ${fileCount}k chars drafted`;
-  }
-  return `Still writing ${target} — ${elapsedSec}s elapsed, ${Math.round(writtenChars / 1000)}k chars drafted`;
+  const verb = stage === 'prototype' ? 'Still generating' : 'Still writing';
+  return progressHeartbeatLine(`${verb} ${target}`, elapsedSec, writtenChars);
 }
 
 export function stageProgressBriefing(stage: string): string {

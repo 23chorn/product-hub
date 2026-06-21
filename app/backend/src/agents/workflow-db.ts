@@ -45,29 +45,6 @@ export interface CheckpointRow {
   resolved_at: number | null;
 }
 
-export interface WorkflowStatus {
-  workflow: WorkflowRow;
-  checkpoints: CheckpointRow[];
-  currentStage: string | null;
-  completedStages: string[];
-  pendingStage: string | null;
-  pendingStages: string[];       // every pending checkpoint's stage (multiple when a wave is mid-review)
-  inProgressStages: string[];    // every stage currently running concurrently (the active wave, or [currentStage])
-  currentSessionId: string | null;
-  productArea?: string;
-  strategicTheme?: string;
-}
-
-export interface WorkflowEvent {
-  id: number;
-  workflow_id: string;
-  event_type: string;
-  stage: string | null;
-  summary: string;
-  details: string | null;
-  created_at: number;
-}
-
 /** Token usage breakdown stored per-stage on the checkpoint row. */
 export interface StageTokenData {
   specialist: {
@@ -160,12 +137,6 @@ export const eventStmts = {
     INSERT INTO workflow_events (workflow_id, event_type, stage, summary, details, created_at)
     VALUES (?, ?, ?, ?, ?, ?)
   `),
-  getEventsSince: db.prepare<[string, number], WorkflowEvent>(`
-    SELECT * FROM workflow_events WHERE workflow_id = ? AND id > ? ORDER BY id ASC
-  `),
-  getAllEvents: db.prepare<[string], WorkflowEvent>(
-    'SELECT * FROM workflow_events WHERE workflow_id = ? ORDER BY id ASC'
-  ),
 };
 
 // ── Helper functions ───────────────────────────────────────────────────────────
@@ -232,13 +203,6 @@ export function touchWorkflow(workflowId: string): void {
 export function setCheckpointTokenUsage(checkpointRowId: number, data: StageTokenData): void {
   db.prepare('UPDATE checkpoints SET token_usage = ? WHERE id = ?')
     .run(JSON.stringify(data), checkpointRowId);
-}
-
-export function getWorkflowEvents(workflowId: string, sinceId?: number): WorkflowEvent[] {
-  if (sinceId !== undefined && sinceId > 0) {
-    return eventStmts.getEventsSince.all(workflowId, sinceId);
-  }
-  return eventStmts.getAllEvents.all(workflowId);
 }
 
 // ── Late-binding registry for circular dependency resolution ───────────────────

@@ -19,6 +19,10 @@ const stmts = {
        status = excluded.status,
        last_checked = excluded.last_checked`
   ),
+  markShipped: db.prepare(
+    `UPDATE items SET status = 'shipped', shipped_at = ?, updated_at = ?
+     WHERE airtable_id = ? AND shipped_at IS NULL`
+  ),
 
   // Proposals (context_change_proposals)
   insertProposal: db.prepare(
@@ -60,6 +64,12 @@ class ContextStore {
 
   upsertSnapshot(airtableId: string, title: string, status: string): void {
     stmts.upsertSnapshot.run(airtableId, title, status, Date.now());
+  }
+
+  /** Marks the local item shipped (production milestone) the first time its linked Airtable record's Status flips to 'Shipped'. */
+  markShipped(airtableId: string): void {
+    const now = Date.now();
+    stmts.markShipped.run(now, now, airtableId);
   }
 
   // Proposals

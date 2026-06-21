@@ -86,4 +86,22 @@ export const contextApi = {
     const response = await axios.get(`${API_BASE_URL}/api/context-files/${encodeURIComponent(fileName)}/versions`);
     return response.data;
   },
+
+  // ── Behaviour docs (editor) ──
+  async getBehaviourFiles(): Promise<{ files: Array<{
+    fileName: string; label: string; description: string; content: string; editRoles: string[] | null;
+  }> }> {
+    const response = await axios.get(`${API_BASE_URL}/api/behaviour-files`);
+    return response.data;
+  },
+
+  async saveBehaviourFile(fileName: string, content: string): Promise<{ ok: boolean }> {
+    const response = await axios.put(`${API_BASE_URL}/api/behaviour-files/${encodeURIComponent(fileName)}`, { content });
+    return response.data;
+  },
+
+  async getBehaviourFileVersions(fileName: string): Promise<{ versions: Array<{ id: number; file_name: string; content: string; created_at: number }> }> {
+    const response = await axios.get(`${API_BASE_URL}/api/behaviour-files/${encodeURIComponent(fileName)}/versions`);
+    return response.data;
+  },
 };

@@ -304,8 +304,11 @@ export async function loadFigmaMockupFileData(itemId?: string): Promise<string> 
 const FRONTEND_PLATFORMS = new Set(['web', 'ios', 'android']);
 
 /**
- * After the designer marks Figma complete, embed Figma links into the ADO tickets
- * for every frontend story (platform = web | ios | android) in this workflow.
+ * After stories are pushed to Azure Boards (story_decomposition), embed Figma links
+ * into the ADO tickets for every frontend story (platform = web | ios | android) in
+ * this workflow. Figma design always runs before story_decomposition in the stage
+ * sequence, so the figma_design artifact and the ADO story mappings both already
+ * exist by the time this is called.
  *
  * Each story gets:
  *   - The Figma file as a Hyperlink relation (shows up in the Links tab)
@@ -316,13 +319,23 @@ const FRONTEND_PLATFORMS = new Set(['web', 'ios', 'android']);
 export async function embedFigmaLinksInFrontendTickets(
   workflowId: string,
   itemId: string,
-  figmaArtifact: {
-    figma_file_url?: string;
-    screens_created?: Array<{ name: string; frame_url?: string }>;
-  },
 ): Promise<void> {
   const { appConfig } = require('../config/app-config');
   if (appConfig.integrations.workItems !== 'ado') return;
+
+  const figmaRaw = await loadLatestArtifactContent(itemId, 'figma_design');
+  if (!figmaRaw) {
+    logger.info('[FIGMA-ADO] No figma_design artifact found — skipping link embed');
+    return;
+  }
+
+  let figmaArtifact: { figma_file_url?: string; screens_created?: Array<{ name: string; frame_url?: string }> };
+  try {
+    figmaArtifact = JSON.parse(figmaRaw);
+  } catch {
+    logger.warn('[FIGMA-ADO] Could not parse figma_design artifact JSON — skipping link embed');
+    return;
+  }
 
   const fileUrl = figmaArtifact.figma_file_url;
   if (!fileUrl) {
@@ -347,7 +360,7 @@ export async function embedFigmaLinksInFrontendTickets(
   const adoIdByKey = new Map(storyMappings.map(m => [m.local_key, m.ado_id]));
 
   // Load the latest merged backlog artifact to find frontend stories
-  const backlogRaw = await (await import('./artifact-helpers')).loadLatestArtifactContent(itemId, 'backlog');
+  const backlogRaw = await loadLatestArtifactContent(itemId, 'backlog');
   if (!backlogRaw) {
     logger.info('[FIGMA-ADO] No backlog artifact found — skipping link embed');
     return;

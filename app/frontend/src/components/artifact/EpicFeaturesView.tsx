@@ -111,7 +111,7 @@ function FeatureCard({ feature, idx }: { feature: EpicFeature; idx: number }) {
     <div className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
       <button
         onClick={() => setExpanded(e => !e)}
-        className="w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-750 transition-colors"
+        className="w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
         disabled={!hasDetail}
       >
         <div className="flex items-start gap-3">

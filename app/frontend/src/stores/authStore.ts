@@ -76,10 +76,19 @@ export function canLaunchWorkflow(user: CurrentUser | null, noAuth: boolean): bo
   return user.roles.includes('product');
 }
 
+/** Admins and the read-only 'management' role can view the stats dashboard. */
+export function canViewStats(user: CurrentUser | null, noAuth: boolean): boolean {
+  if (noAuth) return true;
+  if (!user) return false;
+  if (user.is_admin) return true;
+  return user.roles.includes('management');
+}
+
 export const ROLE_LABELS: Record<string, string> = {
   product: 'Product',
   tech_lead: 'Tech Lead',
   design: 'Design',
   qa: 'QA',
   view_only: 'View Only',
+  management: 'Management',
 };

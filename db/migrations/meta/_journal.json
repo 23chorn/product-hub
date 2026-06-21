@@ -57,6 +57,27 @@
       "when": 1750400200000,
       "tag": "0008_view_only_role",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1750400300000,
+      "tag": "0009_discovery_mode",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1750400400000,
+      "tag": "0010_items_shipped_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1750400500000,
+      "tag": "0011_management_role",
+      "breakpoints": true
     }
   ]
 }

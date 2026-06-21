@@ -14,6 +14,7 @@ import { logger, insertEvent, touchWorkflow } from './workflow-db';
 import { getDemoFixture, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
 import { loadLatestArtifactContent } from './artifact-helpers';
 import { SpecialistAgent } from './specialist-agent';
+import { progressHeartbeatLine } from './stage-metadata';
 import type { AgentType } from '@pap/shared';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -34,49 +35,189 @@ const PARTICIPANTS: RefinementParticipant[] = [
   { name: 'Dex', agentType: 'android-engineer', role: 'Android Engineer — Kotlin & Android Platforms' },
 ];
 
+export interface ProductAreaScope {
+  /** Raw productArea label from item metadata (e.g. "Mobile App"), or null when unset/unrecognised. */
+  area: string | null;
+  hasWeb: boolean;
+  hasIOS: boolean;
+  hasAndroid: boolean;
+}
+
 /**
- * Filter the participant list based on the productArea stored in items.metadata.
- * - Shard - Product Owner (Product) and Vera (QA) are always included.
- * - Finn (Backend) is always included.
- * - Remi (Web) only when productArea includes web/browser/desktop.
- * - iOS Cole only when productArea includes mobile/ios/app.
- * - Android Cole only when productArea includes mobile/android/app.
- * Falls back to all participants when productArea is unset or unrecognised.
+ * Resolve the platform scope from the productArea stored in items.metadata.
+ * Used to (a) filter which engineer participants join the refinement session,
+ * (b) tell every participant which platform(s) are in scope, and (c) enforce
+ * that scope on the synthesized artifacts as a backstop against the model
+ * ignoring the instruction. Exported so feature-stage-runner.ts's revision
+ * paths can apply the same scope when surgically editing a single feature.
+ *
+ * When productArea is unset or doesn't match a recognised platform keyword,
+ * all platforms are treated as in-scope (no enforcement).
  */
-function resolveRefinementParticipants(itemId: string): RefinementParticipant[] {
+export function resolveProductAreaScope(itemId: string): ProductAreaScope {
+  const unscoped: ProductAreaScope = { area: null, hasWeb: true, hasIOS: true, hasAndroid: true };
   try {
     const row = db
       .prepare<[string], { metadata: string | null }>('SELECT metadata FROM items WHERE id = ?')
       .get(itemId);
-    if (!row?.metadata) return PARTICIPANTS;
+    if (!row?.metadata) return unscoped;
     const meta = JSON.parse(row.metadata) as Record<string, unknown>;
 
     // productArea may be a string or an array of strings
     const rawArea = meta.productArea;
-    const area = Array.isArray(rawArea)
-      ? rawArea.join(' ').toLowerCase()
-      : typeof rawArea === 'string'
-        ? rawArea.toLowerCase()
-        : '';
-    if (!area) return PARTICIPANTS;
+    const area = Array.isArray(rawArea) ? rawArea.join(', ').trim() : typeof rawArea === 'string' ? rawArea.trim() : '';
+    if (!area) return unscoped;
 
-    const hasWeb = /web|browser|desktop/.test(area);
-    const hasIOS = /\bmobile\b|\bios\b/.test(area);
-    const hasAndroid = /\bmobile\b|\bandroid\b/.test(area);
+    const lower = area.toLowerCase();
+    const hasWeb = /web|browser|desktop/.test(lower);
+    const hasIOS = /\bmobile\b|\bios\b/.test(lower);
+    const hasAndroid = /\bmobile\b|\bandroid\b/.test(lower);
 
-    // If no platform signal is present default to all participants
-    if (!hasWeb && !hasIOS && !hasAndroid) return PARTICIPANTS;
+    // No recognised platform signal — treat as unscoped (all platforms allowed)
+    if (!hasWeb && !hasIOS && !hasAndroid) return { area, hasWeb: true, hasIOS: true, hasAndroid: true };
 
-    return PARTICIPANTS.filter(p => {
-      if (p.name === 'Shard - Product Owner' || p.name === 'Vera' || p.name === 'Finn') return true;
-      if (p.name === 'Remi') return hasWeb;
-      if (p.name === 'Cole') return hasIOS;
-      if (p.name === 'Dex') return hasAndroid;
-      return true;
-    });
+    return { area, hasWeb, hasIOS, hasAndroid };
   } catch {
-    return PARTICIPANTS;
+    return unscoped;
   }
+}
+
+/**
+ * Filter the participant list to the platforms in scope.
+ * - Shard - Product Owner (Product), Vera (QA), and Finn (Backend) are always included.
+ * - Remi (Web), Cole (iOS), and Dex (Android) are included only when their platform is in scope.
+ */
+function resolveRefinementParticipants(itemId: string): RefinementParticipant[] {
+  const scope = resolveProductAreaScope(itemId);
+  if (!scope.area) return PARTICIPANTS;
+
+  return PARTICIPANTS.filter(p => {
+    if (p.name === 'Shard - Product Owner' || p.name === 'Vera' || p.name === 'Finn') return true;
+    if (p.name === 'Remi') return scope.hasWeb;
+    if (p.name === 'Cole') return scope.hasIOS;
+    if (p.name === 'Dex') return scope.hasAndroid;
+    return true;
+  });
+}
+
+/** Loosely parse a JSON artifact that may be wrapped in a ```json code fence. */
+function parseJsonLoose(raw: string): any | null {
+  const cleaned = raw.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+  try { return JSON.parse(cleaned); } catch { return null; }
+}
+
+/**
+ * Build the "## Platform Scope" brief section that tells every participant which
+ * platform(s) are in scope and which to leave out entirely. Returns '' when unscoped.
+ * Exported so feature-stage-runner.ts's revision paths render the identical wording.
+ */
+export function buildPlatformScopeSection(scope: ProductAreaScope): string {
+  if (!scope.area) return '';
+
+  const excludedPlatforms = [
+    !scope.hasWeb ? 'web' : null,
+    !scope.hasIOS ? 'iOS' : null,
+    !scope.hasAndroid ? 'Android' : null,
+  ].filter((p): p is string => p !== null);
+  const inScopeChannels = [
+    'backend',
+    scope.hasWeb ? 'web' : null,
+    scope.hasIOS ? 'ios' : null,
+    scope.hasAndroid ? 'android' : null,
+  ].filter(Boolean).join(', ');
+
+  return `
+## Platform Scope
+**This feature is scoped to:** ${scope.area}
+- In-scope channels: ${inScopeChannels}${excludedPlatforms.length ? `
+- Do NOT create stories, tickets, or test cases for ${excludedPlatforms.join(' or ')} — not even as "nice to have" or "future work". Leave excluded channels out entirely, not just deprioritized.
+- This applies to every contributor, including Shard's story list and Vera's test suite.` : ''}`;
+}
+
+/**
+ * Strip any stories whose platform falls outside the resolved scope from a backlog
+ * JSON artifact (epic + features + stories). This is a backstop: the brief already
+ * instructs participants to stay in scope, but this guarantees it even if a model
+ * ignores the instruction. Returns the surviving story_ids so QA test cases that
+ * reference a dropped story can be cleaned up too.
+ */
+export function filterBacklogStoriesByScope(
+  backlog: string,
+  scope: ProductAreaScope
+): { backlog: string; survivorStoryIds: Set<string> | null; dropped: number } {
+  if (!scope.area) return { backlog, survivorStoryIds: null, dropped: 0 }; // unscoped — nothing to enforce
+
+  const allowed = new Set<string>(['backend']); // backend work is always in scope regardless of channel
+  if (scope.hasWeb) allowed.add('web');
+  if (scope.hasIOS) allowed.add('ios');
+  if (scope.hasAndroid) allowed.add('android');
+
+  const backlogJson = parseJsonLoose(backlog);
+  if (!backlogJson || !Array.isArray(backlogJson.features)) return { backlog, survivorStoryIds: null, dropped: 0 };
+
+  const survivorStoryIds = new Set<string>();
+  let dropped = 0;
+  for (const feature of backlogJson.features) {
+    if (!Array.isArray(feature.stories)) continue;
+    const before = feature.stories.length;
+    feature.stories = feature.stories.filter((story: any) => {
+      const platformRaw = story?.platform;
+      const platformStr = typeof platformRaw === 'string' ? platformRaw : Array.isArray(platformRaw) ? platformRaw[0] : null;
+      const keep = !platformStr || allowed.has(platformStr);
+      if (keep && story?.story_id) survivorStoryIds.add(story.story_id);
+      return keep;
+    });
+    dropped += before - feature.stories.length;
+  }
+
+  if (dropped === 0) return { backlog, survivorStoryIds, dropped: 0 };
+
+  logger.warn(`[MULTI-AGENT] Platform scope "${scope.area}" — stripped ${dropped} out-of-scope story/stories from the backlog`);
+  return { backlog: JSON.stringify(backlogJson, null, 2), survivorStoryIds, dropped };
+}
+
+/**
+ * Strip QA test cases whose story_ref no longer points at a surviving story (i.e. its
+ * story was dropped by filterBacklogStoriesByScope). Pass survivorStoryIds = null to
+ * skip filtering (unscoped feature).
+ */
+export function filterQaTestCasesByStoryIds(
+  qaTests: string,
+  survivorStoryIds: Set<string> | null
+): { qaTests: string; dropped: number } {
+  if (!survivorStoryIds) return { qaTests, dropped: 0 };
+
+  const qaJson = parseJsonLoose(qaTests);
+  if (!qaJson || !Array.isArray(qaJson.test_cases)) return { qaTests, dropped: 0 };
+
+  const before = qaJson.test_cases.length;
+  qaJson.test_cases = qaJson.test_cases.filter((tc: any) => !tc?.story_ref || survivorStoryIds.has(tc.story_ref));
+  const dropped = before - qaJson.test_cases.length;
+  if (dropped === 0) return { qaTests, dropped: 0 };
+
+  return { qaTests: JSON.stringify(qaJson, null, 2), dropped };
+}
+
+/**
+ * Strip any synthesized stories (and the QA test cases that reference them) whose
+ * platform falls outside the resolved scope. This is a backstop: the brief already
+ * instructs every participant to stay in scope, but this guarantees it even if a
+ * model ignores the instruction.
+ */
+function enforcePlatformScope(
+  backlog: string,
+  qaTests: string,
+  scope: ProductAreaScope
+): { backlog: string; qaTests: string } {
+  const { backlog: filteredBacklog, survivorStoryIds, dropped } = filterBacklogStoriesByScope(backlog, scope);
+  if (dropped === 0) return { backlog: filteredBacklog, qaTests };
+
+  const { qaTests: filteredQaTests, dropped: droppedTests } = filterQaTestCasesByStoryIds(qaTests, survivorStoryIds);
+  if (droppedTests > 0) {
+    logger.warn(`[MULTI-AGENT] Platform scope "${scope.area}" — stripped ${droppedTests} test case(s) referencing out-of-scope stories`);
+  }
+
+  return { backlog: filteredBacklog, qaTests: filteredQaTests };
 }
 
 export interface RefinementResult {
@@ -132,7 +273,8 @@ export async function runMultiAgentRefinement(
     logger.warn(`[MULTI-AGENT] Demo mode is DISABLED — will make real LLM calls (expensive!)`);
   }
 
-  // ── Resolve active participants based on productArea ───────────────────────
+  // ── Resolve active participants and platform scope based on productArea ────
+  const platformScope = resolveProductAreaScope(itemId);
   const activeParticipants = resolveRefinementParticipants(itemId);
   const participantNames = activeParticipants.map(p => p.name).join(', ');
   logger.info(`[MULTI-AGENT] Active participants for Feature ${featureNum}: ${participantNames}`);
@@ -229,6 +371,8 @@ export async function runMultiAgentRefinement(
     }
   }
 
+  const platformScopeSection = buildPlatformScopeSection(platformScope);
+
   const featureBrief = `
 # Feature Refinement Session
 
@@ -237,6 +381,7 @@ ${epicContext ? `**Initiative:** ${epicContext.title || ''}
 **Purpose:** ${epicContext.description || ''}
 **Business Value:** ${epicContext.businessValue || epicContext.business_value || ''}` : ''}
 ${outOfScope.length ? `**Out of Scope (do NOT build these):** ${outOfScope.join('; ')}` : ''}
+${platformScopeSection}
 
 ## Phase Context
 ${phaseContext ? `**Phase:** ${phaseContext.label}${phaseContext.epicTitle ? ` — ${phaseContext.epicTitle}` : ''}
@@ -298,10 +443,12 @@ Any story whose UI surfaces one of these screens must cite the screen's frame_ur
     refine2: refined2.get('Vera') ?? '',
   };
 
-  const [backlog, qaTests] = await Promise.all([
+  const [rawBacklog, rawQaTests] = await Promise.all([
     synthesizeFinalArtifact(workflowId, stage, featureBrief, refined2),
     synthesizeQaArtifact(workflowId, stage, featureBrief, featureNum, veraOutputs, refined2),
   ]);
+
+  const { backlog, qaTests } = enforcePlatformScope(rawBacklog, rawQaTests, platformScope);
 
   logger.info(`[MULTI-AGENT] Feature ${featureNum} refinement complete — backlog: ${backlog.length} chars, QA tests: ${qaTests.length} chars`);
   return { backlog, qaTests };
@@ -317,6 +464,12 @@ async function runPhaseInParallel(
   prompts: Array<{ participant: RefinementParticipant; prompt: string }>
 ): Promise<Map<string, string>> {
   const results = new Map<string, string>();
+
+  // Aggregate live char counts across all concurrently-streaming agents so the heartbeat
+  // reflects the whole phase's progress, not just whichever agent happens to tick last.
+  const charsByAgent = new Map<string, number>();
+  const phaseStart = Date.now();
+  let lastHeartbeat = phaseStart;
 
   // Run all agents in parallel
   const promises = prompts.map(async ({ participant, prompt }) => {
@@ -343,6 +496,16 @@ async function runPhaseInParallel(
         8_000 // max tokens per agent
       )) {
         fullResponse += chunk;
+        charsByAgent.set(participant.name, fullResponse.length);
+
+        const now = Date.now();
+        if (now - lastHeartbeat > 12_000) {
+          lastHeartbeat = now;
+          const totalChars = Array.from(charsByAgent.values()).reduce((a, b) => a + b, 0);
+          const elapsedSec = Math.round((now - phaseStart) / 1000);
+          insertEvent(workflowId, 'stage_progress', stage,
+            progressHeartbeatLine(`${phaseName} — ${charsByAgent.size}/${prompts.length} agent(s) responding`, elapsedSec, totalChars));
+        }
       }
 
       results.set(participant.name, fullResponse.trim());
@@ -385,6 +548,7 @@ function buildDraftPrompts(
 4. Estimate story points (1-2-3-5 scale) based on scope — prefer smaller estimates for atomic tasks
 5. Don't add technical details yet — that's what the engineers will contribute in the next round
 6. **CRITICAL — One stream per ticket:** Each story must belong to exactly ONE platform stream: \`backend\`, \`web\`, \`ios\`, or \`android\`. If a piece of work spans multiple platforms (e.g., an API + a UI), write a separate story for each platform. Name them descriptively: e.g. "Set Up Alert API [Backend]" and "Alert Creation Form [Web]".
+7. Do not write accessibility-specific acceptance criteria or stories (screen reader support, TalkBack, VoiceOver, voice control, etc.) — this product does not target those use cases unless the PRD explicitly calls for them.
 
 **Output Format:**
 Return a JSON structure (use F${featureNum} for all story IDs):
@@ -441,15 +605,15 @@ Plain text list of concerns and recommendations. Example:
 
 **Phase 1 Task — Technical Needs:**
 1. Review the feature brief
-2. List what you'll need to build this feature:
+2. List the high-level technical direction needed to build this feature — meaningful direction only, not a full spec:
    - ${platformFocus}
 3. Flag any technical constraints or complexities (e.g., "Offline mode will require local DB sync")
 4. Suggest story splits if a feature needs multiple platform-specific implementations
 
 **Output Format:**
-Plain text list of technical requirements. Example:
-- API needed: POST /api/alerts (create price alert)
-- Data model: New alerts table (user_id, ticker, target_price, condition)
+Plain text list of technical direction, kept high-level — exact endpoints, schemas, and component names can be worked out later during technical refinement. Example:
+- API needed for creating price alerts
+- New data model to track alert conditions per user
 - Complexity: Real-time price checks require WebSocket or polling
 `;
     }
@@ -508,16 +672,16 @@ Plain text per-story feedback. Example:
 `;
     } else {
       prompt += `
-**Phase 2.1 Task — Add Technical Details:**
+**Phase 2.1 Task — Add Technical Direction:**
 1. Review Shard - Product Owner's story breakdown
-2. For each story that touches your platform, add specific technical acceptance criteria
+2. For each story that touches your platform, add a brief technical direction note — what needs to be built and any constraint worth flagging now, not a full implementation spec. Exact endpoints, schemas, and component names can be worked out later during technical refinement.
 3. **CRITICAL — One stream per ticket:** If any story covers work on YOUR platform but is not already split into its own ticket, propose a new platform-specific story for it. Every story must belong to exactly ONE stream: \`backend\`, \`web\`, \`ios\`, or \`android\`. Shared logic (e.g. "user sees X") must be split into separate stories if it requires distinct implementation on each platform.
 4. Flag dependencies (e.g., "Web story F?.S3 depends on Backend story F?.S2 being complete first")
 
 **Output Format:**
-Plain text mapping of story_id → technical ACs, plus any proposed new platform-specific stories. Example:
-- F?.S1 (Backend): "POST /api/alerts endpoint returns 201 with alert ID in JSON"
-- F?.S2 (Web): "AlertForm component validates ticker symbol before submit"
+Plain text mapping of story_id → technical direction, plus any proposed new platform-specific stories. Example:
+- F?.S1 (Backend): "Needs an API to create an alert and persist it"
+- F?.S2 (Web): "Form must validate the ticker symbol before submit"
 - NEW story needed: "Alert Badge [iOS]" — the iOS app needs a native badge update on alert trigger, separate from the web notification story
 `;
     }
@@ -650,6 +814,8 @@ Merge all contributions into a single JSON artifact following the backlog templa
 - Ensure all story_id references are consistent (F?.S1, F?.S2, etc.)
 - **CRITICAL — One stream per ticket:** Each story's \`platform\` field MUST be a single string — exactly one of: \`"backend"\`, \`"web"\`, \`"ios"\`, \`"android"\`. Never use an array. If an engineer proposed work on your behalf that spans multiple platforms, split it into separate stories — one per platform. Each story's technical_acceptance_criteria must be specific to that one platform only. Stories that require work on multiple platforms must appear as multiple separate stories (e.g. "Create Alert API [Backend]" and "Create Alert Form [Web]"). Title each story to make the platform clear.
 - Do NOT include a test_cases field — the QA engineer stage owns the full test suite as a separate artifact
+- Keep technical_acceptance_criteria and technical_notes to meaningful direction only — what needs to be built and any constraint worth flagging now. Do not write exhaustive implementation specs (exact endpoint signatures, full schemas, function names) — that level of detail gets filled in later as the work is picked up.
+- Do not write accessibility-specific acceptance criteria, stories, or technical notes (screen reader support, TalkBack, VoiceOver, voice control, etc.) — this product does not target those use cases unless the PRD explicitly requires them.
 `;
 
   const facilitator = new SpecialistAgent('story-decomposition');
@@ -665,8 +831,9 @@ Merge all contributions into a single JSON artifact following the backlog templa
   );
 
   let finalArtifact = '';
-  let lastHeartbeat = Date.now();
-  const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000; // touch updated_at every 5 minutes
+  const synthesisStart = Date.now();
+  let lastHeartbeat = synthesisStart;
+  const HEARTBEAT_INTERVAL_MS = 12_000;
 
   // Single feature output (not accumulated), but story count + prd_ref/technical detail
   // can still exceed 8k — use the shared ceiling so this stays in sync with the revision flow.
@@ -684,8 +851,9 @@ Merge all contributions into a single JSON artifact following the backlog templa
     const now = Date.now();
     if (now - lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
       touchWorkflow(workflowId);
+      const elapsedSec = Math.round((now - synthesisStart) / 1000);
       insertEvent(workflowId, 'stage_progress', stage,
-        `Phase 3: Synthesize — still merging contributions (${Math.round(finalArtifact.length / 1000)}k chars so far)...`);
+        progressHeartbeatLine('Phase 3: Synthesize backlog — merging contributions', elapsedSec, finalArtifact.length));
       lastHeartbeat = now;
     }
   }
@@ -819,6 +987,8 @@ Requirements:
   const maxTokens = STAGE_MAX_OUTPUT_TOKENS['qa_engineer'] ?? 14_000;
 
   let output = '';
+  const synthesisStart = Date.now();
+  let lastHeartbeat = synthesisStart;
   for await (const chunk of vera.streamResponse(
     systemPrompt,
     [{ role: 'user', content: synthesisPrompt }],
@@ -827,6 +997,15 @@ Requirements:
     maxTokens
   )) {
     output += chunk;
+    const now = Date.now();
+    if (now - lastHeartbeat > 12_000) {
+      lastHeartbeat = now;
+      const elapsedSec = Math.round((now - synthesisStart) / 1000);
+      // Tagged to the QA sub-stage (not the base story stage) so this progress shows
+      // up in the QA section of the event log instead of bleeding into Refinement.
+      insertEvent(workflowId, 'stage_progress', `${stage}_qa`,
+        progressHeartbeatLine('Phase 3: Synthesize QA tests — extracting test suite', elapsedSec, output.length));
+    }
   }
 
   return output.trim();

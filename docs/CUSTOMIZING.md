@@ -75,7 +75,8 @@ behavior. You can edit these to adjust how agents communicate:
 | `analyst.md` | Research Analyst | Research depth, analysis approach |
 | `architect.md` | Solution Architect | Architecture design approach |
 | `coordinator.md` | Coordinator (Chief of Staff) | Goal decomposition, planning style |
-| `critic.md` | Critic | Review strictness and severity |
+| `critic-core.md` | Critic | Review identity, output format, severity calibration (shared across every stage) |
+| `critic-<stage>.md` (e.g. `critic-prd.md`, `critic-backlog.md`) | Critic | Stage-specific review checks layered on top of `critic-core.md` |
 | `curator.md` | Context Curator | How context files are updated |
 
 Most users will not need to change these. Edit them if you want to shift the
@@ -91,7 +92,12 @@ Templates define the structure of documents agents produce:
 |------|--------|
 | `research.template.md` | Research/analysis report (Analyst) |
 | `prd.template.md` | Product Requirements Document (PM Strategy) |
-| `backlog.template.md` | Epic, feature, and story backlog (PM Backlog) |
+| `epic-features.template.md` | Epic + feature shells (Epic Feature Planner) |
+| `architecture.template.md` | Solution architecture document (Architect) |
+| `backlog.template.md` | Epic, feature, and story backlog (Story Decomposition) |
+| `prototype.template.md` | Wireframe prototype spec (Prototype Builder) |
+| `figma-design.template.md` | Figma design brief (Figma Designer) |
+| `discovery.template.md` | Opportunity drafts (Discovery Scout) |
 
 Edit these to match your team's preferred document format. The section headings
 and structure guide the agent's output — keep the overall shape but adjust
@@ -148,7 +154,7 @@ ROADMAP_INTEGRATION=none        # none | airtable
 WORK_ITEMS_INTEGRATION=none     # none | ado | jira
 
 # Knowledge base — where PRDs are published
-KNOWLEDGE_BASE_INTEGRATION=none # none | notion
+KNOWLEDGE_BASE_INTEGRATION=none # none | notion | gitbook | azure_wiki
 ```
 
 See `.env.example` for the full list of credentials needed for each integration.

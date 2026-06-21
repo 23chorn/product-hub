@@ -46,6 +46,7 @@ export type AgentItem =
 
 export type PanelSelection =
   | { type: 'context'; index: number }
+  | { type: 'behaviour'; index: number }
   | { type: 'skill'; skill: SkillVersion }
   | { type: 'tool'; tool: ExtractedTool }
   | { type: 'new_context' }

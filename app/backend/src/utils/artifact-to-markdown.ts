@@ -267,37 +267,13 @@ function figmaDesignToMarkdown(d: Record<string, any>): string {
     : '🕐 Planned (write deferred)';
   lines.push(`**Status:** ${statusBadge}\n`);
   if (d.figma_file_url) lines.push(`**Mockup file:** ${d.figma_file_url}\n`);
-  if (d.source_design_system) lines.push(`**Design system:** \`${d.source_design_system}\`\n`);
 
-  const dt = d.design_tokens_extracted;
-  if (dt) {
-    if (Array.isArray(dt.design_gaps) && dt.design_gaps.length) {
-      lines.push(`## ⚠ Design Gaps (${dt.design_gaps.length})\n`);
-      lines.push(`> The following components or tokens are missing from the design system and must be created before production handoff.\n`);
-      for (const gap of dt.design_gaps) lines.push(`- ${gap}`);
-      lines.push('');
-    }
-
-    if (Array.isArray(dt.colors) && dt.colors.length) {
-      lines.push(`## Design Tokens — Colors\n`);
-      lines.push(tableHeader('Token', 'Value', 'Usage'));
-      for (const c of dt.colors) lines.push(row(c.name ?? '', c.value ?? '', c.usage ?? ''));
-      lines.push('');
-    }
-
-    if (Array.isArray(dt.typography) && dt.typography.length) {
-      lines.push(`## Design Tokens — Typography\n`);
-      lines.push(tableHeader('Style', 'Family', 'Size', 'Weight', 'Usage'));
-      for (const t of dt.typography) lines.push(row(t.name ?? '', t.font_family ?? '', t.size ?? '', t.weight ?? '', t.usage ?? ''));
-      lines.push('');
-    }
-
-    if (Array.isArray(dt.components) && dt.components.length) {
-      lines.push(`## Components Used\n`);
-      lines.push(tableHeader('Component', 'Node ID', 'Variants'));
-      for (const c of dt.components) lines.push(row(c.name ?? '', c.node_id ?? '', Array.isArray(c.variants) ? c.variants.join(', ') : ''));
-      lines.push('');
-    }
+  const designGaps = d.design_gaps ?? d.design_tokens_extracted?.design_gaps;
+  if (Array.isArray(designGaps) && designGaps.length) {
+    lines.push(`## ⚠ Design Gaps (${designGaps.length})\n`);
+    lines.push(`> The following components or patterns are missing from the design system and should be created before (or during) the designer's pass.\n`);
+    for (const gap of designGaps) lines.push(`- ${gap}`);
+    lines.push('');
   }
 
   if (Array.isArray(d.screens_created) && d.screens_created.length) {
@@ -366,11 +342,20 @@ export function convertArtifactToMarkdown(artifactType: string, content: string)
         const start = content.indexOf('{');
         if (start === -1) throw firstErr;
 
+        // String/escape-aware so a stray "{" or "}" inside a quoted value doesn't throw
+        // off the count and fall through to rendering the raw (possibly duplicated) text.
         let braceCount = 0;
         let end = start;
+        let inString = false;
+        let escaped = false;
         for (let i = start; i < content.length; i++) {
-          if (content[i] === '{') braceCount++;
-          else if (content[i] === '}') braceCount--;
+          const ch = content[i];
+          if (escaped) { escaped = false; continue; }
+          if (ch === '\\' && inString) { escaped = true; continue; }
+          if (ch === '"') { inString = !inString; continue; }
+          if (inString) continue;
+          if (ch === '{') braceCount++;
+          else if (ch === '}') braceCount--;
           if (braceCount === 0) {
             end = i + 1;
             break;

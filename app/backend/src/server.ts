@@ -23,16 +23,18 @@ import { workflowQueryRoutes } from './routes/workflow-query-routes';
 import { changeRequestRoutes } from './routes/change-request-routes';
 import { contextDiffRouter } from './routes/context-diff-routes';
 import { contextFileRouter } from './routes/context-file-routes';
+import { behaviourFileRouter } from './routes/behaviour-file-routes';
+import { discoveryRoutes } from './routes/discovery-routes';
 import { prototypeRoutes } from './routes/prototype-routes';
 import { ticketRoutes } from './routes/ticket-routes';
 import { skillRoutes } from './routes/skill-routes';
 import { personaRoutes } from './routes/persona-routes';
 import { seedSkills, syncSeedSkillTools } from './agents/skill-registry';
 import { demoWebhookRoutes } from './routes/demo-webhook-routes';
-import { demoProjectRoutes } from './routes/demo-project-routes';
 import settingsRoutes from './routes/settings-routes';
 import authRoutes from './routes/auth-routes';
 import userRoutes from './routes/user-routes';
+import { statsRoutes } from './routes/stats-routes';
 import { authMiddleware } from './middleware/auth';
 
 const logger = new Logger('SERVER');
@@ -97,6 +99,7 @@ app.use('/api/config', configRoutes);
 app.use('/api/decision-log', decisionLogRoutes);
 app.use('/api/context', contextRoutes);
 app.use('/api/initiatives', initiativesRoutes);
+app.use('/api/discovery', discoveryRoutes);
 // Workflow routes — gated by ENABLE_WORKFLOW_MODE flag (default: enabled)
 if (appConfig.features.workflowModeEnabled) {
   app.use('/api/workflow', workflowRoutes);
@@ -111,13 +114,14 @@ if (appConfig.features.workflowModeEnabled) {
 app.use('/api', changeRequestRoutes);
 app.use('/api/context-diffs', contextDiffRouter);
 app.use('/api/context-files', contextFileRouter);
+app.use('/api/behaviour-files', behaviourFileRouter);
 app.use('/api', prototypeRoutes);
 app.use('/api', ticketRoutes);
 app.use('/api/skills', skillRoutes);
 app.use('/api/agents/personas', personaRoutes);
 app.use('/api', demoWebhookRoutes);
-app.use('/api', demoProjectRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/stats', statsRoutes);
 
 app.get('/api', (req, res) => {
   res.json({
@@ -129,6 +133,7 @@ app.get('/api', (req, res) => {
       initiatives: 'GET /api/initiatives',
       contextDiffs: 'GET /api/context-diffs/*',
       contextFiles: 'GET /api/context-files',
+      behaviourFiles: 'GET /api/behaviour-files',
     },
   });
 });

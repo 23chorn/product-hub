@@ -477,7 +477,13 @@ export function ArtifactViewer() {
                       />
                     ) : content ? (() => {
                       if (epicFeaturesData) return <EpicFeaturesView data={epicFeaturesData} />;
-                      if (backlogData) return <BacklogView data={backlogData} />;
+                      if (backlogData) return (
+                        <BacklogView
+                          data={backlogData}
+                          isFeaturePreview={/^backlog_F\d+$/.test(artifactType)}
+                          initiativeTitle={activeWorkflow?.summary ?? activeWorkflow?.goal?.split('\n')[0]}
+                        />
+                      );
                       if (techData) return <TechRefinementView data={techData} />;
                       const qaData = artifactType === 'qa_tests' ? tryParseQATests(content) : null;
                       if (qaData) return <QATestsView data={qaData} />;

@@ -26,7 +26,7 @@ import {
 } from './artifact-helpers';
 import { deleteWorkflow as deleteWorkflowImpl, recoverStaleWorkflows as recoverStaleWorkflowsImpl, startStaleRecoveryTimer } from './workflow-lifecycle';
 import { isDemoMode, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
-import { notifyWorkflowComplete } from '../utils/slack-notifier';
+import { notifyWorkflowComplete, notifyCheckpointPending } from '../utils/slack-notifier';
 import { pushItemStatusToAirtable } from './ado-stage-push';
 import { WorkflowRow, CheckpointRow, WorkflowStatus, WorkflowEvent } from './workflow-types';
 export type { WorkflowRow, CheckpointRow, WorkflowStatus, WorkflowEvent } from './workflow-types';
@@ -34,9 +34,7 @@ import { parseDecompositionMetadata, findWaveForStage, type DecompositionMetadat
 export { propagateFeedback, reiterateFromStage, retryCurrentStage, restartWorkflow } from './workflow-mutations';
 export { deleteWorkflow } from './workflow-lifecycle';
 import Logger from '../utils/logger';
-import { CoordinatorAgent } from './coordinator-agent';
-import { CriticAgent } from './critic-agent';
-import { ContextCuratorAgent } from './curator-agent';
+import { getCoordinator, getCritic, getCurator } from './workflow-agents';
 import { workflowOps, rolesJson } from './workflow-db';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
@@ -59,24 +57,6 @@ const SILENT_STAGES = new Set<string>([]);
  * Can also be overridden per-workflow via policy_overrides:
  *   { "model:analyst": "claude-opus-4-6", "model:pm_prd": "claude-sonnet-4-6" }
  */
-// Lazy singletons — avoids reading persona files at import time
-let _coordinator: CoordinatorAgent | null = null;
-function getCoordinator(): CoordinatorAgent {
-  if (!_coordinator) _coordinator = new CoordinatorAgent();
-  return _coordinator;
-}
-
-let _critic: CriticAgent | null = null;
-function getCritic(): CriticAgent {
-  if (!_critic) _critic = new CriticAgent();
-  return _critic;
-}
-
-let _curator: ContextCuratorAgent | null = null;
-function getCurator(): ContextCuratorAgent {
-  if (!_curator) _curator = new ContextCuratorAgent();
-  return _curator;
-}
 
 // ── Policy helpers ─────────────────────────────────────────────────────────────
 
@@ -422,6 +402,9 @@ async function advanceStageCore(workflowId: string): Promise<{ stage: string; se
         criticDetails);
     }
 
+    const criticTitleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(workflow.item_id);
+    if (criticTitleRow) notifyCheckpointPending(criticTitleRow.title, nextStage);
+
     logger.info(`Critic completed for workflow ${workflowId} — verdict: ${review.verdict}`);
     return { stage: nextStage, sessionId: null };
   }
@@ -440,9 +423,7 @@ async function advanceStageCore(workflowId: string): Promise<{ stage: string; se
     if (isDemoWorkflow) {
       await demoSleep(DEMO_STAGE_DELAY_MS['curator'] ?? 1500);
       diffCount = 3;
-      const fixtureTheme = process.env.DEMO_FIXTURE_THEME ?? 'price-alerts';
-      reasoning = fixtureTheme === 'messaging'
-        ? `## Curator review — In-App Messaging & Trade Chat
+      reasoning = `## Curator review — In-App Messaging & Trade Chat
 
 Reviewed all stage outputs against the existing context files. Proposing 3 targeted updates:
 
@@ -451,17 +432,6 @@ Reviewed all stage outputs against the existing context files. Proposing 3 targe
 **strategy.md** — Update the retention strategy section to reference Chat as a social engagement mechanism. Per GTM strategy: target 25% of MAU using Chat within 90 days; 30-day retention lift of +15% for Chat users vs non-Chat. Note the regulatory constraint: all messages retained 7 years for MiFID II compliance.
 
 **current-state.md** — Add the Message Service, Cassandra cluster, Redis cluster, Moderation Service, and S3 archive pipeline to the architecture overview. These are new production components introduced in this feature.
-
-No changes needed to tech-stack.md or process.md — those remain accurate as written.`
-        : `## Curator review — Price Alerts & Watchlist
-
-Reviewed all stage outputs against the existing context files. Proposing 3 targeted updates:
-
-**company.md** — Add the Price Alerts feature to the Active Features section. The PRD confirms push notification infrastructure (Firebase FCM) is now part of the production stack.
-
-**strategy.md** — Update the retention strategy section to reference price alerts as a re-engagement mechanism for dormant users (per GTM strategy: 8% reactivation target). Also note the regulatory constraint: notification copy must not imply investment advice (DFSA requirement).
-
-**current-state.md** — Add the Alert Evaluator microservice and Redis Streams alert queue to the architecture overview. These are new production components introduced in this feature.
 
 No changes needed to tech-stack.md or process.md — those remain accurate as written.`;
     } else {
@@ -512,7 +482,8 @@ No changes needed to tech-stack.md or process.md — those remain accurate as wr
     pm_prd:             'Rex is writing the PRD sections, success metrics, and open questions.',
     epic_feature_planner:'Apex is writing the epic and feature breakdown from the PRD.',
     solution_architect: 'Atlas is writing the architecture sections, API surface, and data model.',
-    prototype:          'Nova is generating the prototype screens and file map from the workflow artifacts.',
+    prototype:          'Nova is generating the prototype wireframe and file map from the workflow artifacts.',
+    figma_design:       'Luma is generating the Figma mockup plan from the workflow artifacts.',
   };
 
   // Creates a session, generates a brief, and fires the autonomous specialist run as a
@@ -520,8 +491,10 @@ No changes needed to tech-stack.md or process.md — those remain accurate as wr
   // multi-member wave below — every wave member gets its own session/brief/run/safety-net,
   // exactly like a standalone stage would.
   const kickoffMemberStage = async (memberStage: string): Promise<void> => {
-    insertEvent(workflowId, 'stage_started', memberStage,
-      STAGE_NARRATION[memberStage] ?? `Starting ${memberStage}...`);
+    const featureStageMatch = memberStage.match(/^story_decomposition_F(\d+)$/);
+    const narration = STAGE_NARRATION[memberStage]
+      ?? (featureStageMatch ? `Starting refinement for Feature ${featureStageMatch[1]}...` : `Starting ${memberStage}...`);
+    insertEvent(workflowId, 'stage_started', memberStage, narration);
 
     let stageMap = STAGE_SESSION_MAP[memberStage];
     if (!stageMap) stageMap = { mode: 'analyst' as AppMode, agentType: 'analyst' as AgentType };
@@ -550,7 +523,7 @@ No changes needed to tech-stack.md or process.md — those remain accurate as wr
 
   if (nextWave.length > 1) {
     insertEvent(workflowId, 'stage_started', nextStage,
-      `Starting ${nextWave.length} features in parallel: ${nextWave.map(s => s.replace('story_decomposition_', 'F')).join(', ')}`);
+      `Starting ${nextWave.length} features in parallel: ${nextWave.map(s => s.replace('story_decomposition_', '')).join(', ')}`);
     await Promise.all(nextWave.map(memberStage => kickoffMemberStage(memberStage)));
   } else {
     await kickoffMemberStage(nextStage);
@@ -657,6 +630,9 @@ export function completeStage(workflowId: string): void {
   );
   stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
 
+  const completeTitleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(workflow.item_id);
+  if (completeTitleRow) notifyCheckpointPending(completeTitleRow.title, workflow.current_stage);
+
   logger.info(`Stage "${workflow.current_stage}" submitted for review — workflow ${workflowId} paused at checkpoint`);
 }
 
@@ -706,6 +682,13 @@ export function pauseAtCheckpoint(
 
   const checkpoint = stmts.getCheckpoint.get(result.lastInsertRowid as number)!;
   logger.info(`Paused workflow ${workflowId} at checkpoint #${checkpoint.id} for stage "${stage}"${requiredRole ? ` (role: ${requiredRole})` : ''}`);
+
+  const pauseWorkflow = stmts.getWorkflow.get(workflowId);
+  if (pauseWorkflow) {
+    const pauseTitleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(pauseWorkflow.item_id);
+    if (pauseTitleRow) notifyCheckpointPending(pauseTitleRow.title, stage);
+  }
+
   return checkpoint;
 }
 
@@ -877,7 +860,7 @@ export function resolveCheckpoint(
 /**
  * Get the full status of a workflow: workflow row, all checkpoints, stage info.
  */
-export function getWorkflowStatus(workflowId: string): import('./workflow-db').WorkflowStatus {
+export function getWorkflowStatus(workflowId: string): WorkflowStatus {
   const workflow = stmts.getWorkflow.get(workflowId);
   if (!workflow) throw new Error(`Workflow not found: ${workflowId}`);
 

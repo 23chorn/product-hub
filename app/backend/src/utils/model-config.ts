@@ -43,6 +43,7 @@ export const ANTHROPIC_AGENT_MODELS: Record<string, string> = {
   story_decomposition:'claude-haiku-4-5-20251001',
   critic:             'claude-haiku-4-5-20251001',
   curator:            'claude-haiku-4-5-20251001',
+  discovery:          'claude-sonnet-4-5-20250929',
 };
 
 /**

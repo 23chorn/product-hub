@@ -211,17 +211,6 @@ If `current-state.md` doesn't exist yet (e.g. you never created one in the Conte
 
 ---
 
-## Mid-Workflow Chat
-
-You can message the Chief of Staff while a workflow is running. Use this to:
-- Ask about the current status
-- Provide corrections or preferences for upcoming stages
-- Share context that should influence the next specialist
-
-Type in the input box at the bottom of the conversation at any time during a workflow.
-
----
-
 ## Context Editor
 
 Click **Context** in the header to open the Context Editor. You can edit 6 project knowledge files directly from the UI:

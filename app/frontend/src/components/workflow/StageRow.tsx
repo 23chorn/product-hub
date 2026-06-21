@@ -17,6 +17,7 @@ interface StageRowProps {
   isLast?: boolean;
   compact?: boolean;
   customLabel?: string; // Override default stage label (e.g., "Feature 1")
+  epicLabel?: string; // Which epic/phase this feature stage belongs to (e.g., "Trade Chat — MVP")
 }
 
 // ── Status icon ───────────────────────────────────────────────────────────────
@@ -65,6 +66,7 @@ export function StageRow({
   isLast,
   compact = false,
   customLabel,
+  epicLabel,
 }: StageRowProps & { prevStatus?: StageStatus }) {
   const showConnector = index > 0;
   const connectorDone = prevStatus === 'complete';
@@ -96,6 +98,11 @@ export function StageRow({
           <span className={`block text-[13px] font-mono leading-none truncate ${labelColor(status)}`}>
             {customLabel ?? STAGE_LABELS[stageName] ?? stageName}
           </span>
+          {epicLabel && (
+            <span className="block text-[10px] font-mono leading-none truncate text-slate-500 dark:text-slate-600 mt-0.5">
+              Epic: {epicLabel}
+            </span>
+          )}
           {isActive && (
             <div className="mt-1 overflow-hidden">
               <AgentAnimation stageName={stageName} />
@@ -135,6 +142,11 @@ export function StageRow({
         <span className={`text-[12px] font-mono leading-none ${labelColor(status)}`}>
           {STAGE_LABELS[stageName] ?? stageName}
         </span>
+        {epicLabel && (
+          <span className="block text-[10px] font-mono leading-none text-slate-500 dark:text-slate-600 mt-0.5">
+            Epic: {epicLabel}
+          </span>
+        )}
 
         {/* Running state: ASCII agent animation */}
         {status === 'in-progress' && (

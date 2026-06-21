@@ -11,6 +11,7 @@ export const items = sqliteTable('items', {
   source:      text('source', { enum: ['airtable', 'quick_add', 'local'] }).notNull().default('airtable'),
   airtable_id: text('airtable_id'),
   metadata:    text('metadata'),           // JSON blob
+  shipped_at:  integer('shipped_at'),      // set when Airtable Status is detected as 'Shipped'
   created_at:  integer('created_at').notNull(),
   updated_at:  integer('updated_at').notNull(),
 }, (t) => [

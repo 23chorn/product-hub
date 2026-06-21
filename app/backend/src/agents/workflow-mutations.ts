@@ -185,7 +185,10 @@ export async function reiterateFromStage(
  * every member of the wave is retried — not just the representative stage stored in
  * current_stage — so a stuck wave doesn't leave its other in-flight features behind.
  */
-export async function retryCurrentStage(workflowId: string): Promise<{ stage: string }> {
+export async function retryCurrentStage(
+  workflowId: string,
+  triggeredBy?: { id: number; name: string; username: string }
+): Promise<{ stage: string }> {
   const workflow = stmts.getWorkflow.get(workflowId);
   if (!workflow) throw new Error(`Workflow not found: ${workflowId}`);
   if (workflow.status !== 'active' && workflow.status !== 'paused_at_checkpoint') {
@@ -201,6 +204,11 @@ export async function retryCurrentStage(workflowId: string): Promise<{ stage: st
 
   for (const memberStage of wave) {
     logger.info(`Retrying stuck stage "${memberStage}" for workflow ${workflowId}`);
+    // Distinct from the 'stage_progress' narration event below — kept separate so the
+    // stats dashboard can count manual retries without scraping narration text.
+    insertEvent(workflowId, 'stage_retried', memberStage,
+      `Stage manually retried${triggeredBy ? ` by ${triggeredBy.name}` : ''}`,
+      triggeredBy ? { userId: triggeredBy.id, name: triggeredBy.name, username: triggeredBy.username } : undefined);
     insertEvent(workflowId, 'stage_progress', memberStage,
       stageProgressWorking(memberStage));
 

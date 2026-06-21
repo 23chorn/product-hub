@@ -157,6 +157,58 @@ export interface LocalInitiative {
 }
 
 // ============================================
+// Discovery Mode Types
+// ============================================
+
+export type DiscoverySourceType = 'user_interview' | 'app_store_review' | 'play_store_review' | 'competitor_note' | 'other';
+export type DiscoveryRunStatus = 'running' | 'complete' | 'error';
+export type DiscoveryOpportunityStatus = 'new' | 'reviewed' | 'promoted' | 'dismissed';
+
+export interface DiscoverySource {
+  id: string;
+  sourceType: DiscoverySourceType;
+  title: string;
+  content: string;
+  origin: 'manual' | 'api';
+  externalId?: string;
+  externalUrl?: string;
+  fetchedAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DiscoveryOpportunityEvidence {
+  sourceTitle: string;
+  sourceId?: string;
+  quote?: string;
+  url?: string;
+}
+
+export interface DiscoveryOpportunity {
+  id: number;
+  runId: string;
+  title: string;
+  description: string;
+  rationale: string;
+  confidence?: number;
+  evidence: DiscoveryOpportunityEvidence[];
+  status: DiscoveryOpportunityStatus;
+  promotedItemId?: string;
+  reviewedAt?: number;
+  createdAt: number;
+}
+
+export interface DiscoveryRun {
+  id: string;
+  status: DiscoveryRunStatus;
+  sourceIds: string[];
+  opportunityCount: number;
+  error?: string;
+  createdAt: number;
+  completedAt?: number;
+}
+
+// ============================================
 // Quick Session Types
 // ============================================
 
@@ -396,37 +448,6 @@ export interface Policy {
 // ============================================
 // Integration Provider Interfaces
 // ============================================
-
-/** Read-only roadmap data (Airtable rows, etc.) */
-export interface RoadmapItem {
-  id: string;
-  title: string;
-  description?: string;
-  status?: string;
-}
-
-export interface RoadmapProvider {
-  getItems(): Promise<RoadmapItem[]>;
-  getItem(id: string): Promise<RoadmapItem>;
-}
-
-/** Write-only work item creation (ADO, Jira, etc.) */
-export interface WorkItemProviderEpic {
-  id: string;      // provider-specific ID (ADO int, Jira key)
-  url?: string;
-}
-
-export interface WorkItemProviderStory {
-  id: string;
-  url?: string;
-}
-
-export interface WorkItemProvider {
-  createEpic(title: string, description?: string): Promise<WorkItemProviderEpic>;
-  createStory(title: string, description: string, epicId: string): Promise<WorkItemProviderStory>;
-  createTask(title: string, description: string, storyId: string): Promise<{ id: string }>;
-  linkDependency(fromId: string, toId: string): Promise<void>;
-}
 
 /** Read-only knowledge base (Notion pages, etc.) */
 export interface KnowledgeBasePage {

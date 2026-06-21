@@ -212,8 +212,6 @@ export async function pushBacklogToBoard(workflowId: string): Promise<PushToBoar
     };
   }
 
-  // For other providers (jira, etc.), use the generic WorkItemProvider interface
-  // which creates items individually rather than as a batch
   throw new WorkflowExportError(400, `Push to board is not yet supported for provider: ${appConfig.integrations.workItems}`);
 }
 

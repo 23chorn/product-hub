@@ -46,12 +46,6 @@ export function getUserByUsername(username: string): UserRow | null {
   ).get(username) ?? null;
 }
 
-export function getUserByEmail(email: string): UserRow | null {
-  return db.prepare<[string], UserRow>(
-    'SELECT * FROM users WHERE email = ? COLLATE NOCASE'
-  ).get(email) ?? null;
-}
-
 export function getUserById(id: number): User | null {
   const row = db.prepare<[number], UserRow>('SELECT * FROM users WHERE id = ?').get(id);
   return row ? attachRoles(row) : null;

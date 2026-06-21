@@ -136,26 +136,6 @@ export const workflowApi = {
     return response.data;
   },
 
-  async sendWorkflowMessage(
-    workflowId: string,
-    message: string,
-    onChunk: (content: string) => void,
-    onComplete: (fullContent: string) => void,
-    onError: (error: string) => void,
-    model?: string
-  ): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/api/workflow/${workflowId}/message`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, model }),
-      credentials: 'include',
-    });
-    if (!response.ok) {
-      throw apiError(await response.json().catch(() => ({})), response.status);
-    }
-    await readSSEStream(response, onChunk, (content) => onComplete(content ?? ''), onError);
-  },
-
   async retryWorkflowStage(workflowId: string) {
     const response = await axios.post(`${API_BASE_URL}/api/workflow/${workflowId}/retry`);
     return response.data;
@@ -215,25 +195,9 @@ export const workflowApi = {
     await axios.delete(`${API_BASE_URL}/api/workflow/${workflowId}`);
   },
 
-  async getPipelineRun(workflowId: string): Promise<{
-    id: number; workflow_id: string; stage: string; status: string;
-    pr_url: string | null; branch: string | null; pipeline_id: string | null;
-    test_results: string | null; created_at: number; updated_at: number;
-  } | null> {
-    try {
-      const response = await axios.get(`${API_BASE_URL}/api/workflow/${workflowId}/pipeline-runs`);
-      return response.data.run;
-    } catch { return null; }
-  },
-
   async getTicketContext(workflowId: string, workItemId?: number): Promise<{ prompt: string; title: string }> {
     const params = workItemId ? `?workItemId=${workItemId}` : '';
     const response = await axios.get(`${API_BASE_URL}/api/workflow/${workflowId}/ticket-context${params}`);
-    return response.data;
-  },
-
-  async getPipelineDemoData(workflowId: string): Promise<{ summary: string; testCases: any[] }> {
-    const response = await axios.get(`${API_BASE_URL}/api/workflow/${workflowId}/pipeline-demo`);
     return response.data;
   },
 
@@ -244,13 +208,6 @@ export const workflowApi = {
   async restartWorkflow(workflowId: string): Promise<any> {
     const response = await axios.post(`${API_BASE_URL}/api/workflow/${workflowId}/restart`);
     return response.data;
-  },
-
-  async getPipelineMedia(workflowId: string): Promise<Array<{ type: 'video' | 'screenshot'; url: string; name: string }>> {
-    try {
-      const response = await axios.get(`${API_BASE_URL}/api/pipeline-media/${workflowId}`);
-      return response.data ?? [];
-    } catch { return []; }
   },
 
   async getWorkflowAudit(workflowId: string): Promise<{ audit: Array<{

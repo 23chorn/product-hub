@@ -47,7 +47,7 @@ export {
   clearCancelFlag,
 } from './workflow-cancel';
 import { setCancelController, clearCancelController, isCancelRequested } from './workflow-cancel';
-export { getCoordinator, getCritic, getCurator } from './workflow-agents';
+export { getCoordinator, getCritic } from './workflow-agents';
 import { getCoordinator, getCritic } from './workflow-agents';
 import { runBacklogMerge, runMultiAgentFeatureStage, runMultiAgentFeatureRevision, runMultiAgentFeatureQaRevision } from './feature-stage-runner';
 
@@ -275,9 +275,14 @@ export async function runAutonomousStage(
       }
     } else if (stage === 'pm_prd') {
       const analystContent = await loadLatestArtifactContent(itemId, 'analyst');
-      if (analystContent) {
-        itemContext = addPlatformScope(`**Research Brief (use as background for the PRD):**\n\n${analystContent}`);
-      }
+      const parts: string[] = [];
+      if (analystContent) parts.push(`**Research Brief (use as background for the PRD):**\n\n${analystContent}`);
+
+      const { loadRelevantBehaviourDocs } = await import('./behaviour-context');
+      const behaviourDocs = await loadRelevantBehaviourDocs(`${goalText ?? ''} ${analystContent ?? ''}`);
+      if (behaviourDocs) parts.push(behaviourDocs);
+
+      if (parts.length > 0) itemContext = addPlatformScope(parts.join('\n\n---\n\n'));
     } else if (stage === 'epic_feature_planner') {
       const prdContent = await loadLatestArtifactContent(itemId, 'prd');
       if (prdContent) {
@@ -352,16 +357,13 @@ export async function runAutonomousStage(
 
       itemContext = parts.join('\n\n');
     } else if (stage === 'prototype') {
-      // Load design system context: try Figma MCP first, fall back to local CSS tokens
-      const figma = await loadFigmaDesignSystem((msg) => {
-        insertEvent(workflowId, 'stage_progress', stage, msg.trim());
-      });
-      const designSystem = figma || await loadLocalDesignSystem();
+      // Deliberately no design system context here — the prototype stage builds a
+      // generic, brand-neutral wireframe (see prototype-builder persona), not a
+      // branded mock. Real design tokens are only loaded later for figma_design.
       // Load prior workflow artifacts (research, PRD, architecture) as reference
       const artifacts = await loadWorkflowArtifacts(itemId);
       const parts: string[] = [];
-      if (designSystem) parts.push(`## Design System\n\n${designSystem}`);
-      if (artifacts) parts.push(`## Workflow Artifacts\n\nUse these documents to understand what to prototype:\n\n${artifacts}`);
+      if (artifacts) parts.push(`## Workflow Artifacts\n\nUse these documents to understand the change being prototyped:\n\n${artifacts}`);
       // Built for exactly one platform (mobile or web) — no dual-variant generation,
       // since there's no UI to switch between two generated versions anyway.
       parts.push(platformHintFor(resolveItemPlatform(itemId)));
@@ -489,10 +491,10 @@ export async function runAutonomousStage(
               }
             }
           }
-          // Heartbeat: no progress event fired in the last 45s — prove the stage is alive.
+          // Heartbeat: no progress event fired in the last 12s — prove the stage is alive.
           // Applies to every stage, including prototype (whose file-count tracker can stay
           // silent for a long time while the model writes the JSON preamble).
-          if (now - lastProgressTime > 45_000) {
+          if (now - lastProgressTime > 12_000) {
             const elapsedSec = Math.round((now - startTime) / 1000);
             insertEvent(workflowId, 'stage_progress', stage,
               stageProgressHeartbeat(stage, elapsedSec, fullResponse.length));
@@ -529,11 +531,22 @@ export async function runAutonomousStage(
         // If parse fails due to extra content after JSON, extract just the first complete object
         if (firstErr.message && firstErr.message.includes('after JSON')) {
           logger.warn(`Extra content after JSON detected in stage "${stage}", extracting first complete object`);
+          // String/escape-aware brace counter — a naive count breaks on any stray "{" or "}"
+          // inside a quoted string value (e.g. a PRD field describing template syntax), which
+          // previously caused this extraction to fail and fall back to the full raw response
+          // (both copies, when the model echoed its answer twice) being saved as the artifact.
           let braceCount = 0;
           let end = 0;
+          let inString = false;
+          let escaped = false;
           for (let i = 0; i < jsonContent.length; i++) {
-            if (jsonContent[i] === '{') braceCount++;
-            else if (jsonContent[i] === '}') braceCount--;
+            const ch = jsonContent[i];
+            if (escaped) { escaped = false; continue; }
+            if (ch === '\\' && inString) { escaped = true; continue; }
+            if (ch === '"') { inString = !inString; continue; }
+            if (inString) continue;
+            if (ch === '{') braceCount++;
+            else if (ch === '}') braceCount--;
             if (braceCount === 0) {
               end = i + 1;
               break;
@@ -753,7 +766,9 @@ export async function runAutonomousStage(
 
     // ── Special handling for prototype: stamp the resolved platform onto the artifact ──
     // so the preview can render a fixed device frame instead of a switchable one.
-    if (stage === 'prototype') {
+    // Demo fixtures already set their own platform (e.g. mobile) — resolveItemPlatform()
+    // would default to 'web' for a demo item with no productArea metadata, clobbering it.
+    if (stage === 'prototype' && demoFixture === null) {
       try {
         const stripped = artifactContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
         const jsonStart = stripped.indexOf('{');
@@ -1056,6 +1071,8 @@ export async function runAutonomousStage(
           `Quality review still has unresolved issues after ${MAX_INLINE_REVISIONS} revision(s): ${issuesSummary}.${questionsSummary} How would you like to proceed?`,
           criticDetails);
         logger.info(`Inline critic exhausted revisions for "${stage}" — pausing for human input`);
+        const titleRowRevised = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(itemId);
+        if (titleRowRevised) notifyCheckpointPending(titleRowRevised.title, stage);
       }
       return;
     }

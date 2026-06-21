@@ -18,6 +18,9 @@ You talk to one agent: the **Coordinator** (Chief of Staff). It gathers requirem
   - **Android Engineer (Cole)** — adds Android-specific technical criteria and notes
 - **Architect (Atlas)** — solution architecture aligned to your tech stack (optional, legacy)
 - **Backlog Agent (Pip)** — epics, features, and stories with acceptance criteria (legacy single-stage)
+- **Prototype Builder (Nova)** — optional, post-pipeline: a low-fidelity wireframe of just the screen(s) the change affects, not the whole app
+- **Figma Designer (Luma)** — optional, post-pipeline: a concise screen-by-screen design brief for a human designer to build in Figma
+- **Discovery Scout** — separate from the pipeline: surfaces candidate opportunities from interviews, app store reviews, and competitor notes for a PM to review (see [Discovery Mode](#discovery-mode))
 - **Critic (Flint)** — adversarial quality review after each specialist stage
 - **Context Curator (Ivy)** — proposes updates to project knowledge files based on workflow outputs
 
@@ -30,13 +33,13 @@ You talk to one agent: the **Coordinator** (Chief of Staff). It gathers requirem
 | Database | SQLite via `better-sqlite3` (`db/product-ops.db`) |
 | Artifact storage | MongoDB (local via Docker) — JSON artifacts stored as BSON; disk fallback when unavailable |
 | AI | Anthropic API, AWS Bedrock, or Ollama (local) — model selectable from UI |
-| Integrations | Airtable (roadmap items), Azure DevOps, Jira, Notion |
+| Integrations | Airtable (roadmap items), Azure DevOps, Notion |
 
 ```
 product-agent/
 ├── app/
 │   ├── backend/       Express API, agents, workflow engine
-│   │   └── src/demo/  Claude Code Studio WS handlers + demo fixtures
+│   │   └── src/demo/  Demo mode fixtures and webhook simulation
 │   ├── frontend/      React UI (two-column layout)
 │   └── shared/        Compiled TypeScript types (@pap/shared)
 ├── agents/
@@ -45,6 +48,7 @@ product-agent/
 │   ├── config.example.yaml  Template for user config (tracked)
 │   └── config.yaml    User identity and preferences (gitignored)
 ├── context/           Project context files injected into every agent prompt
+│   ├── behaviour/     Existing feature behaviour docs (.feature), injected into the PRD stage only
 │   └── README.md      Guidelines for filling in context files
 ├── db/
 │   ├── schema.sql     Canonical DB schema (tracked)
@@ -126,6 +130,10 @@ See [docs/setup/llm-providers.md](docs/setup/llm-providers.md) for detailed prov
 - Embedded test cases (happy path, bad path, edge case)
 - Sprint estimates based on team velocity
 
+**Optional design stages (run after the core pipeline):**
+- Prototype (Nova) — a low-fidelity, brand-neutral wireframe of just the screen(s) the change affects (plus a before/after pair for transitions), not a full app or a branded mock
+- Figma Design (Luma) — a concise design brief for a human designer, not an automated Figma write — surfaces which screens are needed and what's missing from the design system
+
 **Legacy stages (still available):**
 - Architecture (Architect — Atlas) — optional solution architecture document
 - Backlog (Pip) — single-stage backlog generation without feature-by-feature refinement
@@ -160,13 +168,6 @@ When a workflow is active, the main view switches to a split-pane terminal layou
 - **Left pane** — stage list with progress bar, completion status, and per-stage cost
 - **Right pane** — live event log grouped by stage, showing agent progress, critic reviews, and checkpoints with inline approve/revise/reject actions
 
-### Claude Code Studio
-After a workflow's backlog has been pushed to Azure DevOps, a **Claude Code Studio** button appears in the terminal. This opens a local Claude Code CLI session:
-- **Left pane** — ticket context showing the feature goal, ADO work item IDs, and backlog stories with acceptance criteria
-- **Right pane** — real-time terminal output from `claude --print --allowedTools Read,Bash,Glob,Grep` running against the actual project codebase
-- Output is persisted in the Zustand store so it survives navigation
-- Falls back to a mock stream if the Claude CLI is not installed
-
 ### Artifact Viewer
 Review specialist outputs in a slide-out panel with fullscreen mode. The backlog preview shows structured epics, features, and stories with:
 - Sprint estimates at epic and feature level
@@ -182,12 +183,25 @@ Review specialist outputs in a slide-out panel with fullscreen mode. The backlog
 - **Prototype Preview** — renders AI-generated React prototypes in an inline device frame
 
 ### Prototype Builder
-After a workflow completes, click **Generate Prototype** to create an interactive React prototype:
-- Agent reads all workflow artifacts (PRD, architecture, backlog) and the design system
+After a workflow completes, click **Generate Prototype** to create an interactive wireframe:
+- Agent reads the workflow artifacts (PRD, architecture, backlog) and covers **only** the screen(s) the change affects — plus a before/after pair if there's a transition — not the whole app
+- Built from a small set of generic, brand-neutral components (flat colors, plain shapes) rather than your design system, so review focuses on layout and flow, not visual polish
 - Produces a self-contained React app rendered in-browser via an iframe
 - Device frame toggle: desktop / tablet / mobile
 - Code viewer panel showing all generated `.tsx` files
 - Revision input to refine the prototype with natural language instructions
+
+### Figma Design Brief
+After the prototype (or directly after the core pipeline), the **Figma Design** stage produces a short JSON brief for a human designer — which screens are needed, what each shows, how they connect, and what's missing from the design system. It is not an automated Figma mockup generator: a person still builds the actual screens in Figma using the brief as a starting point.
+
+### Discovery Mode
+Click **Discovery** in the header to open a separate, lightweight opportunity-surfacing flow that sits outside the staged pipeline — no checkpoints, just a direct run:
+1. **Add source documents** — paste in user interview notes, app store/Play store reviews, or competitor notes
+2. **Select sources and click Run Discovery** — Scout reviews them alongside a snapshot of your current backlog (so it doesn't re-pitch what's already in flight) and surfaces a handful of evidence-backed opportunity drafts
+3. **Review the feed** — each opportunity shows its rationale and cited evidence; **Dismiss** the ones that aren't worth pursuing
+4. **Promote** a promising one — creates an Airtable record and a local item, so it appears on the Home screen ready to launch through the normal pipeline (requires `ROADMAP_INTEGRATION=airtable`)
+
+Only Product/Admin roles can run discovery or promote an opportunity; other roles can still add source documents.
 
 ### Change Requests
 After a workflow completes, **Change Request** opens a centred modal to describe a targeted change:
@@ -198,11 +212,12 @@ After a workflow completes, **Change Request** opens a centred modal to describe
 ### Initiative List
 The left sidebar shows local initiatives and Airtable roadmap items (when configured). Each initiative displays its workflow status (active/paused/done) and clicking one restores the full workflow state.
 
-### Context Editor
-Edit the 6 canonical project context files directly from the UI. Click **Context** in the header. Changes are picked up immediately by the next agent request — no server restart needed.
-
-### Template Editor
-Edit the output templates that agents follow when producing documents. Click **Templates** in the header. Saves require double-confirmation since template changes affect all future outputs.
+### Agent Studio
+Click **Agent Studio** in the header to manage everything that shapes agent behaviour, organised into collapsible sections:
+- **Context** — edit the canonical `context/*.md` project files. Changes are picked up immediately by the next agent request — no server restart needed
+- **Behaviour Docs** — edit the `.feature` files in `context/behaviour/` that describe how existing functionality currently works; only surfaced to the PRD stage, matched by keyword relevance to the initiative
+- **Agents** — edit a persona's prompt, its output template, and its registered validator tools, with version history per file
+- **Tools** — review the structural validators each stage calls before returning output
 
 ### Mid-Workflow Chat
 Talk to the Chief of Staff while a workflow is running. Ask status questions, provide corrections, or share preferences that should apply to upcoming stages.
@@ -252,6 +267,12 @@ NOTION_API_KEY=...
 NOTION_DATABASE_ID=...
 GITBOOK_API_TOKEN=...
 GITBOOK_SPACE_ID=...
+
+# Figma (optional — lets the Figma Design stage check your design system
+# for gaps before writing the design brief)
+FIGMA_API_KEY=...
+FIGMA_DESIGN_SYSTEM_FILE=...
+FIGMA_MOCKUP_FILE=...
 ```
 
 See `docs/integrations/` for detailed setup guides.
@@ -290,7 +311,9 @@ The `context/` directory contains markdown files injected into agent system prom
 
 **Stage-scoped context**: Files with a YAML frontmatter `stages:` field are only injected into matching agents — useful for technical context (API contracts, DB schema, integrations) that the analyst and PM don't need. Example: `api-contracts.example.md` is injected only into the architect and story decomposition agents.
 
-Context files can be edited from the UI (**Context** button in the header) or on disk. Changes take effect immediately — no restart needed.
+Context files can be edited from the UI (**Agent Studio** button in the header) or on disk. Changes take effect immediately — no restart needed.
+
+**Behaviour docs** (`context/behaviour/`) are a separate corpus: `.feature` files describing how existing functionality behaves today, plus a `feature-map.json` search index. Unlike the files above, they're only injected into the PRD stage, and only the documents whose keywords match the initiative — not the whole corpus. Also editable from Agent Studio.
 
 ## Development
 
@@ -332,6 +355,10 @@ Schema in `db/schema.sql`, mirrored in `app/backend/src/data/database.ts`.
 | `change_requests` | Post-completion change requests with impact assessment and status |
 | `cr_artifact_versions` | Links change requests to new artifact versions and their parents |
 | `ado_work_item_map` | Maps local backlog keys to Azure DevOps work item IDs for sync |
+| `discovery_sources` | Source documents (interviews, reviews, competitor notes) for Discovery Mode |
+| `discovery_runs` | One row per Discovery Scout batch run |
+| `discovery_opportunities` | Opportunity drafts surfaced by a run, reviewed/promoted/dismissed by a PM |
+| `discovery_opportunity_sources` | Links opportunities to the source documents that evidenced them |
 
 ### MongoDB (artifact content)
 JSON artifacts from specialist stages are stored in a local MongoDB instance (`docker-compose.yml` at project root, port 27017). The SQLite `artifacts` table tracks the MongoDB ObjectId in `external_path` with `external_system='mongodb'`. If MongoDB is unreachable on first connect, all artifacts fall back to disk automatically — no configuration needed for basic local development.

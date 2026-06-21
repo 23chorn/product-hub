@@ -176,11 +176,7 @@ router.get('/', (_req: Request, res: Response) => {
         slackWebhookUrl: getPolicy('slack_webhook_url') ?? process.env.SLACK_WEBHOOK_URL ?? null,
       },
       demo: {
-        enabled: getPolicy('demo_mode_enabled') !== null
-          ? getPolicy('demo_mode_enabled') === 'true'
-          : process.env.DEMO_MODE === 'true',
-        projectPath: process.env.DEMO_PROJECT_PATH ?? null,
-        fixtureTheme: process.env.DEMO_FIXTURE_THEME ?? 'messaging',
+        enabled: getPolicy('demo_mode_enabled') === 'true',
       },
     });
   } catch (err: any) {

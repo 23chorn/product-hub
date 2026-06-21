@@ -2,18 +2,10 @@ import https from 'https';
 import Logger from './logger';
 import db from '../data/database';
 import { getUsersByRole, getAdminUsers, hasAnyUsers } from '../data/users';
+import { checkpointArtifactLabel } from '../agents/stage-metadata';
+import { normalizeStageForRoles } from '../agents/workflow-db';
 
 const logger = new Logger('SLACK');
-
-const STAGE_LABELS: Record<string, string> = {
-  analyst: 'Research Brief',
-  pm_prd: 'PRD',
-  solution_architect: 'Architecture',
-  story_decomposition: 'Backlog',
-  qa_engineer: 'QA Tests',
-  tech_refinement: 'Tech Refinement',
-  curator: 'Context Update',
-};
 
 function getWebhookUrl(): string | null {
   try {
@@ -59,7 +51,7 @@ function buildMentions(stage: string): string {
   try {
     const stageRoles = db.prepare<[string], { role_name: string }>(
       'SELECT role_name FROM stage_roles WHERE stage = ?'
-    ).all(stage);
+    ).all(normalizeStageForRoles(stage));
 
     const users = stageRoles.length > 0
       ? stageRoles.flatMap(({ role_name }) => getUsersByRole(role_name))
@@ -82,7 +74,7 @@ function getAppUrl(): string {
 }
 
 export function notifyCheckpointPending(initiativeTitle: string, stage: string, workflowId?: string): void {
-  const label = STAGE_LABELS[stage] ?? stage;
+  const label = checkpointArtifactLabel(stage);
   const mentions = buildMentions(stage);
   const appUrl = getAppUrl();
 
@@ -115,26 +107,6 @@ export function notifyCheckpointPending(initiativeTitle: string, stage: string, 
   }
 
   post({ text, blocks });
-}
-
-export function notifyWikiPublished(initiativeTitle: string, pageName: string, wikiUrl: string): void {
-  post({
-    text: `${pageName} published to Azure Wiki — ${initiativeTitle}`,
-    blocks: [
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `:page_facing_up: *${pageName}* published to Azure Wiki\n*Initiative:* ${initiativeTitle}`,
-        },
-        accessory: {
-          type: 'button',
-          text: { type: 'plain_text', text: 'Open in Azure' },
-          url: wikiUrl,
-        },
-      },
-    ],
-  });
 }
 
 export function notifyWorkflowComplete(initiativeTitle: string): void {

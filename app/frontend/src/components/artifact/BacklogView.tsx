@@ -42,7 +42,7 @@ function AggregateHours({ hours, traditionalHours, aiAssisted }: { hours: number
   return <> · {hours}h</>;
 }
 
-export function BacklogView({ data }: { data: BacklogData }) {
+export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data: BacklogData; isFeaturePreview?: boolean; initiativeTitle?: string }) {
   const [expandedStories, setExpandedStories] = useState<Set<string>>(new Set());
 
   const toggleStory = (key: string) => {
@@ -75,8 +75,67 @@ export function BacklogView({ data }: { data: BacklogData }) {
         </div>
       )}
 
-      {/* Epic header — only for Tier 3 */}
-      {tier === 3 && data.epic && (
+      {/* Initiative → Epic → Feature hierarchy — only for a single feature's refinement checkpoint */}
+      {tier === 3 && data.epic && isFeaturePreview && (() => {
+        const feature = features[0];
+        return (
+          <div className="space-y-3">
+            {initiativeTitle && (
+              <div>
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Initiative</span>
+                <p className="text-sm font-medium text-slate-600 dark:text-slate-400 truncate">{initiativeTitle}</p>
+              </div>
+            )}
+
+            <div className="pl-3 border-l-2 border-indigo-200 dark:border-indigo-800 space-y-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-400">Epic</span>
+              <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">{data.epic.title}</h2>
+              {data.epic.description && (
+                <p className="text-sm text-slate-600 dark:text-slate-400">{data.epic.description}</p>
+              )}
+              {data.epic.businessValue && (
+                <div className="px-3 py-2 rounded-lg bg-teal-50 dark:bg-teal-900/20 border border-teal-200 dark:border-teal-800">
+                  <p className="text-xs text-teal-800 dark:text-teal-300 leading-relaxed">
+                    <span className="font-semibold">Business value: </span>{data.epic.businessValue}
+                  </p>
+                </div>
+              )}
+
+              {feature && (
+                <div className="pl-4 border-l-2 border-teal-200 dark:border-teal-800 space-y-1 pt-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-teal-500 dark:text-teal-400">Feature — being refined</span>
+                    {feature.phase && (
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                        feature.phase === 'MVP'
+                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                          : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                      }`}>
+                        {feature.phase}
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{feature.title}</h3>
+                  {feature.description && (
+                    <p className="text-xs text-slate-600 dark:text-slate-400">{feature.description}</p>
+                  )}
+                  <span className="inline-block text-xs text-slate-400 dark:text-slate-500 pt-0.5">
+                    {totalStories} stor{totalStories !== 1 ? 'ies' : 'y'}
+                    {totalEffort > 0 && <> · {totalEffort} pts</>}
+                    <AggregateHours hours={totalHours} traditionalHours={totalTraditionalHours} aiAssisted={aiAssisted} />
+                    {sprintMeta?.sprintsRequired != null && (
+                      <> · {sprintMeta.sprintsRequired} sprints</>
+                    )}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Epic header — Tier 3 merged backlog (multiple features, no single feature in focus) */}
+      {tier === 3 && data.epic && !isFeaturePreview && (
         <div className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/20 p-4">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xs font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-400">Epic</span>
@@ -450,6 +509,18 @@ export function BacklogView({ data }: { data: BacklogData }) {
             </div>
           );
         };
+
+        // Feature checkpoint preview — the hierarchy header above already shows the
+        // feature's title/description/phase, so just render its stories directly.
+        if (hasFeatures && isFeaturePreview) {
+          return (
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700">
+              <div className="divide-y divide-slate-100 dark:divide-slate-700">
+                {features[0].stories.map((story, si) => renderStory(story, si, '1'))}
+              </div>
+            </div>
+          );
+        }
 
         if (hasFeatures) {
           const ev = sprintMeta?.effectiveVelocity;

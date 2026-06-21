@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { initSSE, sseSend } from '../utils/sse';
 import { randomUUID } from 'crypto';
-import { canApproveCheckpoint, canLaunchWorkflow } from '../middleware/auth';
+import { canApproveCheckpoint, canLaunchWorkflow, requireAdmin } from '../middleware/auth';
 import type { AuthRequest } from '../middleware/auth';
 import {
   createWorkflow,
@@ -11,7 +11,6 @@ import {
   getWorkflowStatus,
   propagateFeedback,
   markWorkflowComplete,
-  getWorkflowEvents,
   reiterateFromStage,
   retryCurrentStage,
   restartWorkflow,
@@ -29,11 +28,9 @@ import { resolveArtifactPath, loadArtifactContentById, updateArtifactContent, ap
 import { pushItemStatusToAirtable } from '../agents/ado-stage-push';
 import { airtableStatusForStage, checkpointArtifactLabel } from '../agents/stage-metadata';
 import Logger from '../utils/logger';
-import { isDemoMode } from '../demo/demo-mode';
 import {
   DEFAULT_STAGES,
   KNOWN_STAGES,
-  getPlanningCoordinator,
 } from './workflow-planning';
 
 const logger = new Logger('WORKFLOW-ROUTES-V2');
@@ -305,6 +302,12 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
               'Backlog pushed to Azure DevOps',
               { ado_url: epicUrl });
             logger.info(`[CHECKPOINT] story_decomposition → pushed backlog to ADO: ${epicUrl}`);
+
+            // Stories now exist in ADO — embed Figma links into the frontend ones.
+            // Fire-and-forget: a failed embed must not block workflow advance.
+            const { embedFigmaLinksInFrontendTickets } = await import('../agents/prototype-agent');
+            embedFigmaLinksInFrontendTickets(workflowId, itemId)
+              .catch(err => logger.warn(`[FIGMA-ADO] Link embed failed: ${err.message}`));
           }
         } catch (err: any) {
           logger.error(`[CHECKPOINT] story_decomposition ADO push failed: ${err.message}`);
@@ -536,7 +539,7 @@ workflowRoutes.post('/checkpoint/figma-complete', async (req: AuthRequest, res: 
     ).get(cp.workflow_id);
 
     // If the designer pasted their own link, persist its file key for future snapshot lookups
-    const { loadFigmaMockupFileData, embedFigmaLinksInFrontendTickets, extractFigmaFileKey, setFigmaFileKey } = await import('../agents/prototype-agent');
+    const { loadFigmaMockupFileData, extractFigmaFileKey, setFigmaFileKey } = await import('../agents/prototype-agent');
     if (trimmedFigmaUrl && wf?.item_id) {
       const fileKey = extractFigmaFileKey(trimmedFigmaUrl);
       if (fileKey) setFigmaFileKey(wf.item_id, fileKey);
@@ -546,7 +549,6 @@ workflowRoutes.post('/checkpoint/figma-complete', async (req: AuthRequest, res: 
     const figmaSnapshot = await loadFigmaMockupFileData(wf?.item_id);
 
     // Patch the artifact with designer_reviewed flag + snapshot
-    let figmaArtifactData: { figma_file_url?: string; screens_created?: any[] } = {};
     if (cp.artifact_id) {
       const rawContent = await loadArtifactContentById(cp.artifact_id);
       if (rawContent) {
@@ -563,17 +565,10 @@ workflowRoutes.post('/checkpoint/figma-complete', async (req: AuthRequest, res: 
           }
           if (notes?.trim()) parsed.designer_notes = notes.trim();
           await updateArtifactContent(cp.artifact_id, JSON.stringify(parsed, null, 2));
-          figmaArtifactData = { figma_file_url: parsed.figma_file_url, screens_created: parsed.screens_created };
         } catch {
           // Non-JSON artifact — skip patch, still advance
         }
       }
-    }
-
-    // Embed Figma links into frontend ADO tickets (fire-and-forget — errors must not block advance)
-    if (wf?.item_id) {
-      embedFigmaLinksInFrontendTickets(cp.workflow_id, wf.item_id, figmaArtifactData)
-        .catch(err => logger.warn(`[FIGMA-ADO] Link embed failed: ${err.message}`));
     }
 
     // Audit + resolve
@@ -647,9 +642,10 @@ workflowRoutes.post('/:id/reiterate', async (req: Request, res: Response) => {
  * Retries the current stage of an active workflow that appears stuck.
  * No body required — it re-triggers whatever current_stage the workflow is on.
  */
-workflowRoutes.post('/:id/retry', async (req: Request, res: Response) => {
+workflowRoutes.post('/:id/retry', async (req: AuthRequest, res: Response) => {
   try {
-    const result = await retryCurrentStage(req.params.id);
+    const triggeredBy = req.user ? { id: req.user.id, name: req.user.name, username: req.user.username } : undefined;
+    const result = await retryCurrentStage(req.params.id, triggeredBy);
     const status = getWorkflowStatus(req.params.id);
     res.json({ ...status, retriedStage: result.stage });
   } catch (err: any) {
@@ -665,8 +661,9 @@ workflowRoutes.post('/:id/retry', async (req: Request, res: Response) => {
  * POST /api/workflow/:id/restart
  * Restarts a stopped/cancelled workflow from the very first stage.
  * Clears the cancel flag and fires a fresh run with no prior artifacts.
+ * Admin-only — discards all progress on the workflow.
  */
-workflowRoutes.post('/:id/restart', async (req: Request, res: Response) => {
+workflowRoutes.post('/:id/restart', requireAdmin, async (req: Request, res: Response) => {
   try {
     await restartWorkflow(req.params.id);
     const status = getWorkflowStatus(req.params.id);
@@ -735,73 +732,6 @@ workflowRoutes.delete('/:id', (req: Request, res: Response) => {
   } catch (err: any) {
     if (err.message.includes('not found')) return res.status(404).json({ error: err.message });
     logger.error('Failed to delete workflow', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ── Mid-workflow conversation (Phase 3) ────────────────────────────────────────
-
-/**
- * POST /api/workflow/:id/message
- * User sends a message to the CoS while a workflow is running.
- * CoS receives the message with workflow context and can answer status questions,
- * accept corrections, and store user input as an event.
- */
-workflowRoutes.post('/:id/message', async (req: Request, res: Response) => {
-  const { message, model } = req.body as { message?: string; model?: string };
-  if (!message) return res.status(400).json({ error: 'message is required' });
-
-  const workflowId = req.params.id;
-
-  try {
-    const status = getWorkflowStatus(workflowId);
-    if (!status) return res.status(404).json({ error: 'Workflow not found' });
-
-    // Store user input as an event
-    const { getWorkflowEvents: getEvents } = require('../agents/workflow-router');
-    const events = getEvents(workflowId) as Array<{ summary: string; event_type: string; stage: string | null }>;
-
-    // Insert user message event
-    db.prepare(`
-      INSERT INTO workflow_events (workflow_id, event_type, stage, summary, details, created_at)
-      VALUES (?, 'user_input', ?, ?, NULL, ?)
-    `).run(workflowId, status.currentStage, message, Date.now());
-
-    // Stream CoS response
-    initSSE(res);
-
-    const coordinator = getPlanningCoordinator();
-    const systemPrompt = coordinator.buildSystemPrompt(workflowId);
-
-    // Build context from recent events
-    const recentEvents = events.slice(-10).map((e: { event_type: string; stage: string | null; summary: string }) =>
-      `[${e.event_type}${e.stage ? ` / ${e.stage}` : ''}] ${e.summary}`
-    ).join('\n');
-
-    const contextMessage = `You are the Chief of Staff. The user is talking to you during an active workflow.\n\nRecent workflow events:\n${recentEvents}\n\nUser message: ${message}\n\nRespond helpfully. If the user provides corrections or preferences, acknowledge them and note that they'll be applied to upcoming stages.`;
-
-    let fullContent = '';
-    try {
-      for await (const chunk of coordinator.streamResponse(workflowId, contextMessage, model)) {
-        fullContent += chunk;
-        sseSend(res, { type: 'content', content: chunk });
-      }
-
-      // Store CoS response as event
-      db.prepare(`
-        INSERT INTO workflow_events (workflow_id, event_type, stage, summary, details, created_at)
-        VALUES (?, 'cos_response', ?, ?, NULL, ?)
-      `).run(workflowId, status.currentStage, fullContent.slice(0, 500), Date.now());
-
-      sseSend(res, { type: 'done', content: fullContent });
-    } catch (err: any) {
-      sseSend(res, { type: 'error', error: err.message });
-    } finally {
-      res.end();
-    }
-  } catch (err: any) {
-    if (err.message?.includes('not found')) return res.status(404).json({ error: err.message });
-    logger.error('Failed to handle mid-workflow message', err);
     res.status(500).json({ error: err.message });
   }
 });
