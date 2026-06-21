@@ -49,6 +49,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   const { realUser, noAuth } = useAuthStore();
   const isAdmin = noAuth || realUser?.is_admin;
   const bottomRef = useRef<HTMLDivElement>(null);
+  const eventScrollRef = useRef<HTMLDivElement>(null);
   const [stopping, setStopping] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
@@ -119,9 +120,14 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
       .catch(() => setFeatureEpicLabels([]));
   }, [epicFeaturesArtifactId]);
 
-  // Auto-scroll event log
+  // Auto-scroll event log — but only when the user is already near the bottom.
+  // Otherwise a new message (e.g. after approving a stage) would yank them down
+  // away from whatever they'd scrolled up to read.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = eventScrollRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (nearBottom) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [coordinatorMessages.length]);
 
   // Poll workflow status while running
@@ -408,7 +414,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
         </div>
 
         {/* Events */}
-        <div className="flex-1 overflow-y-auto px-0 py-2">
+        <div ref={eventScrollRef} className="flex-1 overflow-y-auto px-0 py-2">
           {/* Lifecycle events pinned at the top (collapsible) */}
           {topLifecycleEvents.length > 0 && (
             <div className="mb-1">

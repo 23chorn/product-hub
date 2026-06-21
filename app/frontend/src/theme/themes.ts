@@ -24,6 +24,7 @@ export interface ThemeDef {
 export const THEMES = [
   { id: 'light', label: 'Light', family: 'light', swatch: 'rgb(241 245 249)' },
   { id: 'dark',  label: 'Dark',  family: 'dark',  swatch: 'rgb(16 185 129)' },
+  { id: 'retro', label: 'Retro', family: 'light', swatch: 'rgb(192 96 28)' },
 ] as const satisfies readonly ThemeDef[];
 
 export type ThemeId = (typeof THEMES)[number]['id'];

@@ -580,7 +580,7 @@ workflowRoutes.post('/checkpoint/figma-complete', async (req: AuthRequest, res: 
     }
     const { waveComplete } = resolveCheckpoint(cpId, 'approved', 'Figma design marked complete by designer');
 
-    insertEvent(cp.workflow_id, 'stage_complete', 'figma_design', 'Designer marked Figma mockups as complete');
+    insertEvent(cp.workflow_id, 'stage_complete', 'figma_design', `Designer ${auditor.name} marked Figma mockups as complete`);
 
     if (waveComplete) {
       advanceStage(cp.workflow_id)

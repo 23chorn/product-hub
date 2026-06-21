@@ -78,3 +78,36 @@
   --surface-950: 5 9 7;
 }
 
+/* ── Retro — "70s Warm" (light family) ────────────────────────────────────────
+   A vintage 1970s palette: warm cream/tan surfaces with dark-brown text and a
+   burnt-orange accent. Light family (no .dark class), so this block overrides the
+   :root light ramps. Both surface AND brand are restyled so the whole app reads
+   retro, not just the accent. ────────────────────────────────────────────────── */
+[data-theme="retro"] {
+  /* Burnt-orange accent */
+  --brand-50: 253 245 235;
+  --brand-100: 250 232 209;
+  --brand-200: 244 209 161;
+  --brand-300: 234 175 105;
+  --brand-400: 219 138 62;
+  --brand-500: 192 96 28;
+  --brand-600: 163 76 20;
+  --brand-700: 132 60 18;
+  --brand-800: 105 49 19;
+  --brand-900: 84 40 17;
+  --brand-950: 46 21 9;
+
+  /* Warm cream / tan surfaces (brown-tinted neutrals) */
+  --surface-50: 251 243 228;
+  --surface-100: 245 234 211;
+  --surface-200: 232 217 188;
+  --surface-300: 214 194 160;
+  --surface-400: 181 160 126;
+  --surface-500: 140 122 92;
+  --surface-600: 107 91 65;
+  --surface-700: 79 66 48;
+  --surface-800: 54 45 32;
+  --surface-900: 36 29 20;
+  --surface-950: 20 15 10;
+}
+
