@@ -43,6 +43,35 @@ export const STAGE_LABELS: Record<string, string> = new Proxy(STAGE_LABELS_BASE,
   }
 });
 
+// Friendly titles keyed by artifact *type* (the `type` field on an artifact), as
+// opposed to STAGE_LABELS which is keyed by stage name. The artifact viewer header
+// has only the type, and most types (qa_tests, prd, epic_features, architecture,
+// backlog) don't match a stage key — so without this they showed the raw backend
+// identifier. Mirrors the backend STAGE_ARTIFACT_LABEL document names.
+const ARTIFACT_TYPE_LABELS_BASE: Record<string, string> = {
+  analyst:       'Research Brief',
+  research:      'Research Brief', // session-mode alias
+  prd:           'PRD',
+  epic_features: 'Epic & Features',
+  architecture:  'Architecture Document',
+  backlog:       'Backlog',
+  qa_tests:      'QA Tests',
+  qa:            'QA Tests',       // session-mode alias
+  prototype:     'Prototype',
+  figma_design:  'Figma Mockups',
+  critic_review: 'Critic Review',
+  document:      'Document',
+};
+
+// Proxy to handle per-feature backlog artifacts (backlog_F1, backlog_F2, ...).
+export const ARTIFACT_TYPE_LABELS: Record<string, string> = new Proxy(ARTIFACT_TYPE_LABELS_BASE, {
+  get(target, prop: string) {
+    const match = prop.match(/^backlog_F(\d+)$/);
+    if (match) return `Backlog — F${match[1]}`;
+    return target[prop];
+  },
+});
+
 // Stages available for user toggle at workflow start (order matters).
 // `label` uses the canonical STAGE_PERSONAS text where it fits; two entries below
 // (epic_feature_planner, story_decomposition) use deliberately shorter copy for

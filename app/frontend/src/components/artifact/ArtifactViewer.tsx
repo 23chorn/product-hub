@@ -5,7 +5,7 @@ import { useAuthStore, canApprove, parseRequiredRoles, ROLE_LABELS } from '../..
 import { api } from '../../services/api';
 import { CriticQuestionForm, CriticIssuesPanel } from './CriticQuestionForm';
 import { OpenQuestionsPanel } from './OpenQuestionsPanel';
-import { STAGE_LABELS } from '../../constants/stage-labels';
+import { ARTIFACT_TYPE_LABELS, STAGE_LABELS } from '../../constants/stage-labels';
 import { tryParseBacklog, isBacklogArtifactType } from '../../utils/backlog-helpers';
 import { extractPersonas, PersonaPanel } from './PersonaPanel';
 import { parseOpenQuestions, type OpenQuestion } from '../../utils/artifact-to-markdown';
@@ -298,7 +298,7 @@ export function ArtifactViewer() {
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-sm font-semibold text-surface-900 dark:text-surface-100">
-                  {STAGE_LABELS[artifactType] ?? (artifactType || 'Artifact')}
+                  {ARTIFACT_TYPE_LABELS[artifactType] ?? STAGE_LABELS[artifactType] ?? (artifactType || 'Artifact')}
                 </h2>
                 {versionInfo && (
                   <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400">

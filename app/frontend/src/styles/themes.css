@@ -44,21 +44,37 @@
   --surface-950: 2 6 23;
 }
 
-/* ── Dark — warm charcoal neutrals (keeps the teal brand from :root) ──────────
-   Deliberately warm (stone) rather than cool slate, so dark mode reads less
-   like the default blue-grey AI-app look. Only the surface ramp is overridden;
-   --brand-* falls through to the teal defaults above. ────────────────────────── */
+/* ── Dark — "Obsidian + Emerald" ──────────────────────────────────────────────
+   A deliberately opinionated dark theme, not the default neutral slate/zinc look:
+   near-black surfaces with a faint green tint, paired with a vivid emerald accent
+   (overriding the teal brand from :root). The green glow on buttons/focus comes
+   for free via the --brand-500-backed `glow-brand` shadows. Both ramps are
+   overridden here so the whole app — surfaces AND accent — restyles together. ── */
 [data-theme="dark"] {
-  --surface-50: 250 250 249;
-  --surface-100: 245 245 244;
-  --surface-200: 231 229 228;
-  --surface-300: 214 211 209;
-  --surface-400: 168 162 158;
-  --surface-500: 120 113 108;
-  --surface-600: 87 83 78;
-  --surface-700: 68 64 60;
-  --surface-800: 41 37 36;
-  --surface-900: 28 25 23;
-  --surface-950: 12 10 9;
+  /* Emerald accent (replaces the :root teal) */
+  --brand-50: 236 253 245;
+  --brand-100: 209 250 229;
+  --brand-200: 167 243 208;
+  --brand-300: 110 231 183;
+  --brand-400: 52 211 153;
+  --brand-500: 16 185 129;
+  --brand-600: 5 150 105;
+  --brand-700: 4 120 87;
+  --brand-800: 6 95 70;
+  --brand-900: 6 78 59;
+  --brand-950: 2 44 34;
+
+  /* Green-tinted obsidian surfaces */
+  --surface-50: 236 245 240;
+  --surface-100: 221 245 230;
+  --surface-200: 200 224 210;
+  --surface-300: 168 196 180;
+  --surface-400: 122 150 134;
+  --surface-500: 90 116 102;
+  --surface-600: 60 82 70;
+  --surface-700: 28 40 32;
+  --surface-800: 18 26 21;
+  --surface-900: 10 15 12;
+  --surface-950: 5 9 7;
 }
 
