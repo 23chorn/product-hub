@@ -316,7 +316,7 @@ export function HomeScreen() {
   const hasResults = filteredLocalItems.length > 0;
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-slate-50 dark:bg-slate-950">
+    <div className="flex flex-col h-full overflow-hidden bg-surface-50 dark:bg-surface-950">
 
       {/* Sticky page header with search + filters */}
       <HomeHeader
@@ -355,14 +355,14 @@ export function HomeScreen() {
           {/* No results state */}
           {!loading && (searchQuery || statusFilter !== 'all') && !hasResults && (
             <div className="py-16 text-center">
-              <p className="text-sm text-slate-400 dark:text-slate-500">
+              <p className="text-sm text-surface-400 dark:text-surface-500">
                 No initiatives match
                 {searchQuery && <> "<span className="font-medium">{searchQuery}</span>"</>}
                 {statusFilter !== 'all' && <> with status <span className="font-medium">{STATUS_FILTERS.find(f => f.key === statusFilter)?.label}</span></>}
               </p>
               <button
                 onClick={() => { setSearchQuery(''); setStatusFilter('all'); }}
-                className="mt-2 text-xs text-teal-600 dark:text-teal-400 hover:underline"
+                className="mt-2 text-xs text-brand-600 dark:text-brand-400 hover:underline"
               >
                 Clear filters
               </button>
@@ -371,14 +371,14 @@ export function HomeScreen() {
 
           {/* Empty state (no initiatives at all) */}
           {!loading && visibleItems.length === 0 && !showForm && (
-            <div className="py-16 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 text-center">
-              <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-1">No initiatives yet</p>
-              <p className="text-xs text-slate-400 dark:text-slate-500 mb-4 max-w-xs mx-auto">
+            <div className="py-16 rounded-xl border-2 border-dashed border-surface-200 dark:border-surface-700 text-center">
+              <p className="text-sm font-medium text-surface-500 dark:text-surface-400 mb-1">No initiatives yet</p>
+              <p className="text-xs text-surface-400 dark:text-surface-500 mb-4 max-w-xs mx-auto">
                 Add a detailed description and the pipeline will run autonomously — from research through to backlog.
               </p>
               <button
                 onClick={openForm}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition-colors"
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors"
               >
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -394,7 +394,7 @@ export function HomeScreen() {
               {loading && localItems.length === 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {[...Array(4)].map((_, i) => (
-                    <div key={i} className="h-20 rounded-xl bg-slate-200 dark:bg-slate-800 animate-pulse" />
+                    <div key={i} className="h-20 rounded-xl bg-surface-200 dark:bg-surface-800 animate-pulse" />
                   ))}
                 </div>
               ) : (

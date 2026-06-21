@@ -27,19 +27,19 @@ function fmtHours(n: number | null): string {
 
 function KpiCard({ label, value, sublabel, accent }: { label: string; value: string; sublabel?: string; accent?: string }) {
   return (
-    <div className="bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl p-4">
-      <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">{label}</p>
-      <p className={`text-2xl font-semibold mt-1 ${accent ?? 'text-slate-900 dark:text-slate-100'}`}>{value}</p>
-      {sublabel && <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{sublabel}</p>}
+    <div className="bg-white dark:bg-surface-800/60 border border-surface-200 dark:border-surface-700 rounded-xl p-4">
+      <p className="text-[11px] font-medium uppercase tracking-wider text-surface-500 dark:text-surface-400">{label}</p>
+      <p className={`text-2xl font-semibold mt-1 ${accent ?? 'text-surface-900 dark:text-surface-100'}`}>{value}</p>
+      {sublabel && <p className="text-xs text-surface-500 dark:text-surface-400 mt-1">{sublabel}</p>}
     </div>
   );
 }
 
 function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
-    <div className="bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl p-4">
-      <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200">{title}</h3>
-      {subtitle && <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 mb-3">{subtitle}</p>}
+    <div className="bg-white dark:bg-surface-800/60 border border-surface-200 dark:border-surface-700 rounded-xl p-4">
+      <h3 className="text-sm font-semibold text-surface-800 dark:text-surface-200">{title}</h3>
+      {subtitle && <p className="text-[11px] text-surface-500 dark:text-surface-400 mt-0.5 mb-3">{subtitle}</p>}
       {!subtitle && <div className="mt-3" />}
       {children}
     </div>
@@ -79,12 +79,12 @@ export function StatsDashboardPanel() {
   };
 
   return (
-    <div className="h-full bg-slate-50 dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col overflow-hidden">
+    <div className="h-full bg-surface-50 dark:bg-surface-900 rounded-xl shadow-2xl border border-surface-200 dark:border-surface-700 flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex-shrink-0 bg-white dark:bg-slate-800/60">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-surface-200 dark:border-surface-700 flex-shrink-0 bg-white dark:bg-surface-800/60">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Stats Dashboard</h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+          <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">Stats Dashboard</h2>
+          <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
             Cycle time, quality, and bottlenecks across the agent pipeline
           </p>
         </div>
@@ -95,20 +95,20 @@ export function StatsDashboardPanel() {
             className={`text-xs px-2.5 py-1.5 rounded-lg font-medium border transition-colors ${
               showDemo
                 ? 'bg-amber-100 dark:bg-amber-900/40 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300'
-                : 'bg-white dark:bg-slate-800/50 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-slate-400 dark:hover:border-slate-500'
+                : 'bg-white dark:bg-surface-800/50 border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-300 hover:border-surface-400 dark:hover:border-surface-500'
             }`}
           >
             {showDemo ? '◉ Demo Data' : '○ Demo Data'}
           </button>
-          <div className="flex items-center bg-slate-100 dark:bg-slate-700/60 rounded-lg p-0.5">
+          <div className="flex items-center bg-surface-100 dark:bg-surface-700/60 rounded-lg p-0.5">
             {RANGE_OPTIONS.map(opt => (
               <button
                 key={opt}
                 onClick={() => setDays(opt)}
                 className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors ${
                   days === opt
-                    ? 'bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-400 shadow-sm'
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                    ? 'bg-white dark:bg-surface-900 text-brand-700 dark:text-brand-400 shadow-sm'
+                    : 'text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200'
                 }`}
               >
                 {opt}d
@@ -117,7 +117,7 @@ export function StatsDashboardPanel() {
           </div>
           <button
             onClick={closeStats}
-            className="p-2 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+            className="p-2 rounded-lg text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -128,7 +128,7 @@ export function StatsDashboardPanel() {
 
       <div className="flex-1 overflow-y-auto p-6">
         {loading && !data && (
-          <div className="flex items-center justify-center h-full text-sm text-slate-500 dark:text-slate-400">Loading…</div>
+          <div className="flex items-center justify-center h-full text-sm text-surface-500 dark:text-surface-400">Loading…</div>
         )}
         {error && (
           <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-xs text-red-700 dark:text-red-300 mb-4">
@@ -152,7 +152,7 @@ export function StatsDashboardPanel() {
                 label="1st-Time Approval"
                 value={fmtPct(data.firstTimeApproval.overallRate)}
                 sublabel={`n=${data.firstTimeApproval.totalDecisions}`}
-                accent={data.firstTimeApproval.overallRate != null && data.firstTimeApproval.overallRate >= 70 ? 'text-teal-600 dark:text-teal-400' : undefined}
+                accent={data.firstTimeApproval.overallRate != null && data.firstTimeApproval.overallRate >= 70 ? 'text-brand-600 dark:text-brand-400' : undefined}
               />
               <KpiCard label="Rejection Rate" value={fmtPct(data.rejectionRate.overallRate)} sublabel={`n=${data.rejectionRate.totalResolved}`} />
               <KpiCard
@@ -181,7 +181,7 @@ export function StatsDashboardPanel() {
               <Section title="First-Time Approval Rate" subtitle="Share of stage outputs approved with no revision cycle, by week decided">
                 <Sparkline
                   points={data.firstTimeApproval.points.map(p => ({ x: p.weekStart, y: p.rate }))}
-                  color="#0d9488"
+                  color="rgb(var(--brand-600))"
                   valueFormat={v => `${v.toFixed(0)}%`}
                 />
               </Section>
@@ -216,25 +216,25 @@ export function StatsDashboardPanel() {
 
             <Section title="Currently Stuck" subtitle="Pending approvals open well beyond that stage's usual review time">
               {data.bottlenecks.stuckNow.length === 0 ? (
-                <p className="text-xs text-slate-400 dark:text-slate-600 py-1">Nothing flagged — all pending approvals are within normal range.</p>
+                <p className="text-xs text-surface-400 dark:text-surface-600 py-1">Nothing flagged — all pending approvals are within normal range.</p>
               ) : (
-                <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
+                <div className="divide-y divide-surface-100 dark:divide-surface-700/60">
                   {data.bottlenecks.stuckNow.map(item => (
                     <button
                       key={item.checkpointId}
                       onClick={() => { if (!data.isDemo) handleOpenWorkflow(item.workflowId); }}
                       disabled={data.isDemo}
-                      className={`w-full flex items-center justify-between gap-3 py-2.5 text-left rounded-lg px-2 -mx-2 transition-colors ${data.isDemo ? 'cursor-default' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60'}`}
+                      className={`w-full flex items-center justify-between gap-3 py-2.5 text-left rounded-lg px-2 -mx-2 transition-colors ${data.isDemo ? 'cursor-default' : 'hover:bg-surface-50 dark:hover:bg-surface-800/60'}`}
                     >
                       <div className="min-w-0">
-                        <p className="text-sm text-slate-800 dark:text-slate-200 truncate">{item.itemTitle}</p>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        <p className="text-sm text-surface-800 dark:text-surface-200 truncate">{item.itemTitle}</p>
+                        <p className="text-[11px] text-surface-500 dark:text-surface-400">
                           {stageLabel(item.stage)}{item.requiredRoles.length > 0 ? ` · needs ${item.requiredRoles.join(', ')}` : ''}
                         </p>
                       </div>
                       <div className="text-right flex-shrink-0">
                         <p className="text-sm font-medium text-amber-600 dark:text-amber-400">{fmtHours(item.hoursPending)}</p>
-                        <p className="text-[11px] text-slate-400 dark:text-slate-500">vs {fmtHours(item.thresholdHours)} usual</p>
+                        <p className="text-[11px] text-surface-400 dark:text-surface-500">vs {fmtHours(item.thresholdHours)} usual</p>
                       </div>
                     </button>
                   ))}
@@ -244,30 +244,30 @@ export function StatsDashboardPanel() {
 
             <Section title="Recent Retries" subtitle="Stages manually retried from the admin retry button">
               {data.retries.recent.length === 0 ? (
-                <p className="text-xs text-slate-400 dark:text-slate-600 py-1">No manual retries in range.</p>
+                <p className="text-xs text-surface-400 dark:text-surface-600 py-1">No manual retries in range.</p>
               ) : (
-                <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
+                <div className="divide-y divide-surface-100 dark:divide-surface-700/60">
                   {data.retries.recent.map((item, i) => (
                     <button
                       key={`${item.workflowId}-${item.stage}-${item.ts}-${i}`}
                       onClick={() => { if (!data.isDemo) handleOpenWorkflow(item.workflowId); }}
                       disabled={data.isDemo}
-                      className={`w-full flex items-center justify-between gap-3 py-2.5 text-left rounded-lg px-2 -mx-2 transition-colors ${data.isDemo ? 'cursor-default' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60'}`}
+                      className={`w-full flex items-center justify-between gap-3 py-2.5 text-left rounded-lg px-2 -mx-2 transition-colors ${data.isDemo ? 'cursor-default' : 'hover:bg-surface-50 dark:hover:bg-surface-800/60'}`}
                     >
                       <div className="min-w-0">
-                        <p className="text-sm text-slate-800 dark:text-slate-200 truncate">{item.itemTitle}</p>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        <p className="text-sm text-surface-800 dark:text-surface-200 truncate">{item.itemTitle}</p>
+                        <p className="text-[11px] text-surface-500 dark:text-surface-400">
                           {stageLabel(item.stage)}{item.triggeredByName ? ` · by ${item.triggeredByName}` : ''}
                         </p>
                       </div>
-                      <p className="text-[11px] text-slate-400 dark:text-slate-500 flex-shrink-0">{formatWeek(item.ts)}</p>
+                      <p className="text-[11px] text-surface-400 dark:text-surface-500 flex-shrink-0">{formatWeek(item.ts)}</p>
                     </button>
                   ))}
                 </div>
               )}
             </Section>
 
-            <p className="text-[11px] text-slate-400 dark:text-slate-600 text-center pb-2">
+            <p className="text-[11px] text-surface-400 dark:text-surface-600 text-center pb-2">
               Demo and cancelled workflows excluded. Generated {formatWeek(data.generatedAt)} · range {data.rangeDays}d
             </p>
           </div>

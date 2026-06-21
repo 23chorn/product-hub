@@ -416,12 +416,12 @@ export function SkillManagerPanel() {
   const selectedAgentName = selection?.type === 'new_agent' ? createForm.skill_name : null;
 
   return (
-    <div className={`h-full flex flex-col rounded-2xl overflow-hidden shadow-2xl ring-1 ring-slate-900/10 dark:ring-slate-100/10 ${isDark ? 'bg-slate-900' : 'bg-slate-100'}`}>
+    <div className={`h-full flex flex-col rounded-2xl overflow-hidden shadow-2xl ring-1 ring-surface-900/10 dark:ring-surface-100/10 ${isDark ? 'bg-surface-900' : 'bg-surface-100'}`}>
       {/* Header */}
-      <header className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4 flex items-center justify-between flex-shrink-0">
+      <header className="bg-white dark:bg-surface-800 border-b border-surface-200 dark:border-surface-700 px-6 py-4 flex items-center justify-between flex-shrink-0">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Agent Studio</h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Manage project context, behaviour docs, agent personas, skills, and tools</p>
+          <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">Agent Studio</h2>
+          <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">Manage project context, behaviour docs, agent personas, skills, and tools</p>
         </div>
         <div className="flex items-center space-x-3">
           {toast && (
@@ -432,7 +432,7 @@ export function SkillManagerPanel() {
 
           <button
             onClick={closeSkillManager}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+            className="p-1.5 rounded-lg text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -571,7 +571,7 @@ export function SkillManagerPanel() {
               lockDiscipline="agent"
             />
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center space-y-2 text-slate-400 dark:text-slate-500">
+            <div className="flex-1 flex flex-col items-center justify-center space-y-2 text-surface-400 dark:text-surface-500">
               <svg className="w-8 h-8 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>

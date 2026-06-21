@@ -307,14 +307,14 @@ export function CoordinatorChat() {
             if (!lastMsg || lastMsg.role !== 'coordinator' || lastMsg.eventType || lastMsg.isProgress) return null;
             const content = stripReadyMarker(lastMsg.content);
             return (
-              <div className="flex-shrink-0 border-t border-slate-200 dark:border-slate-800/60 bg-white dark:bg-[#0d1117] px-4 py-3">
+              <div className="flex-shrink-0 border-t border-surface-200 dark:border-surface-800/60 bg-white dark:bg-[#0d1117] px-4 py-3">
                 {!content ? (
-                  <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono">
-                    <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse" />
+                  <div className="flex items-center gap-2 text-[10px] text-surface-500 font-mono">
+                    <span className="w-1.5 h-1.5 rounded-full bg-brand-500 animate-pulse" />
                     thinking…
                   </div>
                 ) : (
-                  <div className="rounded border border-slate-700/40 bg-slate-800/30 px-3 py-2 text-xs font-sans">
+                  <div className="rounded border border-surface-700/40 bg-surface-800/30 px-3 py-2 text-xs font-sans">
                     <div className="prose prose-xs dark:prose-invert max-w-none [&_p]:my-1">
                       <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{content}</ReactMarkdown>
                     </div>
@@ -389,9 +389,9 @@ export function CoordinatorChat() {
 
       {/* Error display */}
       {error && (
-        <div className="border-t border-slate-200 dark:border-slate-700 px-4 py-2 flex items-center gap-2 text-xs text-red-600 dark:text-red-400 flex-shrink-0">
+        <div className="border-t border-surface-200 dark:border-surface-700 px-4 py-2 flex items-center gap-2 text-xs text-red-600 dark:text-red-400 flex-shrink-0">
           {error}
-          <button onClick={() => setError(null)} className="ml-auto text-slate-400 hover:text-slate-600">✕</button>
+          <button onClick={() => setError(null)} className="ml-auto text-surface-400 hover:text-surface-600">✕</button>
         </div>
       )}
       {/* Prototype preview overlay */}

@@ -40,12 +40,12 @@ export function InitiativeCard({
   return (
     <div
       title={item.description || undefined}
-      className="relative group rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 hover:border-slate-300 dark:hover:border-slate-600 hover:shadow-sm transition-all"
+      className="relative group rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/80 hover:border-surface-300 dark:hover:border-surface-600 hover:shadow-sm transition-all"
     >
       <div className="p-4 flex items-start gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-start gap-2 flex-wrap">
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 leading-snug break-words min-w-0">
+            <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100 leading-snug break-words min-w-0">
               {wf?.summary || item.initiative}
             </h3>
             {wf?.isDemo && (
@@ -65,14 +65,14 @@ export function InitiativeCard({
             ))}
           </div>
           {wf?.currentStage && wf.status === 'active' ? (
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
+            <p className="text-[10px] text-surface-400 dark:text-surface-500 mt-1">
               {`Running ${wf.currentStage.replace(/_/g, ' ')}`}
             </p>
           ) : item.description ? (
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">{item.description}</p>
+            <p className="text-xs text-surface-500 dark:text-surface-400 mt-1 line-clamp-2">{item.description}</p>
           ) : null}
           {wf?.updatedAt && (
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
+            <p className="text-[10px] text-surface-400 dark:text-surface-500 mt-1">
               Updated {formatUpdatedAt(wf.updatedAt)}
             </p>
           )}
@@ -107,19 +107,19 @@ export function InitiativeCard({
               </button>
             ) : isComplete ? (
               <button onClick={onResume}
-                className="text-xs px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 font-medium transition-colors">
+                className="text-xs px-3 py-1.5 rounded-lg border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-700/50 font-medium transition-colors">
                 View →
               </button>
             ) : !canLaunch ? (
               <span title="Only Product or Admin users can launch a workflow" className="cursor-not-allowed">
                 <button disabled
-                  className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-600 font-medium pointer-events-none">
+                  className="text-xs px-3 py-1.5 rounded-lg border border-surface-200 dark:border-surface-700 text-surface-400 dark:text-surface-600 font-medium pointer-events-none">
                   Launch →
                 </button>
               </span>
             ) : (
               <button onClick={onLaunch} disabled={isAnalysing}
-                className="text-xs px-3 py-1.5 rounded-lg border border-teal-300 dark:border-teal-700 text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20 disabled:opacity-60 font-medium transition-colors flex items-center gap-1.5">
+                className="text-xs px-3 py-1.5 rounded-lg border border-brand-300 dark:border-brand-700 text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 disabled:opacity-60 font-medium transition-colors flex items-center gap-1.5">
                 {isAnalysing ? (
                   <>
                     <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -142,13 +142,13 @@ export function InitiativeCard({
                   Delete
                 </button>
                 <button onClick={onCancelDelete}
-                  className="text-[10px] px-2 py-1 rounded bg-slate-100 dark:bg-slate-700 text-slate-500">
+                  className="text-[10px] px-2 py-1 rounded bg-surface-100 dark:bg-surface-700 text-surface-500">
                   Cancel
                 </button>
               </div>
             ) : (
               <button onClick={(e) => { e.stopPropagation(); onRequestDelete(); }} disabled={isDeleting}
-                className="opacity-0 group-hover:opacity-100 p-1 text-slate-300 dark:text-slate-600 hover:text-red-400 dark:hover:text-red-500 transition-all">
+                className="opacity-0 group-hover:opacity-100 p-1 text-surface-300 dark:text-surface-600 hover:text-red-400 dark:hover:text-red-500 transition-all">
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>

@@ -32,9 +32,9 @@ function DemoToast({ title, onDismiss }: { title: string; onDismiss: () => void 
       <span className="text-violet-400">⚡</span>
       <div>
         <span className="text-violet-300 font-semibold">Full demo started</span>
-        <span className="text-slate-400 ml-2 text-xs">"{title}" pipeline running</span>
+        <span className="text-surface-400 ml-2 text-xs">"{title}" pipeline running</span>
       </div>
-      <button onClick={onDismiss} className="ml-2 text-slate-600 hover:text-slate-400 text-xs">✕</button>
+      <button onClick={onDismiss} className="ml-2 text-surface-600 hover:text-surface-400 text-xs">✕</button>
     </div>
   );
 }
@@ -149,25 +149,25 @@ function App() {
   // Brief auth loading spinner (only when we haven't resolved yet and login isn't shown)
   if (authLoading && !noAuth && !user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-950">
-        <div className="w-6 h-6 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-surface-950">
+        <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col bg-slate-100 dark:bg-slate-950">
+    <div className="h-screen flex flex-col bg-surface-100 dark:bg-surface-950">
       {/* Toast Notifications */}
       <ToastContainer />
 
       {/* Header */}
-      <header className="bg-white/90 dark:bg-slate-900/80 backdrop-blur-lg border-b border-slate-200 dark:border-slate-700 px-6 py-4">
+      <header className="bg-white/90 dark:bg-surface-900/80 backdrop-blur-lg border-b border-surface-200 dark:border-surface-700 px-6 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+            <h1 className="text-2xl font-bold text-surface-900 dark:text-surface-100">
               Product Hub
             </h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+            <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">
               Chief of Staff-driven product workflow
             </p>
           </div>
@@ -175,7 +175,7 @@ function App() {
             {/* Discovery Button */}
             <button
               onClick={openDiscovery}
-              className="flex items-center px-3 py-1.5 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-700/70 hover:border-slate-400 dark:hover:border-slate-500 transition-colors shadow-sm"
+              className="flex items-center px-3 py-1.5 rounded-lg text-sm font-medium border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 bg-white dark:bg-surface-800/50 hover:bg-surface-50 dark:hover:bg-surface-700/70 hover:border-surface-400 dark:hover:border-surface-500 transition-colors shadow-sm"
               title="Open Discovery"
             >
               Discovery
@@ -184,7 +184,7 @@ function App() {
             {/* Agent Studio Button */}
             <button
               onClick={openSkillManager}
-              className="flex items-center px-3 py-1.5 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-700/70 hover:border-slate-400 dark:hover:border-slate-500 transition-colors shadow-sm"
+              className="flex items-center px-3 py-1.5 rounded-lg text-sm font-medium border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 bg-white dark:bg-surface-800/50 hover:bg-surface-50 dark:hover:bg-surface-700/70 hover:border-surface-400 dark:hover:border-surface-500 transition-colors shadow-sm"
               title="Open Agent Studio"
             >
               Studio
@@ -194,7 +194,7 @@ function App() {
             {canViewStats(user, noAuth) && (
               <button
                 onClick={openStats}
-                className="flex items-center px-3 py-1.5 rounded-lg text-sm font-medium border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-700/70 hover:border-slate-400 dark:hover:border-slate-500 transition-colors shadow-sm"
+                className="flex items-center px-3 py-1.5 rounded-lg text-sm font-medium border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 bg-white dark:bg-surface-800/50 hover:bg-surface-50 dark:hover:bg-surface-700/70 hover:border-surface-400 dark:hover:border-surface-500 transition-colors shadow-sm"
                 title="Open Stats Dashboard"
               >
                 Stats
@@ -204,7 +204,7 @@ function App() {
             {/* Settings Button */}
             <button
               onClick={openSettings}
-              className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
+              className="p-2 rounded-lg text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700 hover:text-surface-700 dark:hover:text-surface-200 transition-colors"
               title="Settings"
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -234,7 +234,7 @@ function App() {
                     className={`px-2 py-1 text-xs rounded-md border transition-colors ${
                       impersonating
                         ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
-                        : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300 hover:border-slate-400 dark:hover:border-slate-500'
+                        : 'bg-surface-100 dark:bg-surface-800 border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:text-surface-800 dark:hover:text-surface-300 hover:border-surface-400 dark:hover:border-surface-500'
                     }`}
                   >
                     {impersonating ? `Viewing as ${user?.name?.split(' ')[0]}` : 'Switch user'}
@@ -245,38 +245,38 @@ function App() {
                     <>
                       <div className="fixed inset-0 z-[9998]" onClick={() => setShowUserSwitcher(false)} />
                       <div
-                        className="fixed z-[9999] w-60 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl overflow-hidden"
+                        className="fixed z-[9999] w-60 bg-white dark:bg-surface-900 border border-surface-200 dark:border-surface-700 rounded-xl shadow-2xl overflow-hidden"
                         style={rect ? { top: rect.bottom + 8, right: window.innerWidth - rect.right } : { top: 60, right: 16 }}
                       >
-                        <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700">
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">View as user</p>
+                        <div className="px-3 py-2 border-b border-surface-200 dark:border-surface-700">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-surface-500 dark:text-surface-400">View as user</p>
                         </div>
                         {allUsers.map(u => (
                           <button
                             key={u.id}
                             onClick={() => { impersonate(u); setShowUserSwitcher(false); }}
-                            className={`w-full text-left px-3 py-2.5 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ${user?.id === u.id ? 'bg-slate-100 dark:bg-slate-800/50' : ''}`}
+                            className={`w-full text-left px-3 py-2.5 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors ${user?.id === u.id ? 'bg-surface-100 dark:bg-surface-800/50' : ''}`}
                           >
                             <div className="flex items-center justify-between gap-2">
                               <div className="min-w-0">
-                                <p className="text-xs font-medium text-slate-800 dark:text-slate-200 truncate">{u.name}</p>
-                                <p className="text-[10px] text-slate-500 dark:text-slate-500 font-mono">@{u.username}</p>
+                                <p className="text-xs font-medium text-surface-800 dark:text-surface-200 truncate">{u.name}</p>
+                                <p className="text-[10px] text-surface-500 dark:text-surface-500 font-mono">@{u.username}</p>
                               </div>
                               <div className="flex flex-wrap gap-1 justify-end flex-shrink-0">
                                 {u.is_admin && <span className="text-[9px] bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-400 border border-violet-200 dark:border-violet-700/50 px-1 py-0.5 rounded">admin</span>}
                                 {u.roles.map(r => (
-                                  <span key={r} className="text-[9px] bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-400 border border-teal-200 dark:border-teal-700/40 px-1 py-0.5 rounded">{ROLE_LABELS[r] ?? r}</span>
+                                  <span key={r} className="text-[9px] bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-400 border border-brand-200 dark:border-brand-700/40 px-1 py-0.5 rounded">{ROLE_LABELS[r] ?? r}</span>
                                 ))}
-                                {!u.is_admin && u.roles.length === 0 && <span className="text-[9px] text-slate-400 dark:text-slate-600">viewer</span>}
+                                {!u.is_admin && u.roles.length === 0 && <span className="text-[9px] text-surface-400 dark:text-surface-600">viewer</span>}
                               </div>
                             </div>
                           </button>
                         ))}
                         {impersonating && (
-                          <div className="border-t border-slate-200 dark:border-slate-700">
+                          <div className="border-t border-surface-200 dark:border-surface-700">
                             <button
                               onClick={() => { stopImpersonating(); setShowUserSwitcher(false); }}
-                              className="w-full text-left px-3 py-2.5 text-xs text-amber-600 dark:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                              className="w-full text-left px-3 py-2.5 text-xs text-amber-600 dark:text-amber-400 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
                             >
                               ← Back to {realUser.name}
                             </button>
@@ -293,11 +293,11 @@ function App() {
             {/* User badge + logout */}
             {user && (
               <div className="flex items-center gap-2 pl-1">
-                <span className="text-xs font-medium text-slate-700 dark:text-slate-300">{user.name}</span>
+                <span className="text-xs font-medium text-surface-700 dark:text-surface-300">{user.name}</span>
                 <button
                   onClick={handleLogout}
                   title="Sign out"
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                  className="p-1.5 rounded-lg text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -317,13 +317,13 @@ function App() {
             : <HomeScreen />}
         </main>
 
-        <div className="shrink-0 flex justify-end px-4 py-2 border-t border-slate-200 dark:border-slate-800/60 bg-white/80 dark:bg-slate-950/80 backdrop-blur-sm">
+        <div className="shrink-0 flex justify-end px-4 py-2 border-t border-surface-200 dark:border-surface-800/60 bg-white/80 dark:bg-surface-950/80 backdrop-blur-sm">
           <div
-            className="inline-flex items-center gap-2 text-[11px] font-mono text-slate-500 dark:text-slate-400"
+            className="inline-flex items-center gap-2 text-[11px] font-mono text-surface-500 dark:text-surface-400"
             title={isConnected === null ? 'Checking connection...' : isConnected ? 'Connected' : 'Disconnected'}
           >
             <span className={`block w-2 h-2 rounded-full ${
-              isConnected === null ? 'bg-slate-400' : isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'
+              isConnected === null ? 'bg-surface-400' : isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'
             }`} />
             <span>
               {isConnected === null ? 'checking' : isConnected ? 'connected' : 'disconnected'}

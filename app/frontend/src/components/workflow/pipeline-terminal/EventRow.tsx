@@ -8,9 +8,9 @@ export function EventRow({ msg }: { msg: CoordinatorMessage }) {
     return (
       <ExpandableRow
         label="context updates"
-        labelColor="text-teal-600 dark:text-teal-500"
-        borderColor="border-teal-200 dark:border-teal-800/40"
-        bgColor="bg-teal-50 dark:bg-teal-900/10"
+        labelColor="text-brand-600 dark:text-brand-500"
+        borderColor="border-brand-200 dark:border-brand-800/40"
+        bgColor="bg-brand-50 dark:bg-brand-900/10"
         content={msg.content}
         timestamp={msg.timestamp}
       />
@@ -56,7 +56,7 @@ export function EventRow({ msg }: { msg: CoordinatorMessage }) {
   const isAdoLink = msg.eventType === 'board_synced' && !!externalUrl;
 
   return (
-    <div className={`flex items-center gap-2 px-2 py-1.5 rounded transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/20 ${isProgress ? 'opacity-60' : ''}`}>
+    <div className={`flex items-center gap-2 px-2 py-1.5 rounded transition-colors hover:bg-surface-100 dark:hover:bg-surface-800/20 ${isProgress ? 'opacity-60' : ''}`}>
       {/* Icon badge */}
       <div className={`flex-shrink-0 w-5 h-5 rounded flex items-center justify-center text-[10px] ${cfg.bgColor}`}>
         <span className={cfg.color}>{cfg.icon}</span>
@@ -65,11 +65,11 @@ export function EventRow({ msg }: { msg: CoordinatorMessage }) {
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline justify-between gap-2">
-          <span className="text-sm text-slate-700 dark:text-slate-300 leading-tight font-mono truncate">{title}</span>
-          <span className="flex-shrink-0 text-[11px] text-slate-400 dark:text-slate-700 font-mono">{formatTs(msg.timestamp)}</span>
+          <span className="text-sm text-surface-700 dark:text-surface-300 leading-tight font-mono truncate">{title}</span>
+          <span className="flex-shrink-0 text-[11px] text-surface-400 dark:text-surface-700 font-mono">{formatTs(msg.timestamp)}</span>
         </div>
         {detail && !externalUrl && (
-          <p className="text-[12px] text-slate-500 dark:text-slate-600 font-mono mt-0.5 leading-relaxed truncate">{detail}</p>
+          <p className="text-[12px] text-surface-500 dark:text-surface-600 font-mono mt-0.5 leading-relaxed truncate">{detail}</p>
         )}
         {isWikiLink && (
           <a

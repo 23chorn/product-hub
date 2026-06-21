@@ -1,6 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { useWorkflowStore } from '../../stores/workflowStore';
 import { useConfigStore } from '../../stores/configStore';
 import { useAuthStore, canApprove, parseRequiredRoles, ROLE_LABELS } from '../../stores/authStore';
@@ -8,24 +6,15 @@ import { api } from '../../services/api';
 import { CriticQuestionForm, CriticIssuesPanel } from './CriticQuestionForm';
 import { OpenQuestionsPanel } from './OpenQuestionsPanel';
 import { STAGE_LABELS } from '../../constants/stage-labels';
-import { tryParseBacklog } from '../../utils/backlog-helpers';
-import { BacklogView } from './BacklogView';
-import { EpicFeaturesView, tryParseEpicFeatures } from './EpicFeaturesView';
-import { QATestsView, tryParseQATests } from './QATestsView';
-import { TechRefinementView, tryParseTechRefinement } from './TechRefinementView';
+import { tryParseBacklog, isBacklogArtifactType } from '../../utils/backlog-helpers';
 import { extractPersonas, PersonaPanel } from './PersonaPanel';
-import { PrototypePreview, type PrototypeData } from '../coordinator/PrototypePreview';
-import { convertArtifactToMarkdown, isDocumentArtifact, parseOpenQuestions, type OpenQuestion } from '../../utils/artifact-to-markdown';
+import { parseOpenQuestions, type OpenQuestion } from '../../utils/artifact-to-markdown';
 import { ArtifactSyncActions } from './ArtifactSyncActions';
 import { CriticReviewFlyout } from './CriticReviewFlyout';
 import { ApproveConfirmModal } from './ApproveConfirmModal';
 import { RejectConfirmModal } from './RejectConfirmModal';
-
-// Per-feature isolated backlog artifacts are saved as backlog_F1, backlog_F2, ... (see
-// saveLocalArtifact in artifact-helpers.ts) — the merged final backlog is plain 'backlog'.
-function isBacklogArtifactType(artifactType: string): boolean {
-  return artifactType === 'backlog' || /^backlog_F\d+$/.test(artifactType);
-}
+import { useCheckpointActions } from '../../hooks/useCheckpointActions';
+import { renderStructuredArtifact } from './artifact-content-view';
 
 export function ArtifactViewer() {
   const { viewingArtifactId, setViewingArtifactId, checkpoints, activeWorkflow, applyWorkflowStatus, addCoordinatorMessage } = useWorkflowStore();
@@ -38,7 +27,6 @@ export function ArtifactViewer() {
   const [showApproveConfirm, setShowApproveConfirm] = useState(false);
   const [showRejectConfirm, setShowRejectConfirm] = useState(false);
   const [showIssuesPanel, setShowIssuesPanel] = useState(false);
-  const [resolveLoading, setResolveLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showCriticFlyout, setShowCriticFlyout] = useState(false);
@@ -58,6 +46,18 @@ export function ArtifactViewer() {
   );
 
   const hasApprovePermission = canApprove(user, noAuth, parseRequiredRoles(pendingCheckpoint?.required_role));
+
+  const { resolveLoading, figmaComplete, rerunStage, resolve } = useCheckpointActions({
+    pendingCheckpoint,
+    activeWorkflow,
+    setError,
+    onResolved: () => {
+      setFeedback('');
+      setShowReviseForm(false);
+      setShowApproveConfirm(false);
+      setShowRejectConfirm(false);
+    },
+  });
 
   useEffect(() => {
     if (!viewingArtifactId) { setContent(null); setError(null); setVersionInfo(null); return; }
@@ -93,68 +93,6 @@ export function ArtifactViewer() {
   }, [viewingArtifactId]);
 
   if (!viewingArtifactId) return null;
-
-  async function figmaComplete(figmaUrl?: string) {
-    if (!pendingCheckpoint || !activeWorkflow) return;
-    setResolveLoading(true);
-    setError(null);
-    try {
-      const result = await api.figmaComplete(pendingCheckpoint.id, figmaUrl);
-      applyWorkflowStatus(result.workflow);
-      addCoordinatorMessage({ role: 'coordinator', content: 'Figma mockups marked complete. Syncing latest frame data and advancing to the next stage.', timestamp: Date.now() });
-      setViewingArtifactId(null);
-    } catch (err: any) {
-      setError(err.response?.data?.error ?? err.message ?? 'Failed to mark Figma complete');
-    } finally {
-      setResolveLoading(false);
-    }
-  }
-
-  async function rerunStage() {
-    if (!activeWorkflow?.id) return;
-    setResolveLoading(true);
-    setError(null);
-    try {
-      const result = await api.retryWorkflowStage(activeWorkflow.id);
-      applyWorkflowStatus(result.workflow);
-      setViewingArtifactId(null);
-    } catch (err: any) {
-      setError(err.response?.data?.error ?? err.message ?? 'Failed to rerun stage');
-    } finally {
-      setResolveLoading(false);
-    }
-  }
-
-  async function resolve(status: 'approved' | 'rejected' | 'revised', fb?: string) {
-    if (!pendingCheckpoint || !activeWorkflow) return;
-    setResolveLoading(true);
-    setError(null);
-    try {
-      const result = await api.resolveCheckpoint(pendingCheckpoint.id, status, fb);
-      applyWorkflowStatus(result.workflow);
-
-      const statusLabel = status === 'approved' ? 'approved' : status === 'rejected' ? 'rejected' : 'sent for revision';
-      const actor = user?.name ?? user?.username;
-      const byNote = actor ? ` by **${actor}**` : '';
-      addCoordinatorMessage({
-        role: 'coordinator',
-        content: `Checkpoint **${STAGE_LABELS[pendingCheckpoint.stage] ?? pendingCheckpoint.stage}** ${statusLabel}${byNote}.${
-          result.complete ? ' Workflow complete.' : ''
-        }`,
-        timestamp: Date.now(),
-      });
-
-      setFeedback('');
-      setShowReviseForm(false);
-      setShowApproveConfirm(false);
-      setShowRejectConfirm(false);
-      setViewingArtifactId(null);
-    } catch (err: any) {
-      setError(err.response?.data?.error ?? err.message ?? 'Failed to resolve');
-    } finally {
-      setResolveLoading(false);
-    }
-  }
 
   const workItemsEnabled = !!(config?.integrations?.workItems && config.integrations.workItems !== 'none');
   const isBacklog = isBacklogArtifactType(artifactType) || artifactType === 'epic_features';
@@ -276,19 +214,19 @@ export function ArtifactViewer() {
       }`}>
         {/* Issues panel — far left, toggled from review header */}
         {showCriticPanel && showIssuesPanel && hasIssues && (
-          <div className="w-[340px] flex-shrink-0 bg-white dark:bg-slate-800 shadow-xl flex flex-col border-r border-slate-200 dark:border-slate-700">
-            <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex-shrink-0 flex items-center justify-between">
+          <div className="w-[340px] flex-shrink-0 bg-white dark:bg-surface-800 shadow-xl flex flex-col border-r border-surface-200 dark:border-surface-700">
+            <div className="px-4 py-3 border-b border-surface-200 dark:border-surface-700 flex-shrink-0 flex items-center justify-between">
               <div>
-                <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                <h2 className="text-sm font-semibold text-surface-900 dark:text-surface-100">
                   Issues Flagged
                 </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
                   {criticData.issues.length} issue{criticData.issues.length !== 1 ? 's' : ''}
                 </p>
               </div>
               <button
                 onClick={() => setShowIssuesPanel(false)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                className="text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 transition-colors"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -303,13 +241,13 @@ export function ArtifactViewer() {
 
         {/* Critic review panel — questions, left of artifact */}
         {showCriticPanel && (
-          <div className="w-[520px] flex-shrink-0 bg-slate-50 dark:bg-slate-900 shadow-xl flex flex-col border-r border-slate-200 dark:border-slate-700">
-            <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex-shrink-0 flex items-center justify-between">
+          <div className="w-[520px] flex-shrink-0 bg-surface-50 dark:bg-surface-900 shadow-xl flex flex-col border-r border-surface-200 dark:border-surface-700">
+            <div className="px-4 py-3 border-b border-surface-200 dark:border-surface-700 flex-shrink-0 flex items-center justify-between">
               <div>
-                <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                <h2 className="text-sm font-semibold text-surface-900 dark:text-surface-100">
                   Flint's Review
                 </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
                   {criticData.questions.length} question{criticData.questions.length !== 1 ? 's' : ''} to answer
                 </p>
               </div>
@@ -335,10 +273,10 @@ export function ArtifactViewer() {
 
         {/* Open questions panel — left of artifact, shown when answering PRD open questions */}
         {showOpenQPanel && (
-          <div className="w-[520px] flex-shrink-0 bg-slate-50 dark:bg-slate-900 shadow-xl flex flex-col border-r border-slate-200 dark:border-slate-700">
-            <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex-shrink-0">
-              <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Open Questions</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+          <div className="w-[520px] flex-shrink-0 bg-surface-50 dark:bg-surface-900 shadow-xl flex flex-col border-r border-surface-200 dark:border-surface-700">
+            <div className="px-4 py-3 border-b border-surface-200 dark:border-surface-700 flex-shrink-0">
+              <h2 className="text-sm font-semibold text-surface-900 dark:text-surface-100">Open Questions</h2>
+              <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
                 {openQuestions.length} question{openQuestions.length !== 1 ? 's' : ''} to resolve
               </p>
             </div>
@@ -354,12 +292,12 @@ export function ArtifactViewer() {
         )}
 
         {/* Artifact drawer — right side (or only panel) */}
-        <div className="flex-1 bg-white dark:bg-slate-800 shadow-xl flex flex-col overflow-hidden">
+        <div className="flex-1 bg-white dark:bg-surface-800 shadow-xl flex flex-col overflow-hidden">
           {/* Header */}
-          <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between flex-shrink-0">
+          <div className="px-4 py-3 border-b border-surface-200 dark:border-surface-700 flex items-center justify-between flex-shrink-0">
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                <h2 className="text-sm font-semibold text-surface-900 dark:text-surface-100">
                   {STAGE_LABELS[artifactType] ?? (artifactType || 'Artifact')}
                 </h2>
                 {versionInfo && (
@@ -390,7 +328,7 @@ export function ArtifactViewer() {
                   className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md border transition-colors ${
                     showCriticFlyout
                       ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400'
-                      : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'
+                      : 'border-surface-200 dark:border-surface-700 text-surface-500 dark:text-surface-400 hover:border-surface-300 dark:hover:border-surface-600'
                   }`}
                   title="Toggle Flint's review"
                 >
@@ -418,8 +356,8 @@ export function ArtifactViewer() {
                   }}
                   className={`p-1 rounded transition-colors ${
                     isEditing
-                      ? 'text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/20'
-                      : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
+                      ? 'text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/20'
+                      : 'text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 hover:bg-surface-100 dark:hover:bg-surface-700'
                   }`}
                   title={isEditing ? 'Exit edit mode' : 'Edit artifact'}
                 >
@@ -430,7 +368,7 @@ export function ArtifactViewer() {
               )}
               <button
                 onClick={() => setIsFullscreen(f => !f)}
-                className="p-1 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                className="p-1 rounded text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
                 title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
               >
                 {isFullscreen ? (
@@ -445,7 +383,7 @@ export function ArtifactViewer() {
               </button>
               <button
                 onClick={() => { setViewingArtifactId(null); setIsFullscreen(false); }}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                className="text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -456,9 +394,9 @@ export function ArtifactViewer() {
 
           {/* Content */}
           {(() => {
-            const epicFeaturesData = content && artifactType === 'epic_features' ? tryParseEpicFeatures(content) : null;
+            // backlogData is also computed inside renderStructuredArtifact; kept here only
+            // to drive the absolutely-positioned persona panel (fullscreen backlog view).
             const backlogData = content && isBacklogArtifactType(artifactType) ? tryParseBacklog(content) : null;
-            const techData = content && isBacklogArtifactType(artifactType) && !backlogData ? tryParseTechRefinement(content) : null;
             const showPersonaPanel = isFullscreen && backlogData && extractPersonas(backlogData).length > 0;
 
             return (
@@ -467,87 +405,23 @@ export function ArtifactViewer() {
                 <div className={`h-full ${isEditing ? 'flex flex-col px-4 py-4' : 'overflow-y-auto px-4 py-4'}`}>
                   <div className={`${isEditing ? 'flex-1 min-h-0 flex flex-col' : ''} ${isFullscreen ? 'mx-auto w-full max-w-4xl' : ''}`}>
                     {loading ? (
-                      <p className="text-sm text-slate-400 animate-pulse">Loading...</p>
+                      <p className="text-sm text-surface-400 animate-pulse">Loading...</p>
                     ) : isEditing ? (
                       <textarea
                         value={editContent}
                         onChange={(e) => setEditContent(e.target.value)}
-                        className="w-full flex-1 min-h-0 text-sm font-mono resize-none bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                        className="w-full flex-1 min-h-0 text-sm font-mono resize-none bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 border border-surface-200 dark:border-surface-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
                         spellCheck={false}
                       />
-                    ) : content ? (() => {
-                      if (epicFeaturesData) return <EpicFeaturesView data={epicFeaturesData} />;
-                      if (backlogData) return (
-                        <BacklogView
-                          data={backlogData}
-                          isFeaturePreview={/^backlog_F\d+$/.test(artifactType)}
-                          initiativeTitle={activeWorkflow?.summary ?? activeWorkflow?.goal?.split('\n')[0]}
-                        />
-                      );
-                      if (techData) return <TechRefinementView data={techData} />;
-                      const qaData = artifactType === 'qa_tests' ? tryParseQATests(content) : null;
-                      if (qaData) return <QATestsView data={qaData} />;
-                      // JSON artifact types that failed to parse — render as code block with warning
-                      if (artifactType === 'qa_tests' || isBacklogArtifactType(artifactType)) {
-                        return (
-                          <div className="space-y-3">
-                            <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
-                              <svg className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-                              </svg>
-                              <div className="flex-1 space-y-2">
-                                <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
-                                  This artifact appears incomplete — the stage was likely interrupted mid-stream. Retry the stage to regenerate a complete output.
-                                </p>
-                                {pendingCheckpoint && hasApprovePermission && (
-                                  <button
-                                    onClick={rerunStage}
-                                    disabled={resolveLoading}
-                                    className="py-1.5 px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 text-white text-xs font-medium rounded-md transition-colors"
-                                  >
-                                    {resolveLoading ? 'Retrying...' : 'Retry Stage'}
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                            <pre className="text-xs font-mono text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-4 overflow-auto whitespace-pre-wrap break-words leading-relaxed">{content}</pre>
-                          </div>
-                        );
-                      }
-                      if (artifactType === 'prototype') {
-                        try {
-                          const protoData: PrototypeData = JSON.parse(content);
-                          if (protoData.files && activeWorkflow) {
-                            return (
-                              <PrototypePreview
-                                prototype={protoData}
-                                workflowId={activeWorkflow.id}
-                                onClose={() => setViewingArtifactId(null)}
-                                onUpdate={() => {}}
-                              />
-                            );
-                          }
-                        } catch { /* fall through to raw view */ }
-                      }
-                      // Document artifacts are stored as JSON but rendered as markdown via the converter.
-                      console.log(`[ArtifactViewer] Checking if "${artifactType}" is document artifact: ${isDocumentArtifact(artifactType)}`);
-                      if (isDocumentArtifact(artifactType)) {
-                        const md = convertArtifactToMarkdown(artifactType, content);
-                        console.log(`[ArtifactViewer] Markdown conversion result: ${md === null ? 'null' : md.length + ' chars'}`);
-                        if (md !== null) {
-                          return (
-                            <div className="prose prose-sm dark:prose-invert max-w-none">
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>{md}</ReactMarkdown>
-                            </div>
-                          );
-                        }
-                      }
-                      return (
-                        <div className="prose prose-sm dark:prose-invert max-w-none">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-                        </div>
-                      );
-                    })() : error ? (
+                    ) : content ? renderStructuredArtifact(content, {
+                      artifactType,
+                      activeWorkflow,
+                      pendingCheckpoint,
+                      hasApprovePermission,
+                      resolveLoading,
+                      rerunStage,
+                      onClose: () => setViewingArtifactId(null),
+                    }) : error ? (
                       <p className="text-sm text-red-500">{error}</p>
                     ) : pendingCheckpoint ? (
                       <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
@@ -562,7 +436,7 @@ export function ArtifactViewer() {
                             <button
                               onClick={rerunStage}
                               disabled={resolveLoading}
-                              className="py-1.5 px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 text-white text-xs font-medium rounded-md transition-colors"
+                              className="py-1.5 px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-surface-300 text-white text-xs font-medium rounded-md transition-colors"
                             >
                               {resolveLoading ? 'Retrying...' : 'Retry Stage'}
                             </button>
@@ -570,7 +444,7 @@ export function ArtifactViewer() {
                         </div>
                       </div>
                     ) : (
-                      <p className="text-sm text-slate-400 italic">No content available.</p>
+                      <p className="text-sm text-surface-400 italic">No content available.</p>
                     )}
                   </div>
                 </div>
@@ -584,7 +458,7 @@ export function ArtifactViewer() {
                 )}
                 {/* Persona panel — positioned absolutely so it doesn't affect content centering */}
                 {showPersonaPanel && (
-                  <div className="absolute top-0 right-0 w-80 h-full overflow-y-auto border-l border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3">
+                  <div className="absolute top-0 right-0 w-80 h-full overflow-y-auto border-l border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 p-3">
                     <PersonaPanel personas={extractPersonas(backlogData)} />
                   </div>
                 )}
@@ -594,14 +468,14 @@ export function ArtifactViewer() {
 
           {/* Save bar (editing mode) */}
           {isEditing && (
-            <div className={`px-4 pb-4 pt-3 border-t border-slate-200 dark:border-slate-700 flex-shrink-0 space-y-2 ${isFullscreen ? 'mx-auto w-full max-w-4xl' : ''}`}>
+            <div className={`px-4 pb-4 pt-3 border-t border-surface-200 dark:border-surface-700 flex-shrink-0 space-y-2 ${isFullscreen ? 'mx-auto w-full max-w-4xl' : ''}`}>
               {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
               {saveToast && <p className="text-xs text-green-600 dark:text-green-400">{saveToast}</p>}
               <div className="flex gap-2">
                 <button
                   onClick={() => handleSave(false)}
                   disabled={!isDirty || isSaving}
-                  className="flex-1 py-2 px-3 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-sm font-medium rounded-lg transition-colors"
+                  className="flex-1 py-2 px-3 bg-brand-600 hover:bg-brand-700 disabled:bg-surface-300 dark:disabled:bg-surface-700 text-white text-sm font-medium rounded-lg transition-colors"
                 >
                   {isSaving ? 'Saving...' : 'Save'}
                 </button>
@@ -609,7 +483,7 @@ export function ArtifactViewer() {
                   <button
                     onClick={() => handleSave(true)}
                     disabled={!isDirty || isSaving}
-                    className="py-2 px-3 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-sm font-medium rounded-lg transition-colors"
+                    className="py-2 px-3 bg-green-600 hover:bg-green-700 disabled:bg-surface-300 dark:disabled:bg-surface-700 text-white text-sm font-medium rounded-lg transition-colors"
                   >
                     Save & Approve
                   </button>
@@ -617,7 +491,7 @@ export function ArtifactViewer() {
                 <button
                   onClick={() => { setIsEditing(false); setEditContent(''); setError(null); }}
                   disabled={isSaving}
-                  className="py-2 px-3 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+                  className="py-2 px-3 text-sm text-surface-500 hover:text-surface-700 dark:hover:text-surface-300 transition-colors"
                 >
                   Cancel
                 </button>
@@ -627,14 +501,14 @@ export function ArtifactViewer() {
 
           {/* Approved-by note (shown when this artifact's checkpoint is already approved) */}
           {approvedCheckpoint && !isEditing && (
-            <div className={`px-4 pb-3 pt-3 border-t border-slate-200 dark:border-slate-700 flex-shrink-0 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 ${isFullscreen ? 'mx-auto w-full max-w-4xl' : ''}`}>
+            <div className={`px-4 pb-3 pt-3 border-t border-surface-200 dark:border-surface-700 flex-shrink-0 flex items-center gap-2 text-xs text-surface-500 dark:text-surface-400 ${isFullscreen ? 'mx-auto w-full max-w-4xl' : ''}`}>
               <svg className="w-3.5 h-3.5 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
               <span>
                 Approved
                 {approvedCheckpoint.resolved_by_name && (
-                  <> by <strong className="text-slate-700 dark:text-slate-300">{approvedCheckpoint.resolved_by_name}</strong></>
+                  <> by <strong className="text-surface-700 dark:text-surface-300">{approvedCheckpoint.resolved_by_name}</strong></>
                 )}
                 {approvedCheckpoint.resolved_at && (
                   <> · {new Date(approvedCheckpoint.resolved_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</>
@@ -645,18 +519,18 @@ export function ArtifactViewer() {
 
           {/* Action buttons (only for pending checkpoints, hidden while editing) */}
           {pendingCheckpoint && !isEditing && (
-            <div className={`px-4 pb-4 pt-3 border-t border-slate-200 dark:border-slate-700 flex-shrink-0 space-y-2 ${isFullscreen ? 'mx-auto w-full max-w-4xl' : ''}`}>
+            <div className={`px-4 pb-4 pt-3 border-t border-surface-200 dark:border-surface-700 flex-shrink-0 space-y-2 ${isFullscreen ? 'mx-auto w-full max-w-4xl' : ''}`}>
               {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
 
               {/* Permission lock — shown when user lacks the required role */}
               {!hasApprovePermission && (
-                <div className="flex items-center gap-2 py-2 text-xs text-slate-400 dark:text-slate-500">
+                <div className="flex items-center gap-2 py-2 text-xs text-surface-400 dark:text-surface-500">
                   <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                   </svg>
                   <span>
                     Approval requires{' '}
-                    <strong className="text-slate-300">
+                    <strong className="text-surface-300">
                       {pendingCheckpoint.required_role
                         ? (ROLE_LABELS[pendingCheckpoint.required_role] ?? pendingCheckpoint.required_role)
                         : 'a specific role'}
@@ -673,20 +547,20 @@ export function ArtifactViewer() {
                     onChange={(e) => setFeedback(e.target.value)}
                     placeholder="What needs to change? Be specific."
                     rows={3}
-                    className="w-full text-sm resize-none rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 px-3 py-2 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    className="w-full text-sm resize-none rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-surface-800 px-3 py-2 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
                   />
                   <div className="flex gap-2">
                     <button
                       onClick={() => resolve('revised', feedback)}
                       disabled={!feedback.trim() || resolveLoading}
-                      className="flex-1 py-2 px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-sm font-medium rounded-lg transition-colors"
+                      className="flex-1 py-2 px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-surface-300 dark:disabled:bg-surface-700 text-white text-sm font-medium rounded-lg transition-colors"
                     >
                       {resolveLoading ? 'Sending...' : 'Send Revision'}
                     </button>
                     <button
                       onClick={() => { setShowReviseForm(false); setFeedback(''); }}
                       disabled={resolveLoading}
-                      className="py-2 px-3 text-sm text-slate-500 hover:text-slate-700 transition-colors"
+                      className="py-2 px-3 text-sm text-surface-500 hover:text-surface-700 transition-colors"
                     >
                       Cancel
                     </button>
@@ -720,21 +594,21 @@ export function ArtifactViewer() {
                           </svg>
                           Open in Figma
                         </a>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                        <p className="text-xs text-surface-500 dark:text-surface-400">
                           Make your edits in Figma, then mark complete to sync and advance the workflow.
                         </p>
                         <div className="flex gap-2">
                           <button
                             onClick={() => figmaComplete()}
                             disabled={resolveLoading}
-                            className="flex-1 py-2 px-3 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 text-white text-sm font-medium rounded-lg transition-colors"
+                            className="flex-1 py-2 px-3 bg-violet-600 hover:bg-violet-700 disabled:bg-surface-300 text-white text-sm font-medium rounded-lg transition-colors"
                           >
                             {resolveLoading ? 'Syncing Figma...' : 'Mark Figma Complete'}
                           </button>
                           <button
                             onClick={rerunStage}
                             disabled={resolveLoading}
-                            className="py-2 px-3 border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-medium rounded-lg transition-colors"
+                            className="py-2 px-3 border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-800 text-sm font-medium rounded-lg transition-colors"
                           >
                             Rerun
                           </button>
@@ -749,7 +623,7 @@ export function ArtifactViewer() {
                       </>
                     ) : (
                       <>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                        <p className="text-xs text-surface-500 dark:text-surface-400">
                           No Figma file was created automatically. Build or update the design from the screens and notes above, then paste the link below.
                         </p>
                         <input
@@ -757,20 +631,20 @@ export function ArtifactViewer() {
                           value={manualFigmaUrl}
                           onChange={(e) => setManualFigmaUrl(e.target.value)}
                           placeholder="https://www.figma.com/design/..."
-                          className="w-full text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                          className="w-full text-sm rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 px-3 py-2 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-violet-500"
                         />
                         <div className="flex gap-2">
                           <button
                             onClick={() => figmaComplete(manualFigmaUrl.trim())}
                             disabled={resolveLoading || !manualFigmaUrl.trim()}
-                            className="flex-1 py-2 px-3 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 text-white text-sm font-medium rounded-lg transition-colors"
+                            className="flex-1 py-2 px-3 bg-violet-600 hover:bg-violet-700 disabled:bg-surface-300 text-white text-sm font-medium rounded-lg transition-colors"
                           >
                             {resolveLoading ? 'Saving...' : 'Save Link & Continue'}
                           </button>
                           <button
                             onClick={rerunStage}
                             disabled={resolveLoading}
-                            className="py-2 px-3 border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-medium rounded-lg transition-colors"
+                            className="py-2 px-3 border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-800 text-sm font-medium rounded-lg transition-colors"
                           >
                             Rerun
                           </button>
@@ -803,14 +677,14 @@ export function ArtifactViewer() {
                     <button
                       onClick={() => setShowApproveConfirm(true)}
                       disabled={resolveLoading}
-                      className="flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white text-sm font-medium rounded-lg transition-colors"
+                      className="flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 disabled:bg-surface-300 text-white text-sm font-medium rounded-lg transition-colors"
                     >
                       Approve
                     </button>
                     <button
                       onClick={() => setShowReviseForm(true)}
                       disabled={resolveLoading}
-                      className="flex-1 py-2 px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 text-white text-sm font-medium rounded-lg transition-colors"
+                      className="flex-1 py-2 px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-surface-300 text-white text-sm font-medium rounded-lg transition-colors"
                     >
                       Revise
                     </button>

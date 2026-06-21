@@ -51,7 +51,7 @@ export function PersonaPanel({ personas }: { personas: ReturnType<typeof extract
                 >
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
-                <span className="text-xs text-slate-700 dark:text-slate-300 text-left">{name}</span>
+                <span className="text-xs text-surface-700 dark:text-surface-300 text-left">{name}</span>
               </div>
               <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 flex-shrink-0">
                 {info.count}
@@ -61,9 +61,9 @@ export function PersonaPanel({ personas }: { personas: ReturnType<typeof extract
               <div className="ml-5 mt-1 mb-2 space-y-1.5">
                 {info.stories.map((s, i) => (
                   <div key={i} className="text-xs border-l-2 border-purple-200 dark:border-purple-700 pl-2">
-                    <p className="font-medium text-slate-700 dark:text-slate-300">{s.title}</p>
-                    <p className="text-slate-400 dark:text-slate-500">{s.feature}</p>
-                    {s.goal && <p className="text-slate-500 dark:text-slate-400 italic mt-0.5">I want {s.goal}</p>}
+                    <p className="font-medium text-surface-700 dark:text-surface-300">{s.title}</p>
+                    <p className="text-surface-400 dark:text-surface-500">{s.feature}</p>
+                    {s.goal && <p className="text-surface-500 dark:text-surface-400 italic mt-0.5">I want {s.goal}</p>}
                   </div>
                 ))}
               </div>

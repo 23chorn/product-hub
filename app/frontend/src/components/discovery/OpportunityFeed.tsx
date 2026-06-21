@@ -25,15 +25,15 @@ export function OpportunityFeed({ opportunities, loading, canMutate, canPromote,
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-1.5 px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+      <div className="flex items-center gap-1.5 px-4 py-3 border-b border-surface-200 dark:border-surface-700">
         {FILTERS.map(f => (
           <button
             key={f.key}
             onClick={() => setFilter(f.key)}
             className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors ${
               filter === f.key
-                ? 'bg-teal-600 text-white'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                ? 'bg-brand-600 text-white'
+                : 'bg-surface-100 dark:bg-surface-800 text-surface-600 dark:text-surface-400 hover:bg-surface-200 dark:hover:bg-surface-700'
             }`}
           >
             {f.label}
@@ -43,9 +43,9 @@ export function OpportunityFeed({ opportunities, loading, canMutate, canPromote,
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {loading ? (
-          <div className="text-center text-sm text-slate-400 py-8">Loading opportunities...</div>
+          <div className="text-center text-sm text-surface-400 py-8">Loading opportunities...</div>
         ) : filtered.length === 0 ? (
-          <div className="text-center text-sm text-slate-400 py-8">
+          <div className="text-center text-sm text-surface-400 py-8">
             No {filter === 'all' ? '' : filter} opportunities yet. Select sources and run discovery.
           </div>
         ) : (

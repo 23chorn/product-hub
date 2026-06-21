@@ -37,19 +37,19 @@ export function ExpandableRow({
         <span className={`text-[9px] font-semibold uppercase tracking-widest font-mono flex-1 text-left ${labelColor}`}>
           {label}
         </span>
-        <span className="text-[9px] text-slate-400 dark:text-slate-700 font-mono flex-shrink-0">{formatTs(timestamp)}</span>
+        <span className="text-[9px] text-surface-400 dark:text-surface-700 font-mono flex-shrink-0">{formatTs(timestamp)}</span>
       </button>
       <div className="px-3 pb-2">
         {displayLines.map((line, i) => {
           const plain = line.replace(/\*\*(.*?)\*\*/g, '$1');
           return (
-            <p key={i} className="text-[10px] text-slate-600 dark:text-slate-400 font-mono leading-relaxed">
+            <p key={i} className="text-[10px] text-surface-600 dark:text-surface-400 font-mono leading-relaxed">
               {plain}
             </p>
           );
         })}
         {!expanded && hasMore && (
-          <p className="text-[9px] text-slate-400 dark:text-slate-600 font-mono mt-0.5">
+          <p className="text-[9px] text-surface-400 dark:text-surface-600 font-mono mt-0.5">
             +{lines.length - 1} more line{lines.length - 1 !== 1 ? 's' : ''}
           </p>
         )}

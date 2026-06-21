@@ -124,7 +124,7 @@ export function ArtifactSyncActions({
         <button
           onClick={pushToBoard}
           disabled={pushLoading}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-brand-600 hover:bg-brand-700 disabled:bg-surface-300 dark:disabled:bg-surface-700 text-white transition-colors"
         >
           {pushLoading ? (
             <>{spinner}Pushing...</>
@@ -158,7 +158,7 @@ export function ArtifactSyncActions({
         <button
           onClick={pushToTestPlans}
           disabled={testPlanPushLoading}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-brand-600 hover:bg-brand-700 disabled:bg-surface-300 dark:disabled:bg-surface-700 text-white transition-colors"
         >
           {testPlanPushLoading ? (
             <>{spinner}Pushing...</>
@@ -189,7 +189,7 @@ export function ArtifactSyncActions({
         <button
           onClick={syncToWiki}
           disabled={wikiSyncLoading}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:bg-surface-300 dark:disabled:bg-surface-700 text-white transition-colors"
         >
           {wikiSyncLoading ? (
             <>{spinner}Syncing...</>

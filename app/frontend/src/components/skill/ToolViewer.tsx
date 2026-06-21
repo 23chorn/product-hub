@@ -11,17 +11,17 @@ export function ToolViewer({ tool, onGoToSkill }: { tool: ExtractedTool; onGoToS
 
   return (
     <>
-      <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/30 flex-shrink-0">
+      <div className="px-5 py-3 border-b border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/30 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-semibold font-mono text-slate-900 dark:text-slate-100">{tool.name}</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            <h3 className="text-sm font-semibold font-mono text-surface-900 dark:text-surface-100">{tool.name}</h3>
+            <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
               Defined in <span className="font-medium">{tool.sourceSkillName}</span> v{tool.sourceSkillVersion}
             </p>
           </div>
           <button
             onClick={onGoToSkill}
-            className="text-xs px-3 py-1.5 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors font-medium"
+            className="text-xs px-3 py-1.5 rounded-md bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-600 transition-colors font-medium"
           >
             Edit in skill →
           </button>

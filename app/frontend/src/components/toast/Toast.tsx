@@ -29,7 +29,7 @@ export function Toast({ message, type, onClose, duration = 2000 }: ToastProps) {
         return 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400';
       case 'info':
       default:
-        return 'bg-teal-100 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400';
+        return 'bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400';
     }
   };
 
@@ -65,18 +65,18 @@ export function Toast({ message, type, onClose, duration = 2000 }: ToastProps) {
 
   return (
     <div
-      className="flex items-start gap-3 p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-xl animate-slide-in-right"
+      className="flex items-start gap-3 p-4 rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 shadow-xl animate-slide-in-right"
       role="alert"
     >
       <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${getIconChip()}`}>
         {getIcon()}
       </div>
       <div className="flex-1 pt-0.5">
-        <p className="text-sm font-medium text-slate-700 dark:text-slate-200">{message}</p>
+        <p className="text-sm font-medium text-surface-700 dark:text-surface-200">{message}</p>
       </div>
       <button
         onClick={onClose}
-        className="flex-shrink-0 text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400 transition-colors"
+        className="flex-shrink-0 text-surface-300 dark:text-surface-600 hover:text-surface-500 dark:hover:text-surface-400 transition-colors"
         aria-label="Close"
       >
         <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">

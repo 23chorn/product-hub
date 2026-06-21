@@ -87,9 +87,9 @@ export function AirtableSyncPanel() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/30 flex-shrink-0">
-        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Airtable Sync</h3>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+      <div className="px-5 py-3 border-b border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/30 flex-shrink-0">
+        <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100">Airtable Sync</h3>
+        <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
           Detects initiative status changes in Airtable (e.g. moved to Shipped) and proposes context file
           updates so stale "Active work" entries don't linger. Last checked: {loaded ? formatTimestamp(lastChecked) : '…'}
         </p>
@@ -103,7 +103,7 @@ export function AirtableSyncPanel() {
         )}
 
         {readOnly && (
-          <div className="text-xs px-3 py-2 rounded-md bg-slate-100 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+          <div className="text-xs px-3 py-2 rounded-md bg-surface-100 dark:bg-surface-800/60 text-surface-500 dark:text-surface-400 border border-surface-200 dark:border-surface-700">
             View-only accounts can see sync status but cannot trigger a check, review, or apply proposals.
           </div>
         )}
@@ -112,7 +112,7 @@ export function AirtableSyncPanel() {
           <button
             onClick={handleCheck}
             disabled={isChecking || readOnly}
-            className="text-xs px-4 py-1.5 rounded-md bg-teal-600 text-white hover:bg-teal-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-medium"
+            className="text-xs px-4 py-1.5 rounded-md bg-brand-600 text-white hover:bg-brand-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-medium"
           >
             {isChecking ? 'Checking…' : 'Check Airtable for Changes'}
           </button>
@@ -120,7 +120,7 @@ export function AirtableSyncPanel() {
             <button
               onClick={handleReview}
               disabled={isReviewing || readOnly}
-              className="text-xs px-4 py-1.5 rounded-md bg-slate-700 text-white hover:bg-slate-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-medium"
+              className="text-xs px-4 py-1.5 rounded-md bg-surface-700 text-white hover:bg-surface-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-medium"
             >
               {isReviewing ? 'Reviewing…' : `Generate Proposals (${changes.length})`}
             </button>
@@ -129,20 +129,20 @@ export function AirtableSyncPanel() {
 
         {changes.length > 0 && (
           <div>
-            <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">
+            <h4 className="text-xs font-semibold text-surface-500 dark:text-surface-400 uppercase tracking-wide mb-2">
               Detected status changes
             </h4>
             <div className="space-y-1.5">
               {changes.map((c) => (
                 <div
                   key={c.airtableId}
-                  className="text-sm px-3 py-2 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40"
+                  className="text-sm px-3 py-2 rounded-md border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/40"
                 >
-                  <span className="font-medium text-slate-800 dark:text-slate-200">{c.title}</span>
-                  <span className="text-slate-400 mx-1.5">·</span>
-                  <span className="text-slate-500 dark:text-slate-400">{c.oldStatus}</span>
-                  <span className="text-slate-400 mx-1">→</span>
-                  <span className={c.newStatus === 'Shipped' ? 'text-green-600 dark:text-green-400 font-medium' : 'text-slate-600 dark:text-slate-300'}>
+                  <span className="font-medium text-surface-800 dark:text-surface-200">{c.title}</span>
+                  <span className="text-surface-400 mx-1.5">·</span>
+                  <span className="text-surface-500 dark:text-surface-400">{c.oldStatus}</span>
+                  <span className="text-surface-400 mx-1">→</span>
+                  <span className={c.newStatus === 'Shipped' ? 'text-green-600 dark:text-green-400 font-medium' : 'text-surface-600 dark:text-surface-300'}>
                     {c.newStatus}
                   </span>
                 </div>
@@ -152,11 +152,11 @@ export function AirtableSyncPanel() {
         )}
 
         <div>
-          <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">
+          <h4 className="text-xs font-semibold text-surface-500 dark:text-surface-400 uppercase tracking-wide mb-2">
             Pending proposals {pendingProposals.length > 0 && `(${pendingProposals.length})`}
           </h4>
           {pendingProposals.length === 0 ? (
-            <p className="text-xs text-slate-400 dark:text-slate-500">
+            <p className="text-xs text-surface-400 dark:text-surface-500">
               No pending proposals. Run a check, then generate proposals if any changes are found.
             </p>
           ) : (
@@ -164,36 +164,36 @@ export function AirtableSyncPanel() {
               {pendingProposals.map((p) => (
                 <div
                   key={p.id}
-                  className="rounded-md border border-slate-200 dark:border-slate-700 overflow-hidden"
+                  className="rounded-md border border-surface-200 dark:border-surface-700 overflow-hidden"
                 >
-                  <div className="px-3 py-2 bg-slate-50 dark:bg-slate-800/40 flex items-center justify-between">
+                  <div className="px-3 py-2 bg-surface-50 dark:bg-surface-800/40 flex items-center justify-between">
                     <div className="min-w-0">
-                      <span className="text-sm font-mono text-slate-800 dark:text-slate-200">{p.fileName}</span>
+                      <span className="text-sm font-mono text-surface-800 dark:text-surface-200">{p.fileName}</span>
                       {p.sectionHint && (
-                        <span className="text-xs text-slate-400 ml-2">{p.sectionHint}</span>
+                        <span className="text-xs text-surface-400 ml-2">{p.sectionHint}</span>
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       <button
                         onClick={() => handleProposalAction(p.id, 'dismiss')}
                         disabled={readOnly}
-                        className="text-xs px-3 py-1 rounded-md border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        className="text-xs px-3 py-1 rounded-md border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                       >
                         Dismiss
                       </button>
                       <button
                         onClick={() => handleProposalAction(p.id, 'confirm')}
                         disabled={readOnly}
-                        className="text-xs px-3 py-1 rounded-md bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-medium"
+                        className="text-xs px-3 py-1 rounded-md bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-medium"
                       >
                         Apply
                       </button>
                     </div>
                   </div>
-                  <pre className="text-xs px-3 py-2 whitespace-pre-wrap font-mono text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900/30">
+                  <pre className="text-xs px-3 py-2 whitespace-pre-wrap font-mono text-surface-700 dark:text-surface-300 bg-white dark:bg-surface-900/30">
                     {p.proposedText}
                   </pre>
-                  <div className="text-xs px-3 py-1.5 text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-700/50">
+                  <div className="text-xs px-3 py-1.5 text-surface-500 dark:text-surface-400 border-t border-surface-100 dark:border-surface-700/50">
                     {p.rationale}
                   </div>
                 </div>

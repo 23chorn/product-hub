@@ -34,11 +34,11 @@ export function ContextFileEditor({
 
   return (
     <>
-      <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/30 flex-shrink-0">
+      <div className="px-5 py-3 border-b border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/30 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{file.label}</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{file.description}</p>
+            <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100">{file.label}</h3>
+            <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">{file.description}</p>
           </div>
           <div className="flex items-center space-x-2">
             {!canEdit && (
@@ -52,7 +52,7 @@ export function ContextFileEditor({
             {versions.length > 0 && (
               <button
                 onClick={() => setShowHistory((v) => !v)}
-                className={`text-xs px-3 py-1.5 rounded-md border transition-colors font-medium ${showHistory ? 'border-teal-400 bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300' : 'border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+                className={`text-xs px-3 py-1.5 rounded-md border transition-colors font-medium ${showHistory ? 'border-brand-400 bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300' : 'border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-700'}`}
               >
                 History ({versions.length})
               </button>
@@ -60,7 +60,7 @@ export function ContextFileEditor({
             {file.hasTemplate && !editContent.trim() && (
               <button
                 onClick={onLoadTemplate}
-                className="text-xs px-3 py-1.5 rounded-md bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 hover:bg-teal-100 dark:hover:bg-teal-900/50 transition-colors font-medium"
+                className="text-xs px-3 py-1.5 rounded-md bg-brand-50 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 hover:bg-brand-100 dark:hover:bg-brand-900/50 transition-colors font-medium"
               >
                 Load template
               </button>
@@ -81,37 +81,37 @@ export function ContextFileEditor({
         </div>
 
         {showHistory && (
-          <div className="w-64 flex-shrink-0 border-l border-slate-200 dark:border-slate-700 flex flex-col overflow-hidden">
-            <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between flex-shrink-0">
-              <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">Version history</span>
+          <div className="w-64 flex-shrink-0 border-l border-surface-200 dark:border-surface-700 flex flex-col overflow-hidden">
+            <div className="px-3 py-2 border-b border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/50 flex items-center justify-between flex-shrink-0">
+              <span className="text-xs font-semibold text-surface-600 dark:text-surface-400 uppercase tracking-wide">Version history</span>
             </div>
             <div className="flex-1 overflow-y-auto">
               {versionsLoading ? (
-                <p className="text-xs text-slate-400 p-3">Loading…</p>
+                <p className="text-xs text-surface-400 p-3">Loading…</p>
               ) : versions.length === 0 ? (
-                <p className="text-xs text-slate-400 p-3">No saved versions yet.</p>
+                <p className="text-xs text-surface-400 p-3">No saved versions yet.</p>
               ) : (
                 versions.map((v) => {
                   const isCurrent = v.content === editContent;
                   return (
-                    <div key={v.id} className="border-b border-slate-100 dark:border-slate-700/50 last:border-0">
-                      <div className={`px-3 py-2.5 transition-colors ${isCurrent ? 'bg-teal-50/60 dark:bg-teal-900/20' : 'hover:bg-slate-50 dark:hover:bg-slate-700/40'}`}>
+                    <div key={v.id} className="border-b border-surface-100 dark:border-surface-700/50 last:border-0">
+                      <div className={`px-3 py-2.5 transition-colors ${isCurrent ? 'bg-brand-50/60 dark:bg-brand-900/20' : 'hover:bg-surface-50 dark:hover:bg-surface-700/40'}`}>
                         <div className="flex items-center justify-between gap-2">
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5">
-                              <p className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate">
+                              <p className="text-xs font-medium text-surface-700 dark:text-surface-300 truncate">
                                 {formatVersionDate(v.created_at)}
                               </p>
                               {isCurrent && (
-                                <span className="flex-shrink-0 text-xs px-1.5 py-0 rounded bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 font-medium">current</span>
+                                <span className="flex-shrink-0 text-xs px-1.5 py-0 rounded bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-medium">current</span>
                               )}
                             </div>
-                            <p className="text-xs text-slate-400">{v.content.length.toLocaleString()} chars</p>
+                            <p className="text-xs text-surface-400">{v.content.length.toLocaleString()} chars</p>
                           </div>
                           <button
                             disabled={isCurrent}
                             onClick={() => { onRestoreVersion(v.content); setShowHistory(false); }}
-                            className="flex-shrink-0 text-xs px-2 py-1 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-teal-100 dark:hover:bg-teal-900/40 hover:text-teal-700 dark:hover:text-teal-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-slate-100 dark:disabled:hover:bg-slate-700"
+                            className="flex-shrink-0 text-xs px-2 py-1 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-400 hover:bg-brand-100 dark:hover:bg-brand-900/40 hover:text-brand-700 dark:hover:text-brand-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-surface-100 dark:disabled:hover:bg-surface-700"
                           >
                             Restore
                           </button>
@@ -126,22 +126,22 @@ export function ContextFileEditor({
         )}
       </div>
 
-      <div className="px-5 py-3 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/30 flex items-center justify-between flex-shrink-0">
-        <span className={`text-xs ${!canEdit ? 'text-slate-400' : isDirty ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-slate-400'}`}>
+      <div className="px-5 py-3 border-t border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/30 flex items-center justify-between flex-shrink-0">
+        <span className={`text-xs ${!canEdit ? 'text-surface-400' : isDirty ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-surface-400'}`}>
           {!canEdit ? 'Read only — insufficient role' : isDirty ? 'Unsaved changes' : 'No changes'}
         </span>
         <div className="flex items-center space-x-2">
           <button
             onClick={onRevert}
             disabled={!isDirty || !canEdit}
-            className="text-xs px-3 py-1.5 rounded-md border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="text-xs px-3 py-1.5 rounded-md border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Revert
           </button>
           <button
             onClick={onSave}
             disabled={!isDirty || isSaving || !canEdit}
-            className="text-xs px-4 py-1.5 rounded-md bg-teal-600 text-white hover:bg-teal-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-medium"
+            className="text-xs px-4 py-1.5 rounded-md bg-brand-600 text-white hover:bg-brand-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed font-medium"
           >
             {isSaving ? 'Saving…' : 'Save'}
           </button>

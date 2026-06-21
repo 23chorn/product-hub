@@ -1,3 +1,5 @@
+@import './styles/themes.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -13,7 +15,7 @@
 
   /* Default to dark mode background to prevent flash */
   html.dark {
-    background-color: #020617;
+    background-color: rgb(var(--surface-950));
   }
 }
 
@@ -96,13 +98,13 @@ code {
    ────────────────────────────────────────────────────────────────────────── */
 @layer utilities {
   .glass-panel {
-    @apply backdrop-blur-xl bg-white/80 dark:bg-slate-800/70;
-    @apply border border-slate-200/50 dark:border-slate-700/50;
+    @apply backdrop-blur-xl bg-white/80 dark:bg-surface-800/70;
+    @apply border border-surface-200/50 dark:border-surface-700/50;
   }
 
   .glass-surface {
-    @apply backdrop-blur-md bg-white/90 dark:bg-slate-900/80;
-    @apply border border-slate-200/50 dark:border-white/5;
+    @apply backdrop-blur-md bg-white/90 dark:bg-surface-900/80;
+    @apply border border-surface-200/50 dark:border-white/5;
   }
 }
 
@@ -115,11 +117,11 @@ code {
 /* Firefox */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 #f1f5f9; /* thumb: slate-300  track: slate-100 */
+  scrollbar-color: rgb(var(--surface-300)) rgb(var(--surface-100)); /* thumb / track */
 }
 
 .dark * {
-  scrollbar-color: #334155 #0f172a; /* thumb: slate-700  track: slate-900 */
+  scrollbar-color: rgb(var(--surface-700)) rgb(var(--surface-900)); /* thumb / track */
 }
 
 /* Webkit */
@@ -129,37 +131,37 @@ code {
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f5f9; /* slate-100 */
+  background: rgb(var(--surface-100));
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1; /* slate-300 */
+  background: rgb(var(--surface-300));
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8; /* slate-400 */
+  background: rgb(var(--surface-400));
 }
 
 ::-webkit-scrollbar-corner {
-  background: #f1f5f9;
+  background: rgb(var(--surface-100));
 }
 
 .dark ::-webkit-scrollbar-track {
-  background: #0f172a; /* slate-900 */
+  background: rgb(var(--surface-900));
 }
 
 .dark ::-webkit-scrollbar-thumb {
-  background: #334155; /* slate-700 */
+  background: rgb(var(--surface-700));
 }
 
 .dark ::-webkit-scrollbar-thumb:hover {
-  background: #475569; /* slate-600 */
+  background: rgb(var(--surface-600));
 }
 
 .dark ::-webkit-scrollbar-corner {
-  background: #0f172a;
+  background: rgb(var(--surface-900));
 }
 
 /* Toast animations */

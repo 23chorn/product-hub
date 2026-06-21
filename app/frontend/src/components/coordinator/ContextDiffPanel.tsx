@@ -99,20 +99,20 @@ export function ContextDiffPanel({ onClose }: Props) {
 
   const actionLabel = (action: string) => {
     if (action === 'add') return <span className="text-green-600 dark:text-green-400 text-xs font-medium">+ ADD</span>;
-    if (action === 'update') return <span className="text-teal-600 dark:text-teal-400 text-xs font-medium">~ UPDATE</span>;
+    if (action === 'update') return <span className="text-brand-600 dark:text-brand-400 text-xs font-medium">~ UPDATE</span>;
     if (action === 'remove') return <span className="text-red-600 dark:text-red-400 text-xs font-medium">− REMOVE</span>;
-    return <span className="text-slate-500 text-xs">{action}</span>;
+    return <span className="text-surface-500 text-xs">{action}</span>;
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-2xl max-h-[80vh] flex flex-col">
+    <div className="bg-white dark:bg-surface-900 rounded-xl shadow-2xl border border-surface-200 dark:border-surface-700 w-full max-w-2xl max-h-[80vh] flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex-shrink-0">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-surface-200 dark:border-surface-700 flex-shrink-0">
         <div>
-          <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+          <h2 className="text-sm font-semibold text-surface-900 dark:text-surface-100">
             Context Diff Review
           </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+          <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
             {diffs.length} pending change{diffs.length !== 1 ? 's' : ''} to context files
           </p>
         </div>
@@ -121,14 +121,14 @@ export function ContextDiffPanel({ onClose }: Props) {
             <button
               onClick={approveAll}
               disabled={approvingAll || actioning !== null}
-              className="text-xs px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white font-medium rounded-lg transition-colors"
+              className="text-xs px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-surface-300 dark:disabled:bg-surface-700 text-white font-medium rounded-lg transition-colors"
             >
               {approvingAll ? 'Approving…' : 'Approve All'}
             </button>
           )}
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+            className="text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 transition-colors"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -154,15 +154,15 @@ export function ContextDiffPanel({ onClose }: Props) {
       {/* Diff list */}
       <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
         {loading && (
-          <p className="text-xs text-slate-400 dark:text-slate-500 text-center py-8">Loading…</p>
+          <p className="text-xs text-surface-400 dark:text-surface-500 text-center py-8">Loading…</p>
         )}
 
         {!loading && diffs.length === 0 && (
           <div className="text-center py-12">
-            <p className="text-sm text-slate-500 dark:text-slate-400">No pending context diffs.</p>
+            <p className="text-sm text-surface-500 dark:text-surface-400">No pending context diffs.</p>
             <button
               onClick={onClose}
-              className="mt-3 text-xs text-teal-600 dark:text-teal-400 hover:underline"
+              className="mt-3 text-xs text-brand-600 dark:text-brand-400 hover:underline"
             >
               Close
             </button>
@@ -176,17 +176,17 @@ export function ContextDiffPanel({ onClose }: Props) {
           return (
             <div
               key={diff.id}
-              className="border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden"
+              className="border border-surface-200 dark:border-surface-700 rounded-lg overflow-hidden"
             >
               {/* Diff header */}
-              <div className="px-3 py-2 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+              <div className="px-3 py-2 bg-surface-50 dark:bg-surface-800 border-b border-surface-200 dark:border-surface-700 flex items-center justify-between">
                 <div className="flex items-center gap-2 min-w-0">
                   {spec && actionLabel(spec.action)}
-                  <span className="text-xs font-mono text-slate-600 dark:text-slate-400 truncate">
+                  <span className="text-xs font-mono text-surface-600 dark:text-surface-400 truncate">
                     {diff.file_name}
                   </span>
                   {spec?.section && (
-                    <span className="text-xs text-slate-400 dark:text-slate-500">
+                    <span className="text-xs text-surface-400 dark:text-surface-500">
                       § {spec.section}
                     </span>
                   )}
@@ -215,7 +215,7 @@ export function ContextDiffPanel({ onClose }: Props) {
                   <p className="text-xs text-green-700 dark:text-green-500 font-medium mb-1">
                     {spec.action === 'add' ? 'Add' : 'Replace with'}
                   </p>
-                  <p className="text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">
+                  <p className="text-xs text-surface-700 dark:text-surface-300 whitespace-pre-wrap leading-relaxed">
                     {spec.content}
                   </p>
                 </div>
@@ -230,8 +230,8 @@ export function ContextDiffPanel({ onClose }: Props) {
               )}
 
               {/* Rationale */}
-              <div className="px-3 py-2 border-t border-slate-100 dark:border-slate-800">
-                <p className="text-xs text-slate-500 dark:text-slate-400 italic">{diff.rationale}</p>
+              <div className="px-3 py-2 border-t border-surface-100 dark:border-surface-800">
+                <p className="text-xs text-surface-500 dark:text-surface-400 italic">{diff.rationale}</p>
               </div>
             </div>
           );

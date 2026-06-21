@@ -11,7 +11,7 @@ interface OpenQuestionsPanelProps {
 const IMPACT_COLORS: Record<string, string> = {
   high:   'text-red-600 dark:text-red-400',
   medium: 'text-amber-600 dark:text-amber-400',
-  low:    'text-slate-500 dark:text-slate-400',
+  low:    'text-surface-500 dark:text-surface-400',
 };
 
 export function OpenQuestionsPanel({ questions, onSubmit, onCancel, loading }: OpenQuestionsPanelProps) {
@@ -72,17 +72,17 @@ export function OpenQuestionsPanel({ questions, onSubmit, onCancel, loading }: O
               key={idx}
               className={`rounded-lg border p-3 space-y-2 transition-colors ${
                 leftOpen.has(idx)
-                  ? 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 opacity-60'
+                  ? 'border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/50 opacity-60'
                   : answered
-                  ? 'border-teal-200 dark:border-teal-800 bg-teal-50/40 dark:bg-teal-900/10'
-                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800'
+                  ? 'border-brand-200 dark:border-brand-800 bg-brand-50/40 dark:bg-brand-900/10'
+                  : 'border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800'
               }`}
             >
               {/* Header row */}
               <div className="flex items-start justify-between gap-2">
                 <div className="space-y-0.5 min-w-0">
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500">
                       {q.type}
                     </span>
                     {q.impact && (
@@ -91,12 +91,12 @@ export function OpenQuestionsPanel({ questions, onSubmit, onCancel, loading }: O
                       </span>
                     )}
                     {q.id && (
-                      <span className="text-[10px] text-slate-400 dark:text-slate-600">#{q.id}</span>
+                      <span className="text-[10px] text-surface-400 dark:text-surface-600">#{q.id}</span>
                     )}
                   </div>
-                  <p className="text-sm text-slate-800 dark:text-slate-200 leading-snug">{q.description}</p>
+                  <p className="text-sm text-surface-800 dark:text-surface-200 leading-snug">{q.description}</p>
                   {q.owner && (
-                    <p className="text-[11px] text-slate-400 dark:text-slate-500">Owner: {q.owner}</p>
+                    <p className="text-[11px] text-surface-400 dark:text-surface-500">Owner: {q.owner}</p>
                   )}
                 </div>
 
@@ -106,9 +106,9 @@ export function OpenQuestionsPanel({ questions, onSubmit, onCancel, loading }: O
                     type="checkbox"
                     checked={leftOpen.has(idx)}
                     onChange={() => toggleLeaveOpen(idx)}
-                    className="rounded border-slate-300 dark:border-slate-600 text-slate-500"
+                    className="rounded border-surface-300 dark:border-surface-600 text-surface-500"
                   />
-                  <span className="text-[10px] text-slate-400 dark:text-slate-500 whitespace-nowrap">Leave open</span>
+                  <span className="text-[10px] text-surface-400 dark:text-surface-500 whitespace-nowrap">Leave open</span>
                 </label>
               </div>
 
@@ -119,7 +119,7 @@ export function OpenQuestionsPanel({ questions, onSubmit, onCancel, loading }: O
                   onChange={(e) => setAnswer(idx, e.target.value)}
                   placeholder="Enter your answer…"
                   rows={2}
-                  className="w-full text-sm resize-none rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                  className="w-full text-sm resize-none rounded-md border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-900 px-2.5 py-1.5 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-1 focus:ring-brand-500"
                 />
               )}
             </div>
@@ -128,27 +128,27 @@ export function OpenQuestionsPanel({ questions, onSubmit, onCancel, loading }: O
       </div>
 
       {/* Progress summary + actions */}
-      <div className="flex-shrink-0 pt-3 border-t border-slate-200 dark:border-slate-700 space-y-2">
+      <div className="flex-shrink-0 pt-3 border-t border-surface-200 dark:border-surface-700 space-y-2">
         {hasAnyAction && (
-          <p className="text-[11px] text-slate-400 dark:text-slate-500">
+          <p className="text-[11px] text-surface-400 dark:text-surface-500">
             {answeredCount > 0 && <span>{answeredCount} answered</span>}
             {answeredCount > 0 && leftOpenCount > 0 && <span> · </span>}
             {leftOpenCount > 0 && <span>{leftOpenCount} left open</span>}
-            {pendingCount > 0 && <span className="ml-1 text-slate-300 dark:text-slate-600">· {pendingCount} pending</span>}
+            {pendingCount > 0 && <span className="ml-1 text-surface-300 dark:text-surface-600">· {pendingCount} pending</span>}
           </p>
         )}
         <div className="flex gap-2">
           <button
             onClick={handleSubmit}
             disabled={!hasAnyAction || loading}
-            className="flex-1 py-2 px-3 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-sm font-medium rounded-lg transition-colors"
+            className="flex-1 py-2 px-3 bg-brand-600 hover:bg-brand-700 disabled:bg-surface-300 dark:disabled:bg-surface-700 text-white text-sm font-medium rounded-lg transition-colors"
           >
             {loading ? 'Sending…' : 'Submit Answers'}
           </button>
           <button
             onClick={onCancel}
             disabled={loading}
-            className="py-2 px-3 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+            className="py-2 px-3 text-sm text-surface-500 hover:text-surface-700 dark:hover:text-surface-300 transition-colors"
           >
             Cancel
           </button>

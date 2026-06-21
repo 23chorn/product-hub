@@ -14,15 +14,15 @@ export function StageGroupHeader({
   const color = status === 'complete'
     ? 'text-green-600 dark:text-green-400'
     : status === 'in-progress'
-    ? 'text-teal-600 dark:text-teal-400'
+    ? 'text-brand-600 dark:text-brand-400'
     : status === 'at-checkpoint'
     ? 'text-amber-600 dark:text-amber-400'
-    : 'text-slate-400 dark:text-slate-600';
+    : 'text-surface-400 dark:text-surface-600';
 
   const dot = status === 'complete'
     ? <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
     : status === 'in-progress'
-    ? <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse inline-block" />
+    ? <span className="w-1.5 h-1.5 rounded-full bg-brand-500 animate-pulse inline-block" />
     : status === 'at-checkpoint'
     ? <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse inline-block" />
     : null;
@@ -34,12 +34,12 @@ export function StageGroupHeader({
       {artifactId && onViewOutput && (
         <button
           onClick={() => onViewOutput(artifactId)}
-          className="text-[9px] font-mono normal-case tracking-normal text-slate-500 dark:text-slate-600 hover:text-teal-600 dark:hover:text-teal-400 transition-colors whitespace-nowrap border border-slate-200 dark:border-slate-800 hover:border-teal-400 dark:hover:border-teal-800 rounded px-1.5 py-0.5"
+          className="text-[9px] font-mono normal-case tracking-normal text-surface-500 dark:text-surface-600 hover:text-brand-600 dark:hover:text-brand-400 transition-colors whitespace-nowrap border border-surface-200 dark:border-surface-800 hover:border-brand-400 dark:hover:border-brand-800 rounded px-1.5 py-0.5"
         >
           view →
         </button>
       )}
-      <div className="flex-1 h-px bg-slate-200 dark:bg-slate-800/60" />
+      <div className="flex-1 h-px bg-surface-200 dark:bg-surface-800/60" />
     </div>
   );
 }

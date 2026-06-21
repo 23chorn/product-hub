@@ -77,7 +77,7 @@ export function InlineCheckpointActions({
     const roleLabels = requiredRoles.map(r => ROLE_LABELS[r] ?? r);
     return (
       <div className="pt-2">
-        <div className="flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500">
+        <div className="flex items-center gap-2 text-xs text-surface-400 dark:text-surface-500">
           <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
           </svg>
@@ -86,8 +86,8 @@ export function InlineCheckpointActions({
             {roleLabels.length > 0
               ? roleLabels.map((label, i) => (
                   <span key={label}>
-                    {i > 0 && <span className="text-slate-500"> or </span>}
-                    <strong className="text-slate-300">{label}</strong>
+                    {i > 0 && <span className="text-surface-500"> or </span>}
+                    <strong className="text-surface-300">{label}</strong>
                   </span>
                 ))
               : 'a specific role'}
@@ -115,17 +115,17 @@ export function InlineCheckpointActions({
               onChange={(e) => setFeedback(e.target.value)}
               placeholder="What needs to change?"
               rows={2}
-              className="w-full text-sm resize-none rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 px-3 py-2 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              className="w-full text-sm resize-none rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-surface-800 px-3 py-2 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
             />
             <div className="flex gap-2">
               <button
                 onClick={() => resolve('revised', feedback)}
                 disabled={!feedback.trim() || loading}
-                className="px-2.5 py-1 text-xs bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white rounded-md transition-colors"
+                className="px-2.5 py-1 text-xs bg-amber-500 hover:bg-amber-600 disabled:bg-surface-300 dark:disabled:bg-surface-700 text-white rounded-md transition-colors"
               >
                 {loading ? 'Sending...' : 'Send Revision'}
               </button>
-              <button onClick={() => { setShowRevise(false); setFeedback(''); }} className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+              <button onClick={() => { setShowRevise(false); setFeedback(''); }} className="text-xs text-surface-500 hover:text-surface-700 dark:hover:text-surface-300">
                 Cancel
               </button>
             </div>
@@ -153,21 +153,21 @@ export function InlineCheckpointActions({
                   </svg>
                   Open in Figma
                 </a>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
+                <p className="text-xs text-surface-500 dark:text-surface-400">
                   Make your edits in Figma, then mark complete to advance the workflow.
                 </p>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => figmaComplete()}
                     disabled={loading}
-                    className="text-xs px-3 py-1.5 rounded-md bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white font-medium transition-colors"
+                    className="text-xs px-3 py-1.5 rounded-md bg-violet-600 hover:bg-violet-700 disabled:bg-surface-300 dark:disabled:bg-surface-700 text-white font-medium transition-colors"
                   >
                     {loading ? 'Syncing Figma...' : 'Mark Figma Complete'}
                   </button>
                   <button
                     onClick={rerunStage}
                     disabled={loading}
-                    className="text-xs px-2.5 py-1 rounded-md border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                    className="text-xs px-2.5 py-1 rounded-md border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-800 transition-colors"
                   >
                     Rerun
                   </button>
@@ -182,7 +182,7 @@ export function InlineCheckpointActions({
               </>
             ) : (
               <>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
+                <p className="text-xs text-surface-500 dark:text-surface-400">
                   Use the screens, design tokens, and notes from "review output →" above to build or update the design in Figma, then paste the link below.
                 </p>
                 <input
@@ -190,20 +190,20 @@ export function InlineCheckpointActions({
                   value={manualFigmaUrl}
                   onChange={(e) => setManualFigmaUrl(e.target.value)}
                   placeholder="https://www.figma.com/design/..."
-                  className="w-full text-xs rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2.5 py-1.5 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                  className="w-full text-xs rounded-md border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 px-2.5 py-1.5 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-violet-500"
                 />
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => figmaComplete(manualFigmaUrl.trim())}
                     disabled={loading || !manualFigmaUrl.trim()}
-                    className="text-xs px-3 py-1.5 rounded-md bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white font-medium transition-colors"
+                    className="text-xs px-3 py-1.5 rounded-md bg-violet-600 hover:bg-violet-700 disabled:bg-surface-300 dark:disabled:bg-surface-700 text-white font-medium transition-colors"
                   >
                     {loading ? 'Saving...' : 'Save Link & Continue'}
                   </button>
                   <button
                     onClick={rerunStage}
                     disabled={loading}
-                    className="text-xs px-2.5 py-1 rounded-md border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                    className="text-xs px-2.5 py-1 rounded-md border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-800 transition-colors"
                   >
                     Rerun
                   </button>
@@ -221,20 +221,20 @@ export function InlineCheckpointActions({
         </div>
       ) : (
         <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-400 dark:text-slate-500 mr-1">
+          <span className="text-xs text-surface-400 dark:text-surface-500 mr-1">
             {STAGE_LABELS[checkpoint.stage] ?? checkpoint.stage}:
           </span>
           <button
             onClick={() => setShowApproveConfirm(true)}
             disabled={loading}
-            className="text-xs px-2.5 py-1 rounded-md bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white transition-colors"
+            className="text-xs px-2.5 py-1 rounded-md bg-green-600 hover:bg-green-700 disabled:bg-surface-300 text-white transition-colors"
           >
             Approve
           </button>
           <button
             onClick={() => setShowRevise(true)}
             disabled={loading}
-            className="text-xs px-2.5 py-1 rounded-md bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 text-white transition-colors"
+            className="text-xs px-2.5 py-1 rounded-md bg-amber-500 hover:bg-amber-600 disabled:bg-surface-300 text-white transition-colors"
           >
             Revise
           </button>
@@ -261,7 +261,7 @@ export function InlineCheckpointActions({
       {showRejectConfirm && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowRejectConfirm(false)} />
-          <div className="relative bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-sm w-full mx-4 p-6">
+          <div className="relative bg-white dark:bg-surface-800 rounded-xl shadow-2xl max-w-sm w-full mx-4 p-6">
             <div className="flex items-center gap-3 mb-3">
               <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
                 <svg className="w-5 h-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -269,25 +269,25 @@ export function InlineCheckpointActions({
                 </svg>
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">End this workflow?</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">This action cannot be undone</p>
+                <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100">End this workflow?</h3>
+                <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">This action cannot be undone</p>
               </div>
             </div>
-            <p className="text-sm text-slate-600 dark:text-slate-300 mb-5">
+            <p className="text-sm text-surface-600 dark:text-surface-300 mb-5">
               Rejecting will permanently end this workflow. All completed stages are preserved, but no further stages will run. You can start a new workflow with a fresh goal afterward.
             </p>
             <div className="flex gap-3">
               <button
                 onClick={() => setShowRejectConfirm(false)}
                 disabled={loading}
-                className="flex-1 py-2 px-3 text-sm font-medium rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                className="flex-1 py-2 px-3 text-sm font-medium rounded-lg border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-700 transition-colors"
               >
                 Go Back
               </button>
               <button
                 onClick={() => resolve('rejected')}
                 disabled={loading}
-                className="flex-1 py-2 px-3 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white text-sm font-medium rounded-lg transition-colors"
+                className="flex-1 py-2 px-3 bg-red-600 hover:bg-red-700 disabled:bg-surface-300 text-white text-sm font-medium rounded-lg transition-colors"
               >
                 {loading ? 'Rejecting...' : 'Yes, Reject'}
               </button>

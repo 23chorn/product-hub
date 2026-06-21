@@ -240,30 +240,30 @@ export function PrototypePreview({
 
   if (!designSystem) {
     return (
-      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-100 dark:bg-slate-900">
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-surface-100 dark:bg-surface-900">
         <div className="text-center">
-          <div className="animate-spin w-8 h-8 border-2 border-slate-300 dark:border-slate-600 border-t-slate-700 dark:border-t-white rounded-full mx-auto mb-3" />
-          <p className="text-sm text-slate-500 dark:text-slate-400">Loading design system...</p>
+          <div className="animate-spin w-8 h-8 border-2 border-surface-300 dark:border-surface-600 border-t-surface-700 dark:border-t-white rounded-full mx-auto mb-3" />
+          <p className="text-sm text-surface-500 dark:text-surface-400">Loading design system...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-slate-100 dark:bg-slate-900">
+    <div className="fixed inset-0 z-[60] flex flex-col bg-surface-100 dark:bg-surface-900">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex-shrink-0">
+      <div className="flex items-center justify-between px-4 py-2.5 bg-white dark:bg-surface-800 border-b border-surface-200 dark:border-surface-700 flex-shrink-0">
         <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold text-slate-900 dark:text-white">{prototype.title}</h2>
-          <span className="text-xs text-slate-500 dark:text-slate-400">{prototype.description}</span>
-          <span className="text-xs text-slate-400 dark:text-slate-500">
+          <h2 className="text-sm font-semibold text-surface-900 dark:text-white">{prototype.title}</h2>
+          <span className="text-xs text-surface-500 dark:text-surface-400">{prototype.description}</span>
+          <span className="text-xs text-surface-400 dark:text-surface-500">
             {prototype.screens.length} screen{prototype.screens.length !== 1 ? 's' : ''}
           </span>
         </div>
 
         <div className="flex items-center gap-2">
           {/* Platform indicator — fixed, not a switcher (this prototype was only built for one platform) */}
-          <span className="px-2.5 py-1 text-xs rounded-md bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400">
+          <span className="px-2.5 py-1 text-xs rounded-md bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400">
             {DEVICE_SIZES[device].label}
           </span>
 
@@ -272,14 +272,14 @@ export function PrototypePreview({
             onClick={() => setShowCode(!showCode)}
             className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
               showCode
-                ? 'bg-teal-600 text-white'
-                : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-white'
+                ? 'bg-brand-600 text-white'
+                : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 hover:text-surface-800 dark:hover:text-white'
             }`}
           >
             {showCode ? 'Hide Code' : 'Show Code'}
           </button>
 
-          <button onClick={onClose} className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors">
+          <button onClick={onClose} className="p-1.5 text-surface-500 dark:text-surface-400 hover:text-surface-800 dark:hover:text-white transition-colors">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -291,32 +291,32 @@ export function PrototypePreview({
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Code panel */}
         {showCode && (
-          <div className="flex flex-col w-1/2 border-r border-slate-200 dark:border-slate-700">
-            <div className="flex gap-0 overflow-x-auto border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 flex-shrink-0">
+          <div className="flex flex-col w-1/2 border-r border-surface-200 dark:border-surface-700">
+            <div className="flex gap-0 overflow-x-auto border-b border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 flex-shrink-0">
               {tsxFiles.map(f => (
                 <button
                   key={f}
                   onClick={() => setSelectedFile(f)}
-                  className={`px-3 py-1.5 text-xs whitespace-nowrap border-r border-slate-200 dark:border-slate-700 transition-colors ${
+                  className={`px-3 py-1.5 text-xs whitespace-nowrap border-r border-surface-200 dark:border-surface-700 transition-colors ${
                     selectedFile === f
-                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white'
-                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-750'
+                      ? 'bg-white dark:bg-surface-900 text-surface-900 dark:text-white'
+                      : 'text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200 hover:bg-surface-100 dark:hover:bg-surface-750'
                   }`}
                 >
                   {f.split('/').pop()}
                 </button>
               ))}
             </div>
-            <pre className="flex-1 overflow-auto text-xs text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-950 p-4 m-0">
+            <pre className="flex-1 overflow-auto text-xs text-surface-700 dark:text-surface-300 bg-surface-50 dark:bg-surface-950 p-4 m-0">
               <code>{prototype.files[selectedFile] ?? prototype.files[selectedFile.replace(/^\//, '')] ?? ''}</code>
             </pre>
           </div>
         )}
 
         {/* Preview — keep dark for device frame contrast */}
-        <div className={`flex items-center justify-center bg-slate-800 dark:bg-slate-900 p-6 overflow-hidden min-h-0 ${showCode ? 'w-1/2' : 'flex-1'}`}>
+        <div className={`flex items-center justify-center bg-surface-800 dark:bg-surface-900 p-6 overflow-hidden min-h-0 ${showCode ? 'w-1/2' : 'flex-1'}`}>
           <div
-            className="relative transition-all duration-200 rounded-[2rem] border-[8px] border-slate-600 dark:border-slate-700 shadow-2xl bg-white overflow-hidden"
+            className="relative transition-all duration-200 rounded-[2rem] border-[8px] border-surface-600 dark:border-surface-700 shadow-2xl bg-white overflow-hidden"
             style={{
               width: deviceSize.width,
               height: deviceSize.height,
@@ -325,7 +325,7 @@ export function PrototypePreview({
             }}
           >
             {device === 'mobile' && (
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-slate-600 dark:bg-slate-700 rounded-b-2xl z-10 pointer-events-none" />
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-surface-600 dark:bg-surface-700 rounded-b-2xl z-10 pointer-events-none" />
             )}
             <iframe
               key={srcdoc}
@@ -339,7 +339,7 @@ export function PrototypePreview({
       </div>
 
       {/* Revision bar */}
-      <div className="flex-shrink-0 px-4 py-2.5 bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700">
+      <div className="flex-shrink-0 px-4 py-2.5 bg-white dark:bg-surface-800 border-t border-surface-200 dark:border-surface-700">
         {revisionStatus && (
           <p className={`text-xs mb-1.5 ${revisionStatus.startsWith('Error') ? 'text-red-500 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
             {revisionStatus}
@@ -356,12 +356,12 @@ export function PrototypePreview({
             placeholder="Describe changes... (e.g. make the buttons larger, add a back button to the transfer screen)"
             rows={1}
             disabled={isRevising}
-            className="flex-1 resize-none rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:opacity-50 overflow-y-auto"
+            className="flex-1 resize-none rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-900 px-3 py-2 text-sm text-surface-900 dark:text-surface-100 placeholder-surface-400 dark:placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 overflow-y-auto"
           />
           <button
             type="submit"
             disabled={!feedback.trim() || isRevising}
-            className="px-4 py-2 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-sm font-medium rounded-lg transition-colors self-end flex-shrink-0"
+            className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:bg-surface-300 dark:disabled:bg-surface-700 text-white text-sm font-medium rounded-lg transition-colors self-end flex-shrink-0"
           >
             {isRevising ? 'Revising...' : 'Revise'}
           </button>

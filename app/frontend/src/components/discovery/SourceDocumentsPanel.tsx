@@ -54,15 +54,15 @@ export function SourceDocumentsPanel({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-surface-200 dark:border-surface-700">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Source Documents</h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Select sources, then run discovery</p>
+          <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100">Source Documents</h3>
+          <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">Select sources, then run discovery</p>
         </div>
         {canMutate && (
           <button
             onClick={() => setShowForm(v => !v)}
-            className="text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/70 transition-colors"
+            className="text-xs px-2.5 py-1.5 rounded-lg border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-700/70 transition-colors"
           >
             {showForm ? 'Cancel' : '+ Add source'}
           </button>
@@ -76,11 +76,11 @@ export function SourceDocumentsPanel({
       )}
 
       {showForm && (
-        <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 space-y-2.5 bg-slate-50/60 dark:bg-slate-800/30">
+        <div className="px-4 py-3 border-b border-surface-200 dark:border-surface-700 space-y-2.5 bg-surface-50/60 dark:bg-surface-800/30">
           <select
             value={sourceType}
             onChange={e => setSourceType(e.target.value as DiscoverySourceType)}
-            className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-slate-100"
+            className="w-full px-2.5 py-1.5 rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 text-sm text-surface-900 dark:text-surface-100"
           >
             {SOURCE_TYPE_OPTIONS.map(t => (
               <option key={t} value={t}>{SOURCE_TYPE_LABELS[t]}</option>
@@ -91,19 +91,19 @@ export function SourceDocumentsPanel({
             value={title}
             onChange={e => setTitle(e.target.value)}
             placeholder="Title (e.g. Interview with Jane)"
-            className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
+            className="w-full px-2.5 py-1.5 rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 text-sm text-surface-900 dark:text-surface-100 placeholder:text-surface-400"
           />
           <textarea
             value={content}
             onChange={e => setContent(e.target.value)}
             placeholder="Paste the interview notes, review text, or competitor notes..."
             rows={5}
-            className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 resize-none"
+            className="w-full px-2.5 py-1.5 rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 text-sm text-surface-900 dark:text-surface-100 placeholder:text-surface-400 resize-none"
           />
           <button
             onClick={handleAdd}
             disabled={!title.trim() || !content.trim() || saving}
-            className="w-full py-1.5 px-3 rounded-lg text-sm font-medium bg-teal-600 hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
+            className="w-full py-1.5 px-3 rounded-lg text-sm font-medium bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
           >
             {saving ? 'Adding...' : 'Add source'}
           </button>
@@ -112,40 +112,40 @@ export function SourceDocumentsPanel({
 
       <div className="flex-1 overflow-y-auto">
         {loading ? (
-          <div className="p-6 text-center text-sm text-slate-400">Loading...</div>
+          <div className="p-6 text-center text-sm text-surface-400">Loading...</div>
         ) : sources.length === 0 ? (
-          <div className="p-6 text-center text-sm text-slate-400">
+          <div className="p-6 text-center text-sm text-surface-400">
             No source documents yet. Add a user interview, app store review, or competitor note to get started.
           </div>
         ) : (
-          <ul className="divide-y divide-slate-200 dark:divide-slate-700">
+          <ul className="divide-y divide-surface-200 dark:divide-surface-700">
             {sources.map(source => (
               <li key={source.id} className="px-4 py-3 flex items-start gap-3">
                 <input
                   type="checkbox"
                   checked={selectedIds.has(source.id)}
                   onChange={() => onToggleSelect(source.id)}
-                  className="mt-1 rounded border-slate-300 dark:border-slate-600"
+                  className="mt-1 rounded border-surface-300 dark:border-surface-600"
                 />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-teal-600 dark:text-teal-400">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-brand-600 dark:text-brand-400">
                       {SOURCE_TYPE_LABELS[source.sourceType]}
                     </span>
                   </div>
-                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{source.title}</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 mt-0.5">{source.content}</p>
+                  <p className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{source.title}</p>
+                  <p className="text-xs text-surface-500 dark:text-surface-400 line-clamp-2 mt-0.5">{source.content}</p>
                 </div>
                 {canMutate && (
                   confirmDeleteId === source.id ? (
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button onClick={() => handleDelete(source.id)} className="text-xs px-2 py-1 rounded-md bg-red-600 hover:bg-red-700 text-white">Delete</button>
-                      <button onClick={() => setConfirmDeleteId(null)} className="text-xs px-2 py-1 rounded-md text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">Cancel</button>
+                      <button onClick={() => setConfirmDeleteId(null)} className="text-xs px-2 py-1 rounded-md text-surface-500 hover:text-surface-700 dark:hover:text-surface-300">Cancel</button>
                     </div>
                   ) : (
                     <button
                       onClick={() => setConfirmDeleteId(source.id)}
-                      className="flex-shrink-0 p-1 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                      className="flex-shrink-0 p-1 rounded-md text-surface-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                       title="Delete source"
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

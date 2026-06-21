@@ -60,28 +60,28 @@ export function ToolPreviewCard({ tool }: { tool: any }) {
   const props = Object.entries<any>(tool.input_schema?.properties ?? {});
   const required = new Set<string>(tool.input_schema?.required ?? []);
   return (
-    <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
-      <div className="px-3 py-2.5 bg-white dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700">
-        <span className="font-mono text-sm font-semibold text-teal-700 dark:text-teal-300">
+    <div className="rounded-lg border border-surface-200 dark:border-surface-700 overflow-hidden">
+      <div className="px-3 py-2.5 bg-white dark:bg-surface-800/60 border-b border-surface-200 dark:border-surface-700">
+        <span className="font-mono text-sm font-semibold text-brand-700 dark:text-brand-300">
           {tool.name ?? <span className="text-red-400 italic">unnamed</span>}
         </span>
         {tool.description && (
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">{tool.description}</p>
+          <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5 leading-relaxed">{tool.description}</p>
         )}
       </div>
       {props.length > 0 && (
-        <div className="px-3 py-2.5 bg-slate-50 dark:bg-slate-900/40">
-          <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-2">Parameters</p>
+        <div className="px-3 py-2.5 bg-surface-50 dark:bg-surface-900/40">
+          <p className="text-[10px] font-semibold text-surface-400 dark:text-surface-500 uppercase tracking-wide mb-2">Parameters</p>
           <div className="space-y-1.5">
             {props.map(([name, schema]) => (
               <div key={name} className="flex items-start gap-2 text-xs flex-wrap">
-                <code className="flex-shrink-0 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-teal-600 dark:text-teal-400">{name}</code>
-                <span className="flex-shrink-0 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">{schema.type}</span>
+                <code className="flex-shrink-0 px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-800 font-mono text-brand-600 dark:text-brand-400">{name}</code>
+                <span className="flex-shrink-0 px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-800 text-surface-500 dark:text-surface-400">{schema.type}</span>
                 {required.has(name) && (
                   <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">required</span>
                 )}
                 {schema.description && (
-                  <span className="text-slate-500 dark:text-slate-400 leading-relaxed">{schema.description}</span>
+                  <span className="text-surface-500 dark:text-surface-400 leading-relaxed">{schema.description}</span>
                 )}
               </div>
             ))}
@@ -92,7 +92,7 @@ export function ToolPreviewCard({ tool }: { tool: any }) {
   );
 }
 
-const inputCls = 'w-full px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-teal-500 placeholder:text-slate-400';
+const inputCls = 'w-full px-2 py-1 text-xs rounded border border-surface-200 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-800 dark:text-surface-200 focus:outline-none focus:ring-1 focus:ring-brand-500 placeholder:text-surface-400';
 
 /** Form-based tool definition editor. Serializes to the same JSON schema on every change. */
 export function JsonToolEditor({
@@ -166,7 +166,7 @@ export function JsonToolEditor({
         return null;
       }
     })();
-    if (!value.trim()) return <p className="text-xs text-slate-400 italic">No tools defined.</p>;
+    if (!value.trim()) return <p className="text-xs text-surface-400 italic">No tools defined.</p>;
     if (raw === null) return <p className="text-xs text-red-400">Invalid JSON</p>;
     return (
       <div className="h-full overflow-y-auto space-y-3 pr-1">
@@ -186,34 +186,34 @@ export function JsonToolEditor({
   return (
     <div className="h-full overflow-y-auto space-y-3 pr-1">
       {tools.length === 0 && (
-        <p className="text-xs text-slate-400 dark:text-slate-500 italic py-2">
+        <p className="text-xs text-surface-400 dark:text-surface-500 italic py-2">
           No tools defined yet. Add one below.
         </p>
       )}
 
       {tools.map((tool, ti) => (
-        <div key={ti} className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+        <div key={ti} className="rounded-lg border border-surface-200 dark:border-surface-700 overflow-hidden">
           {/* Tool name row */}
-          <div className="px-3 py-2 bg-white dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 flex items-center gap-2">
+          <div className="px-3 py-2 bg-white dark:bg-surface-800/60 border-b border-surface-200 dark:border-surface-700 flex items-center gap-2">
             <input
               value={tool.name}
               onChange={(e) => updateTool(ti, { name: e.target.value })}
               placeholder="tool_name"
-              className="flex-1 px-2 py-1 text-xs font-mono rounded border border-slate-200 dark:border-slate-600 bg-transparent text-teal-700 dark:text-teal-300 font-semibold focus:outline-none focus:ring-1 focus:ring-teal-500 placeholder:font-normal placeholder:text-slate-400"
+              className="flex-1 px-2 py-1 text-xs font-mono rounded border border-surface-200 dark:border-surface-600 bg-transparent text-brand-700 dark:text-brand-300 font-semibold focus:outline-none focus:ring-1 focus:ring-brand-500 placeholder:font-normal placeholder:text-surface-400"
             />
             <button
               onClick={() => removeTool(ti)}
-              className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+              className="p-1 rounded text-surface-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
               title="Remove tool"
             >
               <XIcon />
             </button>
           </div>
 
-          <div className="px-3 py-3 bg-slate-50 dark:bg-slate-900/40 space-y-3">
+          <div className="px-3 py-3 bg-surface-50 dark:bg-surface-900/40 space-y-3">
             {/* Description */}
             <div>
-              <label className="block text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-1">
+              <label className="block text-[10px] font-semibold text-surface-400 dark:text-surface-500 uppercase tracking-wide mb-1">
                 Description
               </label>
               <input
@@ -227,24 +227,24 @@ export function JsonToolEditor({
             {/* Parameters */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide">
+                <label className="text-[10px] font-semibold text-surface-400 dark:text-surface-500 uppercase tracking-wide">
                   Parameters
                 </label>
                 <button
                   onClick={() => addParam(ti)}
-                  className="text-[10px] px-2 py-0.5 rounded bg-teal-50 dark:bg-teal-900/20 text-teal-600 dark:text-teal-400 hover:bg-teal-100 dark:hover:bg-teal-900/40 transition-colors font-medium"
+                  className="text-[10px] px-2 py-0.5 rounded bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 hover:bg-brand-100 dark:hover:bg-brand-900/40 transition-colors font-medium"
                 >
                   + Add param
                 </button>
               </div>
 
               {tool.params.length === 0 ? (
-                <p className="text-xs text-slate-400 dark:text-slate-500 italic">No parameters.</p>
+                <p className="text-xs text-surface-400 dark:text-surface-500 italic">No parameters.</p>
               ) : (
                 <div className="space-y-2">
                   <div className="grid grid-cols-[1fr_88px_1fr_58px_16px] gap-1.5 px-0.5">
                     {['Name', 'Type', 'Description', 'Required', ''].map((h) => (
-                      <span key={h} className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide">
+                      <span key={h} className="text-[10px] font-semibold text-surface-400 dark:text-surface-500 uppercase tracking-wide">
                         {h}
                       </span>
                     ))}
@@ -279,12 +279,12 @@ export function JsonToolEditor({
                           type="checkbox"
                           checked={param.required}
                           onChange={(e) => updateParam(ti, pi, { required: e.target.checked })}
-                          className="rounded border-slate-300 dark:border-slate-600 text-teal-600 focus:ring-teal-500"
+                          className="rounded border-surface-300 dark:border-surface-600 text-brand-600 focus:ring-brand-500"
                         />
                       </div>
                       <button
                         onClick={() => removeParam(ti, pi)}
-                        className="p-0.5 rounded text-slate-400 hover:text-red-500 transition-colors"
+                        className="p-0.5 rounded text-surface-400 hover:text-red-500 transition-colors"
                         title="Remove parameter"
                       >
                         <XIcon />
@@ -300,7 +300,7 @@ export function JsonToolEditor({
 
       <button
         onClick={addTool}
-        className="w-full py-2.5 rounded-lg border border-dashed border-slate-300 dark:border-slate-600 text-xs text-slate-500 dark:text-slate-400 hover:border-teal-400 dark:hover:border-teal-500 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-teal-50/50 dark:hover:bg-teal-900/10 transition-colors font-medium"
+        className="w-full py-2.5 rounded-lg border border-dashed border-surface-300 dark:border-surface-600 text-xs text-surface-500 dark:text-surface-400 hover:border-brand-400 dark:hover:border-brand-500 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-brand-50/50 dark:hover:bg-brand-900/10 transition-colors font-medium"
       >
         + Add tool
       </button>

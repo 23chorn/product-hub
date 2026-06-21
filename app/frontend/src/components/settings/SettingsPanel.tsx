@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { api } from '../../services/api';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useThemeStore } from '../../stores/themeStore';
+import { THEMES } from '../../theme/themes';
 import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../stores/authStore';
 import { UserManagementPanel } from './UserManagementPanel';
@@ -44,7 +45,7 @@ function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (
       onClick={() => !disabled && onChange(!checked)}
       disabled={disabled}
       className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
-        checked ? 'bg-teal-600' : 'bg-slate-300 dark:bg-slate-600'
+        checked ? 'bg-brand-600' : 'bg-surface-300 dark:bg-surface-600'
       } ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
     >
       <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ${checked ? 'translate-x-4' : 'translate-x-0'}`} />
@@ -57,8 +58,8 @@ function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (
 function SectionHeader({ title, description }: { title: string; description?: string }) {
   return (
     <div className="mb-4">
-      <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{title}</h3>
-      {description && <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{description}</p>}
+      <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100">{title}</h3>
+      {description && <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">{description}</p>}
     </div>
   );
 }
@@ -67,10 +68,10 @@ function SectionHeader({ title, description }: { title: string; description?: st
 
 function FieldRow({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800 last:border-0">
+    <div className="flex items-center justify-between px-4 py-3 border-b border-surface-100 dark:border-surface-800 last:border-0">
       <div className="flex-1 min-w-0 pr-4">
-        <p className="text-sm text-slate-700 dark:text-slate-300">{label}</p>
-        {hint && <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{hint}</p>}
+        <p className="text-sm text-surface-700 dark:text-surface-300">{label}</p>
+        {hint && <p className="text-xs text-surface-400 dark:text-surface-500 mt-0.5">{hint}</p>}
       </div>
       <div className="flex-shrink-0">{children}</div>
     </div>
@@ -81,7 +82,7 @@ function FieldRow({ label, hint, children }: { label: string; hint?: string; chi
 
 export function SettingsPanel() {
   const { closeSettings, setDemoMode } = useSettingsStore();
-  const { isDark, toggleTheme } = useThemeStore();
+  const { theme, setTheme } = useThemeStore();
   const { user, noAuth, loading: authLoading } = useAuthStore();
   const toast = useToast();
   const [tab, setTab] = useState<Tab>('general');
@@ -139,17 +140,17 @@ export function SettingsPanel() {
   }, [canAccessAdminTabs, tab]);
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+    <div className="flex flex-col h-full bg-white dark:bg-surface-900 rounded-xl shadow-2xl border border-surface-200 dark:border-surface-700 overflow-hidden">
 
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex-shrink-0">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/50 flex-shrink-0">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500">Configuration</p>
-          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100 mt-0.5">Settings</h2>
+          <p className="text-xs font-semibold uppercase tracking-widest text-surface-400 dark:text-surface-500">Configuration</p>
+          <h2 className="text-base font-semibold text-surface-900 dark:text-surface-100 mt-0.5">Settings</h2>
         </div>
         <button
           onClick={closeSettings}
-          className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors p-1 rounded"
+          className="text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 transition-colors p-1 rounded"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -158,15 +159,15 @@ export function SettingsPanel() {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-slate-200 dark:border-slate-700 flex-shrink-0 bg-white dark:bg-slate-900">
+      <div className="flex border-b border-surface-200 dark:border-surface-700 flex-shrink-0 bg-white dark:bg-surface-900">
         {TABS.map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
             className={`px-4 py-2.5 text-xs font-medium border-b-2 transition-colors ${
               tab === t.key
-                ? 'border-teal-500 text-teal-600 dark:text-teal-400'
-                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                : 'border-transparent text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-300'
             }`}
           >
             {t.label}
@@ -178,7 +179,7 @@ export function SettingsPanel() {
       <div className="flex-1 overflow-y-auto px-5 py-5">
         {(loading || authLoading) && (
           <div className="flex items-center justify-center h-32">
-            <svg className="w-5 h-5 animate-spin text-slate-400" fill="none" viewBox="0 0 24 24">
+            <svg className="w-5 h-5 animate-spin text-surface-400" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
@@ -188,9 +189,31 @@ export function SettingsPanel() {
         {tab === 'general' && (
           <div>
             <SectionHeader title="Appearance" />
-            <div className="rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800">
-              <FieldRow label="Dark mode" hint="Toggle between light and dark theme">
-                <Toggle checked={isDark} onChange={toggleTheme} />
+            <div className="rounded-lg border border-surface-200 dark:border-surface-700 divide-y divide-surface-100 dark:divide-surface-800">
+              <FieldRow label="Theme" hint="Choose a color theme for the app">
+                <div className="flex items-center gap-2">
+                  {THEMES.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setTheme(t.id)}
+                      title={t.label}
+                      aria-label={t.label}
+                      aria-pressed={theme === t.id}
+                      className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors ${
+                        theme === t.id
+                          ? 'border-brand-500 text-surface-900 dark:text-surface-100 ring-1 ring-brand-500'
+                          : 'border-surface-200 dark:border-surface-700 text-surface-600 dark:text-surface-400 hover:border-surface-300 dark:hover:border-surface-600'
+                      }`}
+                    >
+                      <span
+                        className="h-3.5 w-3.5 rounded-full ring-1 ring-black/10 dark:ring-white/10"
+                        style={{ backgroundColor: t.swatch }}
+                      />
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
               </FieldRow>
             </div>
 
@@ -200,7 +223,7 @@ export function SettingsPanel() {
                   title="Demo mode"
                   description="When enabled, workflows use static fixture data instead of live LLM calls — useful for testing the pipeline UI and approval flow without API costs."
                 />
-                <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <div className="rounded-lg border border-surface-200 dark:border-surface-700 overflow-hidden">
                   <FieldRow label="Demo mode enabled" hint="Auto-launches a sample demo initiative on the Home screen and hides it from pending-approval counts when off.">
                     <Toggle
                       checked={draft.demo.enabled}
@@ -219,18 +242,18 @@ export function SettingsPanel() {
               title="Pipeline agents"
               description="Toggle which specialist agents run in each workflow. Curator always runs last and cannot be disabled."
             />
-            <div className="rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800">
+            <div className="rounded-lg border border-surface-200 dark:border-surface-700 divide-y divide-surface-100 dark:divide-surface-800">
               {STAGE_ORDER.map(stage => {
                 const isAlwaysOn = ALWAYS_ON.has(stage);
                 const enabled = draft.pipeline.enabledStages[stage] ?? true;
                 return (
                   <div key={stage} className="flex items-center justify-between px-4 py-3">
                     <div>
-                      <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                      <p className="text-sm font-medium text-surface-700 dark:text-surface-300">
                         {STAGE_LABELS[stage] ?? stage}
                       </p>
                       {isAlwaysOn && (
-                        <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Always enabled</p>
+                        <p className="text-xs text-surface-400 dark:text-surface-500 mt-0.5">Always enabled</p>
                       )}
                     </div>
                     <Toggle
@@ -248,7 +271,7 @@ export function SettingsPanel() {
                 title="Figma design"
                 description="Controls how the figma_design stage (Luma) handles Figma itself."
               />
-              <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+              <div className="rounded-lg border border-surface-200 dark:border-surface-700 overflow-hidden">
                 <FieldRow
                   label="Figma bypass mode"
                   hint="Luma still generates the screens, design-token, and gap-analysis overview, but skips creating or writing to a Figma file — the reviewer pastes their own Figma link at the checkpoint instead."
@@ -269,7 +292,7 @@ export function SettingsPanel() {
               title="Quality gates"
               description="Control how the inline critic agent reviews and gates specialist output."
             />
-            <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+            <div className="rounded-lg border border-surface-200 dark:border-surface-700 overflow-hidden">
               <FieldRow
                 label="Require critic review"
                 hint="After each specialist stage, the critic agent reviews the output. Disable to skip reviews entirely."
@@ -305,21 +328,21 @@ export function SettingsPanel() {
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-between px-5 py-3 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex-shrink-0">
-        <p className="text-xs text-slate-400 dark:text-slate-500">
+      <div className="flex items-center justify-between px-5 py-3 border-t border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/50 flex-shrink-0">
+        <p className="text-xs text-surface-400 dark:text-surface-500">
           {dirty ? 'Unsaved changes' : 'All changes saved'}
         </p>
         <div className="flex items-center gap-2">
           <button
             onClick={closeSettings}
-            className="px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
+            className="px-3 py-1.5 text-xs text-surface-600 dark:text-surface-400 hover:text-surface-800 dark:hover:text-surface-200 transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={save}
             disabled={!dirty || saving}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-teal-600 hover:bg-teal-700 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-brand-600 hover:bg-brand-700 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {saving ? (
               <>

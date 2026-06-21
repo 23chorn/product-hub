@@ -78,7 +78,7 @@ export function AgentAnimation({ stageName }: { stageName: string }) {
   const [bar, action] = frames[frame];
 
   return (
-    <div className="font-mono text-[10px] text-teal-500 dark:text-teal-400 leading-tight select-none whitespace-nowrap overflow-hidden">
+    <div className="font-mono text-[10px] text-brand-500 dark:text-brand-400 leading-tight select-none whitespace-nowrap overflow-hidden">
       <span className="opacity-75 tracking-widest">{bar}</span>
       <span className="ml-1.5 opacity-40">{action}…</span>
     </div>

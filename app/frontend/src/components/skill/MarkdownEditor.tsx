@@ -49,21 +49,21 @@ export function MarkdownEditor({
         placeholder={placeholder}
         spellCheck={false}
         readOnly={readOnly}
-        className={`w-1/2 h-full resize-none rounded-lg border text-slate-900 dark:text-slate-100 font-mono text-sm p-4 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent ${readOnly ? 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 cursor-default' : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'}`}
+        className={`w-1/2 h-full resize-none rounded-lg border text-surface-900 dark:text-surface-100 font-mono text-sm p-4 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent ${readOnly ? 'border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/40 cursor-default' : 'border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800'}`}
       />
       <div
         ref={previewRef}
         onScroll={syncFromPreview}
-        className="w-1/2 h-full overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 p-4"
+        className="w-1/2 h-full overflow-y-auto rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/60 p-4"
       >
         {value.trim() ? (
-          <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:font-semibold prose-headings:text-slate-800 dark:prose-headings:text-slate-100 prose-p:text-slate-700 dark:prose-p:text-slate-300 prose-li:text-slate-700 dark:prose-li:text-slate-300 prose-code:text-teal-600 dark:prose-code:text-teal-400 prose-pre:bg-slate-100 dark:prose-pre:bg-slate-900">
+          <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:font-semibold prose-headings:text-surface-800 dark:prose-headings:text-surface-100 prose-p:text-surface-700 dark:prose-p:text-surface-300 prose-li:text-surface-700 dark:prose-li:text-surface-300 prose-code:text-brand-600 dark:prose-code:text-brand-400 prose-pre:bg-surface-100 dark:prose-pre:bg-surface-900">
             <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
               {value}
             </ReactMarkdown>
           </div>
         ) : (
-          <p className="text-xs text-slate-400 dark:text-slate-500 italic">Preview will appear here…</p>
+          <p className="text-xs text-surface-400 dark:text-surface-500 italic">Preview will appear here…</p>
         )}
       </div>
     </div>

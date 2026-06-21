@@ -20,8 +20,8 @@ export function DancingCreature() {
       className="flex-shrink-0 pb-3 pt-2 flex flex-col items-center select-none transition-opacity duration-500"
       title="keep going"
     >
-      <pre className="text-[11px] leading-relaxed text-slate-400 dark:text-slate-400 text-center font-mono">{top}</pre>
-      <pre className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-500 text-center font-mono">{bottom}</pre>
+      <pre className="text-[11px] leading-relaxed text-surface-400 dark:text-surface-400 text-center font-mono">{top}</pre>
+      <pre className="text-[10px] leading-relaxed text-surface-500 dark:text-surface-500 text-center font-mono">{bottom}</pre>
     </div>
   );
 }

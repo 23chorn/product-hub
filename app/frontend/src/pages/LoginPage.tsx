@@ -28,17 +28,17 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-surface-950 p-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold text-slate-100">Product Hub</h1>
-          <p className="text-sm text-slate-500 mt-1">Sign in to continue</p>
+          <h1 className="text-2xl font-bold text-surface-100">Product Hub</h1>
+          <p className="text-sm text-surface-500 mt-1">Sign in to continue</p>
         </div>
 
-        <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl">
+        <div className="bg-surface-900 border border-surface-700 rounded-2xl p-6 shadow-2xl">
           <form onSubmit={handleLogin} className="space-y-4" autoComplete="off" data-1p-ignore data-lpignore="true">
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">Username</label>
+              <label className="block text-xs font-medium text-surface-400 mb-1.5">Username</label>
               <input
                 type="text"
                 name="username"
@@ -52,12 +52,12 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
                 data-lpignore="true"
                 spellCheck={false}
                 autoCapitalize="none"
-                className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                className="w-full bg-surface-800 border border-surface-600 rounded-lg px-3 py-2 text-sm text-surface-100 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">Password</label>
+              <label className="block text-xs font-medium text-surface-400 mb-1.5">Password</label>
               <input
                 type="password"
                 name="password"
@@ -68,7 +68,7 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
                 autoComplete="current-password"
                 data-1p-ignore
                 data-lpignore="true"
-                className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                className="w-full bg-surface-800 border border-surface-600 rounded-lg px-3 py-2 text-sm text-surface-100 placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
               />
             </div>
 
@@ -81,7 +81,7 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-semibold rounded-lg transition-colors"
+              className="w-full py-2.5 bg-brand-600 hover:bg-brand-700 disabled:bg-surface-700 disabled:text-surface-500 text-white text-sm font-semibold rounded-lg transition-colors"
             >
               {loading ? 'Signing in…' : 'Sign In'}
             </button>

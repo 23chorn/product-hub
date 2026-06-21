@@ -20,11 +20,11 @@ function TechnicalNotes({ notes }: { notes?: BacklogStory['technical_notes'] }) 
   if (notes.backend) items.push({ key: 'backend', label: 'Backend', color: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400', note: notes.backend });
   return (
     <div className="mt-2 space-y-1.5">
-      <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Technical Notes:</p>
+      <p className="text-xs font-medium text-surface-500 dark:text-surface-400">Technical Notes:</p>
       {items.map(({ key, label, color, note }) => (
         <div key={key} className="flex gap-1.5 items-start">
           <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded flex-shrink-0 ${color}`}>{label}</span>
-          <p className="text-xs text-slate-600 dark:text-slate-400">{note}</p>
+          <p className="text-xs text-surface-600 dark:text-surface-400">{note}</p>
         </div>
       ))}
     </div>
@@ -82,44 +82,44 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
           <div className="space-y-3">
             {initiativeTitle && (
               <div>
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">Initiative</span>
-                <p className="text-sm font-medium text-slate-600 dark:text-slate-400 truncate">{initiativeTitle}</p>
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500">Initiative</span>
+                <p className="text-sm font-medium text-surface-600 dark:text-surface-400 truncate">{initiativeTitle}</p>
               </div>
             )}
 
             <div className="pl-3 border-l-2 border-indigo-200 dark:border-indigo-800 space-y-2">
               <span className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-400">Epic</span>
-              <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">{data.epic.title}</h2>
+              <h2 className="text-base font-bold text-surface-900 dark:text-surface-100">{data.epic.title}</h2>
               {data.epic.description && (
-                <p className="text-sm text-slate-600 dark:text-slate-400">{data.epic.description}</p>
+                <p className="text-sm text-surface-600 dark:text-surface-400">{data.epic.description}</p>
               )}
               {data.epic.businessValue && (
-                <div className="px-3 py-2 rounded-lg bg-teal-50 dark:bg-teal-900/20 border border-teal-200 dark:border-teal-800">
-                  <p className="text-xs text-teal-800 dark:text-teal-300 leading-relaxed">
+                <div className="px-3 py-2 rounded-lg bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800">
+                  <p className="text-xs text-brand-800 dark:text-brand-300 leading-relaxed">
                     <span className="font-semibold">Business value: </span>{data.epic.businessValue}
                   </p>
                 </div>
               )}
 
               {feature && (
-                <div className="pl-4 border-l-2 border-teal-200 dark:border-teal-800 space-y-1 pt-1">
+                <div className="pl-4 border-l-2 border-brand-200 dark:border-brand-800 space-y-1 pt-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-teal-500 dark:text-teal-400">Feature — being refined</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-brand-500 dark:text-brand-400">Feature — being refined</span>
                     {feature.phase && (
                       <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
                         feature.phase === 'MVP'
                           ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                          : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                          : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-400'
                       }`}>
                         {feature.phase}
                       </span>
                     )}
                   </div>
-                  <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{feature.title}</h3>
+                  <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100">{feature.title}</h3>
                   {feature.description && (
-                    <p className="text-xs text-slate-600 dark:text-slate-400">{feature.description}</p>
+                    <p className="text-xs text-surface-600 dark:text-surface-400">{feature.description}</p>
                   )}
-                  <span className="inline-block text-xs text-slate-400 dark:text-slate-500 pt-0.5">
+                  <span className="inline-block text-xs text-surface-400 dark:text-surface-500 pt-0.5">
                     {totalStories} stor{totalStories !== 1 ? 'ies' : 'y'}
                     {totalEffort > 0 && <> · {totalEffort} pts</>}
                     <AggregateHours hours={totalHours} traditionalHours={totalTraditionalHours} aiAssisted={aiAssisted} />
@@ -139,8 +139,8 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
         <div className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/20 p-4">
           <div className="flex items-center gap-2 mb-1">
             <span className="text-xs font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-400">Epic</span>
-            <span className="text-xs text-slate-400">·</span>
-            <span className="text-xs text-slate-500 dark:text-slate-400">
+            <span className="text-xs text-surface-400">·</span>
+            <span className="text-xs text-surface-500 dark:text-surface-400">
               {hasFeatures && <>{features.length} feature{features.length !== 1 ? 's' : ''} · </>}{totalStories} stor{totalStories !== 1 ? 'ies' : 'y'}
               {totalEffort > 0 && <> · {totalEffort} pts</>}
               <AggregateHours hours={totalHours} traditionalHours={totalTraditionalHours} aiAssisted={aiAssisted} />
@@ -149,32 +149,32 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
               )}
             </span>
           </div>
-          <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">{data.epic.title}</h3>
+          <h3 className="text-base font-semibold text-surface-900 dark:text-surface-100">{data.epic.title}</h3>
           {data.epic.description && (
-            <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">{data.epic.description}</p>
+            <p className="text-sm text-surface-600 dark:text-surface-300 mt-1">{data.epic.description}</p>
           )}
           {data.epic.businessValue && (
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 italic">{data.epic.businessValue}</p>
+            <p className="text-xs text-surface-500 dark:text-surface-400 mt-2 italic">{data.epic.businessValue}</p>
           )}
         </div>
       )}
 
       {/* Feature header — only for Tier 2 (single feature without epic) */}
       {tier === 2 && data.feature && (
-        <div className="rounded-lg border border-teal-200 dark:border-teal-800 bg-teal-50 dark:bg-teal-900/20 p-4">
+        <div className="rounded-lg border border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-900/20 p-4">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-semibold uppercase tracking-wide text-teal-500 dark:text-teal-400">Feature</span>
+            <span className="text-xs font-semibold uppercase tracking-wide text-brand-500 dark:text-brand-400">Feature</span>
             {data.feature.phase && (
               <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
                 data.feature.phase === 'MVP'
                   ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                  : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                  : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-400'
               }`}>
                 {data.feature.phase}
               </span>
             )}
-            <span className="text-xs text-slate-400">·</span>
-            <span className="text-xs text-slate-500 dark:text-slate-400">
+            <span className="text-xs text-surface-400">·</span>
+            <span className="text-xs text-surface-500 dark:text-surface-400">
               {totalStories} stor{totalStories !== 1 ? 'ies' : 'y'}
               {totalEffort > 0 && <> · {totalEffort} pts</>}
               <AggregateHours hours={totalHours} traditionalHours={totalTraditionalHours} aiAssisted={aiAssisted} />
@@ -183,9 +183,9 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
               )}
             </span>
           </div>
-          <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">{data.feature.title}</h3>
+          <h3 className="text-base font-semibold text-surface-900 dark:text-surface-100">{data.feature.title}</h3>
           {data.feature.description && (
-            <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">{data.feature.description}</p>
+            <p className="text-sm text-surface-600 dark:text-surface-300 mt-1">{data.feature.description}</p>
           )}
         </div>
       )}
@@ -194,41 +194,41 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
       {tier === 1 && data.story && (() => {
         const story = data.story;
         return (
-          <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-4 space-y-3">
+          <div className="rounded-lg border border-surface-200 dark:border-surface-700 p-4 space-y-3">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs font-semibold uppercase tracking-wide text-emerald-500 dark:text-emerald-400">Story</span>
               {story.effort != null && (
                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
                   story.effort >= 8 ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
                     : story.effort >= 5 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
-                    : 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400'
+                    : 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400'
                 }`}>
                   {story.effort} pts<HoursDisplay story={story} aiAssisted={aiAssisted} />
                 </span>
               )}
               {sprintMeta?.sprintsRequired != null && (
-                <span className="text-xs text-slate-500 dark:text-slate-400">
+                <span className="text-xs text-surface-500 dark:text-surface-400">
                   · {sprintMeta.sprintsRequired} sprints
                 </span>
               )}
             </div>
-            <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">{story.title}</h3>
+            <h3 className="text-base font-semibold text-surface-900 dark:text-surface-100">{story.title}</h3>
             {/* Support both old format (persona/goal/benefit) and new format (as_a/i_want/so_that) */}
             {(story.persona || story.as_a) && (
-              <div><span className="text-xs font-medium text-slate-500 dark:text-slate-400">As a: </span><span className="text-xs text-slate-700 dark:text-slate-300">{story.as_a || story.persona}</span></div>
+              <div><span className="text-xs font-medium text-surface-500 dark:text-surface-400">As a: </span><span className="text-xs text-surface-700 dark:text-surface-300">{story.as_a || story.persona}</span></div>
             )}
             {(story.goal || story.i_want) && (
-              <div><span className="text-xs font-medium text-slate-500 dark:text-slate-400">I want: </span><span className="text-xs text-slate-700 dark:text-slate-300">{story.i_want || story.goal}</span></div>
+              <div><span className="text-xs font-medium text-surface-500 dark:text-surface-400">I want: </span><span className="text-xs text-surface-700 dark:text-surface-300">{story.i_want || story.goal}</span></div>
             )}
             {(story.benefit || story.so_that) && (
-              <div><span className="text-xs font-medium text-slate-500 dark:text-slate-400">So that: </span><span className="text-xs text-slate-700 dark:text-slate-300">{story.so_that || story.benefit}</span></div>
+              <div><span className="text-xs font-medium text-surface-500 dark:text-surface-400">So that: </span><span className="text-xs text-surface-700 dark:text-surface-300">{story.so_that || story.benefit}</span></div>
             )}
             {(() => { const acs = story.acceptanceCriteria ?? story.acceptance_criteria; return acs && acs.length > 0 && (
               <div>
-                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Acceptance Criteria:</p>
+                <p className="text-xs font-medium text-surface-500 dark:text-surface-400 mb-1">Acceptance Criteria:</p>
                 <ul className="space-y-1">
                   {acs.map((ac, ai) => (
-                    <li key={ai} className="text-xs text-slate-700 dark:text-slate-300 flex items-start gap-1.5">
+                    <li key={ai} className="text-xs text-surface-700 dark:text-surface-300 flex items-start gap-1.5">
                       <span className="text-green-500 mt-px flex-shrink-0">✓</span>
                       <span>{ac.split(/\b(Given|When|Then|And|But)\b/gi).map((part, pi) =>
                         /^(Given|When|Then|And|But)$/i.test(part)
@@ -244,10 +244,10 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
             {/* Technical Acceptance Criteria (new multi-agent format) */}
             {story.technical_acceptance_criteria && story.technical_acceptance_criteria.length > 0 && (
               <div className="mt-2">
-                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Technical Acceptance Criteria:</p>
+                <p className="text-xs font-medium text-surface-500 dark:text-surface-400 mb-1">Technical Acceptance Criteria:</p>
                 <ul className="space-y-1">
                   {story.technical_acceptance_criteria.map((tac, ti) => (
-                    <li key={ti} className="text-xs text-slate-700 dark:text-slate-300 flex items-start gap-1.5">
+                    <li key={ti} className="text-xs text-surface-700 dark:text-surface-300 flex items-start gap-1.5">
                       <span className="text-blue-500 mt-px flex-shrink-0">⚙</span>
                       <span>{tac}</span>
                     </li>
@@ -268,7 +268,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
                       : p === 'web' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                       : p === 'ios' ? 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400'
                       : p === 'android' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
+                      : 'bg-surface-100 dark:bg-surface-800 text-surface-700 dark:text-surface-400'
                     }`}>
                       {p.toUpperCase()}
                     </span>
@@ -279,13 +279,13 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
 
             {/* Test Cases (new multi-agent format) */}
             {story.test_cases && story.test_cases.length > 0 && (
-              <div className="mt-3 border-t border-slate-200 dark:border-slate-700 pt-3">
-                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Test Cases ({story.test_cases.length}):</p>
+              <div className="mt-3 border-t border-surface-200 dark:border-surface-700 pt-3">
+                <p className="text-xs font-medium text-surface-500 dark:text-surface-400 mb-2">Test Cases ({story.test_cases.length}):</p>
                 <div className="space-y-2">
                   {story.test_cases.map(tc => (
-                    <div key={tc.id} className="bg-slate-50 dark:bg-slate-800/50 rounded p-2">
+                    <div key={tc.id} className="bg-surface-50 dark:bg-surface-800/50 rounded p-2">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">{tc.id}</span>
+                        <span className="text-[10px] font-mono text-surface-500 dark:text-surface-400">{tc.id}</span>
                         <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
                           tc.type === 'happy_path' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
                           : tc.type === 'bad_path' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
@@ -297,25 +297,25 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
                           tc.priority === 'critical' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
                           : tc.priority === 'high' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400'
                           : tc.priority === 'medium' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
+                          : 'bg-surface-100 dark:bg-surface-800 text-surface-700 dark:text-surface-400'
                         }`}>
                           {tc.priority}
                         </span>
                       </div>
                       <div className="space-y-0.5 text-xs">
                         {tc.scenario.given.map((g, gi) => (
-                          <div key={`g${gi}`} className="text-slate-600 dark:text-slate-400">
-                            <strong className="text-slate-700 dark:text-slate-300">Given</strong> {g}
+                          <div key={`g${gi}`} className="text-surface-600 dark:text-surface-400">
+                            <strong className="text-surface-700 dark:text-surface-300">Given</strong> {g}
                           </div>
                         ))}
                         {tc.scenario.when.map((w, wi) => (
-                          <div key={`w${wi}`} className="text-slate-600 dark:text-slate-400">
-                            <strong className="text-slate-700 dark:text-slate-300">When</strong> {w}
+                          <div key={`w${wi}`} className="text-surface-600 dark:text-surface-400">
+                            <strong className="text-surface-700 dark:text-surface-300">When</strong> {w}
                           </div>
                         ))}
                         {tc.scenario.then.map((t, ti) => (
-                          <div key={`t${ti}`} className="text-slate-600 dark:text-slate-400">
-                            <strong className="text-slate-700 dark:text-slate-300">Then</strong> {t}
+                          <div key={`t${ti}`} className="text-surface-600 dark:text-surface-400">
+                            <strong className="text-surface-700 dark:text-surface-300">Then</strong> {t}
                           </div>
                         ))}
                       </div>
@@ -326,9 +326,9 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
             )}
 
             {story.agentContext && (
-              <div className="bg-slate-50 dark:bg-slate-800 rounded p-2 mt-1">
-                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-0.5">Agent Context:</p>
-                <p className="text-xs text-slate-600 dark:text-slate-400">{story.agentContext}</p>
+              <div className="bg-surface-50 dark:bg-surface-800 rounded p-2 mt-1">
+                <p className="text-xs font-medium text-surface-500 dark:text-surface-400 mb-0.5">Agent Context:</p>
+                <p className="text-xs text-surface-600 dark:text-surface-400">{story.agentContext}</p>
               </div>
             )}
             <TechnicalNotes notes={story.technical_notes} />
@@ -348,59 +348,59 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
                 className="w-full text-left flex items-start gap-2 group"
               >
                 <svg
-                  className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-slate-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                  className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-surface-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
                   fill="none" viewBox="0 0 24 24" stroke="currentColor"
                 >
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm text-slate-900 dark:text-slate-100 group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors">
+                    <span className="text-sm text-surface-900 dark:text-surface-100 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">
                       {story.title}
                     </span>
                     {story.effort != null && (
                       <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
                         story.effort >= 8 ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
                           : story.effort >= 5 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
-                          : 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400'
+                          : 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400'
                       }`}>
                         {story.effort}<HoursDisplay story={story} aiAssisted={aiAssisted} />
                       </span>
                     )}
                   </div>
                   {(story.persona || story.as_a) && !isExpanded && (
-                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5 truncate">{story.as_a || story.persona}</p>
+                    <p className="text-xs text-surface-400 dark:text-surface-500 mt-0.5 truncate">{story.as_a || story.persona}</p>
                   )}
                 </div>
               </button>
 
               {isExpanded && (
-                <div className="ml-5.5 mt-2 space-y-2 pl-4 border-l-2 border-slate-100 dark:border-slate-700">
+                <div className="ml-5.5 mt-2 space-y-2 pl-4 border-l-2 border-surface-100 dark:border-surface-700">
                   {/* Support both old format (persona/goal/benefit) and new format (as_a/i_want/so_that) */}
                   {(story.persona || story.as_a) && (
                     <div>
-                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">As a: </span>
-                      <span className="text-xs text-slate-700 dark:text-slate-300">{story.as_a || story.persona}</span>
+                      <span className="text-xs font-medium text-surface-500 dark:text-surface-400">As a: </span>
+                      <span className="text-xs text-surface-700 dark:text-surface-300">{story.as_a || story.persona}</span>
                     </div>
                   )}
                   {(story.goal || story.i_want) && (
                     <div>
-                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">I want: </span>
-                      <span className="text-xs text-slate-700 dark:text-slate-300">{story.i_want || story.goal}</span>
+                      <span className="text-xs font-medium text-surface-500 dark:text-surface-400">I want: </span>
+                      <span className="text-xs text-surface-700 dark:text-surface-300">{story.i_want || story.goal}</span>
                     </div>
                   )}
                   {(story.benefit || story.so_that) && (
                     <div>
-                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">So that: </span>
-                      <span className="text-xs text-slate-700 dark:text-slate-300">{story.so_that || story.benefit}</span>
+                      <span className="text-xs font-medium text-surface-500 dark:text-surface-400">So that: </span>
+                      <span className="text-xs text-surface-700 dark:text-surface-300">{story.so_that || story.benefit}</span>
                     </div>
                   )}
                   {(() => { const acs = story.acceptanceCriteria ?? story.acceptance_criteria; return acs && acs.length > 0 && (
                     <div>
-                      <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Acceptance Criteria:</p>
+                      <p className="text-xs font-medium text-surface-500 dark:text-surface-400 mb-1">Acceptance Criteria:</p>
                       <ul className="space-y-1">
                         {acs.map((ac, ai) => (
-                          <li key={ai} className="text-xs text-slate-700 dark:text-slate-300 flex items-start gap-1.5">
+                          <li key={ai} className="text-xs text-surface-700 dark:text-surface-300 flex items-start gap-1.5">
                             <span className="text-green-500 mt-px flex-shrink-0">✓</span>
                             <span>{ac.split(/\b(Given|When|Then|And|But)\b/gi).map((part, pi) =>
                               /^(Given|When|Then|And|But)$/i.test(part)
@@ -416,10 +416,10 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
                   {/* Technical Acceptance Criteria (new multi-agent format) */}
                   {story.technical_acceptance_criteria && story.technical_acceptance_criteria.length > 0 && (
                     <div>
-                      <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Technical Acceptance Criteria:</p>
+                      <p className="text-xs font-medium text-surface-500 dark:text-surface-400 mb-1">Technical Acceptance Criteria:</p>
                       <ul className="space-y-1">
                         {story.technical_acceptance_criteria.map((tac, ti) => (
-                          <li key={ti} className="text-xs text-slate-700 dark:text-slate-300 flex items-start gap-1.5">
+                          <li key={ti} className="text-xs text-surface-700 dark:text-surface-300 flex items-start gap-1.5">
                             <span className="text-blue-500 mt-px flex-shrink-0">⚙</span>
                             <span>{tac}</span>
                           </li>
@@ -440,7 +440,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
                             : p === 'web' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                             : p === 'ios' ? 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400'
                             : p === 'android' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
+                            : 'bg-surface-100 dark:bg-surface-800 text-surface-700 dark:text-surface-400'
                           }`}>
                             {p.toUpperCase()}
                           </span>
@@ -451,13 +451,13 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
 
                   {/* Test Cases (new multi-agent format) */}
                   {story.test_cases && story.test_cases.length > 0 && (
-                    <div className="border-t border-slate-200 dark:border-slate-700 pt-3 mt-3">
-                      <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Test Cases ({story.test_cases.length}):</p>
+                    <div className="border-t border-surface-200 dark:border-surface-700 pt-3 mt-3">
+                      <p className="text-xs font-medium text-surface-500 dark:text-surface-400 mb-2">Test Cases ({story.test_cases.length}):</p>
                       <div className="space-y-2">
                         {story.test_cases.map(tc => (
-                          <div key={tc.id} className="bg-slate-50 dark:bg-slate-800/50 rounded p-2">
+                          <div key={tc.id} className="bg-surface-50 dark:bg-surface-800/50 rounded p-2">
                             <div className="flex items-center gap-2 mb-1">
-                              <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">{tc.id}</span>
+                              <span className="text-[10px] font-mono text-surface-500 dark:text-surface-400">{tc.id}</span>
                               <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
                                 tc.type === 'happy_path' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
                                 : tc.type === 'bad_path' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
@@ -469,25 +469,25 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
                                 tc.priority === 'critical' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
                                 : tc.priority === 'high' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400'
                                 : tc.priority === 'medium' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400'
+                                : 'bg-surface-100 dark:bg-surface-800 text-surface-700 dark:text-surface-400'
                               }`}>
                                 {tc.priority}
                               </span>
                             </div>
                             <div className="space-y-0.5 text-xs">
                               {tc.scenario.given.map((g, gi) => (
-                                <div key={`g${gi}`} className="text-slate-600 dark:text-slate-400">
-                                  <strong className="text-slate-700 dark:text-slate-300">Given</strong> {g}
+                                <div key={`g${gi}`} className="text-surface-600 dark:text-surface-400">
+                                  <strong className="text-surface-700 dark:text-surface-300">Given</strong> {g}
                                 </div>
                               ))}
                               {tc.scenario.when.map((w, wi) => (
-                                <div key={`w${wi}`} className="text-slate-600 dark:text-slate-400">
-                                  <strong className="text-slate-700 dark:text-slate-300">When</strong> {w}
+                                <div key={`w${wi}`} className="text-surface-600 dark:text-surface-400">
+                                  <strong className="text-surface-700 dark:text-surface-300">When</strong> {w}
                                 </div>
                               ))}
                               {tc.scenario.then.map((t, ti) => (
-                                <div key={`t${ti}`} className="text-slate-600 dark:text-slate-400">
-                                  <strong className="text-slate-700 dark:text-slate-300">Then</strong> {t}
+                                <div key={`t${ti}`} className="text-surface-600 dark:text-surface-400">
+                                  <strong className="text-surface-700 dark:text-surface-300">Then</strong> {t}
                                 </div>
                               ))}
                             </div>
@@ -498,9 +498,9 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
                   )}
 
                   {story.agentContext && (
-                    <div className="bg-slate-50 dark:bg-slate-800 rounded p-2 mt-1">
-                      <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-0.5">Agent Context:</p>
-                      <p className="text-xs text-slate-600 dark:text-slate-400">{story.agentContext}</p>
+                    <div className="bg-surface-50 dark:bg-surface-800 rounded p-2 mt-1">
+                      <p className="text-xs font-medium text-surface-500 dark:text-surface-400 mb-0.5">Agent Context:</p>
+                      <p className="text-xs text-surface-600 dark:text-surface-400">{story.agentContext}</p>
                     </div>
                   )}
                   <TechnicalNotes notes={story.technical_notes} />
@@ -514,8 +514,8 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
         // feature's title/description/phase, so just render its stories directly.
         if (hasFeatures && isFeaturePreview) {
           return (
-            <div className="rounded-lg border border-slate-200 dark:border-slate-700">
-              <div className="divide-y divide-slate-100 dark:divide-slate-700">
+            <div className="rounded-lg border border-surface-200 dark:border-surface-700">
+              <div className="divide-y divide-surface-100 dark:divide-surface-700">
                 {features[0].stories.map((story, si) => renderStory(story, si, '1'))}
               </div>
             </div>
@@ -529,21 +529,21 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
             const featureHours = feature.stories.reduce((s, st) => s + (st.estimatedHours ?? 0), 0);
             const featureTraditionalHours = feature.stories.reduce((s, st) => s + (st.traditionalHours ?? st.estimatedHours ?? 0), 0);
             return (
-              <div key={fi} className="rounded-lg border border-slate-200 dark:border-slate-700">
-                <div className="px-4 py-3 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-700 rounded-t-lg">
+              <div key={fi} className="rounded-lg border border-surface-200 dark:border-surface-700">
+                <div className="px-4 py-3 bg-surface-50 dark:bg-surface-800/60 border-b border-surface-200 dark:border-surface-700 rounded-t-lg">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-teal-500 dark:text-teal-400">Feature</span>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-brand-500 dark:text-brand-400">Feature</span>
                     {feature.phase && (
                       <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
                         feature.phase === 'MVP'
                           ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                          : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                          : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-400'
                       }`}>
                         {feature.phase}
                       </span>
                     )}
                     {featureEffort > 0 && (
-                      <span className="text-xs text-slate-400 dark:text-slate-500">
+                      <span className="text-xs text-surface-400 dark:text-surface-500">
                         {featureEffort} pts
                         <AggregateHours hours={featureHours} traditionalHours={featureTraditionalHours} aiAssisted={aiAssisted} />
                         {ev && ev > 0 && (
@@ -552,12 +552,12 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
                       </span>
                     )}
                   </div>
-                  <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{feature.title}</h4>
+                  <h4 className="text-sm font-semibold text-surface-900 dark:text-surface-100">{feature.title}</h4>
                   {feature.description && (
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{feature.description}</p>
+                    <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">{feature.description}</p>
                   )}
                 </div>
-                <div className="divide-y divide-slate-100 dark:divide-slate-700">
+                <div className="divide-y divide-surface-100 dark:divide-surface-700">
                   {feature.stories.map((story, si) => renderStory(story, si, `${fi + 1}`))}
                 </div>
               </div>
@@ -568,8 +568,8 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
         // Tier 2 feature stories — render directly (header already shown above)
         if (tier === 2 && data.feature) {
           return (
-            <div className="rounded-lg border border-slate-200 dark:border-slate-700">
-              <div className="divide-y divide-slate-100 dark:divide-slate-700">
+            <div className="rounded-lg border border-surface-200 dark:border-surface-700">
+              <div className="divide-y divide-surface-100 dark:divide-surface-700">
                 {data.feature.stories.map((story, si) => renderStory(story, si, '1'))}
               </div>
             </div>
@@ -579,8 +579,8 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
         // Legacy flat stories on epic — no feature wrapper
         const flatStories = data.epic?.stories ?? [];
         return (
-          <div className="rounded-lg border border-slate-200 dark:border-slate-700">
-            <div className="divide-y divide-slate-100 dark:divide-slate-700">
+          <div className="rounded-lg border border-surface-200 dark:border-surface-700">
+            <div className="divide-y divide-surface-100 dark:divide-surface-700">
               {flatStories.map((story, si) => renderStory(story, si, '1'))}
             </div>
           </div>

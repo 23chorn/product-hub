@@ -126,3 +126,9 @@ export function tryParseBacklog(content: string): BacklogData | null {
 
   return null;
 }
+
+// Per-feature isolated backlog artifacts are saved as backlog_F1, backlog_F2, ... (see
+// saveLocalArtifact in artifact-helpers.ts) — the merged final backlog is plain 'backlog'.
+export function isBacklogArtifactType(artifactType: string): boolean {
+  return artifactType === 'backlog' || /^backlog_F\d+$/.test(artifactType);
+}

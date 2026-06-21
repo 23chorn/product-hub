@@ -39,25 +39,25 @@ export function ConversationHeader(props: ConversationHeaderProps) {
     : isAtCheckpoint
     ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400'
     : isGathering || isLaunching
-    ? 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
+    ? 'bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400'
     : hasWorkflow
-    ? 'bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-400'
+    ? 'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-400'
     : '';
 
   // When a workflow is active the terminal header owns the back button and title
   if (hasWorkflow) return null;
 
   return (
-    <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-700 flex-shrink-0 bg-white/80 dark:bg-slate-900/80">
+    <div className="px-5 py-3 border-b border-surface-200 dark:border-surface-700 flex-shrink-0 bg-white/80 dark:bg-surface-900/80">
       {/* Title row */}
       <div className="flex items-center gap-4 min-w-0">
         <div className="min-w-0 flex-1">
           {displayGoal ? (
-            <p className="text-sm font-bold text-slate-900 dark:text-slate-100 leading-snug truncate">
+            <p className="text-sm font-bold text-surface-900 dark:text-surface-100 leading-snug truncate">
               {displayGoal}
             </p>
           ) : (
-            <p className="text-sm font-bold text-slate-900 dark:text-slate-100">
+            <p className="text-sm font-bold text-surface-900 dark:text-surface-100">
               {isGathering ? 'Chief of Staff' : 'Product Hub'}
             </p>
           )}
@@ -66,7 +66,7 @@ export function ConversationHeader(props: ConversationHeaderProps) {
         {isGathering && !isLaunching && (
           <button
             onClick={onCancel}
-            className="text-xs text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors flex-shrink-0"
+            className="text-xs text-surface-400 hover:text-red-500 dark:hover:text-red-400 transition-colors flex-shrink-0"
           >
             Cancel
           </button>
