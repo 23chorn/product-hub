@@ -228,8 +228,8 @@ Sprint estimation runs after backlog specialist: reads `agents/config.yaml` for 
 ### Integration providers
 Configured via `app/backend/src/config/app-config.ts`:
 - `ROADMAP_INTEGRATION=airtable|none`
-- `WORK_ITEMS_INTEGRATION=ado|jira|none`
-- `KNOWLEDGE_BASE_INTEGRATION=notion|gitbook|azure_wiki|none` — `azure_wiki` auto-publishes analyst/PRD/architecture/prototype/figma_design drafts to the ADO wiki (`tryWikiPush()` in `workflow-stage-runner.ts`); independent of `WORK_ITEMS_INTEGRATION`, reuses the same `AZURE_DEVOPS_*` credentials. Once an artifact is wiki-synced, its `external_system` flips to `azure_wiki` permanently and all future reads (including previews) come from the wiki, not Mongo/disk.
+- `WORK_ITEMS_INTEGRATION=ado|none`
+- `KNOWLEDGE_BASE_INTEGRATION=azure_wiki|none` — `azure_wiki` auto-publishes analyst/PRD/architecture/prototype/figma_design drafts to the ADO wiki (`tryWikiPush()` in `workflow-stage-runner.ts`); independent of `WORK_ITEMS_INTEGRATION`, reuses the same `AZURE_DEVOPS_*` credentials. Once an artifact is wiki-synced, its `external_system` flips to `azure_wiki` permanently and all future reads (including previews) come from the wiki, not Mongo/disk.
 
 ### Demo
 `POST /api/demo/webhook/trigger` launches a full pipeline without coordinator planning, cycling through 4 sample initiatives (In-App Messaging, Onboarding Redesign, Portfolio Analytics, Social Trading — all "TradeEasy"). `USE_MOCK_DATA=true` bypasses Airtable for local dev.

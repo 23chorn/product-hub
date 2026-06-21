@@ -29,7 +29,7 @@ function handleError(res: Response, context: string, err: unknown): void {
 /**
  * POST /api/workflow/:id/push-to-board
  * Pushes the latest approved backlog artifact to the configured work-items
- * provider (ADO, Jira, etc.). First push creates the hierarchy; later pushes sync.
+ * provider (ADO). First push creates the hierarchy; later pushes sync.
  */
 workflowExportRoutes.post('/:id/push-to-board', async (req: Request, res: Response) => {
   try {

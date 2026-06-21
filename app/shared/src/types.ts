@@ -367,8 +367,8 @@ export interface ValidationResult {
 // ============================================
 
 export type RoadmapIntegration = 'airtable' | 'none';
-export type WorkItemsIntegration = 'ado' | 'jira' | 'none';
-export type KnowledgeBaseIntegration = 'notion' | 'gitbook' | 'azure_wiki' | 'none';
+export type WorkItemsIntegration = 'ado' | 'none';
+export type KnowledgeBaseIntegration = 'azure_wiki' | 'none';
 
 export interface AppConfig {
   ai: {
@@ -445,25 +445,3 @@ export interface Policy {
   created_at: number;
 }
 
-// ============================================
-// Integration Provider Interfaces
-// ============================================
-
-/** Read-only knowledge base (Notion pages, etc.) */
-export interface KnowledgeBasePage {
-  id: string;
-  title: string;
-  content: string;
-}
-
-export interface KnowledgeBaseSearchResult {
-  title: string;
-  body: string;
-  url: string;
-}
-
-export interface KnowledgeBaseProvider {
-  getPages(): Promise<KnowledgeBasePage[]>;
-  getPage(id: string): Promise<KnowledgeBasePage>;
-  search(query: string, limit?: number): Promise<KnowledgeBaseSearchResult[]>;
-}

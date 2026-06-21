@@ -21,8 +21,6 @@ const ENV_VALIDATIONS: EnvValidation[] = [
   { key: 'AIRTABLE_API_KEY', required: true, description: 'Airtable personal access token' },
   { key: 'AIRTABLE_BASE_ID', required: true, description: 'Airtable base ID' },
   { key: 'AIRTABLE_TABLE_NAME', required: true, description: 'Airtable table name' },
-  { key: 'GITBOOK_API_TOKEN', required: true, description: 'GitBook API token' },
-  { key: 'GITBOOK_SPACE_ID', required: true, description: 'GitBook space ID' },
   { key: 'AZURE_DEVOPS_ORG', required: true, description: 'Azure DevOps organization URL' },
   { key: 'AZURE_DEVOPS_PROJECT', required: true, description: 'Azure DevOps project name' },
   { key: 'AZURE_DEVOPS_PAT', required: true, description: 'Azure DevOps personal access token' },

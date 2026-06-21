@@ -4,8 +4,6 @@ import { streamAI, resolveAgentModel } from '../utils/ai-provider';
 import type { SystemPrompt, TokenUsage } from '../utils/ai-provider';
 import { getPolicies } from '../data/database';
 import db from '../data/database';
-import { appConfig } from '../config/app-config';
-import { getKnowledgeBaseProvider } from '../integrations/knowledge-base';
 import { STAGE_LABELS_BRIEF, STAGE_OUTPUT_FORMATS, stageGoal, stageNotDecide } from './stage-metadata';
 import { getActiveSkill, listSkills } from './skill-registry';
 import { readProductArea } from './item-metadata';
@@ -66,11 +64,6 @@ export class CoordinatorAgent {
       return { label: skill.stage_brief_label, format: skill.stage_brief_format };
     }
     return STAGE_OUTPUT_FORMATS[stage] ?? { label: stage, format: '(no format specification defined for this stage)' };
-  }
-
-  /** Whether a knowledge base integration (GitBook, Notion) is configured. */
-  private hasKnowledgeBase(): boolean {
-    return appConfig.integrations.knowledgeBase !== 'none';
   }
 
   // ── Prompt construction ──────────────────────────────────────────────────
@@ -204,7 +197,6 @@ ${policyLines}`;
       .map(p => `- ${p.rule_key}: ${p.rule_value}`)
       .join('\n');
     const overrideLines = Object.entries(policyOverrides)
-      .filter(([k]) => k !== 'kb_queries')
       .map(([k, v]) => `- ${k}: ${v} *(workflow override)*`)
       .join('\n');
     const platformLine = productAreaScope
@@ -312,46 +304,6 @@ ${policyLines}`;
       lines.push('');
       lines.push('## Additional Context');
       lines.push(additionalContext.trim());
-    }
-
-    // ── Knowledge base search (coordinator-controlled) ──────────────────────
-    // Only search for the analyst stage — its findings propagate to later stages
-    // via the artifact chain. Queries are set by the coordinator at COORDINATOR_READY.
-    const kbQueriesRaw = policyOverrides.kb_queries;
-    if (stage === 'analyst' && kbQueriesRaw) {
-      try {
-        const kbQueries: string[] = JSON.parse(kbQueriesRaw);
-        if (kbQueries.length > 0) {
-          const kb = getKnowledgeBaseProvider();
-          const allResults = await Promise.all(
-            kbQueries.map(q => kb.search(q, 3))
-          );
-          // Deduplicate by title
-          const seen = new Set<string>();
-          const uniqueResults = allResults.flat().filter(r => {
-            if (seen.has(r.title)) return false;
-            seen.add(r.title);
-            return true;
-          });
-
-          if (uniqueResults.length > 0) {
-            lines.push('');
-            lines.push('## Relevant Existing Documentation');
-            lines.push('The following documents were found in the knowledge base and may provide useful background. Use them as reference — do not copy them verbatim.');
-            lines.push('');
-            for (const [i, r] of uniqueResults.entries()) {
-              const snippet = r.body.length > 1500 ? r.body.slice(0, 1500) + '...' : r.body;
-              const urlLine = r.url ? ` — ${r.url}` : '';
-              lines.push(`### ${i + 1}. ${r.title}${urlLine}`);
-              lines.push(snippet);
-              lines.push('');
-            }
-            logger.info(`Injected ${uniqueResults.length} KB result(s) into analyst brief from ${kbQueries.length} query/queries`);
-          }
-        }
-      } catch (err) {
-        logger.warn('Knowledge base search failed during brief generation — continuing without results', err);
-      }
     }
 
     const brief = lines.join('\n');
@@ -485,7 +437,7 @@ ${policyLines}`;
    * on behalf of specialist agents, then signals readiness with COORDINATOR_READY.
    */
   private buildPlanningSystemPrompt(): string {
-    return buildPlanningSystemPrompt(this.hasKnowledgeBase());
+    return buildPlanningSystemPrompt();
   }
 
   /**

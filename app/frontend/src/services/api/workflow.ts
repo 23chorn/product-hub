@@ -87,13 +87,11 @@ export const workflowApi = {
     stageSequence?: string[],
     policyOverrides?: Record<string, string>,
     planningSessionId?: string | null,
-    kbQueries?: string[],
     productArea?: string
   ): Promise<{ workflowId: string; stage: string | null; sessionId: string | null; complete: boolean; stages: string[] }> {
     const response = await axios.post(`${API_BASE_URL}/api/workflow/start`, {
       itemId, goal, enrichedContext, stageSequence, policyOverrides,
       ...(planningSessionId ? { planningSessionId } : {}),
-      ...(kbQueries && kbQueries.length > 0 ? { kbQueries } : {}),
       ...(productArea ? { productArea } : {}),
     });
     return response.data;

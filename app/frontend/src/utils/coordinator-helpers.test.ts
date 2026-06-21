@@ -22,7 +22,6 @@ describe('extractReadyPayload', () => {
   it('returns nulls when no marker present', () => {
     expect(extractReadyPayload('no marker here')).toEqual({
       enrichedContext: null,
-      kbQueries: [],
       recommendedStages: null,
       stageRationale: null,
     });
@@ -31,22 +30,19 @@ describe('extractReadyPayload', () => {
   it('parses all fields from the payload', () => {
     const text = ready({
       enriched_context: 'enriched',
-      kb_queries: ['q1', 'q2'],
       recommended_stages: ['analyst', 'pm_prd'],
       stage_rationale: 'because',
     });
     expect(extractReadyPayload(text)).toEqual({
       enrichedContext: 'enriched',
-      kbQueries: ['q1', 'q2'],
       recommendedStages: ['analyst', 'pm_prd'],
       stageRationale: 'because',
     });
   });
 
   it('defaults non-array / non-string fields safely', () => {
-    const text = ready({ enriched_context: 'x', kb_queries: 'nope', recommended_stages: 5 });
+    const text = ready({ enriched_context: 'x', recommended_stages: 5 });
     const out = extractReadyPayload(text);
-    expect(out.kbQueries).toEqual([]);
     expect(out.recommendedStages).toBeNull();
     expect(out.stageRationale).toBeNull();
   });

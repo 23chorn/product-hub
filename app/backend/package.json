@@ -9,7 +9,6 @@
     "start": "node dist/server.js",
     "lint": "eslint src --ext .ts",
     "test:airtable": "tsx ../../tests/integration/test-airtable.ts",
-    "test:gitbook": "tsx ../../tests/integration/test-gitbook.ts",
     "test:ado": "tsx ../../tests/integration/test-ado.ts",
     "test:bedrock": "tsx ../../tests/integration/test-bedrock.ts",
     "validate-env": "tsx src/utils/validate-env.ts",

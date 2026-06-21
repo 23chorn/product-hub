@@ -51,14 +51,13 @@ workflowRoutes.post('/start', async (req: AuthRequest, res: Response) => {
     return res.status(403).json({ error: 'Only Product or Admin users can launch a workflow', code: 'INSUFFICIENT_ROLE' });
   }
 
-  let { itemId, goal, enrichedContext, stageSequence, policyOverrides, planningSessionId, kbQueries, productArea } = req.body as {
+  let { itemId, goal, enrichedContext, stageSequence, policyOverrides, planningSessionId, productArea } = req.body as {
     itemId?: string;
     goal?: string;
     enrichedContext?: string;
     stageSequence?: string[];
     policyOverrides?: Record<string, string>;
     planningSessionId?: string;
-    kbQueries?: string[];
     productArea?: string;
   };
 
@@ -109,11 +108,6 @@ workflowRoutes.post('/start', async (req: AuthRequest, res: Response) => {
     const fullGoal = enrichedContext
       ? `${goal}\n\n[Coordinator context]\n\n${enrichedContext}`
       : goal;
-
-    // Store coordinator's KB search queries in policy overrides so generateStageBrief can use them
-    if (kbQueries && Array.isArray(kbQueries) && kbQueries.length > 0) {
-      policyOverrides = { ...policyOverrides, kb_queries: JSON.stringify(kbQueries) };
-    }
 
     const workflow = createWorkflow(itemId!, fullGoal, stages, policyOverrides);
 

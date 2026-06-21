@@ -3,25 +3,23 @@ export function stripReadyMarker(text: string): string {
   return text.replace(/\n*COORDINATOR_READY\s*\n\{[\s\S]*?\}\s*$/, '').trimEnd();
 }
 
-// Extract enriched_context, kb_queries, recommended_stages, and stage_rationale from a coordinator READY message
+// Extract enriched_context, recommended_stages, and stage_rationale from a coordinator READY message
 export function extractReadyPayload(text: string): {
   enrichedContext: string | null;
-  kbQueries: string[];
   recommendedStages: string[] | null;
   stageRationale: string | null;
 } {
   const match = text.match(/COORDINATOR_READY\s*\n(\{[\s\S]*?\})\s*$/);
-  if (!match) return { enrichedContext: null, kbQueries: [], recommendedStages: null, stageRationale: null };
+  if (!match) return { enrichedContext: null, recommendedStages: null, stageRationale: null };
   try {
     const parsed = JSON.parse(match[1]);
     return {
       enrichedContext: parsed.enriched_context ?? null,
-      kbQueries: Array.isArray(parsed.kb_queries) ? parsed.kb_queries : [],
       recommendedStages: Array.isArray(parsed.recommended_stages) ? parsed.recommended_stages : null,
       stageRationale: typeof parsed.stage_rationale === 'string' ? parsed.stage_rationale : null,
     };
   } catch {
-    return { enrichedContext: null, kbQueries: [], recommendedStages: null, stageRationale: null };
+    return { enrichedContext: null, recommendedStages: null, stageRationale: null };
   }
 }
 

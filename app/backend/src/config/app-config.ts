@@ -72,37 +72,6 @@ function buildConfigFromEnv(): AppConfig {
     }
   }
 
-  if (workItems === 'jira') {
-    const missing = ['JIRA_HOST', 'JIRA_EMAIL', 'JIRA_API_TOKEN', 'JIRA_PROJECT_KEY']
-      .filter(k => !process.env[k]);
-    if (missing.length > 0) {
-      throw new Error(
-        `WORK_ITEMS_INTEGRATION=jira but required env vars are missing: ${missing.join(', ')}.\n` +
-        `Set them in .env or change WORK_ITEMS_INTEGRATION=none to disable.`
-      );
-    }
-  }
-
-  if (knowledgeBase === 'notion') {
-    const missing = ['NOTION_API_KEY', 'NOTION_DATABASE_ID'].filter(k => !process.env[k]);
-    if (missing.length > 0) {
-      throw new Error(
-        `KNOWLEDGE_BASE_INTEGRATION=notion but required env vars are missing: ${missing.join(', ')}.\n` +
-        `Set them in .env or change KNOWLEDGE_BASE_INTEGRATION=none to disable.`
-      );
-    }
-  }
-
-  if (knowledgeBase === 'gitbook') {
-    const missing = ['GITBOOK_API_TOKEN', 'GITBOOK_SPACE_ID'].filter(k => !process.env[k]);
-    if (missing.length > 0) {
-      throw new Error(
-        `KNOWLEDGE_BASE_INTEGRATION=gitbook but required env vars are missing: ${missing.join(', ')}.\n` +
-        `Set them in .env or change KNOWLEDGE_BASE_INTEGRATION=none to disable.`
-      );
-    }
-  }
-
   if (knowledgeBase === 'azure_wiki') {
     const missing = ['AZURE_DEVOPS_ORG', 'AZURE_DEVOPS_PROJECT', 'AZURE_DEVOPS_PAT']
       .filter(k => !process.env[k]);
@@ -148,26 +117,18 @@ function resolveRoadmapIntegration(useMockData: boolean): RoadmapIntegration {
 function resolveWorkItemsIntegration(): WorkItemsIntegration {
   const explicit = process.env.WORK_ITEMS_INTEGRATION?.toLowerCase();
   if (explicit === 'ado') return 'ado';
-  if (explicit === 'jira') return 'jira';
   if (explicit === 'none') return 'none';
   // Infer from credential presence
   if (process.env.AZURE_DEVOPS_PAT) return 'ado';
-  if (process.env.JIRA_API_TOKEN) return 'jira';
   return 'none';
 }
 
 function resolveKnowledgeBaseIntegration(): KnowledgeBaseIntegration {
   const explicit = process.env.KNOWLEDGE_BASE_INTEGRATION?.toLowerCase();
-  if (explicit === 'notion') return 'notion';
-  if (explicit === 'gitbook') return 'gitbook';
   if (explicit === 'azure_wiki') return 'azure_wiki';
-  if (explicit === 'none') return 'none';
-  // Infer from credential presence — require all mandatory vars before auto-enabling.
   // azure_wiki is intentionally NOT inferred from ADO credentials — WORK_ITEMS_INTEGRATION=ado
   // only means work items live in ADO, not that the wiki should be used as the knowledge base.
   // Set KNOWLEDGE_BASE_INTEGRATION=azure_wiki explicitly to opt in.
-  if (process.env.NOTION_API_KEY) return 'notion';
-  if (process.env.GITBOOK_API_TOKEN && process.env.GITBOOK_SPACE_ID) return 'gitbook';
   return 'none';
 }
 

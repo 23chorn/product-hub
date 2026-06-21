@@ -11,10 +11,9 @@ const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
 /**
  * Build the pre-workflow planning system prompt (the "Chief of Staff" planning
  * conversation). Loads company/strategy/current-state context so the coordinator
- * doesn't ask about already-documented things. `hasKnowledgeBase` toggles the
- * kb_queries instructions.
+ * doesn't ask about already-documented things.
  */
-export function buildPlanningSystemPrompt(hasKnowledgeBase: boolean): string {
+export function buildPlanningSystemPrompt(): string {
   // Load project context files so the coordinator doesn't ask about things
   // already documented. Only load files that exist — silently skip missing ones.
   const contextDir = path.join(PROJECT_ROOT, 'context');
@@ -72,19 +71,13 @@ If the goal is so vague you cannot answer any of the four, ask about Problem and
 When all four exit criteria are met, end your response with exactly:
 
 COORDINATOR_READY
-{"enriched_context": "<structured summary covering: (1) problem and evidence, (2) target user and their context, (3) explicit scope boundary — what is MVP vs deferred, (4) hard constraints the specialists must honour>", "recommended_stages": ["<stage_key>", "..."], "stage_rationale": "<one sentence, max 20 words>"${hasKnowledgeBase ? ', "kb_queries": ["<search term 1>", "<search term 2>"]' : ''}}
+{"enriched_context": "<structured summary covering: (1) problem and evidence, (2) target user and their context, (3) explicit scope boundary — what is MVP vs deferred, (4) hard constraints the specialists must honour>", "recommended_stages": ["<stage_key>", "..."], "stage_rationale": "<one sentence, max 20 words>"}
 
 **recommended_stages rules** — always include "solution_architect", "epic_feature_planner", "story_decomposition", and "curator"; add others only when genuinely needed:
 - "analyst": add when market research, competitive analysis, or user research would materially improve the output
 - "pm_prd": add for any new feature or capability; omit only for bug fixes, copy changes, or minor config tweaks
 - "prototype": add when stakeholder alignment on UX flows would accelerate decisions before engineering starts; always comes after pm_prd
 - "figma_design": add when a design exists in Figma that a designer should review and finalise before engineering; always comes directly after prototype (or after pm_prd if prototype is omitted); never after solution_architect
-${hasKnowledgeBase ? `
-**kb_queries rules:**
-- Include 1–3 short, specific search queries that would find relevant existing documentation (PRDs, architecture docs, research) to give specialists useful background.
-- Focus on the domain, feature area, or related past initiatives — not the exact goal text.
-- If the goal is entirely novel with no likely prior documentation, set kb_queries to an empty array [].
-- Example: for "Add SSO support for enterprise customers" → ["SSO", "enterprise authentication", "identity provider integration"]
-` : ''}
+
 Nothing may follow the JSON line. By your 3rd message you must include COORDINATOR_READY regardless of remaining uncertainty — document any unresolved points as assumptions in the enriched_context.`;
 }

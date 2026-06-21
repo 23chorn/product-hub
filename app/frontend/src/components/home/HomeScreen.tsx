@@ -54,7 +54,6 @@ export function HomeScreen() {
   const [enabledStages, setEnabledStages] = useState<Record<string, boolean>>({});
   const [stageRationale, setStageRationale] = useState<string | null>(null);
   const [enrichedContext, setEnrichedContext] = useState<string | null>(null);
-  const [kbQueries, setKbQueries] = useState<string[]>([]);
   const [launchError, setLaunchError] = useState<string | null>(null);
   const planningSessionIdRef = useRef<string | null>(null);
 
@@ -220,7 +219,6 @@ export function HomeScreen() {
           ));
           setStageRationale(payload.stageRationale);
           setEnrichedContext(payload.enrichedContext);
-          setKbQueries(payload.kbQueries || []);
           setLaunchPhase('confirming');
         },
         (err) => { setLaunchError(err); setLaunchPhase(null); },
@@ -249,7 +247,6 @@ export function HomeScreen() {
         launchItem.id, goal, enrichedContext ?? undefined,
         selectedStages, undefined,
         planningSessionIdRef.current ?? undefined,
-        kbQueries,
         launchItem.productArea,
       );
       const status = await api.getWorkflowStatus(result.workflowId);
