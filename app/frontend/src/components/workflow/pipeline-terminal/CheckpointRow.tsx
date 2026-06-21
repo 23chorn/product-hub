@@ -45,7 +45,7 @@ export function CheckpointRow({
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[10px] text-sky-600 dark:text-sky-400 font-mono">⏸ awaiting approval</span>
         {roleBadge && (
-          <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400">
+          <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-700 dark:text-fuchsia-400">
             {roleBadge}
           </span>
         )}

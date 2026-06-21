@@ -32,7 +32,7 @@ export function tryParseTechRefinement(content: string): TechRefinementData | nu
 const TYPE_CONFIG: Record<string, { color: string; dot: string }> = {
   infrastructure: { color: 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300', dot: 'bg-surface-400' },
   backend:        { color: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400',   dot: 'bg-blue-400' },
-  frontend:       { color: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400', dot: 'bg-purple-400' },
+  frontend:       { color: 'bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-700 dark:text-fuchsia-400', dot: 'bg-fuchsia-400' },
   devops:         { color: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400', dot: 'bg-orange-400' },
   security:       { color: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400',       dot: 'bg-red-400' },
   data:           { color: 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400',   dot: 'bg-brand-400' },

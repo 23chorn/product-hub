@@ -49,7 +49,7 @@ export function InitiativeCard({
               {wf?.summary || item.initiative}
             </h3>
             {wf?.isDemo && (
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-700">
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-700">
                 Demo
               </span>
             )}
@@ -57,7 +57,7 @@ export function InitiativeCard({
             {isAdmin && pendingApprovals.map((approval, i) => (
               <span
                 key={`${approval.stage}-${i}`}
-                className="flex-shrink-0 inline-flex items-center text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400"
+                className="flex-shrink-0 inline-flex items-center text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400"
                 title={`Requires approval from: ${approval.roles.map(r => ROLE_LABELS[r] ?? r).join(' or ') || 'any role'}`}
               >
                 Needs {approval.roles.length > 0 ? approval.roles.map(r => ROLE_LABELS[r] ?? r).join('/') : 'approval'}
@@ -79,7 +79,7 @@ export function InitiativeCard({
           {(item.productArea || item.strategicTheme) && (
             <div className="flex flex-wrap gap-1 mt-1.5">
               {item.productArea && (
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400">
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400">
                   {item.productArea}
                 </span>
               )}
@@ -97,7 +97,7 @@ export function InitiativeCard({
           {!isConfirmingDelete && (
             isActive ? (
               <button onClick={onResume}
-                className="text-xs px-3 py-1.5 rounded-lg border border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 font-medium transition-colors">
+                className="text-xs px-3 py-1.5 rounded-lg border border-cyan-300 dark:border-cyan-700 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 font-medium transition-colors">
                 Continue →
               </button>
             ) : isCancelled ? (

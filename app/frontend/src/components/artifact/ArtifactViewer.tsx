@@ -301,7 +301,7 @@ export function ArtifactViewer() {
                   {STAGE_LABELS[artifactType] ?? (artifactType || 'Artifact')}
                 </h2>
                 {versionInfo && (
-                  <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400">
+                  <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400">
                     v{versionInfo.version + 1} (CR #{versionInfo.change_request_id})
                   </span>
                 )}
@@ -601,7 +601,7 @@ export function ArtifactViewer() {
                           <button
                             onClick={() => figmaComplete()}
                             disabled={resolveLoading}
-                            className="flex-1 py-2 px-3 bg-violet-600 hover:bg-violet-700 disabled:bg-surface-300 text-white text-sm font-medium rounded-lg transition-colors"
+                            className="flex-1 py-2 px-3 bg-rose-600 hover:bg-rose-700 disabled:bg-surface-300 text-white text-sm font-medium rounded-lg transition-colors"
                           >
                             {resolveLoading ? 'Syncing Figma...' : 'Mark Figma Complete'}
                           </button>
@@ -631,13 +631,13 @@ export function ArtifactViewer() {
                           value={manualFigmaUrl}
                           onChange={(e) => setManualFigmaUrl(e.target.value)}
                           placeholder="https://www.figma.com/design/..."
-                          className="w-full text-sm rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 px-3 py-2 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                          className="w-full text-sm rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 px-3 py-2 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-rose-500"
                         />
                         <div className="flex gap-2">
                           <button
                             onClick={() => figmaComplete(manualFigmaUrl.trim())}
                             disabled={resolveLoading || !manualFigmaUrl.trim()}
-                            className="flex-1 py-2 px-3 bg-violet-600 hover:bg-violet-700 disabled:bg-surface-300 text-white text-sm font-medium rounded-lg transition-colors"
+                            className="flex-1 py-2 px-3 bg-rose-600 hover:bg-rose-700 disabled:bg-surface-300 text-white text-sm font-medium rounded-lg transition-colors"
                           >
                             {resolveLoading ? 'Saving...' : 'Save Link & Continue'}
                           </button>

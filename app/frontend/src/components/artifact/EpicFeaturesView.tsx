@@ -94,7 +94,7 @@ function PrdRefTags({ prdRef }: { prdRef: PrdRef }) {
         <span key={fr} className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400">{fr}</span>
       ))}
       {nfrs.map(nfr => (
-        <span key={nfr} className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400">{nfr}</span>
+        <span key={nfr} className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400">{nfr}</span>
       ))}
       {journeys.map(j => (
         <span key={j} className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300">{j}</span>
@@ -185,7 +185,7 @@ function FeatureCard({ feature, idx }: { feature: EpicFeature; idx: number }) {
 const PHASE_COLORS: Record<string, string> = {
   MVP:      'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800',
   'Phase 1':'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800',
-  'Phase 2':'bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 border-violet-200 dark:border-violet-800',
+  'Phase 2':'bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800',
   'Phase 3':'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800',
 };
 

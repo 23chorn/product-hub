@@ -81,9 +81,9 @@ export function tryParseQATests(content: string): QATestSuite | null {
 const TYPE_CONFIG: Record<string, { label: string; color: string; dot: string }> = {
   happy_path:  { label: 'Happy Path',  color: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',   dot: 'bg-green-400' },
   negative:    { label: 'Negative',    color: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400',           dot: 'bg-red-400' },
-  edge:        { label: 'Edge Case',   color: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400', dot: 'bg-purple-400' },
+  edge:        { label: 'Edge Case',   color: 'bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-700 dark:text-fuchsia-400', dot: 'bg-fuchsia-400' },
   boundary:    { label: 'Boundary',    color: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400',   dot: 'bg-amber-400' },
-  security:    { label: 'Security',    color: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400', dot: 'bg-indigo-400' },
+  security:    { label: 'Security',    color: 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400', dot: 'bg-cyan-400' },
   performance: { label: 'Performance', color: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400', dot: 'bg-orange-400' },
 };
 
@@ -148,7 +148,7 @@ function TestCaseCard({ tc }: { tc: TestCase }) {
           {hasScenario && (
             <div className="rounded bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 p-2.5 space-y-1.5 font-mono text-xs">
               {tc.scenario!.given.map((s, i) => (
-                <p key={i}><span className="font-bold text-purple-600 dark:text-purple-400">{i === 0 ? 'Given' : 'And'} </span><span className="text-surface-700 dark:text-surface-300">{s}</span></p>
+                <p key={i}><span className="font-bold text-fuchsia-600 dark:text-fuchsia-400">{i === 0 ? 'Given' : 'And'} </span><span className="text-surface-700 dark:text-surface-300">{s}</span></p>
               ))}
               {tc.scenario!.when.map((s, i) => (
                 <p key={i}><span className="font-bold text-blue-600 dark:text-blue-400">{i === 0 ? 'When' : 'And'} </span><span className="text-surface-700 dark:text-surface-300">{s}</span></p>
@@ -265,9 +265,9 @@ export function QATestsView({ data }: { data: QATestSuite }) {
             </div>
           )}
           {cov.edge_cases !== undefined && (
-            <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg px-3 py-2.5 text-center">
-              <p className="text-xl font-bold text-purple-700 dark:text-purple-400">{cov.edge_cases}</p>
-              <p className="text-[10px] text-purple-600 dark:text-purple-500 uppercase tracking-wide mt-0.5">Edge cases</p>
+            <div className="bg-fuchsia-50 dark:bg-fuchsia-900/20 rounded-lg px-3 py-2.5 text-center">
+              <p className="text-xl font-bold text-fuchsia-700 dark:text-fuchsia-400">{cov.edge_cases}</p>
+              <p className="text-[10px] text-fuchsia-600 dark:text-fuchsia-500 uppercase tracking-wide mt-0.5">Edge cases</p>
             </div>
           )}
           {/* New format breakdown (functional/performance/compliance) */}

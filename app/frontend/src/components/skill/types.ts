@@ -66,7 +66,7 @@ export const DISCIPLINE_COLORS: Record<string, string> = {
   agent:   'bg-brand-100 text-brand-700 dark:bg-brand-900/40 dark:text-brand-300',
   dev:     'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
   qa:      'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
-  design:  'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
+  design:  'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/40 dark:text-fuchsia-300',
   general: 'bg-surface-100 text-surface-700 dark:bg-surface-700 dark:text-surface-300',
 };
 

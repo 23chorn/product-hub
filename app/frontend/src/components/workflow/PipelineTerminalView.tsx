@@ -337,7 +337,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
               {activeWorkflow.summary ?? activeWorkflow.goal.split('\n')[0].slice(0, 70)}
             </span>
             {productArea && (
-              <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400">
+              <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400">
                 {productArea}
               </span>
             )}
@@ -662,7 +662,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                     {hasArtifacts && <span className="text-surface-300 dark:text-surface-700 select-none">·</span>}
                     <button
                       onClick={onShowCRForm}
-                      className="px-2.5 py-1 text-xs font-medium rounded border border-purple-300 dark:border-purple-700 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors"
+                      className="px-2.5 py-1 text-xs font-medium rounded border border-fuchsia-300 dark:border-fuchsia-700 text-fuchsia-600 dark:text-fuchsia-400 hover:bg-fuchsia-50 dark:hover:bg-fuchsia-900/20 transition-colors"
                     >
                       Change Request
                     </button>

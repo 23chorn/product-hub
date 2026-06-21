@@ -76,7 +76,7 @@ export function WeeklyBars({ points, height = 110 }: {
               style={{ height: `${(p.started / max) * 100}%`, minHeight: p.started > 0 ? 2 : 0 }}
             />
             <div
-              className="w-1/2 bg-violet-400 dark:bg-violet-600/70 rounded-t"
+              className="w-1/2 bg-rose-400 dark:bg-rose-600/70 rounded-t"
               style={{ height: `${(p.completed / max) * 100}%`, minHeight: p.completed > 0 ? 2 : 0 }}
             />
           </div>
@@ -88,7 +88,7 @@ export function WeeklyBars({ points, height = 110 }: {
       </div>
       <div className="flex items-center gap-4 mt-2 text-[11px] text-surface-500 dark:text-surface-400">
         <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-brand-300 dark:bg-brand-700/70 inline-block" /> Started</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-violet-400 dark:bg-violet-600/70 inline-block" /> Completed</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-rose-400 dark:bg-rose-600/70 inline-block" /> Completed</span>
       </div>
     </div>
   );

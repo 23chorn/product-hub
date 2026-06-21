@@ -17,7 +17,7 @@ function TechnicalNotes({ notes }: { notes?: BacklogStory['technical_notes'] }) 
   const items: Array<{ key: string; label: string; color: string; note: string }> = [];
   if (notes.ios) items.push({ key: 'ios', label: 'iOS', color: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400', note: notes.ios });
   if (notes.android) items.push({ key: 'android', label: 'Android', color: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400', note: notes.android });
-  if (notes.backend) items.push({ key: 'backend', label: 'Backend', color: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400', note: notes.backend });
+  if (notes.backend) items.push({ key: 'backend', label: 'Backend', color: 'bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-700 dark:text-fuchsia-400', note: notes.backend });
   return (
     <div className="mt-2 space-y-1.5">
       <p className="text-xs font-medium text-surface-500 dark:text-surface-400">Technical Notes:</p>
@@ -87,8 +87,8 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
               </div>
             )}
 
-            <div className="pl-3 border-l-2 border-indigo-200 dark:border-indigo-800 space-y-2">
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-400">Epic</span>
+            <div className="pl-3 border-l-2 border-cyan-200 dark:border-cyan-800 space-y-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-cyan-500 dark:text-cyan-400">Epic</span>
               <h2 className="text-base font-bold text-surface-900 dark:text-surface-100">{data.epic.title}</h2>
               {data.epic.description && (
                 <p className="text-sm text-surface-600 dark:text-surface-400">{data.epic.description}</p>
@@ -136,9 +136,9 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
 
       {/* Epic header — Tier 3 merged backlog (multiple features, no single feature in focus) */}
       {tier === 3 && data.epic && !isFeaturePreview && (
-        <div className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/20 p-4">
+        <div className="rounded-lg border border-cyan-200 dark:border-cyan-800 bg-cyan-50 dark:bg-cyan-900/20 p-4">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-400">Epic</span>
+            <span className="text-xs font-semibold uppercase tracking-wide text-cyan-500 dark:text-cyan-400">Epic</span>
             <span className="text-xs text-surface-400">·</span>
             <span className="text-xs text-surface-500 dark:text-surface-400">
               {hasFeatures && <>{features.length} feature{features.length !== 1 ? 's' : ''} · </>}{totalStories} stor{totalStories !== 1 ? 'ies' : 'y'}
@@ -264,7 +264,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
                 <div className="flex gap-1.5 flex-wrap mt-2">
                   {platforms.map(p => (
                     <span key={p} className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                      p === 'backend' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
+                      p === 'backend' ? 'bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-700 dark:text-fuchsia-400'
                       : p === 'web' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                       : p === 'ios' ? 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400'
                       : p === 'android' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
@@ -436,7 +436,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
                       <div className="flex gap-1.5 flex-wrap">
                         {platforms.map(p => (
                           <span key={p} className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                            p === 'backend' ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
+                            p === 'backend' ? 'bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-700 dark:text-fuchsia-400'
                             : p === 'web' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
                             : p === 'ios' ? 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400'
                             : p === 'android' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'

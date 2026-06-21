@@ -28,10 +28,10 @@ function DemoToast({ title, onDismiss }: { title: string; onDismiss: () => void 
     return () => clearTimeout(t);
   }, [onDismiss]);
   return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 px-4 py-3 rounded-xl bg-[#161b22] border border-violet-700/50 shadow-xl text-sm font-mono animate-fade-in">
-      <span className="text-violet-400">⚡</span>
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 px-4 py-3 rounded-xl bg-[#161b22] border border-rose-700/50 shadow-xl text-sm font-mono animate-fade-in">
+      <span className="text-rose-400">⚡</span>
       <div>
-        <span className="text-violet-300 font-semibold">Full demo started</span>
+        <span className="text-rose-300 font-semibold">Full demo started</span>
         <span className="text-surface-400 ml-2 text-xs">"{title}" pipeline running</span>
       </div>
       <button onClick={onDismiss} className="ml-2 text-surface-600 hover:text-surface-400 text-xs">✕</button>
@@ -263,7 +263,7 @@ function App() {
                                 <p className="text-[10px] text-surface-500 dark:text-surface-500 font-mono">@{u.username}</p>
                               </div>
                               <div className="flex flex-wrap gap-1 justify-end flex-shrink-0">
-                                {u.is_admin && <span className="text-[9px] bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-400 border border-violet-200 dark:border-violet-700/50 px-1 py-0.5 rounded">admin</span>}
+                                {u.is_admin && <span className="text-[9px] bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-700/50 px-1 py-0.5 rounded">admin</span>}
                                 {u.roles.map(r => (
                                   <span key={r} className="text-[9px] bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-400 border border-brand-200 dark:border-brand-700/40 px-1 py-0.5 rounded">{ROLE_LABELS[r] ?? r}</span>
                                 ))}

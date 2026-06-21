@@ -172,7 +172,7 @@ export function UserManagementPanel() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-surface-900 dark:text-surface-100">{u.name}</span>
-                      {u.is_admin && <span className="text-[10px] font-semibold bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 px-1.5 py-0.5 rounded">Admin</span>}
+                      {u.is_admin && <span className="text-[10px] font-semibold bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 px-1.5 py-0.5 rounded">Admin</span>}
                     </div>
                     <p className="text-xs text-surface-500 mt-0.5 font-mono">@{u.username}</p>
                     <div className="flex flex-wrap gap-1 mt-1.5">
@@ -344,7 +344,7 @@ function UserForm({
           ))}
           <label className="flex items-center gap-1.5 text-xs text-surface-600 dark:text-surface-400 cursor-pointer">
             <input type="checkbox" checked={form.is_admin} onChange={e => setForm({ ...form, is_admin: e.target.checked })}
-              className="rounded border-surface-300 text-violet-600 focus:ring-violet-500" />
+              className="rounded border-surface-300 text-rose-600 focus:ring-rose-500" />
             Admin
           </label>
         </div>

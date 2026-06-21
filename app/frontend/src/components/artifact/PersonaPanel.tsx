@@ -33,8 +33,8 @@ export function PersonaPanel({ personas }: { personas: ReturnType<typeof extract
   const [expanded, setExpanded] = useState<string | null>(null);
 
   return (
-    <div className="rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20 p-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-purple-500 dark:text-purple-400 mb-2">
+    <div className="rounded-lg border border-fuchsia-200 dark:border-fuchsia-800 bg-fuchsia-50 dark:bg-fuchsia-900/20 p-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-fuchsia-500 dark:text-fuchsia-400 mb-2">
         Personas ({personas.length})
       </p>
       <div className="space-y-1">
@@ -42,25 +42,25 @@ export function PersonaPanel({ personas }: { personas: ReturnType<typeof extract
           <div key={name}>
             <button
               onClick={() => setExpanded(expanded === name ? null : name)}
-              className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded hover:bg-purple-100 dark:hover:bg-purple-900/40 transition-colors"
+              className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded hover:bg-fuchsia-100 dark:hover:bg-fuchsia-900/40 transition-colors"
             >
               <div className="flex items-center gap-1.5 min-w-0">
                 <svg
-                  className={`w-3 h-3 flex-shrink-0 text-purple-400 transition-transform ${expanded === name ? 'rotate-90' : ''}`}
+                  className={`w-3 h-3 flex-shrink-0 text-fuchsia-400 transition-transform ${expanded === name ? 'rotate-90' : ''}`}
                   fill="none" viewBox="0 0 24 24" stroke="currentColor"
                 >
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
                 <span className="text-xs text-surface-700 dark:text-surface-300 text-left">{name}</span>
               </div>
-              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 flex-shrink-0">
+              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-fuchsia-100 dark:bg-fuchsia-900/40 text-fuchsia-600 dark:text-fuchsia-400 flex-shrink-0">
                 {info.count}
               </span>
             </button>
             {expanded === name && (
               <div className="ml-5 mt-1 mb-2 space-y-1.5">
                 {info.stories.map((s, i) => (
-                  <div key={i} className="text-xs border-l-2 border-purple-200 dark:border-purple-700 pl-2">
+                  <div key={i} className="text-xs border-l-2 border-fuchsia-200 dark:border-fuchsia-700 pl-2">
                     <p className="font-medium text-surface-700 dark:text-surface-300">{s.title}</p>
                     <p className="text-surface-400 dark:text-surface-500">{s.feature}</p>
                     {s.goal && <p className="text-surface-500 dark:text-surface-400 italic mt-0.5">I want {s.goal}</p>}

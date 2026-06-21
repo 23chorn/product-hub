@@ -160,7 +160,7 @@ export function InlineCheckpointActions({
                   <button
                     onClick={() => figmaComplete()}
                     disabled={loading}
-                    className="text-xs px-3 py-1.5 rounded-md bg-violet-600 hover:bg-violet-700 disabled:bg-surface-300 dark:disabled:bg-surface-700 text-white font-medium transition-colors"
+                    className="text-xs px-3 py-1.5 rounded-md bg-rose-600 hover:bg-rose-700 disabled:bg-surface-300 dark:disabled:bg-surface-700 text-white font-medium transition-colors"
                   >
                     {loading ? 'Syncing Figma...' : 'Mark Figma Complete'}
                   </button>
@@ -190,13 +190,13 @@ export function InlineCheckpointActions({
                   value={manualFigmaUrl}
                   onChange={(e) => setManualFigmaUrl(e.target.value)}
                   placeholder="https://www.figma.com/design/..."
-                  className="w-full text-xs rounded-md border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 px-2.5 py-1.5 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                  className="w-full text-xs rounded-md border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 px-2.5 py-1.5 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-rose-500"
                 />
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => figmaComplete(manualFigmaUrl.trim())}
                     disabled={loading || !manualFigmaUrl.trim()}
-                    className="text-xs px-3 py-1.5 rounded-md bg-violet-600 hover:bg-violet-700 disabled:bg-surface-300 dark:disabled:bg-surface-700 text-white font-medium transition-colors"
+                    className="text-xs px-3 py-1.5 rounded-md bg-rose-600 hover:bg-rose-700 disabled:bg-surface-300 dark:disabled:bg-surface-700 text-white font-medium transition-colors"
                   >
                     {loading ? 'Saving...' : 'Save Link & Continue'}
                   </button>

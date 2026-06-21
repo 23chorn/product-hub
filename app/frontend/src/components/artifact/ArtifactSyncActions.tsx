@@ -189,7 +189,7 @@ export function ArtifactSyncActions({
         <button
           onClick={syncToWiki}
           disabled={wikiSyncLoading}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:bg-surface-300 dark:disabled:bg-surface-700 text-white transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-cyan-600 hover:bg-cyan-700 disabled:bg-surface-300 dark:disabled:bg-surface-700 text-white transition-colors"
         >
           {wikiSyncLoading ? (
             <>{spinner}Syncing...</>
