@@ -1,12 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
-import * as path from 'path';
 import db from '../data/database';
-import { DATA_DIR } from '../data/database';
+import { itemSessionDir } from '../agents/item-metadata';
 import { createWorkflow, advanceStage } from '../agents/workflow-router';
-import { getArtifactCollection } from '../data/mongo-client';
-import { ObjectId } from 'mongodb';
 import Logger from '../utils/logger';
 
 const logger = new Logger('DEMO-WEBHOOK');
@@ -152,13 +149,6 @@ async function cleanupPreviousDemoRuns(): Promise<void> {
          WHERE s.item_id = ? AND a.wiki_path IS NOT NULL`
       ).all(itemId).map(r => r.wiki_path);
 
-      // MongoDB artifact IDs — collected before SQLite rows are deleted
-      const mongoIds = db.prepare<[string], { external_path: string }>(
-        `SELECT DISTINCT a.external_path
-         FROM artifacts a JOIN sessions s ON a.session_id = s.id
-         WHERE s.item_id = ? AND a.external_system = 'mongodb' AND a.external_path IS NOT NULL`
-      ).all(itemId).map(r => r.external_path);
-
       // ADO work item IDs — delete children before parents (stories → features → epic)
       // so ADO doesn't reject the parent delete due to existing children.
       const adoWorkItemIds = db.prepare<[string], { ado_id: number }>(
@@ -214,21 +204,8 @@ async function cleanupPreviousDemoRuns(): Promise<void> {
         }
       }
 
-      // ── Delete MongoDB artifact documents ─────────────────────────────────
-      if (mongoIds.length > 0) {
-        try {
-          const col = await getArtifactCollection();
-          if (col) {
-            await col.deleteMany({ _id: { $in: mongoIds.map(id => new ObjectId(id)) } });
-            logger.info(`[DEMO CLEANUP] Deleted ${mongoIds.length} MongoDB artifact(s) for item ${itemId}`);
-          }
-        } catch (mongoErr: any) {
-          logger.warn(`[DEMO CLEANUP] MongoDB cleanup failed for item ${itemId}: ${mongoErr.message}`);
-        }
-      }
-
       // ── Delete local disk files ────────────────────────────────────────────
-      const sessionDir = path.join(DATA_DIR, 'sessions', itemId);
+      const sessionDir = itemSessionDir(itemId);
       if (fs.existsSync(sessionDir)) {
         try { fs.rmSync(sessionDir, { recursive: true, force: true }); } catch { /* ignore */ }
       }

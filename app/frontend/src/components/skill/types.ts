@@ -53,6 +53,7 @@ export type PanelSelection =
   | { type: 'new_skill' }
   | { type: 'new_agent' }
   | { type: 'airtable_sync' }
+  | { type: 'doc_file'; fileId: number }
   | null;
 
 export const DISCIPLINE_LABELS: Record<string, string> = {

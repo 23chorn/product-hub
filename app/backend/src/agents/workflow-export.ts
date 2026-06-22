@@ -407,9 +407,9 @@ export async function syncToWiki(workflowId: string, stages?: string[]): Promise
     const { url } = await client.upsertWikiPage(wikiId, wikiPath, content);
     results.push({ stage, pageName: config.pageName, url });
 
-    // Track the wiki mirror location (separate from external_system/external_path, which
-    // stay pointed at the primary mongodb/disk store) so demo cleanup and general tooling
-    // can find and delete the page. This is an upsert-style update — safe to call on re-sync.
+    // Track the wiki mirror location (separate from file_path, which stays pointed at the
+    // primary disk store) so demo cleanup and general tooling can find and delete the page.
+    // This is an upsert-style update — safe to call on re-sync.
     db.prepare(`
       UPDATE artifacts
       SET wiki_path = ?, wiki_url = ?

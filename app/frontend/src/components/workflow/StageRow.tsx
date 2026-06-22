@@ -18,6 +18,8 @@ interface StageRowProps {
   compact?: boolean;
   customLabel?: string; // Override default stage label (e.g., "Feature 1")
   phaseLabel?: string; // Which phase this feature stage belongs to (e.g., "MVP", "Phase 1")
+  /** Scrolls the event log to this stage's section. Only wired up once the stage has started. */
+  onSelect?: () => void;
 }
 
 // ── Status icon ───────────────────────────────────────────────────────────────
@@ -67,9 +69,13 @@ export function StageRow({
   compact = false,
   customLabel,
   phaseLabel,
+  onSelect,
 }: StageRowProps & { prevStatus?: StageStatus }) {
   const showConnector = index > 0;
   const connectorDone = prevStatus === 'complete';
+  // A section only exists in the event log once its stage has started — clicking
+  // a still-pending row would have nowhere to scroll to.
+  const clickable = status !== 'pending' && !!onSelect;
 
   // Compact mode: fixed-height rows so spacing between steps is uniform.
   // Active rows are taller to accommodate the animation; connector below stretches to match.
@@ -78,7 +84,10 @@ export function StageRow({
     const sizing = isActive ? 'flex-1 min-h-[44px] max-h-[64px]' : 'flex-1 min-h-[36px] max-h-[52px]';
 
     return (
-      <div className={`flex gap-0 ${sizing}`}>
+      <div
+        className={`flex gap-0 ${sizing} ${clickable ? 'cursor-pointer group' : ''}`}
+        onClick={clickable ? onSelect : undefined}
+      >
         {/* Gutter */}
         <div className="flex flex-col items-center flex-shrink-0 w-6">
           {showConnector
@@ -95,7 +104,7 @@ export function StageRow({
 
         {/* Content — mt-[11px] aligns text centre with icon centre (h-3 top + h-4/2 = 14px) */}
         <div className="flex-1 min-w-0 overflow-hidden pl-2 mt-[11px]">
-          <span className={`block text-[13px] font-mono leading-none truncate ${labelColor(status)}`}>
+          <span className={`block text-[13px] font-mono leading-none truncate ${labelColor(status)} ${clickable ? 'group-hover:text-brand-400 group-hover:underline' : ''}`}>
             {customLabel ?? STAGE_LABELS[stageName] ?? stageName}
           </span>
           {phaseLabel && (

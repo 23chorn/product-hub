@@ -18,6 +18,14 @@ import {
   deleteTestPlan as deleteTestPlanImpl,
   type TestPlanContext,
 } from './azure-devops-test-plans';
+import {
+  listRepositories as listRepositoriesImpl,
+  listMarkdownFiles as listMarkdownFilesImpl,
+  getFileContent as getFileContentImpl,
+  getFileContentAtCommit as getFileContentAtCommitImpl,
+  listFileCommits as listFileCommitsImpl,
+  type GitContext,
+} from './azure-devops-git';
 
 const logger = new Logger('AZURE-DEVOPS');
 
@@ -870,6 +878,42 @@ export class AzureDevOpsClient {
    */
   async pushQATestPlan(params: Parameters<typeof pushQATestPlanImpl>[1]) {
     return pushQATestPlanImpl(this.testPlanContext, params);
+  }
+
+  // ── Git Items API (Knowledge Studio) ──────────────────────────────────────────
+
+  /**
+   * Shared primitives the Git Items API helpers need. Accepts an optional project
+   * override so a Knowledge Studio repo tracked from a different ADO project than
+   * the globally configured one (AZURE_DEVOPS_PROJECT) still resolves correctly.
+   */
+  private gitContext(projectOverride?: string): GitContext {
+    return { client: this.client, organization: this.organization, project: projectOverride || this.project };
+  }
+
+  /** List every Git repository in the given project (defaults to the configured project). */
+  async listAdoRepositories(project?: string) {
+    return listRepositoriesImpl(this.gitContext(project));
+  }
+
+  /** List every `.md` file in a repository. */
+  async listAdoMarkdownFiles(repoName: string, branch?: string, project?: string) {
+    return listMarkdownFilesImpl(this.gitContext(project), repoName, branch);
+  }
+
+  /** Fetch the raw text content of a single file at the given repo-relative path. */
+  async getAdoFileContent(repoName: string, path: string, branch?: string, project?: string) {
+    return getFileContentImpl(this.gitContext(project), repoName, path, branch);
+  }
+
+  /** Fetch a file's content as it existed at a specific commit. */
+  async getAdoFileContentAtCommit(repoName: string, path: string, commitId: string, project?: string) {
+    return getFileContentAtCommitImpl(this.gitContext(project), repoName, path, commitId);
+  }
+
+  /** List commits that touched a given file path, newest first. */
+  async listAdoFileCommits(repoName: string, path: string, branch?: string, project?: string) {
+    return listFileCommitsImpl(this.gitContext(project), repoName, path, branch);
   }
 
   // ── Demo cleanup helpers ──────────────────────────────────────────────────────

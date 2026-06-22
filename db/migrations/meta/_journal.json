@@ -78,6 +78,27 @@
       "when": 1750400500000,
       "tag": "0011_management_role",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1782130778046,
+      "tag": "0012_knowledge_studio",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1782130778047,
+      "tag": "0013_drop_mongo_artifact_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1782130778048,
+      "tag": "0014_kb_repos_project",
+      "breakpoints": true
     }
   ]
 }

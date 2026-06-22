@@ -48,6 +48,7 @@ export const ANTHROPIC_AGENT_MODELS: Record<string, string> = {
   critic:             'claude-haiku-4-5-20251001',
   curator:            'claude-haiku-4-5-20251001',
   discovery:          'claude-sonnet-4-5-20250929',
+  doc_review:         'claude-haiku-4-5-20251001',
 };
 
 /**
@@ -65,6 +66,7 @@ export const BEDROCK_AGENT_MODELS: Record<string, string> = {
   curator:              'anthropic.claude-haiku-4-5-20251001-v1:0',
   prototype:            'anthropic.claude-haiku-4-5-20251001-v1:0',
   figma_design:         'anthropic.claude-haiku-4-5-20251001-v1:0',
+  doc_review:           'anthropic.claude-haiku-4-5-20251001-v1:0',
   analyst:              'anthropic.claude-sonnet-4-6',
   pm_prd:               'anthropic.claude-sonnet-4-6',
   epic_feature_planner: 'anthropic.claude-sonnet-4-6',

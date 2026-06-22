@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { Group, Panel, usePanelRef } from 'react-resizable-panels';
 import { api, type SkillVersion } from '../../services/api';
 import { useSkillManagerStore } from '../../stores/skillManagerStore';
 import { useThemeStore } from '../../stores/themeStore';
@@ -11,6 +12,8 @@ import { SkillCreateForm } from './SkillCreateForm';
 import { NewContextForm } from './NewContextForm';
 import { SkillManagerSidebar } from './SkillManagerSidebar';
 import { AirtableSyncPanel } from './AirtableSyncPanel';
+import { DocFileViewer } from '../knowledge/DocFileViewer';
+import { ResizeHandle } from '../common/ResizeHandle';
 import { useContextKeeperStore } from '../../stores/contextKeeperStore';
 import {
   bumpPatch,
@@ -48,8 +51,12 @@ export function SkillManagerPanel() {
   const [selection, setSelection] = useState<PanelSelection>(null);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
+  // Sidebar resize/collapse (react-resizable-panels)
+  const sidebarPanelRef = usePanelRef();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
   // Section expand state — all collapsed by default
-  const [expanded, setExpanded] = useState({ context: false, behaviour: false, agents: false, skills: false, tools: false });
+  const [expanded, setExpanded] = useState({ context: false, behaviour: false, agents: false, skills: false, tools: false, docs: false });
   const toggle = (key: keyof typeof expanded) =>
     setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
 
@@ -420,8 +427,8 @@ export function SkillManagerPanel() {
       {/* Header */}
       <header className="bg-white dark:bg-surface-800 border-b border-surface-200 dark:border-surface-700 px-6 py-4 flex items-center justify-between flex-shrink-0">
         <div>
-          <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">Agent Studio</h2>
-          <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">Manage project context, behaviour docs, agent personas, skills, and tools</p>
+          <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">Knowledge Studio</h2>
+          <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">Manage project context, behaviour docs, agent personas, skills, tools, and repo documentation review</p>
         </div>
         <div className="flex items-center space-x-3">
           {toast && (
@@ -442,8 +449,18 @@ export function SkillManagerPanel() {
       </header>
 
       {/* Body */}
-      <div className="flex-1 flex overflow-hidden">
+      <Group orientation="horizontal" className="flex-1 overflow-hidden" id="knowledge-studio-layout">
         {/* Left nav */}
+        <Panel
+          id="sidebar"
+          defaultSize="22%"
+          minSize="14%"
+          maxSize="65%"
+          collapsible
+          collapsedSize={0}
+          panelRef={sidebarPanelRef}
+          onResize={() => setSidebarCollapsed(sidebarPanelRef.current?.isCollapsed() ?? false)}
+        >
         <SkillManagerSidebar
           isLoading={isLoading}
           expanded={expanded}
@@ -481,10 +498,23 @@ export function SkillManagerPanel() {
           allTools={allTools}
           selectedToolName={selectedToolName}
           onSelectTool={(tool) => setSelection({ type: 'tool', tool })}
+          selectedDocFileId={selection?.type === 'doc_file' ? selection.fileId : null}
+          onSelectDocFile={(file) => setSelection({ type: 'doc_file', fileId: file.id })}
+        />
+        </Panel>
+
+        <ResizeHandle
+          collapsed={sidebarCollapsed}
+          collapseDirection="before"
+          onToggleCollapse={() => {
+            if (sidebarPanelRef.current?.isCollapsed()) sidebarPanelRef.current?.expand();
+            else sidebarPanelRef.current?.collapse();
+          }}
         />
 
         {/* Right panel */}
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <Panel id="main" minSize="30%">
+        <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
           {selection?.type === 'context' && contextFiles[selection.index] ? (
             <ContextFileEditor
               file={contextFiles[selection.index]}
@@ -543,6 +573,8 @@ export function SkillManagerPanel() {
                 if (skill) selectSkill(skill);
               }}
             />
+          ) : selection?.type === 'doc_file' ? (
+            <DocFileViewer fileId={selection.fileId} />
           ) : selection?.type === 'airtable_sync' ? (
             <AirtableSyncPanel />
           ) : selection?.type === 'new_context' ? (
@@ -579,7 +611,8 @@ export function SkillManagerPanel() {
             </div>
           )}
         </div>
-      </div>
+        </Panel>
+      </Group>
     </div>
   );
 }

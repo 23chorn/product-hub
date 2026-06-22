@@ -14,6 +14,7 @@ import { EventRow } from './pipeline-terminal/EventRow';
 import { CheckpointRow, isStaleRecoveryCheckpoint } from './pipeline-terminal/CheckpointRow';
 import { AuditTrailPanel } from './AuditTrailPanel';
 import { RestartConfirmModal } from './RestartConfirmModal';
+import { BacklogOverviewModal } from '../artifact/BacklogOverviewModal';
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -50,12 +51,19 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   const isAdmin = noAuth || realUser?.is_admin;
   const bottomRef = useRef<HTMLDivElement>(null);
   const eventScrollRef = useRef<HTMLDivElement>(null);
+  // Event-log section elements, keyed by stage name — lets a left-pane stage row
+  // scroll the matching right-pane section to the top of the log.
+  const stageSectionRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const scrollToStageSection = (stageName: string) => {
+    stageSectionRefs.current.get(stageName)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
   const [stopping, setStopping] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
   const [generalExpanded, setGeneralExpanded] = useState(false);
   const [crExpanded, setCrExpanded] = useState(false);
   const [showAudit, setShowAudit] = useState(false);
+  const [showBacklogOverview, setShowBacklogOverview] = useState(false);
   const [artifacts, setArtifacts] = useState<Array<{ id: number; type: string; stage: string | null; created_at: number }>>([]);
   // 0-based feature index → phase label (e.g. "MVP", "Phase 1") that feature belongs to.
   const [featurePhaseLabels, setFeaturePhaseLabels] = useState<string[]>([]);
@@ -263,6 +271,28 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
     }
   }
 
+  // Per-feature artifact ids (ticket + QA), shared by the bottom-bar "Stories/Tests" button
+  // and the merged overview it opens. checkpoints is oldest-first, so a later approval
+  // naturally overwrites an earlier one as we walk through.
+  const FEATURE_STAGE_RE = /^story_decomposition_F(\d+)$/;
+  const FEATURE_QA_STAGE_RE = /^story_decomposition_F(\d+)_qa$/;
+  const featureButtonsMap = new Map<number, { num: number; ticketArtifactId?: number; qaArtifactId?: number }>();
+  checkpoints.forEach(c => {
+    if (c.status !== 'approved' || !c.artifact_id) return;
+    const storyMatch = FEATURE_STAGE_RE.exec(c.stage);
+    if (storyMatch) {
+      const num = parseInt(storyMatch[1], 10);
+      featureButtonsMap.set(num, { ...(featureButtonsMap.get(num) ?? { num }), ticketArtifactId: c.artifact_id });
+      return;
+    }
+    const qaMatch = FEATURE_QA_STAGE_RE.exec(c.stage);
+    if (qaMatch) {
+      const num = parseInt(qaMatch[1], 10);
+      featureButtonsMap.set(num, { ...(featureButtonsMap.get(num) ?? { num }), qaArtifactId: c.artifact_id });
+    }
+  });
+  const featureButtons = Array.from(featureButtonsMap.values()).sort((a, b) => a.num - b.num);
+
   return (
     <div className="flex h-full overflow-hidden bg-white dark:bg-[#0d1117] font-mono">
       {/* ── Left: stage list ───────────────────────────────────── */}
@@ -315,6 +345,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                   onViewArtifact={setViewingArtifactId}
                   isLast={idx === stageSequence.length - 1}
                   phaseLabel={phaseLabel}
+                  onSelect={() => scrollToStageSection(stageName)}
                   compact
                 />
               );
@@ -466,7 +497,13 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
             const stageArtifactId = approvedCp?.artifact_id ?? pendingArtifactId ?? anyWithArtifact?.artifact_id ?? null;
 
             return (
-              <div key={stageName}>
+              <div
+                key={stageName}
+                ref={el => {
+                  if (el) stageSectionRefs.current.set(stageName, el);
+                  else stageSectionRefs.current.delete(stageName);
+                }}
+              >
                 <StageGroupHeader
                   stageName={stageName}
                   status={status}
@@ -593,28 +630,6 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
             .sort((a, b) => b.created_at - a.created_at);
           const ticketArtifact = ticketCandidates[0] ?? null;
 
-          // Per-feature Tickets + QA Tests buttons — one pair per feature, shown once that
-          // feature's checkpoint is approved. checkpoints is oldest-first, so a later approval
-          // naturally overwrites an earlier one as we walk through.
-          const FEATURE_STAGE_RE = /^story_decomposition_F(\d+)$/;
-          const FEATURE_QA_STAGE_RE = /^story_decomposition_F(\d+)_qa$/;
-          const featureButtonsMap = new Map<number, { num: number; ticketArtifactId?: number; qaArtifactId?: number }>();
-          checkpoints.forEach(c => {
-            if (c.status !== 'approved' || !c.artifact_id) return;
-            const storyMatch = FEATURE_STAGE_RE.exec(c.stage);
-            if (storyMatch) {
-              const num = parseInt(storyMatch[1], 10);
-              featureButtonsMap.set(num, { ...(featureButtonsMap.get(num) ?? { num }), ticketArtifactId: c.artifact_id });
-              return;
-            }
-            const qaMatch = FEATURE_QA_STAGE_RE.exec(c.stage);
-            if (qaMatch) {
-              const num = parseInt(qaMatch[1], 10);
-              featureButtonsMap.set(num, { ...(featureButtonsMap.get(num) ?? { num }), qaArtifactId: c.artifact_id });
-            }
-          });
-          const featureButtons = Array.from(featureButtonsMap.values()).sort((a, b) => a.num - b.num);
-
           const regularArtifacts = Array.from(latestByStage.values())
             .filter(a => !TICKET_MODES.has(a.stage ?? '') && a.stage !== 'backlog' && a.type !== 'qa_tests');
 
@@ -642,26 +657,14 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                     Epic/Features
                   </button>
                 )}
-                {featureButtons.map(f => (
-                  <span key={f.num} className="inline-flex items-center gap-1">
-                    {f.ticketArtifactId && (
-                      <button
-                        onClick={() => setViewingArtifactId(f.ticketArtifactId!)}
-                        className="px-2.5 py-1 text-xs font-medium rounded bg-surface-100 dark:bg-surface-800/60 text-surface-700 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-700/60 transition-colors"
-                      >
-                        F{f.num} Tickets
-                      </button>
-                    )}
-                    {f.qaArtifactId && (
-                      <button
-                        onClick={() => setViewingArtifactId(f.qaArtifactId!)}
-                        className="px-2.5 py-1 text-xs font-medium rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-800/40 transition-colors"
-                      >
-                        F{f.num} QA Tests
-                      </button>
-                    )}
-                  </span>
-                ))}
+                {featureButtons.length > 0 && (
+                  <button
+                    onClick={() => setShowBacklogOverview(true)}
+                    className="px-2.5 py-1 text-xs font-medium rounded bg-surface-100 dark:bg-surface-800/60 text-surface-700 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-700/60 transition-colors"
+                  >
+                    Stories/Tests
+                  </button>
+                )}
                 {showCRButton && onShowCRForm && (
                   <>
                     {hasArtifacts && <span className="text-surface-300 dark:text-surface-700 select-none">·</span>}
@@ -693,6 +696,14 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
 
       {showAudit && (
         <AuditTrailPanel workflowId={activeWorkflow.id} onClose={() => setShowAudit(false)} />
+      )}
+
+      {showBacklogOverview && (
+        <BacklogOverviewModal
+          featureButtons={featureButtons}
+          initiativeTitle={activeWorkflow.summary ?? activeWorkflow.goal.split('\n')[0]}
+          onClose={() => setShowBacklogOverview(false)}
+        />
       )}
 
       {showRestartConfirm && (

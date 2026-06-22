@@ -21,6 +21,7 @@ You talk to one agent: the **Coordinator** (Chief of Staff). It gathers requirem
 - **Prototype Builder (Nova)** — optional, post-pipeline: a low-fidelity wireframe of just the screen(s) the change affects, not the whole app
 - **Figma Designer (Luma)** — optional, post-pipeline: a concise screen-by-screen design brief for a human designer to build in Figma
 - **Discovery Scout** — separate from the pipeline: surfaces candidate opportunities from interviews, app store reviews, and competitor notes for a PM to review (see [Discovery Mode](#discovery-mode))
+- **Doc Reviewer (Cass)** — separate from the pipeline: on-demand, single-file documentation review inside Knowledge Studio's [Documentation Review](#documentation-review) section
 - **Critic (Flint)** — adversarial quality review after each specialist stage
 - **Context Curator (Ivy)** — proposes updates to project knowledge files based on workflow outputs
 
@@ -31,7 +32,7 @@ You talk to one agent: the **Coordinator** (Chief of Staff). It gathers requirem
 | Frontend | React 18 + TypeScript + Vite + Tailwind CSS (port 5173) |
 | Backend | Node.js + Express + TypeScript (port 3001) |
 | Database | SQLite via `better-sqlite3` (`db/product-ops.db`) |
-| Artifact storage | MongoDB (local via Docker) — JSON artifacts stored as BSON; disk fallback when unavailable |
+| Artifact storage | Disk, under `data/sessions/...` — SQLite holds a pointer row per file |
 | AI | Anthropic API, AWS Bedrock, or Ollama (local) — model selectable from UI |
 | Integrations | Airtable (roadmap items), Azure DevOps, Notion |
 
@@ -43,7 +44,7 @@ product-agent/
 │   ├── frontend/      React UI (two-column layout)
 │   └── shared/        Compiled TypeScript types (@pap/shared)
 ├── agents/
-│   ├── personas/      Agent persona markdown files (coordinator, analyst, pm, architect, critic, curator, qa-engineer, prototype-builder, platform engineers)
+│   ├── personas/      Agent persona markdown files (coordinator, analyst, pm, architect, critic, curator, qa-engineer, doc-reviewer, prototype-builder, platform engineers)
 │   ├── templates/     Output templates (research, prd, architecture, backlog, qa-tests, prototype)
 │   ├── config.example.yaml  Template for user config (tracked)
 │   └── config.yaml    User identity and preferences (gitignored)
@@ -64,7 +65,6 @@ product-agent/
 
 - Node.js >= 18
 - npm >= 9
-- Docker (for local MongoDB — `docker compose up -d` starts it on port 27017; the system falls back to disk storage if unavailable)
 - One of:
   - Anthropic API key (`AI_PROVIDER=anthropic`)
   - AWS credentials with Bedrock access (`AI_PROVIDER=bedrock`)
@@ -83,9 +83,6 @@ npm install
 cd app/shared && npm run build && cd ../..
 cp .env.example .env
 # Edit .env — set AI_PROVIDER and credentials
-
-# Start MongoDB (optional — artifacts fall back to disk without it)
-docker compose up -d
 
 # Validate configuration
 npm run validate-env
@@ -147,6 +144,8 @@ Every specialist stage pauses for human review. At each checkpoint you can:
 - **Revise** — provide feedback; the stage reruns with your corrections (critic is skipped — the human is now the reviewer)
 - **Reject** — end the workflow
 
+**Dual checkpoints for story decomposition:** each `story_decomposition_F*` stage creates *two* independent checkpoints — a **Stories** checkpoint (Product/PM approval) and a **QA Tests** checkpoint (QA approval). Both must be approved before the workflow advances to the next feature. If one reviewer requests revisions after the other has already approved, the approved side is automatically invalidated and both artifacts regenerate together — partial approvals never go stale against regenerated work.
+
 After a workflow completes, you can **redo from any stage** — provide a reason, and that stage plus all downstream stages rerun.
 
 ### Sprint Estimation
@@ -155,6 +154,21 @@ The backlog stage automatically calculates sprint estimates using your team's ve
 - **Epic level** — total story points divided by effective velocity
 - **Feature level** — per-feature sprint estimates shown in the backlog preview
 - **AI-assisted estimates** — when `ai_assisted_development.enabled: true`, shows AI vs traditional hour comparisons
+
+## Roles & Access Control
+
+Authentication is optional — with no users in the database, the app runs in single-user, admin-equivalent "no-auth" mode. Once users exist, every request requires a session and is gated by role.
+
+| Role | Grants |
+|------|--------|
+| **Admin** (`is_admin`) | Everything below, plus user management and the **Knowledge Repos** settings tab (which ADO repos Documentation Review tracks) |
+| `product` | Launch new workflows, run/promote Discovery opportunities, approve Stories checkpoints and any stage mapped to `product` in Stage Roles |
+| `qa` | Approve QA Tests checkpoints and any stage mapped to `qa` (e.g. `qa_engineer`, `qa_engineer_F1`–`F3`) |
+| `tech_lead`, `design` | Approve stages mapped to that role via Stage Roles; no special default stages out of the box |
+| `management` | Read-only access to the **Stats Dashboard** (cycle time, first-time-approval rate, throughput, bottlenecks) |
+| `view_only` | Hard-deny marker — overrides every other role a user holds. No checkpoint approvals, no Studio edits, no comments, no Knowledge Repo sync, no new initiatives. Read access only |
+
+Which role a checkpoint requires is configurable per stage in **Settings → Access → Stage Roles** (`stage_roles` table) — the `qa` ↔ QA-stage mapping above is the shipped default, not hardcoded. Roles are assigned per user in **Settings → Access → Users**.
 
 ## UI Features
 
@@ -212,15 +226,28 @@ After a workflow completes, **Change Request** opens a centred modal to describe
 ### Initiative List
 The left sidebar shows local initiatives and Airtable roadmap items (when configured). Each initiative displays its workflow status (active/paused/done) and clicking one restores the full workflow state.
 
-### Agent Studio
-Click **Agent Studio** in the header to manage everything that shapes agent behaviour, organised into collapsible sections:
+### Knowledge Studio
+Click **Knowledge Studio** in the header to manage everything that shapes agent behaviour and project documentation, organised into collapsible sections:
 - **Context** — edit the canonical `context/*.md` project files. Changes are picked up immediately by the next agent request — no server restart needed
 - **Behaviour Docs** — edit the `.feature` files in `context/behaviour/` that describe how existing functionality currently works; only surfaced to the PRD stage, matched by keyword relevance to the initiative
 - **Agents** — edit a persona's prompt, its output template, and its registered validator tools, with version history per file
 - **Tools** — review the structural validators each stage calls before returning output
+- **Documentation Review** — see below
+
+#### Documentation Review
+A read-only-against-source documentation review workflow for Markdown files living in Azure DevOps repos — independent of the staged product pipeline. Requires `WORK_ITEMS_INTEGRATION=ado` (reuses the same `AZURE_DEVOPS_*` credentials; no separate setup).
+
+1. **Track a repo** — an admin adds an ADO repository in **Settings → Knowledge Repos** (label, repo name, optional branch/project). The repo is synced immediately and can be re-synced on demand; sync never writes back to the repo.
+2. **Browse files** — every `.md` file in a tracked repo appears in the sidebar, grouped by repo, filterable by owner/status and by "needs frontmatter." Files must open with a `file-name:`/`owner:`/`status:` YAML frontmatter block to be considered valid — files missing it are flagged with a warning badge.
+3. **Review with AI** — the **Doc Reviewer (Cass)** agent reads the file plus the committee's standing guidelines (`context/doc-review-guidelines.md`, copy from the `.example.md` template to activate) and posts 0–8 suggestions as comments (`minor`/`major`). Cass never edits the file or proposes a rewrite — only the humans who own the doc do that.
+4. **Comment and resolve** — anyone who isn't `view_only` can add their own comments (optionally anchored to a quoted excerpt) and mark any comment (human or AI) resolved.
+5. **History and diffs** — a History tab shows live commit history and per-commit diffs pulled directly from Azure DevOps (not cached locally), useful for auditing how a policy doc evolved.
 
 ### Mid-Workflow Chat
 Talk to the Chief of Staff while a workflow is running. Ask status questions, provide corrections, or share preferences that should apply to upcoming stages.
+
+### Stats Dashboard
+Click **Stats** in the header (visible to Admin and `management` roles) for read-only cycle-time, first-time-approval-rate, throughput, and bottleneck metrics across workflows, over a configurable date range.
 
 ## Environment Variables
 
@@ -308,12 +335,13 @@ The `context/` directory contains markdown files injected into agent system prom
 | `current-state.md` | Where things stand today, active work, known debt | All agents |
 | `api-contracts.md` | REST/WebSocket API contracts and rate limits | Architect, story decomposition, tech refinement, QA |
 | `integrations.md` | Third-party integrations (FCM, SendGrid, analytics, payments) | Architect, story decomposition, tech refinement, QA |
+| `doc-review-guidelines.md` | Documentation committee's standing review instructions | Doc Reviewer (Cass) only — not part of the staged pipeline |
 
 **Stage-scoped context**: Files with a YAML frontmatter `stages:` field are only injected into matching agents — useful for technical context (API contracts, DB schema, integrations) that the analyst and PM don't need. Example: `api-contracts.example.md` is injected only into the architect and story decomposition agents.
 
-Context files can be edited from the UI (**Agent Studio** button in the header) or on disk. Changes take effect immediately — no restart needed.
+Context files can be edited from the UI (**Knowledge Studio** button in the header) or on disk. Changes take effect immediately — no restart needed.
 
-**Behaviour docs** (`context/behaviour/`) are a separate corpus: `.feature` files describing how existing functionality behaves today, plus a `feature-map.json` search index. Unlike the files above, they're only injected into the PRD stage, and only the documents whose keywords match the initiative — not the whole corpus. Also editable from Agent Studio.
+**Behaviour docs** (`context/behaviour/`) are a separate corpus: `.feature` files describing how existing functionality behaves today, plus a `feature-map.json` search index. Unlike the files above, they're only injected into the PRD stage, and only the documents whose keywords match the initiative — not the whole corpus. Also editable from Knowledge Studio.
 
 ## Development
 
@@ -332,6 +360,8 @@ cd app/backend && npx tsc --noEmit
 ```
 
 See [CUSTOMIZING.md](CUSTOMIZING.md) for fork customization and [docs/developer-guide/adding-an-agent-stage.md](docs/developer-guide/adding-an-agent-stage.md) for adding new specialist stages.
+
+Setting up governance for your Product/QA team? Start from [docs/policies-and-procedures-template.md](docs/policies-and-procedures-template.md) — a template grounded in what this system actually enforces (roles, checkpoint gates, documentation review) versus what's left to your team's convention.
 
 ## Storage
 
@@ -359,20 +389,11 @@ Schema in `db/schema.sql`, mirrored in `app/backend/src/data/database.ts`.
 | `discovery_runs` | One row per Discovery Scout batch run |
 | `discovery_opportunities` | Opportunity drafts surfaced by a run, reviewed/promoted/dismissed by a PM |
 | `discovery_opportunity_sources` | Links opportunities to the source documents that evidenced them |
+| `users`, `roles`, `user_roles` | Accounts, the role catalogue, and per-user role assignments |
+| `stage_roles` | Which role(s) may approve each checkpoint stage (configurable, see [Roles & Access Control](#roles--access-control)) |
+| `kb_repos` | Azure DevOps repositories tracked by Knowledge Studio's Documentation Review |
+| `kb_files` | Synced `.md` files per repo, with parsed `file-name`/`owner`/`status` frontmatter |
+| `kb_comments` | Human and AI (Cass) review comments per file, with open/resolved status |
 
-### MongoDB (artifact content)
-JSON artifacts from specialist stages are stored in a local MongoDB instance (`docker-compose.yml` at project root, port 27017). The SQLite `artifacts` table tracks the MongoDB ObjectId in `external_path` with `external_system='mongodb'`. If MongoDB is unreachable on first connect, all artifacts fall back to disk automatically — no configuration needed for basic local development.
-
-```bash
-# Start MongoDB
-docker compose up -d
-
-# Stop MongoDB
-docker compose down
-```
-
-Environment variables (both optional — defaults shown):
-```
-MONGODB_URI=mongodb://localhost:27017
-MONGODB_DB=product-agent
-```
+### Artifact content (disk)
+JSON/markdown artifacts from specialist stages are written straight to disk under `data/sessions/<itemId>/<stage>/artifacts/`. The SQLite `artifacts` table holds a pointer row per file (`file_path`) plus an optional Azure Wiki mirror (`wiki_path`/`wiki_url`) and `external_url` (e.g. the ADO work item a given artifact was pushed to). No separate service to run — it's part of the same `data/` directory used as the project's local backup.

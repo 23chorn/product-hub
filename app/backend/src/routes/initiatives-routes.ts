@@ -4,6 +4,7 @@ import db from '../data/database';
 import Logger from '../utils/logger';
 import { parseRoles } from '../agents/workflow-db';
 import { isDemoWorkflow } from '../demo/demo-mode';
+import { itemSessionDir } from '../agents/item-metadata';
 import type { AirtableItem, LocalInitiative } from '@pap/shared';
 
 const logger = new Logger('INITIATIVES');
@@ -111,7 +112,11 @@ router.get('/', (_req: Request, res: Response) => {
         // Most recently created pending checkpoint wins for the single-stage label
         pendingStageMap.set(cp.workflow_id, cp.stage);
         const approvals = pendingApprovalsMap.get(cp.workflow_id) ?? [];
-        approvals.push({ stage: cp.stage, roles: parseRoles(cp.required_role) });
+        // A stage can have multiple pending checkpoints (one per feature) — collapse
+        // them to a single badge per stage since required roles are stage-derived.
+        if (!approvals.some(a => a.stage === cp.stage)) {
+          approvals.push({ stage: cp.stage, roles: parseRoles(cp.required_role) });
+        }
         pendingApprovalsMap.set(cp.workflow_id, approvals);
       }
     }
@@ -323,9 +328,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
     // ── Delete session directory from disk ─────────────────────────────────
     const fs = await import('fs');
-    const path = await import('path');
-    const DATA_DIR = (await import('../data/database')).DATA_DIR;
-    const sessionDir = path.join(DATA_DIR, 'sessions', id);
+    const sessionDir = itemSessionDir(id);
     if (fs.existsSync(sessionDir)) {
       fs.rmSync(sessionDir, { recursive: true, force: true });
     }

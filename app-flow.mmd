@@ -98,8 +98,7 @@ flowchart TD
 
     %% ── STORAGE LAYER ───────────────────────────────────────────────────────
     subgraph STORE["Artifact Storage (transparent to agents)"]
-        MONGO[(MongoDB\nJSON artifacts)]
-        DISK[(Disk fallback\n/artifacts/)]
+        DISK[(Disk\ndata/sessions/.../artifacts/)]
     end
 
     A1 & A2 & A3 & A4 --> STORE
@@ -116,5 +115,5 @@ flowchart TD
     class CP1,CP2,CP3,CP4,CP5,CP6,CP7,PLAN,CDIFF checkpoint
     class AT,ADO_EF,ADO_S1,ADO_S2,ADO_S3,WIKI,IMPL integration
     class CTX,C1,C2,C3,C4,C5,C6 context
-    class STORE,MONGO,DISK storage
+    class STORE,DISK storage
 ```

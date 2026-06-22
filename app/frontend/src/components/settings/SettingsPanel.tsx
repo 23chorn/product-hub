@@ -2,10 +2,11 @@ import { useEffect, useState, useCallback } from 'react';
 import { api } from '../../services/api';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useThemeStore } from '../../stores/themeStore';
-import { THEMES } from '../../theme/themes';
+import { THEMES, getTheme, type ThemeId } from '../../theme/themes';
 import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../stores/authStore';
 import { UserManagementPanel } from './UserManagementPanel';
+import { KnowledgeRepoPanel } from './KnowledgeRepoPanel';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -34,7 +35,7 @@ const STAGE_ORDER = [
 ];
 const ALWAYS_ON = new Set(['curator']);
 
-type Tab = 'general' | 'pipeline' | 'quality' | 'access';
+type Tab = 'general' | 'pipeline' | 'quality' | 'access' | 'knowledgeRepos';
 
 // ── Toggle ─────────────────────────────────────────────────────────────────────
 
@@ -132,6 +133,7 @@ export function SettingsPanel() {
     { key: 'pipeline',     label: 'Pipeline', adminOnly: true },
     { key: 'quality',      label: 'Quality gates', adminOnly: true },
     { key: 'access',       label: 'Access', adminOnly: true },
+    { key: 'knowledgeRepos', label: 'Knowledge Repos', adminOnly: true },
   ];
   const TABS = ALL_TABS.filter(t => !t.adminOnly || canAccessAdminTabs);
 
@@ -192,27 +194,20 @@ export function SettingsPanel() {
             <div className="rounded-lg border border-surface-200 dark:border-surface-700 divide-y divide-surface-100 dark:divide-surface-800">
               <FieldRow label="Theme" hint="Choose a color theme for the app">
                 <div className="flex items-center gap-2">
-                  {THEMES.map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => setTheme(t.id)}
-                      title={t.label}
-                      aria-label={t.label}
-                      aria-pressed={theme === t.id}
-                      className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors ${
-                        theme === t.id
-                          ? 'border-brand-500 text-surface-900 dark:text-surface-100 ring-1 ring-brand-500'
-                          : 'border-surface-200 dark:border-surface-700 text-surface-600 dark:text-surface-400 hover:border-surface-300 dark:hover:border-surface-600'
-                      }`}
-                    >
-                      <span
-                        className="h-3.5 w-3.5 rounded-full ring-1 ring-black/10 dark:ring-white/10"
-                        style={{ backgroundColor: t.swatch }}
-                      />
-                      {t.label}
-                    </button>
-                  ))}
+                  <span
+                    className="h-3.5 w-3.5 flex-shrink-0 rounded-full ring-1 ring-black/10 dark:ring-white/10"
+                    style={{ backgroundColor: getTheme(theme).swatch }}
+                  />
+                  <select
+                    value={theme}
+                    onChange={(e) => setTheme(e.target.value as ThemeId)}
+                    aria-label="Theme"
+                    className="text-xs bg-white dark:bg-surface-800 border border-surface-300 dark:border-surface-600 rounded-md px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  >
+                    {THEMES.map((t) => (
+                      <option key={t.id} value={t.id}>{t.label}</option>
+                    ))}
+                  </select>
                 </div>
               </FieldRow>
             </div>
@@ -322,6 +317,16 @@ export function SettingsPanel() {
               description="Manage users, roles, and which role is required to approve each pipeline stage."
             />
             <UserManagementPanel />
+          </div>
+        )}
+
+        {tab === 'knowledgeRepos' && (
+          <div>
+            <SectionHeader
+              title="Knowledge Repos"
+              description="Azure DevOps repos to pull .md files from for Knowledge Studio's Documentation Review section."
+            />
+            <KnowledgeRepoPanel />
           </div>
         )}
 

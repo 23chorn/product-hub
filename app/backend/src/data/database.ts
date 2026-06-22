@@ -23,6 +23,13 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
+// WAL already protects against corruption on crash, so the extra fsync FULL does on
+// every commit isn't needed — NORMAL still fsyncs at WAL checkpoints, just not every write.
+db.pragma('synchronous = NORMAL');
+// Many short-lived connections (stage runners, route handlers) hit this DB concurrently.
+// Without a busy_timeout, a writer holding the lock makes every other connection fail
+// immediately with SQLITE_BUSY instead of waiting; this makes them retry for up to 10s.
+db.pragma('busy_timeout = 10000');
 db.pragma('foreign_keys = ON');
 
 // Run all pending migrations from db/migrations/*.sql.

@@ -71,18 +71,17 @@ export const skillVersions = sqliteTable('skill_versions', {
 ]);
 
 // ── Artifacts ─────────────────────────────────────────────────────────────────
+// Content always lives on disk under data/sessions/... — this table is just a
+// pointer to that file, plus an optional external_url (e.g. the ADO work item
+// this artifact was pushed to) and an optional wiki mirror (one-way, never the
+// primary content source) so reads stay disk -> wiki(last resort).
 
 export const artifacts = sqliteTable('artifacts', {
   id:               integer('id').primaryKey({ autoIncrement: true }),
   session_id:       text('session_id').notNull().references(() => sessions.id, { onDelete: 'cascade' }),
   type:             text('type').notNull(),
   file_path:        text('file_path').notNull().default(''),
-  external_system:  text('external_system'),   // 'mongodb' | null — primary content store only
-  external_path:    text('external_path'),
   external_url:     text('external_url'),
-  // Wiki is a one-way mirror, never the primary content source. Kept separate from
-  // external_system/external_path so syncing to wiki never displaces the mongodb/disk
-  // pointer — reads stay mongo -> disk -> wiki(last resort).
   wiki_path:        text('wiki_path'),
   wiki_url:         text('wiki_url'),
   skill_version_id: integer('skill_version_id').references(() => skillVersions.id),
@@ -350,3 +349,52 @@ export const itemStatusSnapshots = sqliteTable('item_status_snapshots', {
   status:       text('status').notNull(),
   last_checked: integer('last_checked').notNull(),
 });
+
+// ── Knowledge Studio: cross-repo documentation review ────────────────────────
+
+export const kbRepos = sqliteTable('kb_repos', {
+  id:                integer('id').primaryKey({ autoIncrement: true }),
+  label:             text('label').notNull(),
+  repository:        text('repository').notNull(),
+  branch:            text('branch'),
+  project:           text('project'),   // ADO project the repo lives in; null = the globally configured AZURE_DEVOPS_PROJECT
+  created_by_user_id: integer('created_by_user_id').references(() => users.id),
+  last_synced_at:    integer('last_synced_at'),
+  created_at:        integer('created_at').notNull(),
+}, (t) => [
+  uniqueIndex('idx_kb_repos_repository').on(t.repository),
+]);
+
+export const kbFiles = sqliteTable('kb_files', {
+  id:                     integer('id').primaryKey({ autoIncrement: true }),
+  repo_id:                integer('repo_id').notNull().references(() => kbRepos.id, { onDelete: 'cascade' }),
+  path:                   text('path').notNull(),
+  frontmatter_file_name:  text('frontmatter_file_name'),
+  frontmatter_owner:      text('frontmatter_owner'),
+  frontmatter_status:     text('frontmatter_status'),
+  frontmatter_valid:      integer('frontmatter_valid').notNull().default(0),
+  content:                text('content').notNull().default(''),
+  commit_id:              text('commit_id'),
+  last_synced_at:         integer('last_synced_at').notNull(),
+  created_at:             integer('created_at').notNull(),
+}, (t) => [
+  uniqueIndex('idx_kb_files_repo_path').on(t.repo_id, t.path),
+  index('idx_kb_files_owner').on(t.frontmatter_owner),
+  index('idx_kb_files_status').on(t.frontmatter_status),
+]);
+
+export const kbComments = sqliteTable('kb_comments', {
+  id:                  integer('id').primaryKey({ autoIncrement: true }),
+  file_id:             integer('file_id').notNull().references(() => kbFiles.id, { onDelete: 'cascade' }),
+  source:              text('source', { enum: ['user', 'agent'] }).notNull(),
+  author_user_id:      integer('author_user_id').references(() => users.id),
+  author_name:         text('author_name').notNull(),
+  body:                text('body').notNull(),
+  quote:               text('quote'),
+  status:              text('status', { enum: ['open', 'resolved'] }).notNull().default('open'),
+  created_at:          integer('created_at').notNull(),
+  resolved_at:         integer('resolved_at'),
+  resolved_by_user_id: integer('resolved_by_user_id').references(() => users.id),
+}, (t) => [
+  index('idx_kb_comments_file').on(t.file_id),
+]);

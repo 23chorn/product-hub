@@ -1,6 +1,6 @@
 # Database Architecture
 
-Two storage systems work in tandem: **SQLite** handles all relational state (orchestration, sessions, users, workflows), and **MongoDB** stores large artifact content. SQLite is the source of truth; MongoDB is an overflow store for document blobs.
+**SQLite** handles all relational state (orchestration, sessions, users, workflows) and is the single source of truth. Large artifact content (specialist agent JSON/markdown output) is written straight to disk under `data/sessions/...`; the `artifacts` table holds a pointer row per file rather than the content itself.
 
 ---
 
@@ -21,7 +21,7 @@ WAL mode is enabled (`journal_mode = WAL`) for non-blocking reads during writes.
 | `items` | Work-item registry. Every session, workflow, and artifact hangs off an item. `source` distinguishes Airtable-originated items from locally created ones. |
 | `sessions` | One row per agent per item per sitting. Links back to `items`; chains to a parent via `parent_session_id`. |
 | `messages` | Full conversation history per session. `sequence` column provides stable ordering independent of clock drift. |
-| `artifacts` | Metadata row per output file. Points to content via `file_path` (disk) or `external_system`/`external_path` (MongoDB or Azure Wiki). |
+| `artifacts` | Metadata row per output file. Points to content via `file_path` (disk, the primary store) plus an optional `wiki_path`/`wiki_url` mirror and `external_url` (e.g. the ADO work item this artifact was pushed to). |
 | `workflows` | Orchestration unit spanning multiple agent sessions. Tracks `current_stage`, `stage_sequence` (JSON array), `estimated_cost`, and `policy_overrides`. |
 | `checkpoints` | Human review pause points within a workflow. Transitions: `pending → approved | rejected | revised`. |
 | `workflow_events` | Event log consumed by the frontend's narration thread. Polled via SSE. |
@@ -72,51 +72,15 @@ db/
 
 ---
 
-## MongoDB — `product-agent` database
+## Artifact content — disk, under `data/sessions/...`
 
-**Driver**: `mongodb` (official Node.js driver)  
-**Default URI**: `mongodb://localhost:27017`  
-**Default DB**: `product-agent`  
-**Code entry point**: `app/backend/src/data/mongo-client.ts`  
-**Local setup**: `docker compose up -d`
+**Code entry point**: `app/backend/src/agents/artifact-helpers.ts`
 
-### Why MongoDB alongside SQLite?
+Specialist agent outputs (PRD JSON, architecture JSON, backlog) are written as plain JSON/markdown files under `data/sessions/<itemId>/<stage>/artifacts/<timestamp>-<stage>.json`. The `artifacts` SQLite row is the source of truth for metadata and points at the file via `file_path`. There's no separate document store and nothing to run locally beyond the SQLite file itself — `saveLocalArtifact()`, `saveCriticArtifact()`, and `saveDiffArtifact()` all write directly to disk and insert the pointer row in the same call.
 
-Specialist agent outputs (PRD JSON, architecture JSON, backlog) can be large structured documents. Storing them as raw `TEXT` blobs in SQLite works but forfeits native document querying and makes the db file grow unboundedly. MongoDB stores these as real BSON, preserving type fidelity and enabling field-level queries if needed later.
-
-### Collection: `artifacts`
-
-One document per specialist stage output.
-
-```ts
-interface ArtifactDocument {
-  _id:           ObjectId;
-  artifact_id:   number;        // back-reference to SQLite artifacts.id
-  item_id:       string;
-  session_id:    string;
-  stage:         string;        // 'analyst' | 'pm_prd' | 'solution_architect' | ...
-  artifact_type: string;        // 'research' | 'prd' | 'architecture' | ...
-  content:       object | string;  // parsed BSON object or raw string
-  created_at:    Date;
-  updated_at:    Date;
-}
-```
-
-Indexes: `artifact_id` (unique), `item_id`, `artifact_type`, `session_id`.
-
-### How SQLite and MongoDB link
-
-The `artifacts` SQLite row is the source of truth for metadata. When content lives in MongoDB:
-
-- `artifacts.external_system = 'mongodb'`
-- `artifacts.external_path = <ObjectId string>`
-- `artifacts.file_path = ''` (empty)
-
-The read path in `artifact-helpers.ts` checks `external_system` first, falls back to `file_path` on disk.
-
-### Fallback behaviour
-
-MongoDB connection uses a 3-second `serverSelectionTimeoutMS`. If unreachable at startup, `_available` is set to `false` and all subsequent calls return `null` without retrying — the caller falls back to writing content as a JSON file on disk instead.
+An artifact can additionally carry:
+- `wiki_path` / `wiki_url` — a one-way mirror to the Azure DevOps wiki (`syncArtifactToWiki()`), only consulted as a read fallback if the disk file goes missing.
+- `external_url` — e.g. the ADO work item URL this artifact was pushed to, stamped on after a successful push.
 
 ---
 
@@ -126,17 +90,12 @@ MongoDB connection uses a 3-second `serverSelectionTimeoutMS`. If unreachable at
 Agent produces output
         │
         ▼
-saveLocalArtifact()
-        │
-        ├─► MongoDB available?
-        │       ├─ YES → insertArtifactDoc() → SQLite row with external_system='mongodb'
-        │       └─ NO  → write JSON to disk  → SQLite row with file_path=<path>
-        │
+saveLocalArtifact() → write JSON to disk → SQLite row with file_path=<path>
+
 Read path (readArtifactContent / loadArtifactContent):
         │
-        ├─► external_system === 'mongodb' → readArtifactDoc(external_path)
-        │       └─ miss → no disk fallback (log warning)
-        └─► file_path set → fs.readFileSync(file_path)
+        ├─► file_path set → fs.readFileSync(file_path)
+        └─► miss → fall back to the wiki mirror (wiki_path), if one exists
 ```
 
 ---
@@ -170,7 +129,3 @@ Switch to **PostgreSQL** (via [Neon](https://neon.tech) for serverless, or self-
 - You need row-level security, logical replication, or read replicas.
 
 Turso (libSQL over SQLite with replication) is a middle path: SQLite-compatible API, edge replication, multi-tenant support — worth evaluating if you want to stay SQLite-flavored but need cloud scale.
-
-### MongoDB: keep as-is
-
-The SQLite + MongoDB split is justified. Large structured documents belong in a document store; orchestration metadata belongs in a relational store. The fallback-to-disk pattern makes local dev friction-free. The only improvement worth making is ensuring the fallback disk artifacts are also cleaned up when MongoDB becomes available again (currently they're orphaned on disk).

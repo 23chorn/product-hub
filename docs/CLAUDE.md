@@ -229,23 +229,19 @@ Sprint estimation runs after backlog specialist: reads `agents/config.yaml` for 
 Configured via `app/backend/src/config/app-config.ts`:
 - `ROADMAP_INTEGRATION=airtable|none`
 - `WORK_ITEMS_INTEGRATION=ado|none`
-- `KNOWLEDGE_BASE_INTEGRATION=azure_wiki|none` — `azure_wiki` auto-publishes analyst/PRD/architecture/prototype/figma_design drafts to the ADO wiki (`tryWikiPush()` in `workflow-stage-runner.ts`); independent of `WORK_ITEMS_INTEGRATION`, reuses the same `AZURE_DEVOPS_*` credentials. Once an artifact is wiki-synced, its `external_system` flips to `azure_wiki` permanently and all future reads (including previews) come from the wiki, not Mongo/disk.
+- `KNOWLEDGE_BASE_INTEGRATION=azure_wiki|none` — `azure_wiki` auto-publishes analyst/PRD/architecture/prototype/figma_design drafts to the ADO wiki (`tryWikiPush()` in `workflow-stage-runner.ts`); independent of `WORK_ITEMS_INTEGRATION`, reuses the same `AZURE_DEVOPS_*` credentials. The wiki is a one-way mirror (`wiki_path`/`wiki_url` columns) — disk (`file_path`) stays the primary read source; the wiki is only consulted as a last-resort fallback if the disk file goes missing.
 
 ### Demo
 `POST /api/demo/webhook/trigger` launches a full pipeline without coordinator planning, cycling through 4 sample initiatives (In-App Messaging, Onboarding Redesign, Portfolio Analytics, Social Trading — all "TradeEasy"). `USE_MOCK_DATA=true` bypasses Airtable for local dev.
 
 Fixture content for `getDemoFixture()` (`demo-mode.ts`) always loads from `app/backend/src/demo/fixtures/messaging/` — that's the only fixture set present today. `DEMO_FIXTURE_THEME` is still read in a couple of places (`workflow-router.ts`, `ws-demo-handler.ts`, `settings-routes.ts`) for labeling/display, but doesn't change which fixture files `demo-mode.ts` actually serves.
 
-**Fixture format**: All fixtures are `.json` files. The `messaging/` subdirectory contains theme-specific overrides for `analyst.json`, `prd.json`, `architecture.json`, `figma-design.json`. Common fixtures (backlog, qa-tests, prototype, epic-features) are shared across themes. Demo artifacts flow through the same `saveLocalArtifact()` path as real LLM outputs — MongoDB is attempted first; falls back to disk if unavailable.
+**Fixture format**: All fixtures are `.json` files. The `messaging/` subdirectory contains theme-specific overrides for `analyst.json`, `prd.json`, `architecture.json`, `figma-design.json`. Common fixtures (backlog, qa-tests, prototype, epic-features) are shared across themes. Demo artifacts flow through the same `saveLocalArtifact()` path as real LLM outputs.
 
-### Artifact storage (`app/backend/src/data/mongo-client.ts`)
-Specialist-stage JSON artifacts are stored in locally hosted MongoDB (`docker-compose.yml` at project root). The `artifacts` SQLite table tracks the storage location via `external_system='mongodb'` and `external_path=<ObjectId>`. Disk fallback is automatic when MongoDB is unreachable (`serverSelectionTimeoutMS: 3000`).
+### Artifact storage (`app/backend/src/agents/artifact-helpers.ts`)
+Specialist-stage JSON/markdown artifacts are written straight to disk under `data/sessions/<itemId>/<stage>/artifacts/`. The `artifacts` SQLite table holds a pointer row per file (`file_path`), plus an optional `wiki_path`/`wiki_url` mirror and `external_url` (e.g. the ADO work item URL an artifact was pushed to).
 
-Key exports: `insertArtifactDoc()`, `updateArtifactDocId()`, `readArtifactDoc()`, `replaceArtifactDocContent()`, `parseContentForMongo()` (stores JSON as real BSON, non-JSON as string).
-
-`saveLocalArtifact()` in `artifact-helpers.ts` dispatches: MongoDB → disk fallback. `updateArtifactContent()` dispatches: MongoDB → azure_wiki → disk based on `external_system`.
-
-To start MongoDB locally: `docker compose up -d`. Set `MONGODB_URI` and `MONGODB_DB` in `.env` (defaults: `mongodb://localhost:27017`, `product-agent`).
+Key exports: `saveLocalArtifact()`, `saveCriticArtifact()`, `saveDiffArtifact()` (writers), `loadLatestArtifactContent()`, `loadArtifactContentById()` (readers — disk first, wiki mirror as last-resort fallback), `updateArtifactContent()` (edits, also refreshes the wiki mirror if one exists).
 
 ### Misc
 - **Airtable formula**: use `NOT({Field})` not `{Field} = BLANK()` for link fields (Airtable returns SERVER_ERROR for the latter)

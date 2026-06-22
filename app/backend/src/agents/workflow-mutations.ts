@@ -40,13 +40,12 @@ export async function propagateFeedback(checkpointId: number, feedback: string):
   if (!workflow) throw new Error(`Workflow not found: ${checkpoint.workflow_id}`);
 
   // Load the full prior artifact — passed as the assistant turn in the conversation thread.
-  // Use the async loader so MongoDB-backed artifacts are fetched correctly.
   let priorDraft = checkpoint.artifact_id
     ? (await loadArtifactContentById(checkpoint.artifact_id)) ?? undefined
     : undefined;
 
   // Every artifact is stored as JSON. If this came back as something else, the primary
-  // store (mongo/disk) was unreadable and readArtifactRow fell back to the wiki's markdown
+  // store (disk) was unreadable and readArtifactRow fell back to the wiki's markdown
   // mirror — not the canonical draft. Threading that in as the specialist's "previous
   // response" makes it think the document format changed, which derails the revision.
   // Treat it as no-prior-draft instead so it gets a clean from-scratch brief.
@@ -150,7 +149,7 @@ export async function reiterateFromStage(
     : undefined;
 
   // See propagateFeedback() above — guard against the wiki's markdown mirror leaking
-  // through as the "prior draft" when mongo/disk content is unreadable.
+  // through as the "prior draft" when disk content is unreadable.
   if (priorDraft && !isJsonArtifactContent(priorDraft)) {
     logger.warn(`reiterateFromStage: artifact content for stage "${fromStage}" is not JSON (likely wiki fallback) — generating a from-scratch brief instead of threading it as the prior draft`);
     priorDraft = undefined;

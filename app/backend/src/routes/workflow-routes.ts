@@ -346,10 +346,11 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
               const { AzureDevOpsClient } = await import('../integrations/azure-devops');
               const client = new AzureDevOpsClient();
               const featureUrl = `https://dev.azure.com/${client['organization']}/${client['project']}/_workitems/edit/${result.featureId}`;
-              const epicUrl = client.getEpicUrl(result.epicId);
               const testPlanUrl = result.testPlanUrl ?? null;
               stampArtifactUrl(featureUrl);
-              const eventMeta: Record<string, any> = { feature_url: featureUrl, epic_url: epicUrl };
+              // No epic_url here — the epic link is already shown on epic_feature_planner's
+              // own event; this checkpoint's event only carries the link(s) it owns.
+              const eventMeta: Record<string, any> = { feature_url: featureUrl };
               if (testPlanUrl) eventMeta.test_plan_url = testPlanUrl;
               insertEvent(workflowId, 'ado_pushed', cpDetail.stage,
                 `Feature ${featureIndex + 1} stories & test cases pushed to Azure DevOps`,
@@ -734,8 +735,8 @@ workflowRoutes.delete('/:id', (req: Request, res: Response) => {
 
 /**
  * GET /api/workflow/artifact/:id/content
- * Returns the text content of an artifact — MongoDB first, disk fallback, the Azure
- * Wiki mirror only as a last resort if both are unavailable.
+ * Returns the text content of an artifact — disk first, the Azure Wiki mirror
+ * only as a last resort if disk is unavailable.
  */
 workflowRoutes.get('/artifact/:id/content', async (req: Request, res: Response) => {
   const id = parseInt(req.params.id, 10);

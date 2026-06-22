@@ -41,8 +41,10 @@ export function EventRow({ msg }: { msg: CoordinatorMessage }) {
   const detailLines = lines.slice(1).filter(l => !l.startsWith('→ '));
   const detail = detailLines.join(' ').slice(0, 120);
 
-  // Extract every "→ url" / "→ Label: url" line — a feature refinement push can carry
-  // multiple distinct links (epic, feature, test plan), and all of them should render.
+  // Extract every "→ url" / "→ Label: url" line. event-to-message.ts emits at most one
+  // per checkpoint (feature link for the stories half, test plan link for the _qa half —
+  // never both, and never an epic link, which is owned by epic_feature_planner's own event)
+  // but this stays generic rather than assuming exactly one.
   const parseUrlLine = (line: string) => {
     const stripped = line.replace(/^→\s*/, '');
     const labelMatch = stripped.match(/^([^:]+):\s*(https:\/\/.+)$/);

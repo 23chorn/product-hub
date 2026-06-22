@@ -183,13 +183,13 @@ function App() {
               </button>
             )}
 
-            {/* Agent Studio Button */}
+            {/* Knowledge Studio Button */}
             <button
               onClick={openSkillManager}
               className="flex items-center px-3 py-1.5 rounded-lg text-sm font-medium border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 bg-white dark:bg-surface-800/50 hover:bg-surface-50 dark:hover:bg-surface-700/70 hover:border-surface-400 dark:hover:border-surface-500 transition-colors shadow-sm"
-              title="Open Agent Studio"
+              title="Open Knowledge Studio"
             >
-              Studio
+              Knowledge Studio
             </button>
 
             {/* Stats Dashboard Button */}

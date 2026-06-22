@@ -801,7 +801,7 @@ export async function runAutonomousStage(
       }
     }
 
-    // If this is a revision run, compute and save a diff (MongoDB-first, disk fallback)
+    // If this is a revision run, compute and save a diff to disk
     let diffArtifactId: number | null = null;
     if (priorDraftContent) {
       try {

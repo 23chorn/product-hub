@@ -445,3 +445,60 @@ export interface Policy {
   created_at: number;
 }
 
+// ============================================
+// Knowledge Studio: cross-repo documentation review
+// ============================================
+
+export type KbCommentSource = 'user' | 'agent';
+export type KbCommentStatus = 'open' | 'resolved';
+
+export interface KbRepo {
+  id: number;
+  label: string;
+  repository: string;
+  branch: string | null;
+  project: string | null;
+  fileCount: number;
+  lastSyncedAt: number | null;
+  createdAt: number;
+}
+
+/** Lightweight row for list views — omits the full file content. */
+export interface KbFileListItem {
+  id: number;
+  repoId: number;
+  repoLabel: string;
+  path: string;
+  frontmatterFileName: string | null;
+  frontmatterOwner: string | null;
+  frontmatterStatus: string | null;
+  frontmatterValid: boolean;
+  openCommentCount: number;
+  lastSyncedAt: number;
+}
+
+export interface KbFile extends KbFileListItem {
+  content: string;
+  commitId: string | null;
+}
+
+export interface KbComment {
+  id: number;
+  fileId: number;
+  source: KbCommentSource;
+  authorName: string;
+  body: string;
+  quote: string | null;
+  status: KbCommentStatus;
+  createdAt: number;
+  resolvedAt: number | null;
+}
+
+export interface KbFileCommit {
+  commitId: string;
+  authorName: string;
+  authorEmail: string;
+  date: number;
+  message: string;
+}
+

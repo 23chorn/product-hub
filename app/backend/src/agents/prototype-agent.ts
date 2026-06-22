@@ -19,7 +19,7 @@ import { streamAI, resolveModelId, type SystemPrompt, type TokenUsage } from '..
 import { repairTruncatedJson } from '../utils/json-repair';
 import type { AgentType } from '@pap/shared';
 import { loadLatestArtifactContent, saveLocalArtifact, resolveArtifactPath } from './artifact-helpers';
-import { readProductArea } from './item-metadata';
+import { readProductArea, itemSessionDir } from './item-metadata';
 import db from '../data/database';
 import Logger from '../utils/logger';
 
@@ -614,7 +614,7 @@ export async function* revisePrototype(
     yield chunk;
   }
 
-  const rawDir = path.join(PROJECT_ROOT, 'data', 'sessions', workflow.item_id, 'prototype', 'raw');
+  const rawDir = path.join(itemSessionDir(workflow.item_id), 'prototype', 'raw');
   await fsAsync.mkdir(rawDir, { recursive: true });
   await fsAsync.writeFile(path.join(rawDir, `${Date.now()}-revision-raw.txt`), fullResponse, 'utf-8');
 

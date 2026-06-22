@@ -3,6 +3,8 @@ import { getAgentDisplayName } from '../../utils/agent-display-names';
 import { SectionHeader } from './SectionHeader';
 import { useAuthStore } from '../../stores/authStore';
 import { STAGE_SHORT_LABELS } from '../../constants/stage-labels';
+import { DocReviewSidebarSection } from '../knowledge/DocReviewSidebarSection';
+import type { KbFileListItem } from '@pap/shared';
 import {
   DISCIPLINE_LABELS,
   DISCIPLINE_COLORS,
@@ -13,7 +15,7 @@ import {
   type PersonaFile,
 } from './types';
 
-type SectionKey = 'context' | 'behaviour' | 'agents' | 'skills' | 'tools';
+type SectionKey = 'context' | 'behaviour' | 'agents' | 'skills' | 'tools' | 'docs';
 
 interface SkillManagerSidebarProps {
   isLoading: boolean;
@@ -50,6 +52,9 @@ interface SkillManagerSidebarProps {
   allTools: ExtractedTool[];
   selectedToolName: string | null;
   onSelectTool: (tool: ExtractedTool) => void;
+  // Documentation Review
+  selectedDocFileId: number | null;
+  onSelectDocFile: (file: KbFileListItem) => void;
 }
 
 const plusIcon = (
@@ -91,6 +96,8 @@ export function SkillManagerSidebar({
   allTools,
   selectedToolName,
   onSelectTool,
+  selectedDocFileId,
+  onSelectDocFile,
 }: SkillManagerSidebarProps) {
   const { user, noAuth } = useAuthStore();
   const isAdmin = noAuth || !!user?.is_admin;
@@ -105,7 +112,7 @@ export function SkillManagerSidebar({
   }
 
   return (
-    <nav className="w-60 border-r border-surface-200 dark:border-surface-700 flex flex-col flex-shrink-0 bg-white dark:bg-surface-800/50 overflow-y-auto">
+    <nav className="w-full h-full border-r border-surface-200 dark:border-surface-700 flex flex-col flex-shrink-0 bg-white dark:bg-surface-800/50 overflow-y-auto">
       {isLoading ? (
         <div className="p-4 text-xs text-surface-400">Loading…</div>
       ) : (
@@ -405,6 +412,14 @@ export function SkillManagerSidebar({
               ))
             )
           )}
+
+          {/* ── Documentation Review ────────────────────── */}
+          <DocReviewSidebarSection
+            isOpen={expanded.docs}
+            onToggle={() => onToggle('docs')}
+            selectedFileId={selectedDocFileId}
+            onSelectFile={onSelectDocFile}
+          />
         </>
       )}
     </nav>

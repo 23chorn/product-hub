@@ -22,9 +22,12 @@ export interface ThemeDef {
 }
 
 export const THEMES = [
-  { id: 'light', label: 'Light', family: 'light', swatch: 'rgb(241 245 249)' },
-  { id: 'dark',  label: 'Dark',  family: 'dark',  swatch: 'rgb(16 185 129)' },
-  { id: 'retro', label: 'Retro', family: 'light', swatch: 'rgb(192 96 28)' },
+  { id: 'light',    label: 'Light',    family: 'light', swatch: 'rgb(241 245 249)' },
+  { id: 'dark',     label: 'Dark',     family: 'dark',  swatch: 'rgb(16 185 129)' },
+  { id: 'retro',    label: 'Retro',    family: 'light', swatch: 'rgb(192 96 28)' },
+  { id: 'terminal', label: 'Terminal', family: 'dark',  swatch: 'rgb(0 230 70)' },
+  { id: 'paper',    label: 'Paper',    family: 'light', swatch: 'rgb(30 64 153)' },
+  { id: 'sand',     label: 'Sand',     family: 'light', swatch: 'rgb(176 99 70)' },
 ] as const satisfies readonly ThemeDef[];
 
 export type ThemeId = (typeof THEMES)[number]['id'];

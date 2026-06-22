@@ -54,7 +54,7 @@ saveLocalArtifact()   ← disk: canonical working copy, feeds all downstream rea
         │
         ├── pushBacklogToAdo()    ← ADO Boards (side-effect, write-only)
         ├── pushTestPlanToAdo()   ← ADO Test Plans (side-effect, write-only)
-        └── saveMainArtifact()    ← Azure Wiki (side-effect, write-only)
+        └── syncArtifactToWiki()  ← Azure Wiki (side-effect, write-only)
 ```
 
 All downstream reads (`loadArtifactContentById`, `loadLatestArtifactForStage`, frontend viewer, change requests) go to local disk. Never read back from ADO or the wiki to feed a downstream stage.
@@ -66,5 +66,5 @@ Azure Boards, Azure Test Plans, and Azure Wiki are write-only publish destinatio
 **Why external systems are write-only:** ADO stores data in its own format — work items as parent/child hierarchies, test cases as XML step fields. Reconstructing the internal JSON from ADO would be lossy and fragile. The local artifact file is always the authoritative representation.
 
 **Consequence for artifact save helpers:**
-- `saveLocalArtifact` — disk only. Used for stages that push to ADO (`pm_backlog`, `tech_refinement`, `qa_engineer`).
-- `saveMainArtifact` — disk + wiki. Used for stages that publish to the wiki (`analyst`, `pm_prd`, `solution_architect`, `prototype`).
+- `saveLocalArtifact` — disk only. Used for all specialist-stage outputs, including those that push to ADO (`pm_backlog`, `tech_refinement`, `qa_engineer`).
+- `syncArtifactToWiki` — called separately (`tryWikiPush()` in `workflow-stage-runner.ts`) for stages that publish to the wiki (`analyst`, `pm_prd`, `solution_architect`, `prototype`). Sets `wiki_path`/`wiki_url` on the same artifact row without touching `file_path` — disk stays the primary source.

@@ -2,16 +2,10 @@ import * as fs from 'fs';
 import * as fsAsync from 'fs/promises';
 import * as path from 'path';
 import db from '../data/database';
+import { itemSessionDir } from './item-metadata';
 import { STAGE_ARTIFACT_TYPE } from './stage-metadata';
 import { saveToWiki, loadFromWiki, wikiPathForArtifact } from '../integrations/document-store/azure-wiki-store';
 import { convertArtifactToMarkdown } from '../utils/artifact-to-markdown';
-import {
-  insertArtifactDoc,
-  updateArtifactDocId,
-  readArtifactDoc,
-  replaceArtifactDocContent,
-  parseContentForMongo,
-} from '../data/mongo-client';
 import Logger from '../utils/logger';
 
 const logger = new Logger('ARTIFACT-HELPERS');
@@ -23,8 +17,6 @@ type ArtifactRow = {
   session_id: string;
   type: string;
   file_path: string;
-  external_system: string | null;
-  external_path: string | null;
   external_url: string | null;
   wiki_path?: string | null;
   wiki_url?: string | null;
@@ -58,17 +50,12 @@ export function resolveArtifactPath(storedPath: string): string {
 }
 
 /**
- * Read content from an artifact row — MongoDB first, disk fallback, wiki as last resort.
- * The wiki is a one-way export mirror, never the primary source — it's only consulted
- * here if both mongo and disk come up empty (e.g. mongo unreachable and the disk file
- * was moved/deleted).
+ * Read content from an artifact row — disk first, wiki as last resort.
+ * The wiki is a one-way export mirror, never the primary source — it's only
+ * consulted here if the disk file is missing (e.g. moved/deleted).
  */
 async function readArtifactRow(row: ArtifactRow): Promise<string | null> {
-  if (row.external_system === 'mongodb' && row.external_path) {
-    const content = await readArtifactDoc(row.external_path);
-    if (content !== null) return content;
-    logger.warn(`MongoDB read miss for artifact external_path=${row.external_path} — falling back`);
-  } else if (row.file_path) {
+  if (row.file_path) {
     try {
       return fs.readFileSync(resolveArtifactPath(row.file_path), 'utf-8');
     } catch (err: any) {
@@ -78,7 +65,7 @@ async function readArtifactRow(row: ArtifactRow): Promise<string | null> {
 
   if (row.wiki_path) {
     try {
-      logger.info(`Falling back to wiki for artifact (mongo/disk unavailable): ${row.wiki_path}`);
+      logger.info(`Falling back to wiki for artifact (disk unavailable): ${row.wiki_path}`);
       return await loadFromWiki(row.wiki_path);
     } catch (err: any) {
       logger.warn(`Wiki fallback read failed for path=${row.wiki_path}: ${err.message}`);
@@ -86,40 +73,6 @@ async function readArtifactRow(row: ArtifactRow): Promise<string | null> {
   }
 
   return null;
-}
-
-// ── Main artifact save (wiki-backed) ─────────────────────────────────────────
-
-/**
- * Saves a main document artifact to the Azure Wiki and inserts an artifact row
- * with the external reference. Returns the artifact row ID.
- *
- * Used for human-facing document types that should be persisted to the wiki.
- */
-export async function saveMainArtifact(
-  sessionId: string,
-  stage: string,
-  content: string,
-  itemId: string,
-  skillVersionId?: number | null
-): Promise<number> {
-  const artifactType = STAGE_ARTIFACT_TYPE[stage] ?? stage;
-
-  const itemRow = db.prepare<[string], { title: string }>(
-    'SELECT title FROM items WHERE id = ?'
-  ).get(itemId);
-  if (!itemRow) throw new Error(`Item ${itemId} not found`);
-
-  const wikiPath = wikiPathForArtifact(itemRow.title, stage);
-  const { url } = await saveToWiki(wikiPath, content);
-
-  const result = db.prepare(`
-    INSERT INTO artifacts (session_id, type, file_path, external_system, external_path, external_url, skill_version_id, created_at)
-    VALUES (?, ?, '', ?, ?, ?, ?, ?)
-  `).run(sessionId, artifactType, 'azure_wiki', wikiPath, url, skillVersionId ?? null, Date.now());
-
-  logger.info(`Main artifact "${stage}" saved to wiki: ${wikiPath}`);
-  return result.lastInsertRowid as number;
 }
 
 function wikiStatusBanner(status: 'draft' | 'approved', date?: string): string {
@@ -143,7 +96,7 @@ function toWikiContent(artifactType: string, rawContent: string, status: 'draft'
  * Sync a local artifact to the Azure Wiki (first publish).
  * Content is converted from JSON to markdown where a converter exists.
  * The wiki is a one-way mirror — this only sets wiki_path/wiki_url, never touches
- * external_system/external_path so the mongodb/disk pointer (the primary source) stays intact.
+ * file_path, so the disk pointer (the primary source) stays intact.
  */
 export async function syncArtifactToWiki(artifactId: number): Promise<string> {
   const artifact = db.prepare<[number], ArtifactRow>(
@@ -156,9 +109,9 @@ export async function syncArtifactToWiki(artifactId: number): Promise<string> {
     return artifact.wiki_url;
   }
 
-  // Read content from the primary store (mongodb or disk)
+  // Read content from the primary store (disk)
   const content = await readArtifactRow(artifact);
-  if (!content) throw new Error(`Could not read artifact ${artifactId} content (external_system=${artifact.external_system ?? 'disk'})`);
+  if (!content) throw new Error(`Could not read artifact ${artifactId} content from disk`);
 
   // Get item title for wiki path
   const session = db.prepare<[string], { item_id: string }>(
@@ -191,7 +144,7 @@ export async function syncArtifactToWiki(artifactId: number): Promise<string> {
 
 /**
  * Re-publish an already-synced wiki mirror with "Approved" status.
- * Re-reads source content from the primary store (mongodb/disk) and regenerates
+ * Re-reads source content from the primary store (disk) and regenerates
  * the markdown, replacing the Draft banner.
  */
 export async function approveWikiArtifact(artifactId: number): Promise<void> {
@@ -214,7 +167,7 @@ export async function approveWikiArtifact(artifactId: number): Promise<void> {
 // ── Local artifact save (disk only, no wiki push) ────────────────────────────
 
 /**
- * Saves an artifact to MongoDB (with disk fallback if MongoDB is unavailable).
+ * Saves an artifact to disk under data/sessions/<itemId>/<stage>/artifacts/.
  * Used for all specialist-stage outputs that don't go to Azure Wiki or ADO directly.
  */
 export async function saveLocalArtifact(
@@ -232,32 +185,7 @@ export async function saveLocalArtifact(
     : isTechRefinementFeatureStage ? 'backlog'
     : (STAGE_ARTIFACT_TYPE[stage] ?? stage);
 
-  // ── Attempt MongoDB storage ────────────────────────────────────────────────
-  const mongoId = await insertArtifactDoc({
-    item_id:       itemId,
-    session_id:    sessionId,
-    stage,
-    artifact_type: artifactType,
-    content:       parseContentForMongo(content),
-    created_at:    new Date(),
-    updated_at:    new Date(),
-  });
-
-  if (mongoId) {
-    const result = db.prepare(`
-      INSERT INTO artifacts (session_id, type, file_path, external_system, external_path, skill_version_id, created_at)
-      VALUES (?, ?, '', 'mongodb', ?, ?, ?)
-    `).run(sessionId, artifactType, mongoId, skillVersionId ?? null, Date.now());
-
-    const artifactId = result.lastInsertRowid as number;
-    await updateArtifactDocId(mongoId, artifactId);
-    logger.info(`Artifact "${stage}" saved to MongoDB (mongo_id=${mongoId}, artifact_id=${artifactId})`);
-    return artifactId;
-  }
-
-  // ── Disk fallback ──────────────────────────────────────────────────────────
-  logger.warn(`MongoDB unavailable — writing artifact "${stage}" to disk`);
-  const artifactDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, stage, 'artifacts');
+  const artifactDir = path.join(itemSessionDir(itemId), stage, 'artifacts');
   await fsAsync.mkdir(artifactDir, { recursive: true });
   // Every stage routed through here produces JSON by design (see STAGE_OUTPUT_FORMATS) — use
   // .json unconditionally rather than sniffing content, which mislabeled truncated/fenced JSON as .md.
@@ -269,15 +197,14 @@ export async function saveLocalArtifact(
     VALUES (?, ?, ?, ?, ?)
   `).run(sessionId, artifactType, artifactPath, skillVersionId ?? null, Date.now());
 
-  logger.info(`Artifact "${stage}" saved to disk (fallback): ${artifactPath}`);
+  logger.info(`Artifact "${stage}" saved to disk: ${artifactPath}`);
   return result.lastInsertRowid as number;
 }
 
 // ── Critic artifact save ──────────────────────────────────────────────────────
 
 /**
- * Saves the critic's full markdown review. MongoDB-first, disk fallback.
- * Returns the artifact row ID.
+ * Saves the critic's full markdown review to disk. Returns the artifact row ID.
  */
 export async function saveCriticArtifact(
   itemId: string,
@@ -285,29 +212,7 @@ export async function saveCriticArtifact(
   fullText: string,
   sessionId?: string | null
 ): Promise<number> {
-  const mongoId = await insertArtifactDoc({
-    item_id:       itemId,
-    session_id:    sessionId ?? '',
-    stage:         `critic_${stage}`,
-    artifact_type: 'critic_review',
-    content:       fullText,
-    created_at:    new Date(),
-    updated_at:    new Date(),
-  });
-
-  if (mongoId) {
-    const result = db.prepare(`
-      INSERT INTO artifacts (session_id, type, file_path, external_system, external_path, created_at)
-      VALUES (?, ?, '', 'mongodb', ?, ?)
-    `).run(sessionId ?? null, 'critic_review', mongoId, Date.now());
-    const artifactId = result.lastInsertRowid as number;
-    await updateArtifactDocId(mongoId, artifactId);
-    logger.info(`Critic review for stage "${stage}" saved to MongoDB (mongo_id=${mongoId})`);
-    return artifactId;
-  }
-
-  // Disk fallback
-  const artifactDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, 'critic', 'artifacts');
+  const artifactDir = path.join(itemSessionDir(itemId), 'critic', 'artifacts');
   await fsAsync.mkdir(artifactDir, { recursive: true });
   const artifactPath = path.join(artifactDir, `${Date.now()}-critic-${stage}.md`);
   await fsAsync.writeFile(artifactPath, fullText, 'utf-8');
@@ -317,15 +222,14 @@ export async function saveCriticArtifact(
     VALUES (?, ?, ?, ?)
   `).run(sessionId ?? null, 'critic_review', artifactPath, Date.now());
 
-  logger.info(`Critic review for stage "${stage}" saved to disk (fallback): ${artifactPath}`);
+  logger.info(`Critic review for stage "${stage}" saved to disk: ${artifactPath}`);
   return result.lastInsertRowid as number;
 }
 
 // ── Revision diff save ────────────────────────────────────────────────────────
 
 /**
- * Saves a revision diff document. MongoDB-first, disk fallback.
- * Returns the artifact row ID, or null on failure.
+ * Saves a revision diff document to disk. Returns the artifact row ID, or null on failure.
  */
 export async function saveDiffArtifact(
   itemId: string,
@@ -336,30 +240,8 @@ export async function saveDiffArtifact(
 ): Promise<number | null> {
   const artifactType = `${stage}_diff`;
 
-  const mongoId = await insertArtifactDoc({
-    item_id:       itemId,
-    session_id:    sessionId,
-    stage:         `${stage}_diff`,
-    artifact_type: artifactType,
-    content:       diffText,
-    created_at:    new Date(),
-    updated_at:    new Date(),
-  });
-
-  if (mongoId) {
-    const result = db.prepare(`
-      INSERT INTO artifacts (session_id, type, file_path, external_system, external_path, created_at)
-      VALUES (?, ?, '', 'mongodb', ?, ?)
-    `).run(sessionId, artifactType, mongoId, Date.now());
-    const artifactId = result.lastInsertRowid as number;
-    await updateArtifactDocId(mongoId, artifactId);
-    logger.info(`Revision diff for stage "${stage}" saved to MongoDB (mongo_id=${mongoId})`);
-    return artifactId;
-  }
-
-  // Disk fallback
   try {
-    const diffDir = path.join(PROJECT_ROOT, 'data', 'sessions', itemId, mode, 'artifacts');
+    const diffDir = path.join(itemSessionDir(itemId), mode, 'artifacts');
     await fsAsync.mkdir(diffDir, { recursive: true });
     const diffPath = path.join(diffDir, `${Date.now()}-${stage}-diff.md`);
     await fsAsync.writeFile(diffPath, diffText, 'utf-8');
@@ -367,7 +249,7 @@ export async function saveDiffArtifact(
       INSERT INTO artifacts (session_id, type, file_path, created_at)
       VALUES (?, ?, ?, ?)
     `).run(sessionId, artifactType, diffPath, Date.now());
-    logger.info(`Revision diff for stage "${stage}" saved to disk (fallback): ${diffPath}`);
+    logger.info(`Revision diff for stage "${stage}" saved to disk: ${diffPath}`);
     return result.lastInsertRowid as number;
   } catch (err: any) {
     logger.warn(`Failed to save revision diff for "${stage}": ${err.message}`);
@@ -381,7 +263,7 @@ export async function saveDiffArtifact(
  * True if `content` parses as JSON (optionally wrapped in a ```json fence). Every workflow
  * artifact is stored as JSON by design — this is used to detect when a loaded "prior draft"
  * is actually the wiki's markdown mirror leaking through readArtifactRow's last-resort
- * fallback (mongo/disk content unreadable), rather than the canonical artifact. Feeding that
+ * fallback (disk content unreadable), rather than the canonical artifact. Feeding that
  * markdown to a specialist as its own "previous response" during a revision confuses it about
  * the expected output format.
  */
@@ -400,22 +282,22 @@ export function isJsonArtifactContent(content: string): boolean {
  */
 export async function loadArtifactContentById(artifactId: number): Promise<string | null> {
   const row = db.prepare<[number], ArtifactRow>(
-    'SELECT file_path, external_system, external_path, wiki_path FROM artifacts WHERE id = ?'
+    'SELECT file_path, wiki_path FROM artifacts WHERE id = ?'
   ).get(artifactId);
   if (!row) return null;
-  logger.info(`Loading artifact id=${artifactId} from ${row.external_system ?? 'disk'}`);
+  logger.info(`Loading artifact id=${artifactId} from disk`);
   return readArtifactRow(row);
 }
 
 /**
  * Load the most recent artifact content for an item by artifact type.
- * Primary source is mongodb/disk; falls back to the wiki mirror only if both are unavailable.
+ * Primary source is disk; falls back to the wiki mirror only if that's unavailable.
  */
 export async function loadLatestArtifactContent(itemId: string, artifactType: string): Promise<string | null> {
   logger.info(`[ARTIFACT-LOAD] Looking for artifact: itemId=${itemId}, type=${artifactType}`);
 
   const row = db.prepare<[string, string], ArtifactRow>(`
-    SELECT a.file_path, a.external_system, a.external_path, a.wiki_path
+    SELECT a.file_path, a.wiki_path
     FROM artifacts a
     JOIN sessions s ON a.session_id = s.id
     WHERE s.item_id = ? AND a.type = ?
@@ -456,21 +338,17 @@ export function loadLatestArtifactWikiUrl(itemId: string, artifactType: string):
 }
 
 /**
- * Update artifact content — writes to the primary store (MongoDB or disk).
+ * Update artifact content — writes to the primary store (disk).
  * If a wiki mirror exists for this artifact, best-effort refreshes it too (as Draft) —
  * a wiki push failure must not block saving the primary content.
  */
 export async function updateArtifactContent(artifactId: number, content: string): Promise<{ url?: string }> {
   const row = db.prepare<[number], ArtifactRow>(
-    'SELECT id, session_id, type, file_path, external_system, external_path, external_url, wiki_path, wiki_url FROM artifacts WHERE id = ?'
+    'SELECT id, session_id, type, file_path, external_url, wiki_path, wiki_url FROM artifacts WHERE id = ?'
   ).get(artifactId);
   if (!row) throw new Error(`Artifact ${artifactId} not found`);
 
-  if (row.external_system === 'mongodb' && row.external_path) {
-    const ok = await replaceArtifactDocContent(row.external_path, parseContentForMongo(content));
-    if (!ok) throw new Error(`MongoDB update failed for artifact ${artifactId}`);
-    logger.info(`[UPDATE] mongodb ✓ ${row.external_path}`);
-  } else if (row.file_path) {
+  if (row.file_path) {
     fs.writeFileSync(resolveArtifactPath(row.file_path), content, 'utf-8');
   } else {
     throw new Error(`Artifact ${artifactId} has no storage location`);
@@ -501,7 +379,7 @@ export async function updateArtifactContent(artifactId: number, content: string)
  */
 export function loadLatestArtifactForItem(itemId: string): { content: string; type: string } {
   const row = db.prepare<[string], ArtifactRow & { type: string }>(`
-    SELECT a.file_path, a.external_system, a.external_path, a.type
+    SELECT a.file_path, a.type
     FROM artifacts a
     JOIN sessions s ON a.session_id = s.id
     WHERE s.item_id = ? AND s.mode IN ('prd', 'analyst', 'architecture', 'backlog')
@@ -509,7 +387,7 @@ export function loadLatestArtifactForItem(itemId: string): { content: string; ty
   `).get(itemId);
 
   if (!row) return { content: '(no artifact found)', type: 'document' };
-  if (!row.file_path && !row.external_path) return { content: '(no artifact found)', type: row.type };
+  if (!row.file_path) return { content: '(no artifact found)', type: row.type };
 
   try {
     return { content: fs.readFileSync(resolveArtifactPath(row.file_path), 'utf-8'), type: row.type };
@@ -526,7 +404,7 @@ export function loadLatestArtifactForStage(itemId: string, stage: string): strin
   const artifactType = STAGE_ARTIFACT_TYPE[stage];
   if (!artifactType) return undefined;
   const row = db.prepare<[string, string], ArtifactRow>(`
-    SELECT a.file_path, a.external_system, a.external_path FROM artifacts a
+    SELECT a.file_path FROM artifacts a
     JOIN sessions s ON a.session_id = s.id
     WHERE s.item_id = ? AND a.type = ?
     ORDER BY a.created_at DESC LIMIT 1
@@ -546,7 +424,7 @@ export function loadLatestArtifactForStage(itemId: string, stage: string): strin
  */
 export function loadFullArtifact(artifactId: number): string | undefined {
   const row = db.prepare<[number], ArtifactRow>(
-    'SELECT file_path, external_system, external_path FROM artifacts WHERE id = ?'
+    'SELECT file_path FROM artifacts WHERE id = ?'
   ).get(artifactId);
   if (!row) return undefined;
   if (!row.file_path) return undefined;
@@ -562,7 +440,7 @@ export function loadFullArtifact(artifactId: number): string | undefined {
  */
 export function loadArtifactSummary(artifactId: number): string | undefined {
   const row = db.prepare<[number], ArtifactRow>(
-    'SELECT file_path, external_system, external_path FROM artifacts WHERE id = ?'
+    'SELECT file_path FROM artifacts WHERE id = ?'
   ).get(artifactId);
   if (!row) return undefined;
   if (!row.file_path) return undefined;
@@ -574,38 +452,34 @@ export function loadArtifactSummary(artifactId: number): string | undefined {
   }
 }
 
-// ── Path helpers (used by legacy code; return null for external artifacts) ────
+// ── Path helpers (used by legacy code) ───────────────────────────────────────
 
 /**
  * Get the file path of the most recent architecture artifact for an item.
- * Returns null for externally stored artifacts — use loadLatestArtifactContent() instead.
  */
 export function getLatestArchitectureArtifactPath(itemId: string): string | null {
   const row = db.prepare<[string], ArtifactRow>(`
-    SELECT a.file_path, a.external_system, a.external_path
+    SELECT a.file_path
     FROM artifacts a
     JOIN sessions s ON a.session_id = s.id
     WHERE s.item_id = ? AND s.mode = 'architecture'
     ORDER BY a.created_at DESC LIMIT 1
   `).get(itemId);
-  if (!row) return null;
-  if (row.external_system) return null;
+  if (!row || !row.file_path) return null;
   return resolveArtifactPath(row.file_path);
 }
 
 /**
  * Get the file path of the most recent artifact of a given type for an item.
- * Returns null for externally stored artifacts — use loadLatestArtifactContent() instead.
  */
 export function getLatestArtifactPathByType(itemId: string, artifactType: string): string | null {
   const row = db.prepare<[string, string], ArtifactRow>(`
-    SELECT a.file_path, a.external_system, a.external_path
+    SELECT a.file_path
     FROM artifacts a
     JOIN sessions s ON a.session_id = s.id
     WHERE s.item_id = ? AND a.type = ?
     ORDER BY a.created_at DESC LIMIT 1
   `).get(itemId, artifactType);
-  if (!row) return null;
-  if (row.external_system) return null;
+  if (!row || !row.file_path) return null;
   return resolveArtifactPath(row.file_path);
 }

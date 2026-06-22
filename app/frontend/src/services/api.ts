@@ -17,6 +17,7 @@ import { demoApi } from './api/demo';
 import { usersApi } from './api/users';
 import { discoveryApi } from './api/discovery';
 import { statsApi } from './api/stats';
+import { kbApi } from './api/kb';
 
 export type { SkillVersion } from './api/types';
 export type { StatsDashboard } from './api/stats';
@@ -35,4 +36,5 @@ export const api = {
   ...usersApi,
   ...discoveryApi,
   ...statsApi,
+  ...kbApi,
 };

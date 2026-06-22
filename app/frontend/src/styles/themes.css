@@ -111,3 +111,100 @@
   --surface-950: 20 15 10;
 }
 
+/* ── Terminal — "Phosphor CRT" (dark family) ──────────────────────────────────
+   True near-neutral black surfaces (not the green-tinted obsidian of Dark) paired
+   with a vivid phosphor-green accent — the classic black-terminal-with-green-text
+   look, echoing this app's own monospace pipeline-terminal UI. ────────────────── */
+[data-theme="terminal"] {
+  /* Phosphor green accent */
+  --brand-50: 230 255 234;
+  --brand-100: 198 255 209;
+  --brand-200: 145 255 170;
+  --brand-300: 92 255 131;
+  --brand-400: 40 255 92;
+  --brand-500: 0 230 70;
+  --brand-600: 0 191 58;
+  --brand-700: 0 153 46;
+  --brand-800: 0 115 35;
+  --brand-900: 0 77 23;
+  --brand-950: 0 38 12;
+
+  /* True black, near-neutral surfaces */
+  --surface-50: 235 238 235;
+  --surface-100: 219 224 219;
+  --surface-200: 187 195 187;
+  --surface-300: 148 158 148;
+  --surface-400: 110 122 110;
+  --surface-500: 80 92 80;
+  --surface-600: 55 64 55;
+  --surface-700: 34 40 34;
+  --surface-800: 18 22 18;
+  --surface-900: 8 10 8;
+  --surface-950: 0 0 0;
+}
+
+/* ── Paper — "Ink on Bond" (light family) ─────────────────────────────────────
+   Warm, visibly-toned bond-paper surfaces — dimmer and distinctly warmer than
+   the default Light slate's icy near-white, so the whole canvas reads as aged
+   paper rather than a slightly-recolored Light — paired with a deep ink-navy
+   accent for a higher-contrast, editorial feel. ─────────────────────────────── */
+[data-theme="paper"] {
+  /* Ink-navy accent */
+  --brand-50: 235 240 250;
+  --brand-100: 209 222 245;
+  --brand-200: 163 186 230;
+  --brand-300: 110 142 209;
+  --brand-400: 65 100 184;
+  --brand-500: 30 64 153;
+  --brand-600: 22 50 122;
+  --brand-700: 18 40 97;
+  --brand-800: 16 32 76;
+  --brand-900: 14 26 58;
+  --brand-950: 8 15 33;
+
+  /* Warm bond-paper grey — dimmer and visibly warmer than Light's cool near-white */
+  --surface-50: 240 237 230;
+  --surface-100: 230 226 215;
+  --surface-200: 213 207 190;
+  --surface-300: 188 179 156;
+  --surface-400: 152 142 119;
+  --surface-500: 118 109 90;
+  --surface-600: 88 81 67;
+  --surface-700: 65 60 49;
+  --surface-800: 44 41 34;
+  --surface-900: 28 26 21;
+  --surface-950: 15 14 12;
+}
+
+/* ── Sand — "Desert Modern" (light family) ────────────────────────────────────
+   Visibly dimmer, rosier desert-clay surfaces — more saturated and noticeably
+   warmer than Paper's neutral bond grey, but greyer than Retro's yellow-cream
+   vintage tan — paired with a muted rust-coral accent. ──────────────────────── */
+[data-theme="sand"] {
+  /* Muted rust-coral accent */
+  --brand-50: 253 240 235;
+  --brand-100: 250 222 211;
+  --brand-200: 240 191 172;
+  --brand-300: 225 152 128;
+  --brand-400: 205 116 90;
+  --brand-500: 176 99 70;
+  --brand-600: 148 79 54;
+  --brand-700: 119 63 43;
+  --brand-800: 94 50 35;
+  --brand-900: 73 40 29;
+  --brand-950: 41 22 16;
+
+  /* Rosy desert-clay surfaces — clearly dimmer/warmer than Light or Paper */
+  --surface-50: 240 230 220;
+  --surface-100: 229 215 200;
+  --surface-200: 211 192 172;
+  --surface-300: 188 163 142;
+  --surface-400: 158 132 112;
+  --surface-500: 130 105 88;
+  --surface-600: 100 81 68;
+  --surface-700: 75 61 51;
+  --surface-800: 51 42 35;
+  --surface-900: 32 27 22;
+  --surface-950: 18 15 13;
+}
+
