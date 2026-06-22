@@ -194,8 +194,13 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
     }
   };
 
+  // Synthetic QA sub-stages (story_decomposition_F<n>_qa) get their own approved
+  // checkpoint but are never added to stage_sequence (see the comment below on
+  // deriveQaSubStageStatus), so they must be excluded here too — otherwise they
+  // inflate the numerator past the denominator and the percentage exceeds 100%.
+  const stageSequenceSet = new Set(stageSequence);
   const total = stageSequence.length;
-  const doneCount = completedStages.length;
+  const doneCount = completedStages.filter(s => stageSequenceSet.has(s)).length;
   const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
 
   const statuses: StageStatus[] = stageSequence.map(s =>
@@ -274,7 +279,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
               {isComplete ? 'complete' : `${doneCount}/${total}`}
             </span>
             <div className="flex items-center gap-1.5">
-              <span className="text-[10px] text-surface-500 dark:text-surface-600">{pct}%</span>
+              <span className="text-[10px] text-surface-500 dark:text-surface-600">{isComplete ? 100 : pct}%</span>
             </div>
           </div>
           <div className="h-0.5 bg-surface-200 dark:bg-surface-800 rounded-full overflow-hidden">

@@ -15,6 +15,7 @@ import db from '../data/database';
 import { loadArtifactContentById } from './artifact-helpers';
 import { loadPrdForItem, buildEpicEnrichment, buildFeatureEnrichment } from '../utils/prd-enrichment';
 import { insertEvent } from './workflow-db';
+import { featureLocalKey, storyLocalKey } from '../integrations/azure-devops-format';
 import Logger from '../utils/logger';
 
 const logger = new Logger('ADO-PUSH');
@@ -100,6 +101,17 @@ export async function pushBacklogToAdo(workflowId: string, itemId: string): Prom
       }
     }
 
+    // Stamp each feature/story title with its local F#/S# key so the ADO ticket itself
+    // shows implementation order — same numbering used for ado_work_item_map.local_key below.
+    for (let fi = 0; fi < backlog.features.length; fi++) {
+      const featureKey = featureLocalKey(fi);
+      backlog.features[fi].title = `[${featureKey}] ${backlog.features[fi].title}`;
+      const stories = (backlog.features[fi].stories ?? []) as any[];
+      for (let si = 0; si < stories.length; si++) {
+        stories[si].title = `[${storyLocalKey(featureKey, si)}] ${stories[si].title}`;
+      }
+    }
+
     const { AzureDevOpsClient } = require('../integrations/azure-devops');
     const client = new AzureDevOpsClient();
     const artifactId = artifactRow.id;
@@ -140,11 +152,11 @@ export async function pushBacklogToAdo(workflowId: string, itemId: string): Prom
       insertMapping.run(workflowId, artifactId, topId, 'epic', topUrl, 'epic', backlog.epic.title, now);
       let featureIdx = 0, storyIdx = 0;
       for (let fi = 0; fi < backlog.features.length; fi++) {
-        const featureKey = `F${fi + 1}`;
+        const featureKey = featureLocalKey(fi);
         const featureAdoId = createResult.featureIds[featureIdx++];
         insertMapping.run(workflowId, artifactId, featureAdoId, 'feature', client.getEpicUrl(featureAdoId), featureKey, backlog.features[fi].title, now);
         for (let si = 0; si < backlog.features[fi].stories.length; si++) {
-          const storyKey = `${featureKey}.S${si + 1}`;
+          const storyKey = storyLocalKey(featureKey, si);
           const storyAdoId = createResult.storyIds[storyIdx++];
           insertMapping.run(workflowId, artifactId, storyAdoId, 'story', client.getEpicUrl(storyAdoId), storyKey, backlog.features[fi].stories[si].title, now);
         }

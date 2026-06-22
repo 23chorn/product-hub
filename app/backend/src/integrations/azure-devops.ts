@@ -10,6 +10,8 @@ import {
   buildTechnicalSuggestions,
   buildPlatformNotes,
   deriveTeamTags,
+  featureLocalKey,
+  storyLocalKey,
 } from './azure-devops-format';
 import {
   pushQATestPlan as pushQATestPlanImpl,
@@ -556,7 +558,7 @@ export class AzureDevOpsClient {
     // Process features and stories
     for (let fi = 0; fi < structure.features.length; fi++) {
       const featureData = structure.features[fi];
-      const featureKey = `F${fi + 1}`;
+      const featureKey = featureLocalKey(fi);
       const featureMapping = existingMap.get(featureKey);
 
       let featureAdoId: number;
@@ -591,7 +593,7 @@ export class AzureDevOpsClient {
       // Process stories
       for (let si = 0; si < featureData.stories.length; si++) {
         const storyData = featureData.stories[si];
-        const storyKey = `${featureKey}.S${si + 1}`;
+        const storyKey = storyLocalKey(featureKey, si);
         const storyMapping = existingMap.get(storyKey);
 
         const storyDescription = [

@@ -8,6 +8,7 @@
 import db, { getPolicies } from '../data/database';
 import { stmts, insertEvent, logger } from './workflow-db';
 import { loadLatestArtifactContent } from './artifact-helpers';
+import { featureLocalKey, storyLocalKey } from '../integrations/azure-devops-format';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -611,9 +612,11 @@ export async function pushEpicAndFeaturesToADO(
       logger.info(`[EPIC PUSH] Created phase epic #${phaseEpicId}: ${phaseEpicTitle}`);
 
       for (const featureData of (phase.features ?? [])) {
+        const featureKey = featureLocalKey(globalFeatureIdx);
+        const featureTitle = `[${featureKey}] ${featureData.title}`;
         const feature = await client.createWorkItem({
           type: client['workItemTypes'].feature as any,
-          title: featureData.title,
+          title: featureTitle,
           description: buildFeatureDescription(featureData),
           parentId: phaseEpicId,
           tags: initiativeTag,
@@ -623,8 +626,8 @@ export async function pushEpicAndFeaturesToADO(
         db.prepare(`
           INSERT INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, title, created_at)
           VALUES (?, NULL, ?, 'feature', ?, ?, ?, ?)
-        `).run(workflowId, feature.id, featureUrl, `F${globalFeatureIdx + 1}`, featureData.title, now);
-        logger.info(`[EPIC PUSH] Created feature #${feature.id} (F${globalFeatureIdx + 1}): ${featureData.title}`);
+        `).run(workflowId, feature.id, featureUrl, featureKey, featureTitle, now);
+        logger.info(`[EPIC PUSH] Created feature #${feature.id} (${featureKey}): ${featureTitle}`);
         globalFeatureIdx++;
       }
     }
@@ -652,9 +655,11 @@ export async function pushEpicAndFeaturesToADO(
 
     for (let i = 0; i < allFeatures.length; i++) {
       const featureData = allFeatures[i];
+      const featureKey = featureLocalKey(i);
+      const featureTitle = `[${featureKey}] ${featureData.title}`;
       const feature = await client.createWorkItem({
         type: client['workItemTypes'].feature as any,
-        title: featureData.title,
+        title: featureTitle,
         description: buildFeatureDescription(featureData),
         parentId: firstEpicId,
         tags: initiativeTag,
@@ -664,8 +669,8 @@ export async function pushEpicAndFeaturesToADO(
       db.prepare(`
         INSERT INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, title, created_at)
         VALUES (?, NULL, ?, 'feature', ?, ?, ?, ?)
-      `).run(workflowId, feature.id, featureUrl, `F${i + 1}`, featureData.title, now);
-      logger.info(`[EPIC PUSH] Created feature #${feature.id}: ${featureData.title}`);
+      `).run(workflowId, feature.id, featureUrl, featureKey, featureTitle, now);
+      logger.info(`[EPIC PUSH] Created feature #${feature.id}: ${featureTitle}`);
     }
   }
 
@@ -725,16 +730,17 @@ export async function pushFeatureToADO(
   }
 
   const epicId = epicMapping.ado_id;
+  const featureKey = featureLocalKey(featureIndex);
 
   // Fetch feature mapping (should exist from pushEpicAndFeaturesToADO)
   const featureMapping = db.prepare<[string, string], { ado_id: number }>(
     `SELECT ado_id FROM ado_work_item_map
      WHERE workflow_id = ? AND ado_type = 'feature' AND local_key = ?
      LIMIT 1`
-  ).get(workflowId, `F${featureIndex + 1}`);
+  ).get(workflowId, featureKey);
 
   if (!featureMapping) {
-    throw new Error(`Feature mapping for F${featureIndex + 1} not found — pushEpicAndFeaturesToADO should have created it`);
+    throw new Error(`Feature mapping for ${featureKey} not found — pushEpicAndFeaturesToADO should have created it`);
   }
 
   const featureId = featureMapping.ado_id;
@@ -744,10 +750,10 @@ export async function pushFeatureToADO(
     `SELECT local_key, ado_id FROM ado_work_item_map
      WHERE workflow_id = ? AND ado_type = 'story' AND local_key LIKE ?
      ORDER BY local_key`
-  ).all(workflowId, `F${featureIndex + 1}.S%`);
+  ).all(workflowId, `${featureKey}.S%`);
 
   if (existingStories.length > 0) {
-    logger.info(`[STORY PUSH] Feature F${featureIndex + 1} already has ${existingStories.length} stories in ADO — skipping duplicate creation`);
+    logger.info(`[STORY PUSH] Feature ${featureKey} already has ${existingStories.length} stories in ADO — skipping duplicate creation`);
     const featureUrl = `https://dev.azure.com/${process.env.AZURE_DEVOPS_ORG}/${process.env.AZURE_DEVOPS_PROJECT}/_workitems/edit/${featureId}`;
     return { epicId, featureId, storyIds: existingStories.map(s => s.ado_id), testPlanId: null, testPlanUrl: null, testCaseCount: 0 };
   }
@@ -758,7 +764,8 @@ export async function pushFeatureToADO(
   const storyIds: number[] = [];
   const allTestCases: any[] = [];
 
-  for (const storyData of targetFeature.stories) {
+  for (let si = 0; si < targetFeature.stories.length; si++) {
+    const storyData = targetFeature.stories[si];
     // Support both old format (persona/goal/benefit) and new format (as_a/i_want/so_that)
     const persona = storyData.persona ?? storyData.as_a ?? '';
     const goal = storyData.goal ?? storyData.i_want ?? '';
@@ -805,7 +812,7 @@ export async function pushFeatureToADO(
 
     const story = await client.createWorkItem({
       type: client['workItemTypes'].story as any,
-      title: storyData.title,
+      title: `[${storyLocalKey(featureKey, si)}] ${storyData.title}`,
       description,
       acceptanceCriteria: allAcceptanceCriteria,
       effort,
@@ -846,10 +853,11 @@ export async function pushFeatureToADO(
     const storyId = storyIds[i];
     const storyUrl = `https://dev.azure.com/${client['organization']}/${client['project']}/_workitems/edit/${storyId}`;
     const story = targetFeature.stories[i];
+    const storyKey = storyLocalKey(featureKey, i);
     db.prepare(`
       INSERT INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, title, created_at)
       VALUES (?, NULL, ?, 'story', ?, ?, ?, ?)
-    `).run(workflowId, storyId, storyUrl, `F${featureIndex + 1}.S${i + 1}`, story.title, now);
+    `).run(workflowId, storyId, storyUrl, storyKey, `[${storyKey}] ${story.title}`, now);
   }
 
   logger.info(`[STORY PUSH] Added ${storyIds.length} stories to feature #${featureId}`);

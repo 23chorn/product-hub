@@ -22,6 +22,21 @@ export function stripStoryPrefix(text: string, prefix: RegExp): string {
   return text.replace(prefix, '').trim();
 }
 
+/**
+ * Local key for a feature's position in the backlog (1-based) — e.g. "F1".
+ * Single source of truth for this numbering: used both as the ado_work_item_map
+ * lookup key and as the title prefix stamped onto the ADO ticket itself, so the
+ * two always agree.
+ */
+export function featureLocalKey(featureIndex: number): string {
+  return `F${featureIndex + 1}`;
+}
+
+/** Local key for a story's position within its feature (1-based) — e.g. "F1.S2". */
+export function storyLocalKey(featureKey: string, storyIndex: number): string {
+  return `${featureKey}.S${storyIndex + 1}`;
+}
+
 /** Escape special HTML characters to prevent injection in ADO rich-text fields */
 export function escapeHtml(text: string): string {
   return text
