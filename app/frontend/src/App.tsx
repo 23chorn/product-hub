@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { HomeScreen, resetHomeScreenFilter } from './components/home/HomeScreen';
-import { DecisionLogPanel } from './components/decision-log';
 import { ToastContainer } from './components/toast/ToastContainer';
 import { CoordinatorChat } from './components/coordinator';
 import { ArtifactViewer } from './components/artifact';
@@ -12,7 +11,6 @@ import { QuickTicketPanel } from './components/ticket/QuickTicketPanel';
 import { StatsDashboardPanel } from './components/stats/StatsDashboardPanel';
 import { LoginPage } from './pages/LoginPage';
 import { useModelStore } from './stores/modelStore';
-import { useDecisionLogStore } from './stores/decisionLogStore';
 import { useSkillManagerStore } from './stores/skillManagerStore';
 import { useDiscoveryStore } from './stores/discoveryStore';
 import { useSettingsStore } from './stores/settingsStore';
@@ -42,7 +40,6 @@ function DemoToast({ title, onDismiss }: { title: string; onDismiss: () => void 
 
 function App() {
   const { setAvailableModels, setAgentModels } = useModelStore();
-  const { isOpen: isDLOpen } = useDecisionLogStore();
   const { isOpen: isSMOpen, openSkillManager } = useSkillManagerStore();
   const { isOpen: isDiscoveryOpen, openDiscovery } = useDiscoveryStore();
   const { isOpen: isSettingsOpen, openSettings, closeSettings, setDemoMode } = useSettingsStore();
@@ -332,13 +329,6 @@ function App() {
             </span>
           </div>
         </div>
-
-        {/* Decision Log Modal Overlay */}
-        {isDLOpen && (
-          <div className="absolute inset-0 z-50 p-3">
-            <DecisionLogPanel />
-          </div>
-        )}
 
         {/* Agent Studio Modal Overlay */}
         {isSMOpen && (

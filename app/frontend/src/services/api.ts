@@ -6,7 +6,6 @@
  */
 import { configApi } from './api/config';
 import { initiativesApi } from './api/initiatives';
-import { decisionLogApi } from './api/decision-log';
 import { workflowApi } from './api/workflow';
 import { changeRequestApi } from './api/change-request';
 import { contextApi } from './api/context';
@@ -25,7 +24,6 @@ export type { StatsDashboard } from './api/stats';
 export const api = {
   ...configApi,
   ...initiativesApi,
-  ...decisionLogApi,
   ...workflowApi,
   ...changeRequestApi,
   ...contextApi,

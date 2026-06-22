@@ -7,7 +7,6 @@ const logger = new Logger('SESSION-MANAGER');
 /** Derive agent_id string from mode per spec convention. */
 function deriveAgentId(mode: AppMode, agentType: AgentType): string {
   if (agentType === 'analyst') return 'analyst';
-  if (agentType === 'decision-log') return 'decision-log';
   return `pm-${mode}`; // 'pm-prd' | 'pm-backlog'
 }
 

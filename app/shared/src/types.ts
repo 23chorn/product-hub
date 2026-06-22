@@ -223,8 +223,8 @@ export interface QuickItem {
 // Specialist Agent Types
 // ============================================
 
-export type AppMode = 'prd' | 'backlog' | 'analyst' | 'epic_features' | 'architecture' | 'decision-log' | 'context' | 'prototype' | 'qa' | 'tech_refinement' | 'figma_design';
-export type AgentType = 'pm' | 'analyst' | 'epic-feature-planner' | 'architect' | 'story-decomposition' | 'decision-log' | 'context-keeper' | 'prototype-builder' | 'qa-engineer' | 'tech-refinement' | 'backend-engineer' | 'web-engineer' | 'ios-engineer' | 'android-engineer' | 'figma-designer';
+export type AppMode = 'prd' | 'backlog' | 'analyst' | 'epic_features' | 'architecture' | 'context' | 'prototype' | 'qa' | 'tech_refinement' | 'figma_design';
+export type AgentType = 'pm' | 'analyst' | 'epic-feature-planner' | 'architect' | 'story-decomposition' | 'context-keeper' | 'prototype-builder' | 'qa-engineer' | 'tech-refinement' | 'backend-engineer' | 'web-engineer' | 'ios-engineer' | 'android-engineer' | 'figma-designer';
 
 
 // ============================================
@@ -288,22 +288,6 @@ export interface PublishPRDResponse {
 
 export interface StartBacklogSessionRequest {
   sessionId: string; // PRD session ID
-}
-
-// ============================================
-// Decision Log Types
-// ============================================
-
-export interface MonthEntry {
-  month: string;   // 'YYYY-MM' e.g. '2026-02'
-  label: string;   // 'February 2026'
-}
-
-export interface DecisionLogSession {
-  sessionId: string;
-  monthId: string;
-  messages: ChatMessage[];
-  logExists: boolean;
 }
 
 // ============================================

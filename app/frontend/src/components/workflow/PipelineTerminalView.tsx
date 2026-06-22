@@ -214,6 +214,13 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   const statuses: StageStatus[] = stageSequence.map(s =>
     deriveStageStatus(s, currentStage, completedStages, pendingStage, activeWorkflow.status, inProgressStages, pendingStages)
   );
+  const statusByStage = new Map(stageSequence.map((s, i) => [s, statuses[i]]));
+
+  // The bare `story_decomposition` placeholder is a stand-in that injectFeatureDecompositionStages
+  // replaces with the real per-feature stages once epic_feature_planner is approved. Don't render it
+  // as a roadmap row beforehand — the refinement stage(s) should only appear once the feature
+  // breakdown exists, not from the start of the run.
+  const roadmapStages = stageSequence.filter(s => s !== 'story_decomposition');
 
   // Group coordinator messages by stage (null stage → 'general')
   const eventsByStage = new Map<string, CoordinatorMessage[]>();
@@ -324,8 +331,8 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
         <div className="flex-1 overflow-y-auto">
           {/* Agent stage rows */}
           <div className="flex flex-col px-2 py-2">
-            {stageSequence.map((stageName, idx) => {
-              const status = statuses[idx];
+            {roadmapStages.map((stageName, idx) => {
+              const status = statusByStage.get(stageName)!;
               const checkpoint = checkpoints.find(c => c.stage === stageName && c.status === 'pending');
               const latestApproved = checkpoints.filter(c => c.stage === stageName && c.status === 'approved').at(-1);
               const completedAt = latestApproved?.resolved_at ?? latestApproved?.created_at ?? null;
@@ -337,13 +344,13 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                   stageName={stageName}
                   index={idx}
                   status={status}
-                  prevStatus={idx > 0 ? statuses[idx - 1] : undefined}
+                  prevStatus={idx > 0 ? statusByStage.get(roadmapStages[idx - 1]) : undefined}
                   checkpoint={checkpoint}
                   latestApproved={latestApproved}
                   completedAt={completedAt}
                   agentModel={agentModels[stageName]}
                   onViewArtifact={setViewingArtifactId}
-                  isLast={idx === stageSequence.length - 1}
+                  isLast={idx === roadmapStages.length - 1}
                   phaseLabel={phaseLabel}
                   onSelect={() => scrollToStageSection(stageName)}
                   compact

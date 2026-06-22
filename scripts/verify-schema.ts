@@ -68,14 +68,6 @@ const EXPECTED_TABLES: Record<string, ColumnSpec[]> = {
     { name: 'status' },
     { name: 'created_at' },
   ],
-  staged_decisions: [
-    { name: 'id' },
-    { name: 'session_id' },
-    { name: 'agent_id' },
-    { name: 'summary' },
-    { name: 'status' },
-    { name: 'created_at' },
-  ],
   context_loads: [
     { name: 'id' },
     { name: 'session_id' },
