@@ -4,7 +4,7 @@ export const EVENT_CFG: Record<string, { icon: string; color: string; bgColor: s
   stage_started:       { icon: '▶', color: 'text-brand-600 dark:text-brand-400',    bgColor: 'bg-brand-100 dark:bg-brand-900/30' },
   stage_progress:      { icon: '·', color: 'text-surface-500 dark:text-surface-400',  bgColor: 'bg-surface-100 dark:bg-surface-800/40' },
   stage_completed:     { icon: '✓', color: 'text-green-600 dark:text-green-400',  bgColor: 'bg-green-100 dark:bg-green-900/30' },
-  critic_verdict:      { icon: '◎', color: 'text-amber-600 dark:text-amber-400',  bgColor: 'bg-amber-100 dark:bg-amber-900/30' },
+  critic_verdict:      { icon: '◎', color: 'text-lime-600 dark:text-lime-400',  bgColor: 'bg-lime-100 dark:bg-lime-900/30' },
   checkpoint_created:  { icon: '⏸', color: 'text-amber-600 dark:text-amber-400',  bgColor: 'bg-amber-100 dark:bg-amber-900/30' },
   revision_started:    { icon: '↻', color: 'text-rose-600 dark:text-rose-400', bgColor: 'bg-rose-100 dark:bg-rose-900/30' },
   human_edit:          { icon: '✎', color: 'text-blue-600 dark:text-blue-400',    bgColor: 'bg-blue-100 dark:bg-blue-900/30' },

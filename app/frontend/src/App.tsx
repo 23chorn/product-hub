@@ -19,7 +19,7 @@ import { useSettingsStore } from './stores/settingsStore';
 import { useConfigStore } from './stores/configStore';
 import { useWorkflowStore } from './stores/workflowStore';
 import { useStatsStore } from './stores/statsStore';
-import { useAuthStore, ROLE_LABELS, canViewStats } from './stores/authStore';
+import { useAuthStore, ROLE_LABELS, canViewStats, canLaunchWorkflow } from './stores/authStore';
 import { api } from './services/api';
 
 function DemoToast({ title, onDismiss }: { title: string; onDismiss: () => void }) {
@@ -173,13 +173,15 @@ function App() {
           </div>
           <div className="flex items-center gap-2">
             {/* Discovery Button */}
-            <button
-              onClick={openDiscovery}
-              className="flex items-center px-3 py-1.5 rounded-lg text-sm font-medium border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 bg-white dark:bg-surface-800/50 hover:bg-surface-50 dark:hover:bg-surface-700/70 hover:border-surface-400 dark:hover:border-surface-500 transition-colors shadow-sm"
-              title="Open Discovery"
-            >
-              Discovery
-            </button>
+            {canLaunchWorkflow(user, noAuth) && (
+              <button
+                onClick={openDiscovery}
+                className="flex items-center px-3 py-1.5 rounded-lg text-sm font-medium border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 bg-white dark:bg-surface-800/50 hover:bg-surface-50 dark:hover:bg-surface-700/70 hover:border-surface-400 dark:hover:border-surface-500 transition-colors shadow-sm"
+                title="Open Discovery"
+              >
+                Discovery
+              </button>
+            )}
 
             {/* Agent Studio Button */}
             <button

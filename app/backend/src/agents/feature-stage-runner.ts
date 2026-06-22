@@ -13,6 +13,7 @@ import type { AgentType } from '@pap/shared';
 import { logger, insertEvent } from './workflow-db';
 import { validateBacklogJson, validateQaTestsJson } from './tool-validators';
 import { isCancelRequested } from './workflow-cancel';
+import { resolveAgentModel } from '../utils/ai-provider';
 import { progressHeartbeatLine, collectStreamWithHeartbeat, STAGE_MAX_OUTPUT_TOKENS } from './stage-metadata';
 import { stripJsonFence } from '../utils/json-repair';
 import type { ProductAreaScope } from './multi-agent-refinement';
@@ -294,7 +295,7 @@ async function runFeatureSurgicalRevision(
   const maxTokens = STAGE_MAX_OUTPUT_TOKENS[spec.tokenKey] ?? spec.fallbackTokens;
 
   const fullResponse = await collectStreamWithHeartbeat(
-    agent.streamResponse(systemPrompt, messages, undefined, undefined, maxTokens),
+    agent.streamResponse(systemPrompt, messages, resolveAgentModel(spec.agentType), undefined, maxTokens),
     (elapsedSec, chars) => insertEvent(workflowId, 'stage_progress', stage,
       progressHeartbeatLine(`Revising Feature ${featureNum} ${spec.noun}`, elapsedSec, chars)),
   );

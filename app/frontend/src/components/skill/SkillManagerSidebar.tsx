@@ -93,6 +93,7 @@ export function SkillManagerSidebar({
   onSelectTool,
 }: SkillManagerSidebarProps) {
   const { user, noAuth } = useAuthStore();
+  const isAdmin = noAuth || !!user?.is_admin;
 
   function canEdit(editRoles: string[] | null): boolean {
     if (noAuth || !user) return true;
@@ -127,7 +128,7 @@ export function SkillManagerSidebar({
               ) : undefined
             }
           />
-          {expanded.context && (
+          {expanded.context && isAdmin && (
             <button
               onClick={onSelectAirtableSync}
               className={`w-full text-left px-4 py-2 border-b border-surface-100 dark:border-surface-700/40 transition-colors flex items-center justify-between ${

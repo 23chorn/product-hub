@@ -27,19 +27,23 @@ export function StageGroupHeader({
     ? <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse inline-block" />
     : null;
 
+  // A full-width top border (rather than the previous thin rule trailing the
+  // label) is what actually reads as a section break once the log is dense
+  // with rows — the old inline rule was easy to lose among hover backgrounds.
   return (
-    <div className={`flex items-center gap-2 px-2 py-1.5 mt-2 first:mt-0 text-[10px] font-semibold uppercase tracking-widest ${color}`}>
-      {dot}
-      <span>{label}</span>
-      {artifactId && onViewOutput && (
-        <button
-          onClick={() => onViewOutput(artifactId)}
-          className="text-[9px] font-mono normal-case tracking-normal text-surface-500 dark:text-surface-600 hover:text-brand-600 dark:hover:text-brand-400 transition-colors whitespace-nowrap border border-surface-200 dark:border-surface-800 hover:border-brand-400 dark:hover:border-brand-800 rounded px-1.5 py-0.5"
-        >
-          view →
-        </button>
-      )}
-      <div className="flex-1 h-px bg-surface-200 dark:bg-surface-800/60" />
+    <div className="mt-4 pt-3 border-t-2 border-surface-200 dark:border-surface-700/80">
+      <div className={`flex items-center gap-2 px-2 py-1 text-[10px] font-semibold uppercase tracking-widest ${color}`}>
+        {dot}
+        <span>{label}</span>
+        {artifactId && onViewOutput && (
+          <button
+            onClick={() => onViewOutput(artifactId)}
+            className="text-[9px] font-mono normal-case tracking-normal text-surface-500 dark:text-surface-600 hover:text-brand-600 dark:hover:text-brand-400 transition-colors whitespace-nowrap border border-surface-200 dark:border-surface-800 hover:border-brand-400 dark:hover:border-brand-800 rounded px-1.5 py-0.5"
+          >
+            view →
+          </button>
+        )}
+      </div>
     </div>
   );
 }

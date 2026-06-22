@@ -8,6 +8,11 @@ import { Sparkline, WeeklyBars, HorizontalBarList, formatWeek } from './charts';
 
 const RANGE_OPTIONS = [30, 90, 180, 365];
 
+// Hidden (not removed) during early platform validation: both depend on Airtable
+// "Shipped" status tracking well after the pipeline finishes, which is sparse/lagging
+// this early. Flip to true once shipped-status data is reliably populated.
+const SHOW_SHIPPING_KPIS = false;
+
 function stageLabel(stage: string): string {
   return STAGE_SHORT_LABELS[stage] ?? stage.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
@@ -144,10 +149,12 @@ export function StatsDashboardPanel() {
         {data && (
           <div className="space-y-5 max-w-6xl mx-auto">
             {/* KPI row */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
               <KpiCard label="In Flight" value={String(data.wip.active)} sublabel={data.wip.oldestActiveAgeDays != null ? `oldest ${fmtDays(data.wip.oldestActiveAgeDays)}` : undefined} />
               <KpiCard label="Avg Cycle Time" value={fmtDays(data.cycleTime.overallAvgDays)} sublabel={`median ${fmtDays(data.cycleTime.overallMedianDays)} · n=${data.cycleTime.count}`} />
-              <KpiCard label="Avg Time to Ship" value={fmtDays(data.timeToShip.overallAvgDays)} sublabel={`${data.timeToShip.shippedCount}/${data.timeToShip.completedCount} shipped`} />
+              {SHOW_SHIPPING_KPIS && (
+                <KpiCard label="Avg Time to Ship" value={fmtDays(data.timeToShip.overallAvgDays)} sublabel={`${data.timeToShip.shippedCount}/${data.timeToShip.completedCount} shipped`} />
+              )}
               <KpiCard
                 label="1st-Time Approval"
                 value={fmtPct(data.firstTimeApproval.overallRate)}
@@ -155,27 +162,29 @@ export function StatsDashboardPanel() {
                 accent={data.firstTimeApproval.overallRate != null && data.firstTimeApproval.overallRate >= 70 ? 'text-brand-600 dark:text-brand-400' : undefined}
               />
               <KpiCard label="Rejection Rate" value={fmtPct(data.rejectionRate.overallRate)} sublabel={`n=${data.rejectionRate.totalResolved}`} />
-              <KpiCard
-                label="Post-Ship Change Requests"
-                value={fmtPct(data.qualityRegression.rate)}
-                sublabel={`${data.qualityRegression.completedWithChangeRequest}/${data.qualityRegression.completedTotal} completed`}
-              />
+              {SHOW_SHIPPING_KPIS && (
+                <KpiCard
+                  label="Post-Ship Change Requests"
+                  value={fmtPct(data.qualityRegression.rate)}
+                  sublabel={`${data.qualityRegression.completedWithChangeRequest}/${data.qualityRegression.completedTotal} completed`}
+                />
+              )}
               <KpiCard label="Manual Retries" value={String(data.retries.totalCount)} sublabel="admin-triggered, in range" />
             </div>
 
             {/* Trends */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Section title="Cycle Time" subtitle="Days from pipeline start to pipeline complete, by week of completion">
+              <Section title="Cycle Time" subtitle="Average days from pipeline start to pipeline complete, by week of completion">
                 <Sparkline
                   points={data.cycleTime.points.map(p => ({ x: p.weekStart, y: p.avg ?? 0 }))}
-                  valueFormat={v => `${v.toFixed(1)}d avg`}
+                  valueFormat={v => `${v.toFixed(1)}d`}
                 />
               </Section>
-              <Section title="Time to Ship" subtitle="Days from pipeline complete to Airtable status = Shipped, by week shipped">
+              <Section title="Time to Ship" subtitle="Average days from pipeline complete to Airtable status = Shipped, by week shipped">
                 <Sparkline
                   points={data.timeToShip.points.map(p => ({ x: p.weekStart, y: p.avg ?? 0 }))}
                   color="#7c3aed"
-                  valueFormat={v => `${v.toFixed(1)}d avg`}
+                  valueFormat={v => `${v.toFixed(1)}d`}
                 />
               </Section>
               <Section title="First-Time Approval Rate" subtitle="Share of stage outputs approved with no revision cycle, by week decided">

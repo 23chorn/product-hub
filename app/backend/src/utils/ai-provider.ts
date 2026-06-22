@@ -12,6 +12,8 @@ import type { ModelOption } from '@pap/shared';
 import {
   PROVIDER_MODELS,
   ANTHROPIC_AGENT_MODELS,
+  BEDROCK_AGENT_MODELS,
+  lookupAgentModel,
   modelMaxOutputTokens,
 } from './model-config';
 import Logger from './logger';
@@ -38,11 +40,11 @@ export function getActiveProvider(): AIProvider {
  */
 const DEFAULT_MODELS: Record<AIProvider, string> = {
   anthropic: 'claude-haiku-4-5-20251001',
-  bedrock:   'global.anthropic.claude-opus-4-6-v1',
+  bedrock:   'anthropic.claude-sonnet-4-6',
   ollama:    'llama3.2:1b',
 };
 
-export { PROVIDER_MODELS, ANTHROPIC_AGENT_MODELS } from './model-config';
+export { PROVIDER_MODELS, ANTHROPIC_AGENT_MODELS, BEDROCK_AGENT_MODELS } from './model-config';
 
 export function getAvailableModels(): ModelOption[] {
   return PROVIDER_MODELS[getActiveProvider()] ?? [];
@@ -59,10 +61,8 @@ export function resolveModelId(modelEnvValue: string | undefined): string {
 
 /** Returns the model ID to use for a given agent, respecting the active provider. */
 export function resolveAgentModel(agent: string): string {
-  if (getActiveProvider() === 'anthropic') {
-    return ANTHROPIC_AGENT_MODELS[agent] ?? DEFAULT_MODELS.anthropic;
-  }
-  return resolveModelId(undefined);
+  const provider = getActiveProvider();
+  return lookupAgentModel(provider, agent) ?? DEFAULT_MODELS[provider];
 }
 
 /** Returns a short human-readable label for a model ID. */

@@ -12,6 +12,11 @@ const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
  * Build the pre-workflow planning system prompt (the "Chief of Staff" planning
  * conversation). Loads company/strategy/current-state context so the coordinator
  * doesn't ask about already-documented things.
+ *
+ * Plain string, not a cacheable SystemPrompt — the brief is always supplied
+ * complete via Airtable, so the exit criteria below resolve on the first message
+ * almost every time. Like curator, this is a one-shot call with no follow-up read
+ * to recoup the cache_write surcharge, so caching it would cost more, not less.
  */
 export function buildPlanningSystemPrompt(): string {
   // Load project context files so the coordinator doesn't ask about things

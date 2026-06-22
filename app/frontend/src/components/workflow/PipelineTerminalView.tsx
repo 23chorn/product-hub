@@ -5,7 +5,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { api } from '../../services/api';
 import { deriveStageStatus } from '../../utils/stage-tracker-helpers';
 import { StageRow } from './StageRow';
-import { tryParseEpicFeatures } from '../artifact/EpicFeaturesView';
+import { tryParseEpicFeatures, toPhases } from '../artifact/EpicFeaturesView';
 import { STAGE_LABELS, STAGE_SHORT_LABELS } from '../../constants/stage-labels';
 import type { StageStatus, CoordinatorMessage } from '../../stores/workflowStore';
 import { DancingCreature } from './pipeline-terminal/DancingCreature';
@@ -57,9 +57,8 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   const [crExpanded, setCrExpanded] = useState(false);
   const [showAudit, setShowAudit] = useState(false);
   const [artifacts, setArtifacts] = useState<Array<{ id: number; type: string; stage: string | null; created_at: number }>>([]);
-  // 0-based feature index → "<initiative> — <phase>" label, mirroring the epic title the
-  // backend actually creates in ADO (feature-decomposition.ts), so it matches what reviewers see there.
-  const [featureEpicLabels, setFeatureEpicLabels] = useState<string[]>([]);
+  // 0-based feature index → phase label (e.g. "MVP", "Phase 1") that feature belongs to.
+  const [featurePhaseLabels, setFeaturePhaseLabels] = useState<string[]>([]);
 
   useEffect(() => {
     setStopping(false);
@@ -93,31 +92,26 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
     return matches.reduce((latest, a) => (a.created_at > latest.created_at ? a : latest), matches[0]).id;
   }, [artifacts]);
 
-  // Resolve which epic/phase each feature belongs to, for the "Refinement - F1" stage rows.
+  // Resolve which phase each feature belongs to, for the "Refinement - F1" stage rows.
   useEffect(() => {
     if (!epicFeaturesArtifactId) {
-      setFeatureEpicLabels([]);
+      setFeaturePhaseLabels([]);
       return;
     }
     api.getArtifactContent(epicFeaturesArtifactId)
       .then(({ content }) => {
         const parsed = tryParseEpicFeatures(content);
         if (!parsed) {
-          setFeatureEpicLabels([]);
+          setFeaturePhaseLabels([]);
           return;
         }
         const labels: string[] = [];
-        if (parsed.phases && parsed.phases.length > 0) {
-          for (const phase of parsed.phases) {
-            const epicTitle = `${parsed.epic.title} — ${phase.label}`;
-            for (const _feature of phase.features ?? []) labels.push(epicTitle);
-          }
-        } else if (parsed.features) {
-          for (const _feature of parsed.features) labels.push(parsed.epic.title);
+        for (const phase of toPhases(parsed)) {
+          for (const _feature of phase.features ?? []) labels.push(phase.label);
         }
-        setFeatureEpicLabels(labels);
+        setFeaturePhaseLabels(labels);
       })
-      .catch(() => setFeatureEpicLabels([]));
+      .catch(() => setFeaturePhaseLabels([]));
   }, [epicFeaturesArtifactId]);
 
   // Auto-scroll event log — but only when the user is already near the bottom.
@@ -301,7 +295,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
               const latestApproved = checkpoints.filter(c => c.stage === stageName && c.status === 'approved').at(-1);
               const completedAt = latestApproved?.resolved_at ?? latestApproved?.created_at ?? null;
               const featureMatch = stageName.match(/^story_decomposition_F(\d+)$/);
-              const epicLabel = featureMatch ? featureEpicLabels[parseInt(featureMatch[1], 10) - 1] : undefined;
+              const phaseLabel = featureMatch ? featurePhaseLabels[parseInt(featureMatch[1], 10) - 1] : undefined;
               return (
                 <StageRow
                   key={stageName}
@@ -315,7 +309,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                   agentModel={agentModels[stageName]}
                   onViewArtifact={setViewingArtifactId}
                   isLast={idx === stageSequence.length - 1}
-                  epicLabel={epicLabel}
+                  phaseLabel={phaseLabel}
                   compact
                 />
               );
@@ -656,7 +650,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                     {f.qaArtifactId && (
                       <button
                         onClick={() => setViewingArtifactId(f.qaArtifactId!)}
-                        className="px-2.5 py-1 text-xs font-medium rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200 dark:hover:bg-emerald-800/40 transition-colors"
+                        className="px-2.5 py-1 text-xs font-medium rounded bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-800/40 transition-colors"
                       >
                         F{f.num} QA Tests
                       </button>
@@ -668,7 +662,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                     {hasArtifacts && <span className="text-surface-300 dark:text-surface-700 select-none">·</span>}
                     <button
                       onClick={onShowCRForm}
-                      className="px-2.5 py-1 text-xs font-medium rounded border border-fuchsia-300 dark:border-fuchsia-700 text-fuchsia-600 dark:text-fuchsia-400 hover:bg-fuchsia-50 dark:hover:bg-fuchsia-900/20 transition-colors"
+                      className="px-2.5 py-1 text-xs font-medium rounded border border-cyan-300 dark:border-cyan-700 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 transition-colors"
                     >
                       Change Request
                     </button>

@@ -67,7 +67,7 @@ export function tryParseEpicFeatures(content: string): EpicFeaturesData | null {
 }
 
 /** Normalise both phases[] and legacy flat features[] into a phase list. */
-function toPhases(data: EpicFeaturesData): EpicPhase[] {
+export function toPhases(data: EpicFeaturesData): EpicPhase[] {
   if (data.phases && data.phases.length > 0) return data.phases;
   if (data.features && data.features.length > 0) {
     const byPhase = new Map<string, EpicFeature[]>();

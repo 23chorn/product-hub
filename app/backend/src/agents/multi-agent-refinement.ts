@@ -14,6 +14,7 @@ import { logger, insertEvent, touchWorkflow } from './workflow-db';
 import { getDemoFixture, demoSleep, DEMO_STAGE_DELAY_MS, isDemoWorkflow } from '../demo/demo-mode';
 import { loadLatestArtifactContent } from './artifact-helpers';
 import { SpecialistAgent } from './specialist-agent';
+import { resolveAgentModel } from '../utils/ai-provider';
 import { progressHeartbeatLine, collectStreamWithHeartbeat, STAGE_MAX_OUTPUT_TOKENS } from './stage-metadata';
 import { stripJsonFence, parseJsonLoose } from '../utils/json-repair';
 import { readProductArea } from './item-metadata';
@@ -479,7 +480,7 @@ async function runPhaseInParallel(
       for await (const chunk of agent.streamResponse(
         systemPrompt,
         [{ role: 'user', content: prompt }],
-        undefined, // model override
+        resolveAgentModel(participant.agentType),
         undefined, // onTokens
         8_000 // max tokens per agent
       )) {
@@ -827,7 +828,7 @@ Merge all contributions into a single JSON artifact following the backlog templa
   const maxTokens = STAGE_MAX_OUTPUT_TOKENS['story_decomposition'] ?? 16_000;
 
   const finalArtifact = await collectStreamWithHeartbeat(
-    facilitator.streamResponse(systemPrompt, [{ role: 'user', content: synthesisPrompt }], undefined, undefined, maxTokens),
+    facilitator.streamResponse(systemPrompt, [{ role: 'user', content: synthesisPrompt }], resolveAgentModel('story-decomposition'), undefined, maxTokens),
     (elapsedSec, chars) => {
       touchWorkflow(workflowId);
       insertEvent(workflowId, 'stage_progress', stage,
@@ -965,7 +966,7 @@ Requirements:
   const maxTokens = STAGE_MAX_OUTPUT_TOKENS['qa_engineer'] ?? 14_000;
 
   const output = await collectStreamWithHeartbeat(
-    vera.streamResponse(systemPrompt, [{ role: 'user', content: synthesisPrompt }], undefined, undefined, maxTokens),
+    vera.streamResponse(systemPrompt, [{ role: 'user', content: synthesisPrompt }], resolveAgentModel('qa-engineer'), undefined, maxTokens),
     // Tagged to the QA sub-stage (not the base story stage) so this progress shows
     // up in the QA section of the event log instead of bleeding into Refinement.
     (elapsedSec, chars) => insertEvent(workflowId, 'stage_progress', `${stage}_qa`,

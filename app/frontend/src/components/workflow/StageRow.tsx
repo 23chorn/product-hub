@@ -17,7 +17,7 @@ interface StageRowProps {
   isLast?: boolean;
   compact?: boolean;
   customLabel?: string; // Override default stage label (e.g., "Feature 1")
-  epicLabel?: string; // Which epic/phase this feature stage belongs to (e.g., "Trade Chat — MVP")
+  phaseLabel?: string; // Which phase this feature stage belongs to (e.g., "MVP", "Phase 1")
 }
 
 // ── Status icon ───────────────────────────────────────────────────────────────
@@ -66,7 +66,7 @@ export function StageRow({
   isLast,
   compact = false,
   customLabel,
-  epicLabel,
+  phaseLabel,
 }: StageRowProps & { prevStatus?: StageStatus }) {
   const showConnector = index > 0;
   const connectorDone = prevStatus === 'complete';
@@ -98,9 +98,9 @@ export function StageRow({
           <span className={`block text-[13px] font-mono leading-none truncate ${labelColor(status)}`}>
             {customLabel ?? STAGE_LABELS[stageName] ?? stageName}
           </span>
-          {epicLabel && (
+          {phaseLabel && (
             <span className="block text-[10px] font-mono leading-none truncate text-surface-500 dark:text-surface-600 mt-0.5">
-              Epic: {epicLabel}
+              {phaseLabel}
             </span>
           )}
           {isActive && (
@@ -142,9 +142,9 @@ export function StageRow({
         <span className={`text-[12px] font-mono leading-none ${labelColor(status)}`}>
           {STAGE_LABELS[stageName] ?? stageName}
         </span>
-        {epicLabel && (
+        {phaseLabel && (
           <span className="block text-[10px] font-mono leading-none text-surface-500 dark:text-surface-600 mt-0.5">
-            Epic: {epicLabel}
+            {phaseLabel}
           </span>
         )}
 

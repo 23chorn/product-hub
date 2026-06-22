@@ -18,20 +18,27 @@ export function eventToMessage(event: WorkflowEvent): { role: 'coordinator'; con
   let content = event.summary;
 
   // stage_completed / ado_pushed — append external URLs for direct linking.
-  // A feature refinement push can carry up to three distinct links (epic, feature,
-  // test plan) — emit one "→ Label: url" line per link present so all of them render,
-  // not just whichever happened to be checked first.
+  // A feature refinement push carries both a feature and a test plan link (plus the
+  // epic, which is only included for the underlying push call — the epic link itself
+  // is already shown on the epic_feature_planner stage's own event, so it's never
+  // surfaced again here). Which of feature/test-plan actually renders is keyed off
+  // which half of the story_decomposition_F* pair this event belongs to: the PM
+  // "stories" checkpoint shows the feature link, the "_qa" checkpoint shows the test
+  // plan link — never both, since each section only cares about its own work item.
   if ((event.event_type === 'stage_completed' || event.event_type === 'ado_pushed') && event.details) {
     try {
       const details = JSON.parse(event.details);
       if (details.wiki_url) {
         content = `${content}\n→ ${details.wiki_url}`;
-      } else if (details.epic_url || details.feature_url || details.test_plan_url) {
+      } else if (details.feature_url || details.test_plan_url) {
+        const isQaCheckpoint = (event.stage ?? '').endsWith('_qa');
         const lines: string[] = [];
-        if (details.epic_url) lines.push(`→ View Epic: ${details.epic_url}`);
-        if (details.feature_url) lines.push(`→ View Feature: ${details.feature_url}`);
-        if (details.test_plan_url) lines.push(`→ View Test Plan: ${details.test_plan_url}`);
-        content = `${content}\n${lines.join('\n')}`;
+        if (isQaCheckpoint) {
+          if (details.test_plan_url) lines.push(`→ View Test Plan: ${details.test_plan_url}`);
+        } else if (details.feature_url) {
+          lines.push(`→ View Feature: ${details.feature_url}`);
+        }
+        if (lines.length > 0) content = `${content}\n${lines.join('\n')}`;
       } else if (details.ado_url) {
         content = `${content}\n→ ${details.ado_url}`;
       }
