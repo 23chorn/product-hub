@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as fsAsync from 'fs/promises';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
 import db from '../data/database';
 import { itemSessionDir } from './item-metadata';
 import { STAGE_ARTIFACT_TYPE } from './stage-metadata';
@@ -189,7 +190,10 @@ export async function saveLocalArtifact(
   await fsAsync.mkdir(artifactDir, { recursive: true });
   // Every stage routed through here produces JSON by design (see STAGE_OUTPUT_FORMATS) — use
   // .json unconditionally rather than sniffing content, which mislabeled truncated/fenced JSON as .md.
-  const artifactPath = path.join(artifactDir, `${Date.now()}-${stage}.json`);
+  // The random suffix guards against collisions when parallel feature stages save artifacts of the
+  // same type in the same millisecond — e.g. story_decomposition_F* all write type 'qa_tests' into a
+  // shared dir, so a bare `${Date.now()}-${stage}.json` had them clobbering one file into corrupt JSON.
+  const artifactPath = path.join(artifactDir, `${Date.now()}-${randomUUID().slice(0, 8)}-${stage}.json`);
   await fsAsync.writeFile(artifactPath, content, 'utf-8');
 
   const result = db.prepare(`
@@ -294,8 +298,6 @@ export async function loadArtifactContentById(artifactId: number): Promise<strin
  * Primary source is disk; falls back to the wiki mirror only if that's unavailable.
  */
 export async function loadLatestArtifactContent(itemId: string, artifactType: string): Promise<string | null> {
-  logger.info(`[ARTIFACT-LOAD] Looking for artifact: itemId=${itemId}, type=${artifactType}`);
-
   const row = db.prepare<[string, string], ArtifactRow>(`
     SELECT a.file_path, a.wiki_path
     FROM artifacts a
@@ -305,19 +307,23 @@ export async function loadLatestArtifactContent(itemId: string, artifactType: st
   `).get(itemId, artifactType);
 
   if (!row) {
-    // Debug: show what artifacts exist for this item
-    const allArtifacts = db.prepare<[string], { type: string; created_at: number; file_path: string }>(`
-      SELECT a.type, a.created_at, a.file_path
-      FROM artifacts a
-      JOIN sessions s ON a.session_id = s.id
-      WHERE s.item_id = ?
-      ORDER BY a.created_at DESC
-    `).all(itemId);
-    logger.warn(`[ARTIFACT-LOAD] No artifact found for type=${artifactType}. Available artifacts for item ${itemId}: ${JSON.stringify(allArtifacts)}`);
+    // A missing artifact is often expected (optional stages, prior-stage probes), so this
+    // stays at debug. The full artifact inventory — useful when chasing an unexpected miss —
+    // is only queried when debug logging is actually on, to avoid an extra query per miss.
+    if (process.env.NODE_ENV === 'development' || process.env.DEBUG) {
+      const allArtifacts = db.prepare<[string], { type: string; created_at: number }>(`
+        SELECT a.type, a.created_at
+        FROM artifacts a
+        JOIN sessions s ON a.session_id = s.id
+        WHERE s.item_id = ?
+        ORDER BY a.created_at DESC
+      `).all(itemId);
+      logger.debug(`No "${artifactType}" artifact for item ${itemId}; available:`, allArtifacts);
+    }
     return null;
   }
 
-  logger.info(`[ARTIFACT-LOAD] Found artifact: ${row.file_path}`);
+  logger.debug(`Loaded "${artifactType}" artifact for item ${itemId}: ${row.file_path}`);
   return readArtifactRow(row);
 }
 

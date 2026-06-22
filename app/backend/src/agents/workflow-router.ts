@@ -317,6 +317,7 @@ async function advanceStageCore(workflowId: string): Promise<{ stage: string; se
 
   // Move to next stage
   stmts.updateWorkflowStage.run(nextStage, now, workflowId);
+  logger.info(`Workflow ${workflowId} advancing: "${workflow.current_stage ?? '(start)'}" → "${nextStage}" (step ${nextIndex + 1}/${sequence.length})`);
 
   // ── Critic stage: automated single-shot review ────────────────────────────
   if (nextStage === 'critic') {

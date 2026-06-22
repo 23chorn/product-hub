@@ -53,6 +53,7 @@
     "@types/node": "^20.11.0",
     "@types/uuid": "^9.0.8",
     "@types/ws": "^8.18.1",
+    "@vitest/coverage-v8": "^4.0.18",
     "drizzle-kit": "^0.31.10",
     "figma-mcp": "^0.1.4",
     "tsx": "^4.7.0",

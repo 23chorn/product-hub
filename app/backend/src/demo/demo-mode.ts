@@ -11,38 +11,33 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import db from '../data/database';
+import Logger from '../utils/logger';
+
+const logger = new Logger('DEMO');
 
 // Use project root for reliable fixture path resolution
 // Walk up from __dirname until we find package.json with workspaces
 function findProjectRoot(): string {
-  console.log(`[DEMO FIXTURE] Starting from __dirname: ${__dirname}`);
   let dir = __dirname;
   for (let i = 0; i < 10; i++) {
     try {
       const pkgPath = path.join(dir, 'package.json');
-      console.log(`[DEMO FIXTURE] Checking for package.json at: ${pkgPath}`);
       if (fs.existsSync(pkgPath)) {
         const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-        if (pkg.workspaces) {
-          console.log(`[DEMO FIXTURE] Found project root: ${dir}`);
-          return dir;
-        }
+        if (pkg.workspaces) return dir;
       }
     } catch {}
     dir = path.resolve(dir, '..');
   }
   const fallback = path.resolve(__dirname, '../../../../');
-  console.log(`[DEMO FIXTURE] Using fallback root: ${fallback}`);
+  logger.warn(`Could not locate workspace root by walking up from ${__dirname} — using fallback ${fallback}`);
   return fallback;
 }
 const PROJECT_ROOT = findProjectRoot();
 
 function getFixturesDir(): string {
   const baseFixtures = path.join(PROJECT_ROOT, 'app/backend/src/demo/fixtures');
-  const messagingDir = path.join(baseFixtures, 'messaging');
-  console.log(`[DEMO FIXTURE] PROJECT_ROOT: ${PROJECT_ROOT}`);
-  console.log(`[DEMO FIXTURE] Using fixtures dir: ${messagingDir}`);
-  return messagingDir;
+  return path.join(baseFixtures, 'messaging');
 }
 
 // Stage → fixture file mapping
@@ -81,7 +76,7 @@ export function isDemoMode(): boolean {
     ).get() as { rule_value: string } | undefined;
     return row?.rule_value === 'true';
   } catch (err: any) {
-    console.log(`[DEMO MODE] Policy query failed: ${err.message}`);
+    logger.warn(`demo_mode_enabled policy query failed: ${err.message}`);
     return false;
   }
 }
@@ -102,37 +97,36 @@ export function getDemoFixture(stage: string): string | null {
       const fullBacklog = JSON.parse(fullBacklogContent);
 
       if (!fullBacklog.features || !Array.isArray(fullBacklog.features)) {
-        console.error(`[DEMO FIXTURE ERROR] Invalid backlog structure in ${fixturePath}`);
+        logger.error(`Invalid backlog structure in ${fixturePath}`);
         return null;
       }
 
       const targetFeature = fullBacklog.features[featureIndex];
       if (!targetFeature) {
-        console.error(`[DEMO FIXTURE ERROR] Feature ${featureIndex + 1} not found in backlog`);
+        logger.error(`Feature ${featureIndex + 1} not found in backlog ${fixturePath}`);
         return null;
       }
 
       return JSON.stringify({ epic: fullBacklog.epic, features: [targetFeature] }, null, 2);
     } catch (err: any) {
-      console.error(`[DEMO FIXTURE ERROR] Failed to process feature-specific backlog for ${stage}:`, err.message);
+      logger.error(`Failed to process feature-specific backlog for ${stage}: ${err.message}`);
       return null;
     }
   }
 
   const filename = DEMO_FIXTURE_FILES[stage];
   if (!filename) {
-    console.log(`[DEMO FIXTURE] No mapping for stage "${stage}"`);
+    logger.debug(`No fixture mapping for stage "${stage}"`);
     return null;
   }
 
   const fixturePath = path.join(getFixturesDir(), filename);
-  console.log(`[DEMO FIXTURE] Attempting to load: ${fixturePath}`);
   try {
     const content = fs.readFileSync(fixturePath, 'utf-8');
-    console.log(`[DEMO FIXTURE] Successfully loaded ${fixturePath} (${content.length} chars)`);
+    logger.debug(`Loaded fixture for "${stage}" (${content.length} chars)`);
     return content;
   } catch (err) {
-    console.error(`[DEMO FIXTURE ERROR] Failed to load fixture for "${stage}": ${fixturePath}`, err instanceof Error ? err.message : String(err));
+    logger.error(`Failed to load fixture for "${stage}" at ${fixturePath}`, err instanceof Error ? err : String(err));
     return null;
   }
 }

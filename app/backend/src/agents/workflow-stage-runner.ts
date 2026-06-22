@@ -6,9 +6,6 @@
  * checkpoints for human review.
  */
 
-import * as fs from 'fs';
-import * as fsAsync from 'fs/promises';
-import * as path from 'path';
 import db from '../data/database';
 import { sessionManager } from '../session/session-manager';
 import { CoordinatorAgent } from './coordinator-agent';
@@ -22,15 +19,17 @@ import {
   STAGE_ARTIFACT_LABEL, stageProgressHeartbeat, stageProgressReview, stageProgressReviewComplete, stageProgressRevision, stageProgressSection, stageProgressWorking,
 } from './stage-metadata';
 import {
-  saveCriticArtifact, saveDiffArtifact, saveLocalArtifact, loadLatestArtifactContent, updateArtifactContent, syncArtifactToWiki,
+  saveCriticArtifact, saveDiffArtifact, saveLocalArtifact, loadLatestArtifactContent, syncArtifactToWiki,
 } from './artifact-helpers';
 import { getActiveSkill } from './skill-registry';
 import { type ToolDefinition, getRegisteredTools } from './tool-registry';
-import { loadWorkflowArtifacts, loadLocalDesignSystem, loadFigmaDesignSystem, getFigmaFileKey, setFigmaFileKey, createFigmaFile, resolveItemPlatform, platformHintFor, resolvedFramePlatform } from './prototype-agent';
-import { repairTruncatedJson, stripJsonFence, extractFirstJsonObject } from '../utils/json-repair';
+import { stripJsonFence } from '../utils/json-repair';
 import { readProductArea } from './item-metadata';
+import { ITEM_CONTEXT_BUILDERS } from './stage-item-context';
+import { stripWholeResponseDuplication, cleanStageArtifactJson } from './stage-output-parser';
+import { STAGE_ARTIFACT_POSTPROCESSORS } from './stage-artifact-postprocess';
 import {
-  PROJECT_ROOT, logger, stmts, insertEvent,
+  logger, stmts, insertEvent,
   setCheckpointTokenUsage, loadGlobalPolicies, workflowOps, rolesJson,
   type StageTokenData,
 } from './workflow-db';
@@ -74,42 +73,6 @@ const STAGE_EVENT_LABEL: Record<string, string> = {
   prototype: 'Prototype',
   figma_design: 'Figma Design',
 };
-
-/**
- * Detects and strips a known LLM failure mode where the entire response echoes
- * itself twice in a single completion — most often seen on revision turns, where
- * the prior draft already sits in context and the model re-states it in full
- * before producing the "real" answer. Looks for the response's own opening line
- * recurring partway through; if that split produces two near-equal, near-identical
- * halves, only the first copy is kept. This runs before any JSON/markdown-specific
- * parsing so it catches the duplication regardless of output format.
- */
-function stripWholeResponseDuplication(text: string, stage: string): string {
-  const trimmed = text.trim();
-  if (trimmed.length < 200) return text;
-
-  const firstLineEnd = trimmed.indexOf('\n');
-  const anchor = (firstLineEnd > 10 ? trimmed.slice(0, firstLineEnd) : trimmed.slice(0, 40)).trim();
-  if (anchor.length < 8) return text;
-
-  const secondOccurrence = trimmed.indexOf(anchor, anchor.length + 1);
-  if (secondOccurrence === -1) return text;
-
-  const firstHalf = trimmed.slice(0, secondOccurrence);
-  const secondHalf = trimmed.slice(secondOccurrence);
-  // Guard against the anchor line coincidentally reappearing later in a legitimately
-  // long document — only treat as a true duplicate if the halves are near-equal length
-  // and match content once whitespace differences (missing/extra newlines at the glue
-  // point) are normalized away.
-  const lenRatio = secondHalf.length / firstHalf.length;
-  if (lenRatio < 0.85 || lenRatio > 1.15) return text;
-
-  const normalize = (s: string) => s.replace(/\s+/g, ' ').trim();
-  if (normalize(firstHalf) !== normalize(secondHalf)) return text;
-
-  logger.warn(`Stage "${stage}" response echoed the full document twice — stripping the duplicate copy (${trimmed.length} → ${firstHalf.length} chars)`);
-  return firstHalf.trimEnd();
-}
 
 /**
  * Create the checkpoint representing a completed stage's output, attaching specialist/critic
@@ -199,111 +162,6 @@ function finishStage(
     if (titleRow) notifyCheckpointPending(titleRow.title, stage);
   }
 }
-
-interface ItemContextParams {
-  itemId: string;
-  workflowId: string;
-  stage: string;
-  goalText: string | null;
-  addPlatformScope: (base: string) => string;
-  figmaBypass: boolean;
-}
-
-/**
- * Per-stage builders for the "itemContext" injected into each specialist's brief —
- * the prior stage's artifact(s), formatted for that specialist's needs. Keyed by
- * stage name and looked up by runAutonomousStage; a stage with no entry here (e.g.
- * the critic) simply gets no itemContext. Feature-specific stages (story_decomposition_F1,
- * qa_engineer_F1, etc.) never reach this dispatch — they're routed to the multi-agent
- * pipeline, or rejected by the STAGE_SESSION_MAP check earlier in runAutonomousStage,
- * before itemContext is ever built.
- */
-const ITEM_CONTEXT_BUILDERS: Record<string, (params: ItemContextParams) => Promise<string | undefined>> = {
-  async analyst({ goalText, addPlatformScope }) {
-    if (!goalText) return undefined;
-    return addPlatformScope(`## THIS IS YOUR RESEARCH TOPIC\nThe task below defines exactly what to research. The company context above is background only — your output must be about this specific goal, NOT about the company's existing products.\n\n**Goal:** ${goalText}`);
-  },
-
-  async pm_prd({ itemId, goalText, addPlatformScope }) {
-    const analystContent = await loadLatestArtifactContent(itemId, 'analyst');
-    const parts: string[] = [];
-    if (analystContent) parts.push(`**Research Brief (use as background for the PRD):**\n\n${analystContent}`);
-
-    const { loadRelevantBehaviourDocs } = await import('./behaviour-context');
-    const behaviourDocs = await loadRelevantBehaviourDocs(`${goalText ?? ''} ${analystContent ?? ''}`);
-    if (behaviourDocs) parts.push(behaviourDocs);
-
-    return parts.length > 0 ? addPlatformScope(parts.join('\n\n---\n\n')) : undefined;
-  },
-
-  async epic_feature_planner({ itemId, addPlatformScope }) {
-    const prdContent = await loadLatestArtifactContent(itemId, 'prd');
-    if (!prdContent) return undefined;
-    return addPlatformScope(`**PRD Document (use as source of functional requirements to decompose into epic and features):**\n\n${prdContent}`);
-  },
-
-  async solution_architect({ itemId, addPlatformScope }) {
-    const parts: string[] = [];
-    const prdContent = await loadLatestArtifactContent(itemId, 'prd');
-    if (prdContent) parts.push(`**PRD Document (use as source of requirements for the architecture):**\n\n${prdContent}`);
-
-    const techStackPath = path.join(PROJECT_ROOT, 'context', 'tech-stack.md');
-    let techStackNote = '';
-    try {
-      const techStack = fs.readFileSync(techStackPath, 'utf-8');
-      techStackNote = `**Existing Tech Stack (align your architecture with this):**\n\n${techStack}`;
-    } catch {
-      techStackNote = `**Note:** No existing tech stack document found at context/tech-stack.md. You should recommend technology choices with tradeoffs for each decision.`;
-    }
-    parts.push(techStackNote);
-    return addPlatformScope(parts.join('\n\n---\n\n'));
-  },
-
-  async prototype({ itemId, addPlatformScope }) {
-    // Deliberately no design system context here — the prototype stage builds a
-    // generic, brand-neutral wireframe (see prototype-builder persona), not a
-    // branded mock. Real design tokens are only loaded later for figma_design.
-    const artifacts = await loadWorkflowArtifacts(itemId);
-    const parts: string[] = [];
-    if (artifacts) parts.push(`## Workflow Artifacts\n\nUse these documents to understand the change being prototyped:\n\n${artifacts}`);
-    // Built for exactly one platform (mobile or web) — no dual-variant generation,
-    // since there's no UI to switch between two generated versions anyway.
-    parts.push(platformHintFor(resolveItemPlatform(itemId)));
-    return parts.length > 0 ? addPlatformScope(parts.join('\n\n---\n\n')) : undefined;
-  },
-
-  async figma_design({ itemId, workflowId, stage, addPlatformScope, figmaBypass }) {
-    // Read design tokens from the Figma design system file via MCP
-    const figma = await loadFigmaDesignSystem((msg) => {
-      insertEvent(workflowId, 'stage_progress', stage, msg.trim());
-    });
-    const designSystem = figma || await loadLocalDesignSystem();
-    const [prdContent, protoContent] = await Promise.all([
-      loadLatestArtifactContent(itemId, 'prd'),
-      loadLatestArtifactContent(itemId, 'prototype'),
-    ]);
-    const parts: string[] = [];
-    if (designSystem) parts.push(`## Design System\n\n${designSystem}`);
-    if (prdContent) parts.push(`## PRD\n\nUse this to identify user journeys each screen must cover:\n\n${prdContent}`);
-    if (protoContent) parts.push(`## Prototype\n\nUse this as a reference for the screens and navigation flows to visualise:\n\n${protoContent}`);
-    if (!figmaBypass) {
-      let mockupFile = getFigmaFileKey(itemId);
-      if (!mockupFile) {
-        const item = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(itemId);
-        const fileName = item ? `${item.title} — Mockups` : 'Initiative Mockups';
-        insertEvent(workflowId, 'stage_progress', stage, `Creating Figma file "${fileName}"...`);
-        const created = await createFigmaFile(fileName);
-        if (created) {
-          setFigmaFileKey(itemId, created);
-          mockupFile = created;
-          insertEvent(workflowId, 'stage_progress', stage, `Figma file created: ${created}`);
-        }
-      }
-      if (mockupFile) parts.push(`## Target Figma File\n\nCreate mockup frames in Figma file key: \`${mockupFile}\`\nFile URL: https://www.figma.com/file/${mockupFile}/`);
-    }
-    return parts.length > 0 ? addPlatformScope(parts.join('\n\n---\n\n')) : undefined;
-  },
-};
 
 /**
  * Run a specialist stage autonomously (no user interaction).
@@ -442,7 +300,7 @@ export async function runAutonomousStage(
       : {};
     const isDemo = isDemoWorkflow(policyOverrides);
 
-    logger.info(`[DEMO CHECK] Stage "${stage}" - isDemoWorkflow: ${isDemo}, policyOverrides: ${JSON.stringify(policyOverrides)}`);
+    logger.debug(`Stage "${stage}" demo check — isDemoWorkflow=${isDemo}`, policyOverrides);
 
     // Admin-only global setting: when on, figma_design still produces the full screens/tokens/notes
     // overview, but never auto-creates or writes to a Figma file — a human pastes their own link instead.
@@ -452,7 +310,7 @@ export async function runAutonomousStage(
     let demoFixture: string | null = null;
     if (isDemo) {
       demoFixture = getDemoFixture(stage) ?? null;
-      logger.info(`[DEMO FIXTURE] Stage "${stage}" - fixture ${demoFixture ? 'LOADED' : 'NOT FOUND'} (${demoFixture?.length ?? 0} chars)`);
+      logger.info(`Stage "${stage}" using demo fixture (${demoFixture ? `${demoFixture.length} chars` : 'NOT FOUND'})`);
     }
 
     const agent = new SpecialistAgent(stageMap.agentType);
@@ -523,18 +381,12 @@ export async function runAutonomousStage(
 
     if (demoFixture !== null) {
       // ── Demo fixture injection — simulate realistic progress events ───────
-      if (stage === 'analyst') {
-        insertEvent(workflowId, 'stage_progress', stage, stageProgressSection(stage, 'Executive Summary', 1));
-        await demoSleep(4_500);
-        insertEvent(workflowId, 'stage_progress', stage, stageProgressHeartbeat(stage, 5, 900));
-        await demoSleep(3_500);
-        insertEvent(workflowId, 'stage_progress', stage, stageProgressSection(stage, 'Market Analysis', 2));
-        await demoSleep(2_000);
-      } else {
-        const delay = DEMO_STAGE_DELAY_MS[stage] ?? 2_000;
-        insertEvent(workflowId, 'stage_progress', stage, stageProgressWorking(stage));
-        await demoSleep(delay);
-      }
+      // Every stage emits a single "working" line (no per-section cycling), so the analyst
+      // reads like the PRD stage — "Sage is writing the Research Brief." — rather than stepping
+      // through "Writing section 1: Executive Summary…", "section 2: Market Analysis…".
+      const delay = DEMO_STAGE_DELAY_MS[stage] ?? 2_000;
+      insertEvent(workflowId, 'stage_progress', stage, stageProgressWorking(stage));
+      await demoSleep(delay);
       fullResponse = demoFixture;
     } else {
       // ── Real LLM streaming ────────────────────────────────────────────────
@@ -592,41 +444,7 @@ export async function runAutonomousStage(
     fullResponse = stripWholeResponseDuplication(fullResponse, stage);
 
     // Clean up LLM output before saving
-    let artifactContent: string;
-    if (stage === 'prototype') {
-      // Strip code fences, repair truncated JSON, pretty-print
-      const repaired = repairTruncatedJson(fullResponse);
-      try {
-        const parsed = JSON.parse(repaired);
-        artifactContent = JSON.stringify(parsed, null, 2);
-      } catch {
-        artifactContent = repaired;
-      }
-    } else {
-      // Strip code fences, skip any preamble before {, pretty-print
-      const jsonContent = stripJsonFence(fullResponse);
-      try {
-        artifactContent = JSON.stringify(JSON.parse(jsonContent), null, 2);
-      } catch (firstErr: any) {
-        // If parse failed because the model appended trailing content after a valid object
-        // (or echoed its answer twice), recover just the first complete object. Falls back to
-        // the raw content for any other parse error.
-        const jsonOnly = firstErr.message?.includes('after JSON')
-          ? extractFirstJsonObject(jsonContent)
-          : null;
-        if (jsonOnly) {
-          logger.warn(`Extra content after JSON detected in stage "${stage}", extracting first complete object`);
-          try {
-            artifactContent = JSON.stringify(JSON.parse(jsonOnly), null, 2);
-            logger.info(`Successfully extracted and parsed JSON object (${jsonOnly.length} chars)`);
-          } catch {
-            artifactContent = jsonContent;
-          }
-        } else {
-          artifactContent = jsonContent;
-        }
-      }
-    }
+    let artifactContent = cleanStageArtifactJson(stage, fullResponse);
 
     // ── Analyst stage: enforce the no-fake-citations policy server-side ─────────
     // The model is told not to include references without web search, but that's
@@ -682,123 +500,15 @@ export async function runAutonomousStage(
     // Fire the Airtable push in the background (don't block artifact save)
     pushArtifactLinkToAirtable().catch(() => {});
 
-    // ── Special handling for figma_design: write design brief to Figma as a comment ──
-    if (stage === 'figma_design' && !figmaBypass) {
-      try {
-        const parsed = JSON.parse(stripJsonFence(artifactContent));
-        const fileKey = getFigmaFileKey(itemId);
-        const screens = Array.isArray(parsed.screens_created) ? parsed.screens_created : [];
-
-        if (fileKey && screens.length > 0) {
-          insertEvent(workflowId, 'stage_progress', stage, 'Writing design brief to Figma...');
-          const { writeFigmaAnnotations } = await import('./prototype-agent');
-          const result = await writeFigmaAnnotations(fileKey, screens, parsed.navigation_flow);
-
-          if (result.success) {
-            parsed.figma_write_status = 'annotated';
-            if (result.commentId) parsed.figma_comment_id = result.commentId;
-            const updated = JSON.stringify(parsed, null, 2);
-            await updateArtifactContent(artifactId, updated);
-            artifactContent = updated;
-            insertEvent(workflowId, 'stage_progress', stage,
-              `Design brief posted to Figma — open the file and make your edits, then mark complete in Product Hub.`);
-          } else {
-            logger.warn(`[FIGMA-DESIGN] Annotation write failed for file ${fileKey} — status remains "planned"`);
-          }
-        } else if (!fileKey) {
-          logger.info('[FIGMA-DESIGN] No Figma file key — annotation skipped');
-        }
-      } catch (err: any) {
-        logger.warn(`[FIGMA-DESIGN] Post-processing failed: ${err.message}`);
-      }
-    }
-
-    // ── Special handling for solution_architect: extract epic_features_enriched from JSON ──
-    if (stage === 'solution_architect') {
-      try {
-        const parsed = JSON.parse(artifactContent);
-        if (parsed.epic_features_enriched) {
-          const enrichedJson = JSON.stringify(parsed.epic_features_enriched, null, 2);
-          await saveLocalArtifact(sessionId, 'epic_features_enriched', enrichedJson, itemId, skillVersionId);
-          logger.info(`Extracted and saved tech-enriched epic/features JSON from architect JSON output`);
-        } else {
-          logger.warn(`No epic_features_enriched field in architect JSON — story decomposition will use non-enriched features`);
-        }
-      } catch (err: any) {
-        logger.warn(`Failed to parse architect JSON for epic_features_enriched extraction: ${err.message}`);
-      }
-    }
-
-    // ── Special handling for epic_feature_planner: ensure empty stories arrays, and
-    // resolve each feature's dependsOn (title references) into stable dependsOnIndices
-    // using the same flatten order F-keys are assigned from downstream. ──
-    if (stage === 'epic_feature_planner') {
-      const jsonContent = stripJsonFence(artifactContent);
-      try {
-        const parsed = JSON.parse(jsonContent);
-        const { flattenFeatures, resolveFeatureDependencies } = await import('./feature-decomposition');
-
-        // Ensure stories: [] on every feature (phased or legacy) — the legacy block
-        // only ever handled the flat shape; phased output was previously left untouched.
-        const ensureStories = (f: any) => ({ ...f, stories: f.stories ?? [] });
-        if (Array.isArray(parsed.phases)) {
-          parsed.phases = parsed.phases.map((p: any) => ({
-            ...p,
-            features: Array.isArray(p.features) ? p.features.map(ensureStories) : [],
-          }));
-        } else if (Array.isArray(parsed.features)) {
-          parsed.features = parsed.features.map(ensureStories);
-        }
-
-        const flatFeatures = flattenFeatures(parsed);
-        const { resolvedByIndex, warnings } = resolveFeatureDependencies(flatFeatures);
-
-        // Stamp dependsOnIndices back onto each feature in its original nested location,
-        // by position — flattenFeatures()'s order is stable for a given parsed JSON.
-        let flatIdx = 0;
-        const stampDeps = (f: any) => {
-          const resolved = resolvedByIndex.get(flatIdx) ?? [];
-          flatIdx++;
-          return { ...f, dependsOnIndices: resolved };
-        };
-        if (Array.isArray(parsed.phases)) {
-          parsed.phases = parsed.phases.map((p: any) => ({
-            ...p,
-            features: Array.isArray(p.features) ? p.features.map(stampDeps) : [],
-          }));
-        } else if (Array.isArray(parsed.features)) {
-          parsed.features = parsed.features.map(stampDeps);
-        }
-
-        if (warnings.length > 0) {
-          logger.warn(`[epic_feature_planner] Dependency resolution warnings: ${warnings.join(' | ')}`);
-          insertEvent(workflowId, 'validation_warning', stage,
-            `${warnings.length} feature dependency reference(s) could not be resolved — treated as independent`,
-            { warnings });
-        }
-
-        artifactContent = JSON.stringify(parsed, null, 2);
-        await updateArtifactContent(artifactId, artifactContent);
-        logger.info(`Updated artifact in-place for stage "${stage}" (dependencies resolved)`);
-      } catch (err: any) {
-        logger.warn(`Failed to parse JSON for ${stage}: ${err.message}`);
-      }
-    }
-
-    // ── Special handling for prototype: stamp the resolved platform onto the artifact ──
-    // so the preview can render a fixed device frame instead of a switchable one.
-    // Demo fixtures already set their own platform (e.g. mobile) — resolveItemPlatform()
-    // would default to 'web' for a demo item with no productArea metadata, clobbering it.
-    if (stage === 'prototype' && demoFixture === null) {
-      try {
-        const parsed = JSON.parse(stripJsonFence(artifactContent));
-        parsed.platform = resolvedFramePlatform(resolveItemPlatform(itemId));
-        artifactContent = JSON.stringify(parsed, null, 2);
-        await updateArtifactContent(artifactId, artifactContent);
-        logger.info(`Stamped platform "${parsed.platform}" onto prototype artifact`);
-      } catch (err: any) {
-        logger.warn(`Failed to stamp platform onto prototype artifact: ${err.message}`);
-      }
+    // ── Per-stage artifact post-processing (figma annotation, architect enrichment
+    // extraction, feature dependency resolution, prototype platform stamping) ──
+    // Each processor persists its own change and returns the updated content.
+    const postprocessor = STAGE_ARTIFACT_POSTPROCESSORS[stage];
+    if (postprocessor) {
+      artifactContent = await postprocessor({
+        workflowId, itemId, stage, sessionId, artifactId, artifactContent,
+        skillVersionId, figmaBypass, isDemoFixture: demoFixture !== null,
+      });
     }
 
     // If this is a revision run, compute and save a diff to disk
