@@ -20,6 +20,7 @@ import type { AppMode, AgentType } from '@pap/shared';
 import {
   STAGE_SESSION_MAP, STAGE_MAX_OUTPUT_TOKENS, STAGE_ARTIFACT_TYPE,
   STAGE_ARTIFACT_LABEL, STAGE_LABELS_INTERNAL, stageProgressBriefing, stageProgressBriefReceived,
+  stageStartedNarration,
 } from './stage-metadata';
 import {
   saveCriticArtifact, loadLatestArtifactForItem,
@@ -478,24 +479,13 @@ No changes needed to tech-stack.md or process.md — those remain accurate as wr
   const _isDemoAutoApprove = _wfPolicyOverrides['demo_auto_approve'] === 'true';
 
   // ── Regular specialist stage: run autonomously in the background ─────────
-  const STAGE_NARRATION: Record<string, string> = {
-    analyst:            'Sage is writing the Research Brief from market evidence and source notes.',
-    pm_prd:             'Rex is writing the PRD sections, success metrics, and open questions.',
-    epic_feature_planner:'Apex is writing the epic and feature breakdown from the PRD.',
-    solution_architect: 'Atlas is writing the architecture sections, API surface, and data model.',
-    prototype:          'Nova is generating the prototype wireframe and file map from the workflow artifacts.',
-    figma_design:       'Luma is generating the Figma mockup plan from the workflow artifacts.',
-  };
 
   // Creates a session, generates a brief, and fires the autonomous specialist run as a
   // background task for ONE stage. Shared by the single-stage path and each member of a
   // multi-member wave below — every wave member gets its own session/brief/run/safety-net,
   // exactly like a standalone stage would.
   const kickoffMemberStage = async (memberStage: string): Promise<void> => {
-    const featureStageMatch = memberStage.match(/^story_decomposition_F(\d+)$/);
-    const narration = STAGE_NARRATION[memberStage]
-      ?? (featureStageMatch ? `Starting refinement for Feature ${featureStageMatch[1]}...` : `Starting ${memberStage}...`);
-    insertEvent(workflowId, 'stage_started', memberStage, narration);
+    insertEvent(workflowId, 'stage_started', memberStage, stageStartedNarration(memberStage));
 
     let stageMap = STAGE_SESSION_MAP[memberStage];
     if (!stageMap) stageMap = { mode: 'analyst' as AppMode, agentType: 'analyst' as AgentType };

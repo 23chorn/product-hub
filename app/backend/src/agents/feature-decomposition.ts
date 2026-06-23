@@ -318,6 +318,30 @@ export async function injectFeatureDecompositionStages(workflowId: string): Prom
 }
 
 /**
+ * Inverse of injectFeatureDecompositionStages — collapses any story_decomposition_F<n>
+ * wave stages (plus the trailing backlog_merge they were injected with) back into a
+ * single 'story_decomposition' placeholder. Used by restartWorkflow() so a fresh run's
+ * stage_sequence starts un-expanded; epic_feature_planner re-expands it once the new
+ * run's feature count is known again, rather than the sidebar showing last run's
+ * feature rows before epic_feature_planner has even started.
+ */
+export function collapseFeatureDecompositionStages(sequence: string[]): string[] {
+  const featureStageRe = /^story_decomposition_F\d+$/;
+  const firstFeatureIdx = sequence.findIndex(s => featureStageRe.test(s));
+  if (firstFeatureIdx === -1) return sequence;
+
+  let endIdx = firstFeatureIdx;
+  while (endIdx < sequence.length && featureStageRe.test(sequence[endIdx])) endIdx++;
+  if (sequence[endIdx] === 'backlog_merge') endIdx++;
+
+  return [
+    ...sequence.slice(0, firstFeatureIdx),
+    'story_decomposition',
+    ...sequence.slice(endIdx),
+  ];
+}
+
+/**
  * Load the accumulated partial backlog (if exists) from disk.
  * Returns null if no backlog artifact exists yet.
  */

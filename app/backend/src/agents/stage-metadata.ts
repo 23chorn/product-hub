@@ -243,6 +243,26 @@ export function stageProgressWorking(stage: string): string {
   return `${name ?? 'The coordinator'} is writing ${subject}.`;
 }
 
+// "Stage started" narration shown the moment a specialist session is kicked off — richer
+// than stageProgressWorking() (which only fires during demo playback / manual retry).
+// One source of truth so a fresh stage launch and a workflow restart announce themselves
+// identically — see kickoffMemberStage() in workflow-router.ts and restartWorkflow() in
+// workflow-mutations.ts.
+const STAGE_STARTED_NARRATION: Record<string, string> = {
+  analyst:              'Sage is writing the Research Brief from market evidence and source notes.',
+  pm_prd:               'Rex is writing the PRD sections, success metrics, and open questions.',
+  epic_feature_planner: 'Apex is writing the epic and feature breakdown from the PRD.',
+  solution_architect:   'Atlas is writing the architecture sections, API surface, and data model.',
+  prototype:            'Nova is generating the prototype wireframe and file map from the workflow artifacts.',
+  figma_design:         'Luma is generating the Figma mockup plan from the workflow artifacts.',
+};
+
+export function stageStartedNarration(stage: string): string {
+  const featureStageMatch = stage.match(/^story_decomposition_F(\d+)$/);
+  return STAGE_STARTED_NARRATION[stage]
+    ?? (featureStageMatch ? `Starting refinement for Feature ${featureStageMatch[1]}...` : `Starting ${stage}...`);
+}
+
 export function stageProgressSection(stage: string, section: string, index?: number): string {
   const target = stageProgressTarget(stage);
   if (stage === 'prototype') {

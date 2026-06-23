@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeFeatureWaves, resolveFeatureDependencies } from '../../app/backend/src/agents/feature-decomposition';
+import { computeFeatureWaves, resolveFeatureDependencies, collapseFeatureDecompositionStages } from '../../app/backend/src/agents/feature-decomposition';
 
 describe('resolveFeatureDependencies', () => {
   it('returns empty deps for every feature when none declare dependsOn', () => {
@@ -117,5 +117,45 @@ describe('computeFeatureWaves', () => {
     const { waves, hadCycle } = computeFeatureWaves(deps, 3);
     expect(hadCycle).toBe(false);
     expect(waves).toEqual([[0, 1, 2]]);
+  });
+});
+
+describe('collapseFeatureDecompositionStages', () => {
+  it('returns the sequence unchanged when no feature-wave stages are present', () => {
+    const sequence = ['analyst', 'pm_prd', 'epic_feature_planner', 'story_decomposition', 'curator'];
+    expect(collapseFeatureDecompositionStages(sequence)).toEqual(sequence);
+  });
+
+  it('collapses a single wave of feature stages plus backlog_merge back into story_decomposition', () => {
+    const sequence = [
+      'analyst', 'pm_prd', 'epic_feature_planner',
+      'story_decomposition_F1', 'story_decomposition_F2', 'backlog_merge',
+      'curator',
+    ];
+    expect(collapseFeatureDecompositionStages(sequence)).toEqual([
+      'analyst', 'pm_prd', 'epic_feature_planner', 'story_decomposition', 'curator',
+    ]);
+  });
+
+  it('collapses multiple sequential waves of feature stages into one placeholder', () => {
+    // wave 1: F1, F2 run concurrently; wave 2: F3 depends on one of them
+    const sequence = [
+      'analyst', 'epic_feature_planner',
+      'story_decomposition_F1', 'story_decomposition_F2', 'story_decomposition_F3',
+      'backlog_merge', 'curator',
+    ];
+    expect(collapseFeatureDecompositionStages(sequence)).toEqual([
+      'analyst', 'epic_feature_planner', 'story_decomposition', 'curator',
+    ]);
+  });
+
+  it('collapses even without a trailing backlog_merge entry', () => {
+    const sequence = ['analyst', 'story_decomposition_F1', 'story_decomposition_F2'];
+    expect(collapseFeatureDecompositionStages(sequence)).toEqual(['analyst', 'story_decomposition']);
+  });
+
+  it('is idempotent — collapsing an already-collapsed sequence is a no-op', () => {
+    const sequence = ['analyst', 'pm_prd', 'story_decomposition', 'curator'];
+    expect(collapseFeatureDecompositionStages(collapseFeatureDecompositionStages(sequence))).toEqual(sequence);
   });
 });

@@ -12,7 +12,7 @@ import { sessionManager } from '../session/session-manager';
 import type { AppMode, AgentType } from '@pap/shared';
 import {
   STAGE_SESSION_MAP, STAGE_LABELS_INTERNAL, STAGE_ARTIFACT_TYPE,
-  stageProgressWorking,
+  stageProgressWorking, stageStartedNarration,
 } from './stage-metadata';
 import { loadArtifactContentById, loadLatestArtifactContent, resolveArtifactPath, isJsonArtifactContent } from './artifact-helpers';
 import {
@@ -21,7 +21,7 @@ import {
 import {
   runAutonomousStage, getCoordinator, SILENT_STAGES, clearCancelFlag,
 } from './workflow-stage-runner';
-import { parseDecompositionMetadata, findWaveForStage } from './feature-decomposition';
+import { parseDecompositionMetadata, findWaveForStage, collapseFeatureDecompositionStages } from './feature-decomposition';
 
 function stageSession(stage: string): { mode: AppMode; agentType: AgentType } {
   return STAGE_SESSION_MAP[stage] ?? { mode: 'analyst' as AppMode, agentType: 'analyst' as AgentType };
@@ -252,7 +252,11 @@ export async function restartWorkflow(workflowId: string): Promise<void> {
   const sequence: string[] = JSON.parse(workflow.stage_sequence);
   if (sequence.length === 0) throw new Error('Workflow has no stages');
 
-  const firstStage = sequence[0];
+  // Collapse any story_decomposition_F<n> wave stages left over from the previous run
+  // back into a single 'story_decomposition' placeholder — otherwise the sidebar shows
+  // last run's feature count immediately, before epic_feature_planner has re-run.
+  const collapsedSequence = collapseFeatureDecompositionStages(sequence);
+  const firstStage = collapsedSequence[0];
 
   // Clear in-memory cancel flag so stages can run again
   clearCancelFlag(workflowId);
@@ -278,6 +282,11 @@ export async function restartWorkflow(workflowId: string): Promise<void> {
     db.prepare(`DELETE FROM workflow_events WHERE workflow_id = ?`).run(workflowId);
     // Delete sessions (and their messages/artifacts via cascade) created during this workflow run
     db.prepare(`DELETE FROM sessions WHERE item_id = ? AND created_at >= ?`).run(workflow.item_id, workflow.created_at);
+    // Collapse last run's feature-wave stages out of stage_sequence and clear wave
+    // metadata, so the sidebar shows a single un-expanded stage until epic_feature_planner
+    // re-runs and re-injects this attempt's actual feature count.
+    db.prepare(`UPDATE workflows SET stage_sequence = ?, decomposition_metadata = NULL WHERE id = ?`)
+      .run(JSON.stringify(collapsedSequence), workflowId);
   })();
 
   // Delete artifact files from disk
@@ -292,6 +301,8 @@ export async function restartWorkflow(workflowId: string): Promise<void> {
 
   // Reset workflow state to first stage
   stmts.updateWorkflowStageAndStatus.run(firstStage, 'active', now, workflowId);
+
+  insertEvent(workflowId, 'stage_started', firstStage, stageStartedNarration(firstStage));
 
   // Generate a fresh brief for the first stage (no prior draft)
   const brief = await getCoordinator().generateStageBrief(workflowId, firstStage);
