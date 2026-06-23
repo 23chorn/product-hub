@@ -117,11 +117,29 @@ export function deleteWorkflow(workflowId: string): void {
   }
 
   // ── 5. Delete workflow child rows and the workflow itself ─────────────────
-  db.prepare('DELETE FROM checkpoints WHERE workflow_id = ?').run(workflowId);
-  db.prepare('DELETE FROM context_diffs WHERE workflow_id = ?').run(workflowId);
-  db.prepare('DELETE FROM workflow_events WHERE workflow_id = ?').run(workflowId);
-  db.prepare('DELETE FROM coordinator_sessions WHERE workflow_id = ?').run(workflowId);
-  db.prepare('DELETE FROM workflows WHERE id = ?').run(workflowId);
+  // Foreign keys are enforced at runtime (see database.ts), so every table that
+  // references workflows.id — or a row we delete below — must be cleared first,
+  // in child-before-parent order, or the final DELETE fails with a FK violation.
+  // Only some of these FKs declare ON DELETE CASCADE in the schema; the rest
+  // (checkpoints, checkpoint_audit, change_requests, cr_artifact_versions, the
+  // ADO/QA maps) must be deleted by hand here. Wrapped in a transaction so a
+  // mid-sequence failure can't leave the workflow half-deleted.
+  db.transaction(() => {
+    // checkpoint_audit → checkpoints, and cr_artifact_versions → change_requests:
+    // clear these grandchildren before the rows they point at.
+    db.prepare('DELETE FROM checkpoint_audit WHERE checkpoint_id IN (SELECT id FROM checkpoints WHERE workflow_id = ?)').run(workflowId);
+    db.prepare('DELETE FROM cr_artifact_versions WHERE change_request_id IN (SELECT id FROM change_requests WHERE workflow_id = ?)').run(workflowId);
+
+    // Rows that reference workflows.id without ON DELETE CASCADE.
+    db.prepare('DELETE FROM checkpoints WHERE workflow_id = ?').run(workflowId);
+    db.prepare('DELETE FROM change_requests WHERE workflow_id = ?').run(workflowId);
+    db.prepare('DELETE FROM ado_work_item_map WHERE workflow_id = ?').run(workflowId);
+    db.prepare('DELETE FROM qa_test_plan_map WHERE workflow_id = ?').run(workflowId);
+    db.prepare('DELETE FROM context_diffs WHERE workflow_id = ?').run(workflowId);
+    db.prepare('DELETE FROM workflow_events WHERE workflow_id = ?').run(workflowId);
+    db.prepare('DELETE FROM coordinator_sessions WHERE workflow_id = ?').run(workflowId);
+    db.prepare('DELETE FROM workflows WHERE id = ?').run(workflowId);
+  })();
 
   logger.info(`Deleted workflow ${workflowId} — ${deletedFiles} file(s) removed, ${sessionIds.size} session(s) deleted`);
 }
