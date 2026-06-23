@@ -1,19 +1,14 @@
 /** Shared types for the API client modules. */
 
-export interface SkillVersion {
-  id: number;
-  skill_name: string;
-  agent_type: string;
-  version: string;
-  owner_team: string;
-  discipline: string;
-  persona_prompt: string;
-  output_format_template: string | null;
-  stage_brief_label: string | null;
-  stage_brief_format: string | null;
-  development_context: string | null;
-  tool_definitions: string | null;
-  created_at: number;
-  deprecated_at: number | null;
+/** An editable agent definition file — a persona (agents/personas/*.md) or output template (agents/templates/*.md). */
+export interface AgentFile {
+  key: string;
+  dir: 'personas' | 'templates';
   editRoles: string[] | null;
+}
+
+export interface AgentFileContent {
+  key: string;
+  dir: 'personas' | 'templates';
+  content: string;
 }

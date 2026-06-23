@@ -1,128 +1,126 @@
 import { Router } from 'express';
-import {
-  getActiveSkill, getSkill, listSkills, listSkillVersions,
-  publishSkill, deprecateSkill,
-} from '../agents/skill-registry';
-import { syncPersonaMarkdownFromSkill } from '../utils/persona-file-sync';
+import * as fs from 'fs';
+import * as path from 'path';
 import { hasAnyUsers } from '../data/users';
 import { isViewOnly } from '../middleware/auth';
 import type { AuthRequest } from '../middleware/auth';
 
 export const skillRoutes = Router();
 
+const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
+const PERSONAS_DIR = path.join(PROJECT_ROOT, 'agents', 'personas');
+const TEMPLATES_DIR = path.join(PROJECT_ROOT, 'agents', 'templates');
+
 /**
- * Which roles may edit each agent skill. null = any authenticated user.
- * [] = admin only. Agents not listed here default to null (unrestricted).
+ * Which roles may edit each agent file, keyed by its filename stem (e.g. "analyst"
+ * for analyst.md, "research.template" for research.template.md). null = any
+ * authenticated user. [] = admin only. Files not listed here default to null
+ * (unrestricted).
  */
 const AGENT_EDIT_ROLES: Record<string, string[]> = {
   // Product agents
-  analyst:              ['product'],
-  pm_prd:               ['product'],
-  epic_feature_planner: ['product'],
-  story_decomposition:  ['product'],
-  curator:              ['product'],
+  analyst:                  ['product'],
+  'research.template':      ['product'],
+  pm:                       ['product'],
+  'prd.template':           ['product'],
+  'epic-feature-planner':   ['product'],
+  'epic-features.template': ['product'],
+  'story-decomposition':    ['product'],
+  'backlog.template':       ['product'],
+  curator:                  ['product'],
   // Technical agents
-  solution_architect:   ['tech_lead'],
-  'ios-engineer':       ['tech_lead'],
-  'android-engineer':   ['tech_lead'],
-  'backend-engineer':   ['tech_lead'],
-  'web-engineer':       ['tech_lead'],
-  qa_engineer:          ['qa'],
-  'tech-refinement':    ['tech_lead'],
-  'figma-designer':     ['design'],
+  architect:                ['tech_lead'],
+  'architecture.template':  ['tech_lead'],
+  'ios-engineer':            ['tech_lead'],
+  'android-engineer':        ['tech_lead'],
+  'backend-engineer':        ['tech_lead'],
+  'web-engineer':            ['tech_lead'],
+  'qa-engineer':             ['qa'],
+  'figma-designer':          ['design'],
+  'figma-design.template':  ['design'],
   // Meta / infrastructure agents — admin only
-  coordinator:          [],
-  critic:               [],
-  prototype:            [],
+  coordinator:               [],
+  'critic-core':             [],
+  'prototype-builder':       [],
+  'prototype.template':      [],
 };
 
-function canEditSkill(user: AuthRequest['user'], skillName: string): boolean {
+interface AgentFile {
+  key: string;
+  dir: 'personas' | 'templates';
+}
+
+/** One source of truth for "what's editable" — a directory scan, not a hardcoded map. */
+function listAgentFiles(): AgentFile[] {
+  const files: AgentFile[] = [];
+  for (const name of fs.readdirSync(PERSONAS_DIR)) {
+    if (!name.endsWith('.md')) continue;
+    files.push({ key: name.slice(0, -3), dir: 'personas' });
+  }
+  for (const name of fs.readdirSync(TEMPLATES_DIR)) {
+    if (!name.endsWith('.md')) continue;
+    files.push({ key: name.slice(0, -3), dir: 'templates' });
+  }
+  return files;
+}
+
+/**
+ * Resolve a client-supplied key to a file path — only ever via exact match against
+ * the directory scan above, never by joining the raw key directly. Rules out path
+ * traversal: an unmatched key (e.g. containing "..") simply resolves to null.
+ */
+function resolveFile(key: string): { dir: AgentFile['dir']; filePath: string } | null {
+  const match = listAgentFiles().find(f => f.key === key);
+  if (!match) return null;
+  const baseDir = match.dir === 'personas' ? PERSONAS_DIR : TEMPLATES_DIR;
+  return { dir: match.dir, filePath: path.join(baseDir, `${match.key}.md`) };
+}
+
+function canEditFile(user: AuthRequest['user'], key: string): boolean {
   if (!hasAnyUsers()) return true;
   if (!user) return false;
   if (user.is_admin) return true;
   if (isViewOnly(user)) return false;
-  const roles = AGENT_EDIT_ROLES[skillName];
-  if (roles === undefined) return true;   // unknown skill — unrestricted
+  const roles = AGENT_EDIT_ROLES[key];
+  if (roles === undefined) return true;   // unlisted file — unrestricted
   if (roles.length === 0) return false;   // admin only
   return roles.some(r => user.roles.includes(r));
 }
 
-function editRolesForSkill(skillName: string): string[] | null {
-  const roles = AGENT_EDIT_ROLES[skillName];
-  return roles === undefined ? null : roles;
-}
-
-skillRoutes.get('/', (req, res) => {
-  const discipline = typeof req.query.discipline === 'string' ? req.query.discipline : undefined;
-  const skills = listSkills(discipline).map(s => ({ ...s, editRoles: editRolesForSkill(s.skill_name) }));
-  res.json(skills);
+skillRoutes.get('/', (_req, res) => {
+  const files = listAgentFiles().map(f => ({ ...f, editRoles: AGENT_EDIT_ROLES[f.key] ?? null }));
+  res.json(files);
 });
 
-skillRoutes.get('/:name', (req, res) => {
-  const skill = getActiveSkill(req.params.name);
-  if (!skill) return res.status(404).json({ error: `Skill "${req.params.name}" not found` });
-  res.json(skill);
-});
-
-skillRoutes.get('/:name/versions', (req, res) => {
-  res.json(listSkillVersions(req.params.name));
-});
-
-skillRoutes.post('/', (req: AuthRequest, res) => {
-  const { skill_name, agent_type, version, owner_team, discipline, persona_prompt } = req.body;
-  if (!skill_name || !version) {
-    return res.status(400).json({ error: 'skill_name and version are required' });
-  }
-
-  if (!canEditSkill(req.user, skill_name)) {
-    return res.status(403).json({ error: 'You do not have permission to edit this agent', code: 'INSUFFICIENT_ROLE' });
-  }
-  // Agent-discipline skills require a persona_prompt; others default to empty string
-  const resolvedDiscipline = discipline ?? 'agent';
-  const resolvedPersona = persona_prompt ?? '';
-  if (resolvedDiscipline === 'agent' && !resolvedPersona) {
-    return res.status(400).json({ error: 'persona_prompt is required for agent-discipline skills' });
-  }
-
-  const existing = getSkill(skill_name, version);
-  if (existing) {
-    return res.status(409).json({ error: `Skill "${skill_name}" version "${version}" already exists` });
-  }
+skillRoutes.get('/:key', (req, res) => {
+  const resolved = resolveFile(req.params.key);
+  if (!resolved) return res.status(404).json({ error: `Agent file "${req.params.key}" not found` });
 
   try {
-    if (resolvedDiscipline === 'agent') {
-      syncPersonaMarkdownFromSkill(skill_name, agent_type ?? 'general', resolvedPersona);
-    }
-    const id = publishSkill({
-      skill_name,
-      agent_type: agent_type ?? 'general',
-      version,
-      owner_team: owner_team ?? 'core',
-      discipline: resolvedDiscipline,
-      persona_prompt: resolvedPersona,
-      output_format_template: req.body.output_format_template ?? null,
-      stage_brief_label: req.body.stage_brief_label ?? null,
-      stage_brief_format: req.body.stage_brief_format ?? null,
-      development_context: req.body.development_context ?? null,
-      tool_definitions: req.body.tool_definitions ?? null,
-      deprecated_at: null,
-    });
-    res.status(201).json({ id, skill_name, version });
+    const content = fs.readFileSync(resolved.filePath, 'utf-8');
+    res.json({ key: req.params.key, dir: resolved.dir, content });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-skillRoutes.delete('/:name/versions/:version', (req: AuthRequest, res) => {
-  const skill = getSkill(req.params.name, req.params.version);
-  if (!skill) {
-    return res.status(404).json({ error: `Skill "${req.params.name}" version "${req.params.version}" not found` });
+skillRoutes.put('/:key', (req: AuthRequest, res) => {
+  const resolved = resolveFile(req.params.key);
+  if (!resolved) return res.status(404).json({ error: `Agent file "${req.params.key}" not found` });
+
+  if (!canEditFile(req.user, req.params.key)) {
+    return res.status(403).json({ error: 'You do not have permission to edit this agent file', code: 'INSUFFICIENT_ROLE' });
   }
 
-  if (!canEditSkill(req.user, req.params.name)) {
-    return res.status(403).json({ error: 'You do not have permission to deprecate this agent', code: 'INSUFFICIENT_ROLE' });
+  const { content } = req.body as { content?: string };
+  if (typeof content !== 'string' || !content.trim()) {
+    return res.status(400).json({ error: 'content is required' });
   }
 
-  deprecateSkill(req.params.name, req.params.version);
-  res.json({ deprecated: true, skill_name: req.params.name, version: req.params.version });
+  try {
+    fs.writeFileSync(resolved.filePath, content, 'utf-8');
+    res.json({ key: req.params.key, saved: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });

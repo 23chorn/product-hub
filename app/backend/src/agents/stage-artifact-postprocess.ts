@@ -28,7 +28,6 @@ export interface ArtifactPostprocessParams {
   sessionId: string;
   artifactId: number;
   artifactContent: string;
-  skillVersionId: number | null;
   figmaBypass: boolean;
   /** true when this stage's output came from a demo fixture rather than the LLM */
   isDemoFixture: boolean;
@@ -70,12 +69,12 @@ export const STAGE_ARTIFACT_POSTPROCESSORS: Record<string, ArtifactPostprocessor
   },
 
   // ── solution_architect: extract epic_features_enriched from JSON ──
-  async solution_architect({ itemId, sessionId, artifactContent, skillVersionId }) {
+  async solution_architect({ itemId, sessionId, artifactContent }) {
     try {
       const parsed = JSON.parse(artifactContent);
       if (parsed.epic_features_enriched) {
         const enrichedJson = JSON.stringify(parsed.epic_features_enriched, null, 2);
-        await saveLocalArtifact(sessionId, 'epic_features_enriched', enrichedJson, itemId, skillVersionId);
+        await saveLocalArtifact(sessionId, 'epic_features_enriched', enrichedJson, itemId);
         logger.info(`Extracted and saved tech-enriched epic/features JSON from architect JSON output`);
       } else {
         logger.warn(`No epic_features_enriched field in architect JSON — story decomposition will use non-enriched features`);

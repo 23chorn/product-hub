@@ -30,12 +30,19 @@ db.pragma('synchronous = NORMAL');
 // Without a busy_timeout, a writer holding the lock makes every other connection fail
 // immediately with SQLITE_BUSY instead of waiting; this makes them retry for up to 10s.
 db.pragma('busy_timeout = 10000');
-db.pragma('foreign_keys = ON');
 
 // Run all pending migrations from db/migrations/*.sql.
 // Applied migrations are tracked in the __drizzle_migrations table so each
 // SQL file runs exactly once, on any DB (fresh or existing).
+// Foreign keys must be off while migrating: better-sqlite3's bundled SQLite defaults
+// foreign_keys to ON regardless of our pragma below, and any PRAGMA foreign_keys toggle
+// a migration file itself emits is a no-op once inside the transaction migrate() wraps
+// each file in — enforcement state is whatever it was when that transaction began. SQLite's
+// column-drop/rebuild dance (CREATE __new_x, copy rows, DROP x, RENAME) and dropping a table
+// still referenced by another table's column declaration both need it off to complete.
+db.pragma('foreign_keys = OFF');
 migrate(drizzle(db), { migrationsFolder: MIGRATIONS });
+db.pragma('foreign_keys = ON');
 
 // ---------------------------------------------------------------------------
 // Helper: getPolicies

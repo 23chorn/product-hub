@@ -48,28 +48,6 @@ export const messages = sqliteTable('messages', {
   index('idx_messages_session_seq').on(t.session_id, t.sequence),
 ]);
 
-// ── Skill versioning (defined before artifacts for FK) ────────────────────────
-
-export const skillVersions = sqliteTable('skill_versions', {
-  id:                    integer('id').primaryKey({ autoIncrement: true }),
-  skill_name:            text('skill_name').notNull(),
-  agent_type:            text('agent_type').notNull(),
-  version:               text('version').notNull(),
-  owner_team:            text('owner_team').notNull().default('core'),
-  discipline:            text('discipline').notNull().default('agent'),
-  persona_prompt:        text('persona_prompt').notNull().default(''),
-  output_format_template: text('output_format_template'),
-  stage_brief_label:     text('stage_brief_label'),
-  stage_brief_format:    text('stage_brief_format'),
-  development_context:   text('development_context'),
-  tool_definitions:      text('tool_definitions'),   // JSON blob
-  created_at:            integer('created_at').notNull(),
-  deprecated_at:         integer('deprecated_at'),
-}, (t) => [
-  index('idx_skill_versions_name').on(t.skill_name),
-  uniqueIndex('skill_versions_name_version_unique').on(t.skill_name, t.version),
-]);
-
 // ── Artifacts ─────────────────────────────────────────────────────────────────
 // Content always lives on disk under data/sessions/... — this table is just a
 // pointer to that file, plus an optional external_url (e.g. the ADO work item
@@ -84,7 +62,6 @@ export const artifacts = sqliteTable('artifacts', {
   external_url:     text('external_url'),
   wiki_path:        text('wiki_path'),
   wiki_url:         text('wiki_url'),
-  skill_version_id: integer('skill_version_id').references(() => skillVersions.id),
   status:           text('status', { enum: ['draft', 'approved', 'superseded'] }).notNull().default('draft'),
   created_at:       integer('created_at').notNull(),
 }, (t) => [
@@ -276,17 +253,6 @@ export const qaTestPlanMap = sqliteTable('qa_test_plan_map', {
 ]);
 
 // ── Audit / history ───────────────────────────────────────────────────────────
-
-export const workflowSkillAssignments = sqliteTable('workflow_skill_assignments', {
-  id:            integer('id').primaryKey({ autoIncrement: true }),
-  workflow_id:   text('workflow_id').notNull().references(() => workflows.id, { onDelete: 'cascade' }),
-  stage:         text('stage').notNull(),
-  skill_name:    text('skill_name').notNull(),
-  skill_version: text('skill_version').notNull(),
-  created_at:    integer('created_at').notNull(),
-}, (t) => [
-  index('idx_skill_assignments_workflow').on(t.workflow_id),
-]);
 
 export const contextFileVersions = sqliteTable('context_file_versions', {
   id:         integer('id').primaryKey({ autoIncrement: true }),

@@ -29,6 +29,7 @@ export const PROVIDER_MODELS: Record<AIProvider, ModelOption[]> = {
   bedrock: [
     { id: 'global.anthropic.claude-haiku-4-5-20251001-v1:0', label: 'Haiku 4.5 (Bedrock)', description: 'Fast · Low cost' },
     { id: 'global.anthropic.claude-sonnet-4-5-20250929-v1:0', label: 'Sonnet 4.5 (Bedrock)', description: 'Main · Med. cost' },
+    { id: 'global.anthropic.claude-opus-4-6-v1', label: 'Opus 4.6 (Bedrock)', description: 'Highest capability · High cost' },
   ],
   // ── Ollama (local) ──────────────────────────────────────────────────────────
   // Each `id` must exactly match the model tag returned by `ollama list`.
@@ -56,13 +57,15 @@ export const ANTHROPIC_AGENT_MODELS: Record<string, string> = {
 };
 
 /**
- * Bedrock per-stage tiering: Sonnet for the stages that draft a core pipeline
- * artifact a human reviews and everything downstream depends on (research,
- * PRD, epic/feature breakdown, architecture); Haiku for orchestration/review/
- * extraction stages (coordinator, critic, curator) and for the narrower,
- * more mechanical specialist stages — prototype wireframes are deliberately
- * low-fidelity/generic-component-only, and the Figma design stage produces a
- * structured brief for a human designer to act on, not a polished deliverable.
+ * Bedrock per-stage tiering: Opus for analyst — it sets the factual/strategic
+ * foundation every downstream stage (PRD, architecture, backlog) reasons from,
+ * so errors here compound. Sonnet for the other stages that draft a core
+ * pipeline artifact a human reviews (PRD, epic/feature breakdown, architecture);
+ * Haiku for orchestration/review/extraction stages (coordinator, critic, curator)
+ * and for the narrower, more mechanical specialist stages — prototype wireframes
+ * are deliberately low-fidelity/generic-component-only, and the Figma design
+ * stage produces a structured brief for a human designer to act on, not a
+ * polished deliverable.
  */
 export const BEDROCK_AGENT_MODELS: Record<string, string> = {
   coordinator:          'global.anthropic.claude-haiku-4-5-20251001-v1:0',
@@ -71,7 +74,7 @@ export const BEDROCK_AGENT_MODELS: Record<string, string> = {
   prototype:            'global.anthropic.claude-haiku-4-5-20251001-v1:0',
   figma_design:         'global.anthropic.claude-haiku-4-5-20251001-v1:0',
   doc_review:           'global.anthropic.claude-haiku-4-5-20251001-v1:0',
-  analyst:              'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+  analyst:              'global.anthropic.claude-opus-4-6-v1',
   pm_prd:               'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
   epic_feature_planner: 'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
   solution_architect:   'global.anthropic.claude-sonnet-4-5-20250929-v1:0',

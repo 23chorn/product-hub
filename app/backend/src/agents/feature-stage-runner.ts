@@ -95,7 +95,7 @@ export async function runBacklogMerge(
 
   // Save the merged backlog artifact
   const artifactContent = JSON.stringify(mergedBacklog, null, 2);
-  const artifactId = await saveLocalArtifact(sessionId, 'backlog', artifactContent, itemId, null);
+  const artifactId = await saveLocalArtifact(sessionId, 'backlog', artifactContent, itemId);
 
   logger.info(`[BACKLOG MERGE] Merged ${featureArtifacts.length} features into final backlog (artifact ${artifactId})`);
   insertEvent(workflowId, 'stage_completed', 'backlog_merge',
@@ -145,7 +145,7 @@ export async function runMultiAgentFeatureStage(
     const featureNum = featureIndex + 1;
     const featureArtifactType = `backlog_F${featureNum}`;
     const featureArtifactContent = JSON.stringify(newFeature, null, 2);
-    const artifactId = await saveLocalArtifact(sessionId, featureArtifactType, featureArtifactContent, itemId, null);
+    const artifactId = await saveLocalArtifact(sessionId, featureArtifactType, featureArtifactContent, itemId);
 
     // Deterministic backlog validation — runs regardless of LLM tool use
     emitValidationWarnings(workflowId, stage,
@@ -159,7 +159,7 @@ export async function runMultiAgentFeatureStage(
     let qaTestCaseCount: number | undefined;
     if (result.qaTests) {
       const strippedQa = stripJsonFence(result.qaTests);
-      qaArtifactId = await saveLocalArtifact(sessionId, 'qa_tests', strippedQa, itemId, null);
+      qaArtifactId = await saveLocalArtifact(sessionId, 'qa_tests', strippedQa, itemId);
       logger.info(`[MULTI-AGENT] QA test suite artifact saved for Feature ${featureIndex + 1}`);
       try { qaTestCaseCount = JSON.parse(strippedQa).test_cases?.length; } catch { /* best-effort, used for event copy only */ }
 
@@ -329,7 +329,7 @@ async function runFeatureSurgicalRevision(
   const { saveLocalArtifact, saveDiffArtifact } = await import('./artifact-helpers');
   const { computeRevisionDiff } = await import('../utils/revision-diff');
   const artifactContent = JSON.stringify(revised, null, 2);
-  const artifactId = await saveLocalArtifact(sessionId, spec.artifactType(featureNum), artifactContent, itemId, null);
+  const artifactId = await saveLocalArtifact(sessionId, spec.artifactType(featureNum), artifactContent, itemId);
 
   // Compute and save diff so the reviewer can see exactly what changed
   try {

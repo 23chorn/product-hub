@@ -15,8 +15,9 @@ Structural validation (citation counts, references section, suspicious URLs, ass
 
 ## Unverified claims
 
-- Claims marked `[Assumption — no source found]` are expected and correct behaviour. Do not flag them as defects.
-- If the brief's conclusions rest almost entirely on unverified assumptions (the majority of substantive claims are assumptions), flag as **MAJOR** — the analysis lacks an evidential foundation.
+- Claims marked `[Assumption — no source found]` (web search available) or `[Unverified — recommend manual confirmation]` (no web search available) are expected and correct behaviour. Do not flag them as defects.
+- This check applies only when web search was available for this document (see the no-web-search note above, if present). If web search was NOT available, the majority — or all — of substantive claims being unverified/inferred is expected and must not be flagged, regardless of proportion.
+- If web search WAS available and the brief's conclusions still rest almost entirely on unverified assumptions (the majority of substantive claims are assumptions) despite the analyst having tools to verify them, flag as **MAJOR** — the analysis lacks an evidential foundation.
 
 ## PM Questions
 

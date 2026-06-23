@@ -51,7 +51,7 @@ agents/config.yaml
 /templates/
 
 # Context files: ignore company-specific .md files, but track README, examples, and .gitkeep
-# context/*.md
+context/*.md
 context/claude
 !context/README.md
 !context/*.example.md

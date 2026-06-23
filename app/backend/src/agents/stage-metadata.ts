@@ -347,6 +347,69 @@ export function stageProgressRevision(stage: string): string {
   return `Auto-revising ${stageProgressTarget(stage)} based on quality review feedback...`;
 }
 
+// ── Tool definitions per stage ─────────────────────────────────────────────────
+
+interface StageToolDefinition {
+  name: string;
+  description: string;
+  input_schema: {
+    type: 'object';
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
+}
+
+/** Tools advertised to the LLM for each stage — the schemas tool-registry.ts's handlers implement. */
+export const STAGE_TOOL_DEFINITIONS: Record<string, StageToolDefinition[]> = {
+  analyst: [
+    {
+      name: 'validate_analyst_json',
+      description: 'Validate your research brief JSON before returning it. Checks all required top-level fields, market_size sub-fields, target_users/competitive_landscape/constraints_and_risks arrays, inline [N] citations against the references list, and flags placeholder URLs. Call after completing the full JSON object.',
+      input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete research brief JSON string (may be wrapped in a ```json code block)' } }, required: ['json'] },
+    },
+  ],
+
+  pm_prd: [
+    {
+      name: 'validate_prd_json',
+      description: 'Validate your PRD JSON before returning it. Checks personas, user journeys, success_metrics (primary/secondary/counter), NFR measurability, functional requirement count (10–20), out_of_scope, and open_questions. Call after completing the full JSON object.',
+      input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete PRD JSON string (may be wrapped in a ```json code block)' } }, required: ['json'] },
+    },
+  ],
+
+  epic_feature_planner: [
+    {
+      name: 'validate_epic_features_json',
+      description: 'Validate your epic and feature plan JSON before returning it. Checks: epic header fields (title ≤6 words, description, businessValue, prdLink); phases[] structure (required — features must be nested under phases, not at root level); phase labels (exactly "MVP", "Phase 1", "Phase 2", "Phase 3"); max 5 features per phase; max 4 phases; each phase has a deliverable; per-feature checks: acceptance criteria (3–5, no user-story format), prdRef.functionalRequirements (FR-XX format), stories must be empty []; outOfScope list; TBD flags. Call after completing the full JSON object.',
+      input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete epic & features JSON string (may be wrapped in a ```json code block)' } }, required: ['json'] },
+    },
+  ],
+
+  solution_architect: [
+    {
+      name: 'validate_architecture_json',
+      description: 'Validate your architecture JSON before returning it. Checks technology_decisions (including that alternatives are substantive), new_dependencies structure, data_model entities and ERD, api_surface endpoints, repository_impact, infrastructure (hosting, cost_estimate), security_considerations, and the epic_features_enriched block required by story decomposition agents. Also scans for unresolved TBD decisions. Call after completing the full JSON object.',
+      input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete architecture JSON string (may be wrapped in a ```json code block)' } }, required: ['json'] },
+    },
+  ],
+
+  qa_engineer: [
+    {
+      name: 'validate_qa_tests_json',
+      description: 'Validate your QA test suite JSON before returning it. Checks test case IDs (TC-F?-??? format), uniqueness, type (happy_path/negative/edge/boundary/security/performance), priority, Given/When/Then scenario completeness, tag validity (@smoke/@regression/@negative/@edge/@security/@performance), vague Then clauses, that at least one critical test is @smoke tagged, and that ≥20% of tests are negative paths. Call after completing the full JSON.',
+      input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete QA test suite JSON string (may be wrapped in a ```json code block)' } }, required: ['json'] },
+    },
+  ],
+
+  story_decomposition: [
+    {
+      name: 'validate_backlog_json',
+      description: 'Validate your backlog JSON structure before returning it. Checks story_id format (F?.S?), as_a/i_want/so_that fields, Given/When/Then acceptance criteria (2–5 per story), technical_acceptance_criteria, platform tags, Fibonacci estimated_points, and story/feature count limits. Call after drafting.',
+      input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete backlog JSON string to validate' } }, required: ['json'] },
+    },
+  ],
+};
+
 // ── Airtable roadmap status sync ──────────────────────────────────────────────
 
 // Maps a completed stage to the corresponding Airtable "Status" select value.

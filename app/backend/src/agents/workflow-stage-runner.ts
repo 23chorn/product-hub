@@ -16,12 +16,11 @@ import { resolveAgentModel, getActiveProvider, type TokenUsage } from '../utils/
 import { computeRevisionDiff } from '../utils/revision-diff';
 import {
   STAGE_SESSION_MAP, STAGE_MAX_OUTPUT_TOKENS, STAGE_ARTIFACT_TYPE,
-  STAGE_ARTIFACT_LABEL, stageProgressHeartbeat, stageProgressReview, stageProgressReviewComplete, stageProgressRevision, stageProgressSection, stageProgressWorking,
+  STAGE_ARTIFACT_LABEL, STAGE_TOOL_DEFINITIONS, stageProgressHeartbeat, stageProgressReview, stageProgressReviewComplete, stageProgressRevision, stageProgressSection, stageProgressWorking,
 } from './stage-metadata';
 import {
   saveCriticArtifact, saveDiffArtifact, saveLocalArtifact, loadLatestArtifactContent, syncArtifactToWiki,
 } from './artifact-helpers';
-import { getActiveSkill } from './skill-registry';
 import { type ToolDefinition, getRegisteredTools } from './tool-registry';
 import { stripJsonFence } from '../utils/json-repair';
 import { readProductArea } from './item-metadata';
@@ -221,32 +220,18 @@ export async function runAutonomousStage(
     return;
   }
 
-  const activeSkill = getActiveSkill(stage);
-  const skillVersionId = activeSkill?.id ?? null;
-  if (activeSkill) {
-    db.prepare(
-      `INSERT INTO workflow_skill_assignments (workflow_id, stage, skill_name, skill_version, created_at)
-       VALUES (?, ?, ?, ?, ?)`
-    ).run(workflowId, stage, activeSkill.skill_name, activeSkill.version, Date.now());
-    logger.info(`Stage "${stage}" using skill v${activeSkill.version}`);
-  }
-
-  // Parse tool definitions from skill and filter to those with registered handlers
+  // Tools advertised to the LLM for this stage, filtered to those with a registered handler.
   let skillTools: ToolDefinition[] = [];
-  if (activeSkill?.tool_definitions) {
-    try {
-      const parsed: ToolDefinition[] = JSON.parse(activeSkill.tool_definitions);
-      const registered = getRegisteredTools();
-      skillTools = parsed.filter(t => registered.includes(t.name));
-      const skipped = parsed.length - skillTools.length;
-      if (skipped > 0) {
-        logger.warn(`Stage "${stage}": ${skipped} tool(s) skipped — no handler registered`);
-      }
-      if (skillTools.length > 0) {
-        logger.info(`Stage "${stage}": providing tools: ${skillTools.map(t => t.name).join(', ')}`);
-      }
-    } catch {
-      logger.warn(`Stage "${stage}": could not parse tool_definitions from skill`);
+  const stageToolDefs = STAGE_TOOL_DEFINITIONS[stage];
+  if (stageToolDefs) {
+    const registered = getRegisteredTools();
+    skillTools = stageToolDefs.filter(t => registered.includes(t.name));
+    const skipped = stageToolDefs.length - skillTools.length;
+    if (skipped > 0) {
+      logger.warn(`Stage "${stage}": ${skipped} tool(s) skipped — no handler registered`);
+    }
+    if (skillTools.length > 0) {
+      logger.info(`Stage "${stage}": providing tools: ${skillTools.map(t => t.name).join(', ')}`);
     }
   }
 
@@ -466,7 +451,7 @@ export async function runAutonomousStage(
 
     const artifactType = STAGE_ARTIFACT_TYPE[stage] ?? stage;
 
-    const artifactId = await saveLocalArtifact(sessionId, stage, artifactContent, itemId, skillVersionId);
+    const artifactId = await saveLocalArtifact(sessionId, stage, artifactContent, itemId);
 
     // ── Push artifact link to Airtable (all stages that produce viewable artifacts) ──
     // Airtable should only ever show the permanent link (Azure Wiki / ADO epic) — never
@@ -507,7 +492,7 @@ export async function runAutonomousStage(
     if (postprocessor) {
       artifactContent = await postprocessor({
         workflowId, itemId, stage, sessionId, artifactId, artifactContent,
-        skillVersionId, figmaBypass, isDemoFixture: demoFixture !== null,
+        figmaBypass, isDemoFixture: demoFixture !== null,
       });
     }
 

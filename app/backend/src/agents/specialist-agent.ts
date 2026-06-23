@@ -3,7 +3,6 @@ import { streamAI, resolveModelId, getActiveProvider, type SystemPrompt, type To
 import Logger from '../utils/logger';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { getActiveSkill } from './skill-registry';
 
 const logger = new Logger('SPECIALIST-AGENT');
 
@@ -80,43 +79,9 @@ export class SpecialistAgent {
     this.model = resolveModelId(undefined);
   }
 
-  /**
-   * Load the agent persona. Lookup order:
-   * 1. Exact stage name (e.g. "analyst", "epic_feature_planner")
-   * 2. Agent's own type (e.g. "backend-engineer" for sub-agents in multi-agent refinement)
-   * 3. Stage name with _F\d+ suffix stripped (e.g. "story_decomposition_F1" → "story_decomposition")
-   * 4. Disk fallback
-   */
+  /** Load the agent persona from disk (agents/personas/{agentType}.md). */
   async loadPersona(stage?: string): Promise<string> {
     if (this.persona) return this.persona;
-
-    if (stage) {
-      const skill = getActiveSkill(stage);
-      if (skill) {
-        this.persona = skill.persona_prompt;
-        logger.info(`Loaded persona for stage "${stage}" from skill registry v${skill.version}`);
-        return this.persona;
-      }
-    }
-
-    const ownSkill = getActiveSkill(this.agentType);
-    if (ownSkill) {
-      this.persona = ownSkill.persona_prompt;
-      logger.info(`Loaded persona for agent type "${this.agentType}" from skill registry v${ownSkill.version}`);
-      return this.persona;
-    }
-
-    if (stage) {
-      const normalized = stage.replace(/_F\d+$/, '');
-      if (normalized !== stage) {
-        const normalizedSkill = getActiveSkill(normalized);
-        if (normalizedSkill) {
-          this.persona = normalizedSkill.persona_prompt;
-          logger.info(`Loaded persona for stage "${normalized}" (normalized from "${stage}") from skill registry v${normalizedSkill.version}`);
-          return this.persona;
-        }
-      }
-    }
 
     const agentFilePath = path.join(AGENTS_ROOT, 'personas', `${this.agentType}.md`);
     logger.info(`Loading persona from disk: ${agentFilePath}`);
@@ -226,22 +191,16 @@ The full document is assembled at export. Mid-conversation your job is to gather
       stable += `\n\n## Project & Company Context\nUse this as background for your output. It describes the company, product, and strategy context.\n\n${projectContext}`;
     }
 
-    // Inject the output template for the current stage. Try skill registry first,
-    // fall back to disk. Stages without a template (critic, curator) skip this.
-    if (autonomous && stage) {
-      const skill = getActiveSkill(stage);
-      if (skill?.output_format_template) {
-        stable += `\n\n## Output Template\nFollow this structure for your output:\n\n${skill.output_format_template}`;
-        logger.info(`Injected output template for stage "${stage}" from skill registry v${skill.version}`);
-      } else if (STAGE_TEMPLATE_MAP[stage]) {
-        try {
-          const templatePath = path.join(TEMPLATES_DIR, STAGE_TEMPLATE_MAP[stage]);
-          const templateContent = await fs.readFile(templatePath, 'utf-8');
-          stable += `\n\n## Output Template\nFollow this structure for your output:\n\n${templateContent}`;
-          logger.info(`Injected output template from disk: ${STAGE_TEMPLATE_MAP[stage]}`);
-        } catch {
-          logger.warn(`Could not load output template: ${STAGE_TEMPLATE_MAP[stage]}`);
-        }
+    // Inject the output template for the current stage, read from disk.
+    // Stages without a template (critic, curator) skip this.
+    if (autonomous && stage && STAGE_TEMPLATE_MAP[stage]) {
+      try {
+        const templatePath = path.join(TEMPLATES_DIR, STAGE_TEMPLATE_MAP[stage]);
+        const templateContent = await fs.readFile(templatePath, 'utf-8');
+        stable += `\n\n## Output Template\nFollow this structure for your output:\n\n${templateContent}`;
+        logger.info(`Injected output template from disk: ${STAGE_TEMPLATE_MAP[stage]}`);
+      } catch {
+        logger.warn(`Could not load output template: ${STAGE_TEMPLATE_MAP[stage]}`);
       }
     }
 

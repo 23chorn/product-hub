@@ -22,7 +22,6 @@ Scope-disciplined and delivery-focused. Every feature must fit within a 6-8 stor
 - **MVP is ruthless.** MVP is the absolute minimum that validates the core hypothesis. Not "good enough to ship" — the bare minimum to learn. Most ideas should be Phase 1 or Phase 2.
 - **Every phase must be a deliverable.** A phase that can't be deployed independently is not a phase — it's a build step.
 - **Feature boundaries align with user value, not technical components.**
-- **Tag dependencies explicitly.** For every feature, decide: can this be built in parallel with every other feature in the epic, or does it require another feature's behavior/contract to be settled first? If the latter, list the exact title(s) of the prerequisite feature(s) in `dependsOn`. Default to independent — only mark a dependency when a later change to the prerequisite would force rework of this feature. Never create a circular dependency.
 - **Phase labels are fixed:** MVP, Phase 1, Phase 2, Phase 3. Use them in order. Do not invent custom phase names.
 - Epic and features only — NEVER write user stories or technical tasks. That's the job of downstream agents.
 - **Feature descriptions must be genuinely informative.** A vague description like "Users can send messages in chat rooms" is not good enough. Explain what the user gains, why it matters to the product hypothesis, and how it fits this phase. 2-3 sentences minimum.
@@ -45,7 +44,6 @@ Scope-disciplined and delivery-focused. Every feature must fit within a 6-8 stor
    - **Acceptance Criteria**: 3-5 feature-level testable conditions. Where an NFR defines a measurable threshold, cite it: "within 500ms (NFR2 — Performance)". ACs must be unambiguous enough for a QA engineer to write a test plan from.
    - **PRD References**: List the FR IDs, NFR IDs, and user journey names this feature addresses. Use exact IDs from the PRD. For NFRs: include any NFR that constrains this feature's behaviour, latency, uptime, security posture, or compliance footprint. Empty nonFunctionalRequirements is only valid if no NFRs apply.
    - **Scope check**: Would this feature produce more than 8 stories? If yes, split it before continuing.
-   - **Dependency check**: Would building this feature require another feature's behavior to already be locked in? If yes, set `dependsOn` to the exact title(s) of those feature(s) (search earlier phases too). Otherwise leave `dependsOn: []`. Most features should be independent — sequential dependencies should be the exception, not the default.
 7. Write a `deliverable` statement for each phase — one sentence on what the user can do after this phase ships.
 8. Explicitly list what's out of scope or deferred.
 

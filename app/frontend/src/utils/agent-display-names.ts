@@ -1,5 +1,3 @@
-import type { SkillVersion } from '../services/api';
-
 const AGENT_DISPLAY_NAMES: Record<string, string> = {
   analyst: 'Sage - Analyst',
   pm: 'Rex - Product Manager',
@@ -11,6 +9,7 @@ const AGENT_DISPLAY_NAMES: Record<string, string> = {
   curator: 'Ivy - Context Curator',
   coordinator: 'Coordinator - Chief of Staff',
   critic: 'Flint - Adversarial Reviewer',
+  'critic-core': 'Flint - Adversarial Reviewer',
   'prototype-builder': 'Nova - Prototype',
   prototype: 'Nova - Prototype',
   'ios-engineer': 'Cole - iOS Engineer',
@@ -33,8 +32,7 @@ export function humanizeLabel(value: string): string {
     .trim();
 }
 
-export function getAgentDisplayName(skill: Pick<SkillVersion, 'skill_name' | 'agent_type'>): string {
-  return AGENT_DISPLAY_NAMES[skill.skill_name]
-    ?? AGENT_DISPLAY_NAMES[skill.agent_type]
-    ?? humanizeLabel(skill.skill_name);
+/** key is an agent file's stem, e.g. "analyst" for analyst.md, "research.template" for research.template.md. */
+export function getAgentDisplayName(key: string): string {
+  return AGENT_DISPLAY_NAMES[key] ?? humanizeLabel(key);
 }

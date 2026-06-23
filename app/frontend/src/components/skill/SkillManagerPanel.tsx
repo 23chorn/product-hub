@@ -1,30 +1,19 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Group, Panel, usePanelRef } from 'react-resizable-panels';
-import { api, type SkillVersion } from '../../services/api';
+import { api, type AgentFile } from '../../services/api';
 import { useSkillManagerStore } from '../../stores/skillManagerStore';
 import { useThemeStore } from '../../stores/themeStore';
 import { useAuthStore } from '../../stores/authStore';
 import { getAgentDisplayName } from '../../utils/agent-display-names';
 import { ContextFileEditor } from './ContextFileEditor';
 import { SkillViewer } from './SkillViewer';
-import { ToolViewer } from './ToolViewer';
-import { SkillCreateForm } from './SkillCreateForm';
 import { NewContextForm } from './NewContextForm';
 import { SkillManagerSidebar } from './SkillManagerSidebar';
 import { AirtableSyncPanel } from './AirtableSyncPanel';
 import { DocFileViewer } from '../knowledge/DocFileViewer';
 import { ResizeHandle } from '../common/ResizeHandle';
 import { useContextKeeperStore } from '../../stores/contextKeeperStore';
-import {
-  bumpPatch,
-  type PanelSelection,
-  type ExtractedTool,
-  type ContentTab,
-  type Discipline,
-  type ContextFile,
-  type PersonaFile,
-  type AgentItem,
-} from './types';
+import type { PanelSelection, ContextFile } from './types';
 
 // ─── Main panel ───────────────────────────────────────────────────────────────
 
@@ -44,10 +33,8 @@ export function SkillManagerPanel() {
   }
 
   const [contextFiles, setContextFiles] = useState<ContextFile[]>([]);
-  const [personas, setPersonas] = useState<PersonaFile[]>([]);
-  const [allSkills, setAllSkills] = useState<SkillVersion[]>([]);
+  const [agentFiles, setAgentFiles] = useState<AgentFile[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [filterDiscipline, setFilterDiscipline] = useState<Discipline>('all');
   const [selection, setSelection] = useState<PanelSelection>(null);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
@@ -56,7 +43,7 @@ export function SkillManagerPanel() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // Section expand state — all collapsed by default
-  const [expanded, setExpanded] = useState({ context: false, behaviour: false, agents: false, skills: false, tools: false, docs: false });
+  const [expanded, setExpanded] = useState({ context: false, behaviour: false, agents: false, templates: false, docs: false });
   const toggle = (key: keyof typeof expanded) =>
     setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
 
@@ -75,20 +62,10 @@ export function SkillManagerPanel() {
   const [behVersions, setBehVersions] = useState<Array<{ id: number; file_name: string; content: string; created_at: number }>>([]);
   const [behVersionsLoading, setBehVersionsLoading] = useState(false);
 
-  // Skill view state
-  const [versionHistory, setVersionHistory] = useState<SkillVersion[]>([]);
-  const [activeTab, setActiveTab] = useState<ContentTab>('persona');
-  const [skillEditContent, setSkillEditContent] = useState('');
-  const [newVersion, setNewVersion] = useState('');
-  const [isPublishing, setIsPublishing] = useState(false);
-
-  // Skill / agent create state
-  const [createForm, setCreateForm] = useState({
-    skill_name: '', discipline: 'dev', owner_team: '', agent_type: 'general',
-    version: '1.0.0', persona_prompt: '', development_context: '',
-    tool_definitions: '', output_format_template: '',
-  });
-  const [isCreating, setIsCreating] = useState(false);
+  // Agent file (persona / output template) editing state
+  const [agentFileContent, setAgentFileContent] = useState('');
+  const [agentFileSavedContent, setAgentFileSavedContent] = useState('');
+  const [agentFileSaving, setAgentFileSaving] = useState(false);
 
   // Context create state
   const [ctxCreateForm, setCtxCreateForm] = useState({ label: '', description: '', content: '' });
@@ -101,84 +78,21 @@ export function SkillManagerPanel() {
     setTimeout(() => setToast(null), 2500);
   };
 
-  // Derived slices
-  const agentSkills = useMemo(
-    () => allSkills.filter((s) => s.discipline === 'agent'),
-    [allSkills],
-  );
-  const agentItems = useMemo<AgentItem[]>(() => {
-    const personaItems = personas.map((persona) => {
-      const publishedSkill = agentSkills.find((skill) =>
-        skill.skill_name === persona.skillName ||
-        skill.agent_type === persona.agentType ||
-        getAgentDisplayName(skill) === persona.displayName
-      ) ?? null;
-      return {
-        type: 'persona' as const,
-        key: persona.name,
-        persona,
-        publishedSkill,
-        displayName: persona.displayName,
-      };
-    });
-
-    const personaDisplayNames = new Set(personaItems.map((item) => item.displayName));
-    const personaSkillNames = new Set(personaItems.map((item) => item.publishedSkill?.skill_name ?? item.persona.skillName));
-
-    const customSkills = agentSkills.filter((skill) =>
-      !personaDisplayNames.has(getAgentDisplayName(skill)) &&
-      !personaSkillNames.has(skill.skill_name)
-    ).map((skill) => ({
-      type: 'skill' as const,
-      key: skill.skill_name,
-      skill,
-      displayName: getAgentDisplayName(skill),
-    }));
-
-    return [...personaItems, ...customSkills];
-  }, [agentSkills, personas]);
-  const domainSkills = useMemo(
-    () => allSkills.filter((s) => s.discipline !== 'agent'),
-    [allSkills],
-  );
-  const filteredDomainSkills = useMemo(
-    () => filterDiscipline === 'all' ? domainSkills : domainSkills.filter((s) => s.discipline === filterDiscipline),
-    [domainSkills, filterDiscipline],
-  );
-  const allTools = useMemo<ExtractedTool[]>(() => {
-    const tools: ExtractedTool[] = [];
-    for (const skill of allSkills) {
-      if (!skill.tool_definitions) continue;
-      try {
-        const defs = JSON.parse(skill.tool_definitions);
-        if (Array.isArray(defs)) {
-          defs.forEach((d: any) => tools.push({
-            name: d.name,
-            description: d.description,
-            input_schema: d.input_schema,
-            sourceSkillName: skill.skill_name,
-            sourceSkillVersion: skill.version,
-          }));
-        }
-      } catch { /* skip malformed */ }
-    }
-    return tools;
-  }, [allSkills]);
+  const personaFiles = useMemo(() => agentFiles.filter((f) => f.dir === 'personas'), [agentFiles]);
+  const templateFiles = useMemo(() => agentFiles.filter((f) => f.dir === 'templates'), [agentFiles]);
 
   useEffect(() => {
     const load = async () => {
       setIsLoading(true);
       try {
-        const [{ files }, { files: behFiles }, skillList, personaList] = await Promise.all([
+        const [{ files }, { files: behFiles }, agentFileList] = await Promise.all([
           api.getContextFiles(),
           api.getBehaviourFiles(),
           api.getSkills(),
-          api.getPersonas(),
         ]);
         setContextFiles(files);
         setBehaviourFiles(behFiles.map((f) => ({ ...f, hasTemplate: false, stages: null })));
-        setAllSkills(skillList);
-        setPersonas(personaList);
+        setAgentFiles(agentFileList);
       } catch {
         showToast('Failed to load', false);
       } finally {
@@ -188,7 +102,7 @@ export function SkillManagerPanel() {
     load();
   }, []);
 
-  // Cmd/Ctrl+S saves the currently open context or behaviour doc
+  // Cmd/Ctrl+S saves the currently open context, behaviour doc, or agent file
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
@@ -197,12 +111,14 @@ export function SkillManagerPanel() {
           handleContextSave();
         } else if (selection?.type === 'behaviour' && behEditContent !== behSavedContent && !behIsSaving) {
           handleBehaviourSave();
+        } else if (selection?.type === 'agent_file' && agentFileContent !== agentFileSavedContent && !agentFileSaving) {
+          handleAgentFileSave();
         }
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [selection, ctxEditContent, ctxSavedContent, ctxIsSaving, behEditContent, behSavedContent, behIsSaving]);
+  }, [selection, ctxEditContent, ctxSavedContent, ctxIsSaving, behEditContent, behSavedContent, behIsSaving, agentFileContent, agentFileSavedContent, agentFileSaving]);
 
   const selectContextFile = (index: number, file: ContextFile) => {
     setSelection({ type: 'context', index });
@@ -274,98 +190,30 @@ export function SkillManagerPanel() {
     }
   };
 
-  const getSkillTabContent = (skill: SkillVersion, tab: ContentTab): string => {
-    switch (tab) {
-      case 'persona':     return skill.persona_prompt ?? '';
-      case 'dev_context': return skill.development_context ?? '';
-      case 'tools':       return skill.tool_definitions ?? '';
-      case 'template':    return skill.output_format_template ?? '';
-    }
-  };
-
-  const selectSkill = async (skill: SkillVersion) => {
-    const primaryTab: ContentTab = skill.discipline === 'agent' ? 'persona' : 'dev_context';
-    setSelection({ type: 'skill', skill });
-    setActiveTab(primaryTab);
-    setSkillEditContent(getSkillTabContent(skill, primaryTab));
-    setNewVersion(bumpPatch(skill.version));
+  const selectAgentFile = async (file: AgentFile) => {
+    setSelection({ type: 'agent_file', key: file.key });
     try {
-      const versions = await api.getSkillVersions(skill.skill_name);
-      setVersionHistory(versions);
+      const { content } = await api.getSkill(file.key);
+      setAgentFileContent(content);
+      setAgentFileSavedContent(content);
     } catch {
-      setVersionHistory([]);
+      showToast('Failed to load file', false);
+      setAgentFileContent('');
+      setAgentFileSavedContent('');
     }
   };
 
-  const handleSkillTabChange = (tab: ContentTab) => {
-    setActiveTab(tab);
-    if (selection?.type === 'skill') setSkillEditContent(getSkillTabContent(selection.skill, tab));
-  };
-
-  const handlePublish = async (meta: { owner_team: string; agent_type: string }) => {
-    if (selection?.type !== 'skill' || !newVersion.trim()) return;
-    const { skill } = selection;
-    setIsPublishing(true);
+  const handleAgentFileSave = async () => {
+    if (selection?.type !== 'agent_file') return;
+    setAgentFileSaving(true);
     try {
-      await api.publishSkill({
-        skill_name: skill.skill_name,
-        agent_type: meta.agent_type,
-        version: newVersion.trim(),
-        owner_team: meta.owner_team,
-        discipline: skill.discipline,
-        persona_prompt:         activeTab === 'persona'     ? skillEditContent : skill.persona_prompt,
-        output_format_template: activeTab === 'template'    ? skillEditContent : (skill.output_format_template ?? undefined),
-        development_context:    activeTab === 'dev_context' ? skillEditContent : (skill.development_context ?? undefined),
-        tool_definitions:       activeTab === 'tools'       ? skillEditContent : (skill.tool_definitions ?? undefined),
-      });
-      showToast(`Published v${newVersion.trim()}`);
-      const [skillList, refreshed] = await Promise.all([
-        api.getSkills(),
-        api.getSkill(skill.skill_name),
-      ]);
-      setAllSkills(skillList);
-      await selectSkill(refreshed);
+      await api.saveSkill(selection.key, agentFileContent);
+      setAgentFileSavedContent(agentFileContent);
+      showToast('Saved');
     } catch (err: any) {
-      showToast(err?.response?.data?.error ?? 'Publish failed', false);
+      showToast(err?.response?.data?.error ?? 'Save failed', false);
     } finally {
-      setIsPublishing(false);
-    }
-  };
-
-  const handleCreate = async () => {
-    if (!createForm.skill_name.trim() || !createForm.version.trim()) {
-      showToast('Skill name and version are required', false);
-      return;
-    }
-    setIsCreating(true);
-    try {
-      await api.publishSkill({
-        skill_name: createForm.skill_name.trim(),
-        agent_type: createForm.agent_type || 'general',
-        version: createForm.version.trim(),
-        owner_team: createForm.owner_team || 'core',
-        discipline: createForm.discipline,
-        persona_prompt: createForm.persona_prompt,
-        development_context: createForm.development_context || undefined,
-        tool_definitions: createForm.tool_definitions || undefined,
-        output_format_template: createForm.output_format_template || undefined,
-      });
-      showToast(`Created ${createForm.skill_name} v${createForm.version}`);
-      setCreateForm({ skill_name: '', discipline: 'dev', owner_team: '', agent_type: 'general', version: '1.0.0', persona_prompt: '', development_context: '', tool_definitions: '', output_format_template: '' });
-      const skillList = await api.getSkills();
-      setAllSkills(skillList);
-      // Select the newly created skill
-      const newSkill = skillList.find((s) => s.skill_name === createForm.skill_name.trim());
-      if (newSkill) {
-        await selectSkill(newSkill);
-        setExpanded((p) => ({ ...p, [newSkill.discipline === 'agent' ? 'agents' : 'skills']: true }));
-      } else {
-        setSelection(null);
-      }
-    } catch (err: any) {
-      showToast(err?.response?.data?.error ?? 'Create failed', false);
-    } finally {
-      setIsCreating(false);
+      setAgentFileSaving(false);
     }
   };
 
@@ -400,27 +248,10 @@ export function SkillManagerPanel() {
     }
   };
 
-  const openPersonaForCreation = (persona: PersonaFile) => {
-    setCreateForm({
-      skill_name: persona.skillName,
-      discipline: 'agent',
-      owner_team: 'core',
-      agent_type: persona.agentType,
-      version: '1.0.0',
-      persona_prompt: persona.content,
-      development_context: '',
-      tool_definitions: '',
-      output_format_template: '',
-    });
-    setSelection({ type: 'new_agent' });
-    setExpanded((p) => ({ ...p, agents: true }));
-  };
-
-  const selectedSkillName = selection?.type === 'skill' ? selection.skill.skill_name : null;
   const selectedCtxIndex = selection?.type === 'context' ? selection.index : null;
   const selectedBehaviourIndex = selection?.type === 'behaviour' ? selection.index : null;
-  const selectedToolName = selection?.type === 'tool' ? selection.tool.name : null;
-  const selectedAgentName = selection?.type === 'new_agent' ? createForm.skill_name : null;
+  const selectedAgentFileKey = selection?.type === 'agent_file' ? selection.key : null;
+  const selectedAgentFile = selectedAgentFileKey ? agentFiles.find((f) => f.key === selectedAgentFileKey) ?? null : null;
 
   return (
     <div className={`h-full flex flex-col rounded-2xl overflow-hidden shadow-2xl ring-1 ring-surface-900/10 dark:ring-surface-100/10 ${isDark ? 'bg-surface-900' : 'bg-surface-100'}`}>
@@ -428,7 +259,7 @@ export function SkillManagerPanel() {
       <header className="bg-white dark:bg-surface-800 border-b border-surface-200 dark:border-surface-700 px-6 py-4 flex items-center justify-between flex-shrink-0">
         <div>
           <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">Knowledge Studio</h2>
-          <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">Manage project context, behaviour docs, agent personas, skills, tools, and repo documentation review</p>
+          <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">Manage project context, behaviour docs, agent personas, output templates, and repo documentation review</p>
         </div>
         <div className="flex items-center space-x-3">
           {toast && (
@@ -476,28 +307,10 @@ export function SkillManagerPanel() {
           behaviourFiles={behaviourFiles}
           selectedBehaviourIndex={selectedBehaviourIndex}
           onSelectBehaviour={selectBehaviourFile}
-          agentItems={agentItems}
-          selectedSkillName={selectedSkillName}
-          selectedAgentName={selectedAgentName}
-          onSelectSkill={selectSkill}
-          onCreatePersona={openPersonaForCreation}
-          onNewAgent={() => {
-            setCreateForm({
-              skill_name: '', discipline: 'agent', owner_team: 'core', agent_type: 'analyst',
-              version: '1.0.0', persona_prompt: '', development_context: '',
-              tool_definitions: '', output_format_template: '',
-            });
-            setSelection({ type: 'new_agent' });
-            setExpanded((p) => ({ ...p, agents: true }));
-          }}
-          domainSkills={domainSkills}
-          filteredDomainSkills={filteredDomainSkills}
-          filterDiscipline={filterDiscipline}
-          onFilterDisciplineChange={setFilterDiscipline}
-          onNewSkill={() => { setSelection({ type: 'new_skill' }); setExpanded((p) => ({ ...p, skills: true })); }}
-          allTools={allTools}
-          selectedToolName={selectedToolName}
-          onSelectTool={(tool) => setSelection({ type: 'tool', tool })}
+          personaFiles={personaFiles}
+          templateFiles={templateFiles}
+          selectedAgentFileKey={selectedAgentFileKey}
+          onSelectAgentFile={selectAgentFile}
           selectedDocFileId={selection?.type === 'doc_file' ? selection.fileId : null}
           onSelectDocFile={(file) => setSelection({ type: 'doc_file', fileId: file.id })}
         />
@@ -550,28 +363,17 @@ export function SkillManagerPanel() {
               onRestoreVersion={(content) => { setBehEditContent(content); showToast('Version restored — save to apply'); }}
               onLoadTemplate={() => {}}
             />
-          ) : selection?.type === 'skill' ? (
+          ) : selection?.type === 'agent_file' && selectedAgentFile ? (
             <SkillViewer
-              skill={selection.skill}
-              displayName={selection.skill.discipline === 'agent' ? getAgentDisplayName(selection.skill) : selection.skill.skill_name}
-              activeTab={activeTab}
-              editContent={skillEditContent}
-              setEditContent={setSkillEditContent}
-              newVersion={newVersion}
-              setNewVersion={setNewVersion}
-              versionHistory={versionHistory}
-              isPublishing={isPublishing}
-              canEdit={canEdit(selection.skill.editRoles ?? null)}
-              onTabChange={handleSkillTabChange}
-              onPublish={handlePublish}
-            />
-          ) : selection?.type === 'tool' ? (
-            <ToolViewer
-              tool={selection.tool}
-              onGoToSkill={() => {
-                const skill = allSkills.find((s) => s.skill_name === selection.tool.sourceSkillName);
-                if (skill) selectSkill(skill);
-              }}
+              file={selectedAgentFile}
+              displayName={getAgentDisplayName(selectedAgentFile.key)}
+              editContent={agentFileContent}
+              savedContent={agentFileSavedContent}
+              isSaving={agentFileSaving}
+              canEdit={canEdit(selectedAgentFile.editRoles)}
+              onChange={setAgentFileContent}
+              onSave={handleAgentFileSave}
+              onRevert={() => setAgentFileContent(agentFileSavedContent)}
             />
           ) : selection?.type === 'doc_file' ? (
             <DocFileViewer fileId={selection.fileId} />
@@ -584,23 +386,6 @@ export function SkillManagerPanel() {
               onSubmit={handleCreateContext}
               onCancel={() => setSelection(null)}
               isCreating={isCreatingCtx}
-            />
-          ) : selection?.type === 'new_skill' ? (
-            <SkillCreateForm
-              form={createForm}
-              setForm={setCreateForm}
-              onSubmit={handleCreate}
-              onCancel={() => setSelection(null)}
-              isCreating={isCreating}
-            />
-          ) : selection?.type === 'new_agent' ? (
-            <SkillCreateForm
-              form={createForm}
-              setForm={setCreateForm}
-              onSubmit={handleCreate}
-              onCancel={() => setSelection(null)}
-              isCreating={isCreating}
-              lockDiscipline="agent"
             />
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center space-y-2 text-surface-400 dark:text-surface-500">
@@ -616,4 +401,3 @@ export function SkillManagerPanel() {
     </div>
   );
 }
-

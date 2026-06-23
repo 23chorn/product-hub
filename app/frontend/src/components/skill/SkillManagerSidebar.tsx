@@ -1,21 +1,13 @@
-import type { SkillVersion } from '../../services/api';
+import type { AgentFile } from '../../services/api';
 import { getAgentDisplayName } from '../../utils/agent-display-names';
 import { SectionHeader } from './SectionHeader';
 import { useAuthStore } from '../../stores/authStore';
 import { STAGE_SHORT_LABELS } from '../../constants/stage-labels';
 import { DocReviewSidebarSection } from '../knowledge/DocReviewSidebarSection';
 import type { KbFileListItem } from '@pap/shared';
-import {
-  DISCIPLINE_LABELS,
-  DISCIPLINE_COLORS,
-  type AgentItem,
-  type ContextFile,
-  type Discipline,
-  type ExtractedTool,
-  type PersonaFile,
-} from './types';
+import type { ContextFile } from './types';
 
-type SectionKey = 'context' | 'behaviour' | 'agents' | 'skills' | 'tools' | 'docs';
+type SectionKey = 'context' | 'behaviour' | 'agents' | 'templates' | 'docs';
 
 interface SkillManagerSidebarProps {
   isLoading: boolean;
@@ -35,23 +27,11 @@ interface SkillManagerSidebarProps {
   behaviourFiles: ContextFile[];
   selectedBehaviourIndex: number | null;
   onSelectBehaviour: (index: number, file: ContextFile) => void;
-  // Agents
-  agentItems: AgentItem[];
-  selectedSkillName: string | null;
-  selectedAgentName: string | null;
-  onSelectSkill: (skill: SkillVersion) => void;
-  onCreatePersona: (persona: PersonaFile) => void;
-  onNewAgent: () => void;
-  // Skills
-  domainSkills: SkillVersion[];
-  filteredDomainSkills: SkillVersion[];
-  filterDiscipline: Discipline;
-  onFilterDisciplineChange: (d: Discipline) => void;
-  onNewSkill: () => void;
-  // Tools
-  allTools: ExtractedTool[];
-  selectedToolName: string | null;
-  onSelectTool: (tool: ExtractedTool) => void;
+  // Agent files (personas + output templates)
+  personaFiles: AgentFile[];
+  templateFiles: AgentFile[];
+  selectedAgentFileKey: string | null;
+  onSelectAgentFile: (file: AgentFile) => void;
   // Documentation Review
   selectedDocFileId: number | null;
   onSelectDocFile: (file: KbFileListItem) => void;
@@ -63,10 +43,7 @@ const plusIcon = (
   </svg>
 );
 
-// Domain "Skills" section has no defined use yet — flip to true to bring it back.
-const SHOW_SKILLS_SECTION = false;
-
-/** Left navigation for the Agent Studio: collapsible Context / Agents / Skills / Tools sections. */
+/** Left navigation for the Knowledge Studio: collapsible Context / Behaviour / Agents / Templates / Docs sections. */
 export function SkillManagerSidebar({
   isLoading,
   expanded,
@@ -82,20 +59,10 @@ export function SkillManagerSidebar({
   behaviourFiles,
   selectedBehaviourIndex,
   onSelectBehaviour,
-  agentItems,
-  selectedSkillName,
-  selectedAgentName,
-  onSelectSkill,
-  onCreatePersona,
-  onNewAgent,
-  domainSkills,
-  filteredDomainSkills,
-  filterDiscipline,
-  onFilterDisciplineChange,
-  onNewSkill,
-  allTools,
-  selectedToolName,
-  onSelectTool,
+  personaFiles,
+  templateFiles,
+  selectedAgentFileKey,
+  onSelectAgentFile,
   selectedDocFileId,
   onSelectDocFile,
 }: SkillManagerSidebarProps) {
@@ -110,6 +77,30 @@ export function SkillManagerSidebar({
     if (editRoles.length === 0) return false;
     return editRoles.some(r => user.roles.includes(r));
   }
+
+  const agentFileButton = (file: AgentFile) => {
+    const editable = canEdit(file.editRoles);
+    return (
+      <button
+        key={file.key}
+        onClick={() => onSelectAgentFile(file)}
+        className={`w-full text-left px-4 py-2 border-b border-surface-100 dark:border-surface-700/40 transition-colors ${
+          selectedAgentFileKey === file.key
+            ? 'bg-brand-50 dark:bg-brand-900/20 border-l-2 border-l-brand-500'
+            : 'hover:bg-surface-50 dark:hover:bg-surface-700/30 border-l-2 border-l-transparent'
+        }`}
+      >
+        <div className="flex items-center justify-between gap-1">
+          <span className="text-sm text-surface-800 dark:text-surface-200 truncate">{getAgentDisplayName(file.key)}</span>
+          {!editable && (
+            <svg className="w-3 h-3 text-surface-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+          )}
+        </div>
+      </button>
+    );
+  };
 
   return (
     <nav className="w-full h-full border-r border-surface-200 dark:border-surface-700 flex flex-col flex-shrink-0 bg-white dark:bg-surface-800/50 overflow-y-auto">
@@ -247,171 +238,20 @@ export function SkillManagerSidebar({
           {/* ── Agents ──────────────────────────────── */}
           <SectionHeader
             label="Agents"
-            count={agentItems.length}
+            count={personaFiles.length}
             isOpen={expanded.agents}
             onToggle={() => onToggle('agents')}
-            action={
-              canCreate ? (
-                <button
-                  onClick={onNewAgent}
-                  className="p-0.5 rounded text-surface-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
-                  title="New agent"
-                >
-                  {plusIcon}
-                </button>
-              ) : undefined
-            }
           />
-          {expanded.agents && agentItems.map((item) => {
-            const isSelected =
-              (item.type === 'skill' && selectedSkillName === item.skill.skill_name) ||
-              (item.type === 'persona' && selectedAgentName === item.persona.skillName);
-            const publishedSkill = item.type === 'skill' ? item.skill : item.publishedSkill;
-            const editable = publishedSkill ? canEdit(publishedSkill.editRoles ?? null) : true;
-            return (
-              <button
-                key={item.key}
-                onClick={() => {
-                  if (item.type === 'skill') {
-                    onSelectSkill(item.skill);
-                  } else if (item.publishedSkill) {
-                    onSelectSkill(item.publishedSkill);
-                  } else {
-                    onCreatePersona(item.persona);
-                  }
-                }}
-                className={`w-full text-left px-4 py-2 border-b border-surface-100 dark:border-surface-700/40 transition-colors ${
-                  isSelected
-                    ? 'bg-brand-50 dark:bg-brand-900/20 border-l-2 border-l-brand-500'
-                    : 'hover:bg-surface-50 dark:hover:bg-surface-700/30 border-l-2 border-l-transparent'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-1">
-                  <span className="text-sm text-surface-800 dark:text-surface-200 truncate">{item.displayName}</span>
-                  {!editable && (
-                    <svg className="w-3 h-3 text-surface-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
-                  )}
-                </div>
-                {item.type === 'skill' ? (
-                  <div className="text-xs text-surface-400 mt-0.5">v{item.skill.version} · {item.skill.owner_team}</div>
-                ) : item.publishedSkill ? (
-                  <div className="text-xs text-surface-400 mt-0.5">v{item.publishedSkill.version} · {item.publishedSkill.owner_team}</div>
-                ) : (
-                  <div className="text-xs px-1 py-0 rounded bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400 mt-0.5 inline-block">not published</div>
-                )}
-              </button>
-            );
-          })}
+          {expanded.agents && personaFiles.map(agentFileButton)}
 
-          {/* ── Skills (hidden until a use is defined) ──── */}
-          {SHOW_SKILLS_SECTION && (
-            <>
-              <SectionHeader
-                label="Skills"
-                count={domainSkills.length}
-                isOpen={expanded.skills}
-                onToggle={() => onToggle('skills')}
-                action={
-                  canCreate ? (
-                    <button
-                      onClick={onNewSkill}
-                      className="p-0.5 rounded text-surface-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
-                      title="New skill"
-                    >
-                      {plusIcon}
-                    </button>
-                  ) : undefined
-                }
-              />
-              {expanded.skills && (
-                <>
-                  {/* Discipline filter chips */}
-                  <div className="px-3 pb-2 flex flex-wrap gap-1">
-                    {(['all', 'dev', 'qa', 'design', 'general'] as ('all' | Discipline)[]).map((d) => (
-                      <button
-                        key={d}
-                        onClick={() => onFilterDisciplineChange(d as Discipline)}
-                        className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
-                          filterDiscipline === d
-                            ? 'bg-brand-600 text-white'
-                            : 'text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700'
-                        }`}
-                      >
-                        {d === 'all' ? 'All' : DISCIPLINE_LABELS[d]}
-                      </button>
-                    ))}
-                  </div>
-                  {/* Skill items grouped by discipline */}
-                  {filteredDomainSkills.length === 0 ? (
-                    <div className="px-4 pb-2 text-xs text-surface-400">No skills found</div>
-                  ) : (
-                    (['dev', 'qa', 'design', 'general'] as const)
-                      .filter((d) => filteredDomainSkills.some((s) => s.discipline === d))
-                      .map((disc) => (
-                        <div key={disc}>
-                          {filterDiscipline === 'all' && (
-                            <div className="px-4 pt-1 pb-0.5 text-xs font-medium text-surface-400 dark:text-surface-500">
-                              {DISCIPLINE_LABELS[disc]}
-                            </div>
-                          )}
-                          {filteredDomainSkills.filter((s) => s.discipline === disc).map((skill) => (
-                            <button
-                              key={skill.skill_name}
-                              onClick={() => onSelectSkill(skill)}
-                              className={`w-full text-left px-4 py-2 border-b border-surface-100 dark:border-surface-700/40 transition-colors ${
-                                selectedSkillName === skill.skill_name
-                                  ? 'bg-brand-50 dark:bg-brand-900/20 border-l-2 border-l-brand-500'
-                                  : 'hover:bg-surface-50 dark:hover:bg-surface-700/30 border-l-2 border-l-transparent'
-                              }`}
-                            >
-                              <div className="flex items-center space-x-1.5">
-                                <span className={`px-1.5 py-0 rounded text-xs font-medium ${DISCIPLINE_COLORS[disc]}`}>
-                                  {DISCIPLINE_LABELS[disc]}
-                                </span>
-                                <span className="text-sm text-surface-800 dark:text-surface-200 truncate">
-                                  {skill.discipline === 'agent' ? getAgentDisplayName(skill) : skill.skill_name}
-                                </span>
-                              </div>
-                              <div className="text-xs text-surface-400 mt-0.5 pl-0.5">v{skill.version} · {skill.owner_team}</div>
-                            </button>
-                          ))}
-                        </div>
-                      ))
-                  )}
-                </>
-              )}
-            </>
-          )}
-
-          {/* ── Tools ───────────────────────────────────── */}
+          {/* ── Output Templates ────────────────────── */}
           <SectionHeader
-            label="Tools"
-            count={allTools.length}
-            isOpen={expanded.tools}
-            onToggle={() => onToggle('tools')}
+            label="Output Templates"
+            count={templateFiles.length}
+            isOpen={expanded.templates}
+            onToggle={() => onToggle('templates')}
           />
-          {expanded.tools && (
-            allTools.length === 0 ? (
-              <div className="px-4 pb-2 text-xs text-surface-400">No tools registered</div>
-            ) : (
-              allTools.map((tool) => (
-                <button
-                  key={`${tool.sourceSkillName}:${tool.name}`}
-                  onClick={() => onSelectTool(tool)}
-                  className={`w-full text-left px-4 py-2 border-b border-surface-100 dark:border-surface-700/40 transition-colors ${
-                    selectedToolName === tool.name
-                      ? 'bg-brand-50 dark:bg-brand-900/20 border-l-2 border-l-brand-500'
-                      : 'hover:bg-surface-50 dark:hover:bg-surface-700/30 border-l-2 border-l-transparent'
-                  }`}
-                >
-                  <div className="text-sm font-mono text-surface-800 dark:text-surface-200 truncate">{tool.name}</div>
-                  <div className="text-xs text-surface-400 mt-0.5 truncate">from {tool.sourceSkillName}</div>
-                </button>
-              ))
-            )
-          )}
+          {expanded.templates && templateFiles.map(agentFileButton)}
 
           {/* ── Documentation Review ────────────────────── */}
           <DocReviewSidebarSection

@@ -7,7 +7,7 @@ import {
   validateEpicFeaturesJson,
   validateQaTestsJson,
 } from './tool-validators';
-import { getContextFile, getDomainSkillContext } from './tool-context';
+import { getContextFile } from './tool-context';
 
 const logger = new Logger('TOOL-REGISTRY');
 
@@ -59,4 +59,3 @@ registerTool('validate_backlog_json',           validateBacklogJson);
 registerTool('validate_epic_features_json',     validateEpicFeaturesJson);
 registerTool('validate_qa_tests_json',          validateQaTestsJson);
 registerTool('get_context_file',                getContextFile);
-registerTool('get_domain_skill_context',        getDomainSkillContext);

@@ -28,8 +28,6 @@ import { discoveryRoutes } from './routes/discovery-routes';
 import { prototypeRoutes } from './routes/prototype-routes';
 import { ticketRoutes } from './routes/ticket-routes';
 import { skillRoutes } from './routes/skill-routes';
-import { personaRoutes } from './routes/persona-routes';
-import { seedSkills, syncSeedSkillTools } from './agents/skill-registry';
 import { demoWebhookRoutes } from './routes/demo-webhook-routes';
 import settingsRoutes from './routes/settings-routes';
 import authRoutes from './routes/auth-routes';
@@ -42,8 +40,6 @@ const logger = new Logger('SERVER');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-seedSkills();
-syncSeedSkillTools();
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
 // Security middleware
@@ -118,7 +114,6 @@ app.use('/api/kb', kbRouter);
 app.use('/api', prototypeRoutes);
 app.use('/api', ticketRoutes);
 app.use('/api/skills', skillRoutes);
-app.use('/api/agents/personas', personaRoutes);
 app.use('/api', demoWebhookRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/stats', statsRoutes);

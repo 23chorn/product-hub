@@ -175,8 +175,7 @@ export async function saveLocalArtifact(
   sessionId: string,
   stage: string,
   content: string,
-  itemId: string,
-  skillVersionId?: number | null
+  itemId: string
 ): Promise<number> {
   const isFeatureStage             = /^story_decomposition_F\d+$/.test(stage);
   const isQaFeatureStage           = /^qa_engineer_F\d+$/.test(stage);
@@ -197,9 +196,9 @@ export async function saveLocalArtifact(
   await fsAsync.writeFile(artifactPath, content, 'utf-8');
 
   const result = db.prepare(`
-    INSERT INTO artifacts (session_id, type, file_path, skill_version_id, created_at)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(sessionId, artifactType, artifactPath, skillVersionId ?? null, Date.now());
+    INSERT INTO artifacts (session_id, type, file_path, created_at)
+    VALUES (?, ?, ?, ?)
+  `).run(sessionId, artifactType, artifactPath, Date.now());
 
   logger.info(`Artifact "${stage}" saved to disk: ${artifactPath}`);
   return result.lastInsertRowid as number;

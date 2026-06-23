@@ -5,7 +5,6 @@ import type { SystemPrompt, TokenUsage } from '../utils/ai-provider';
 import { getPolicies } from '../data/database';
 import db from '../data/database';
 import { STAGE_LABELS_BRIEF, STAGE_OUTPUT_FORMATS, stageGoal, stageNotDecide } from './stage-metadata';
-import { getActiveSkill, listSkills } from './skill-registry';
 import { readProductArea } from './item-metadata';
 import Logger from '../utils/logger';
 import type { CriticIssue } from './critic-agent';
@@ -49,20 +48,11 @@ export class CoordinatorAgent {
   private readonly persona: string;
 
   constructor() {
-    const skill = getActiveSkill('coordinator');
-    this.persona = skill?.persona_prompt ?? fs.readFileSync(PERSONA_PATH, 'utf-8');
-    if (skill) {
-      logger.info(`Coordinator persona loaded from skill registry v${skill.version}`);
-    } else {
-      logger.info('Coordinator persona loaded from disk');
-    }
+    this.persona = fs.readFileSync(PERSONA_PATH, 'utf-8');
+    logger.info('Coordinator persona loaded from disk');
   }
 
   private resolveStageFormat(stage: string): { label: string; format: string } {
-    const skill = getActiveSkill(stage);
-    if (skill?.stage_brief_label && skill?.stage_brief_format) {
-      return { label: skill.stage_brief_label, format: skill.stage_brief_format };
-    }
     return STAGE_OUTPUT_FORMATS[stage] ?? { label: stage, format: '(no format specification defined for this stage)' };
   }
 
@@ -276,29 +266,6 @@ ${policyLines}`;
       '- Produce the complete document in one response. Do not truncate or defer any section.',
       '- If any detail is genuinely ambiguous, make a reasonable assumption — do not ask.',
     ];
-
-    // ── Domain skill discovery ──────────────────────────────────────────────────
-    // If the active skill for this stage has get_domain_skill_context in its tools,
-    // inject the list of available domain skills so the agent knows what to look up.
-    const activeSkill = getActiveSkill(stage);
-    if (activeSkill?.tool_definitions) {
-      try {
-        const toolDefs: Array<{ name: string }> = JSON.parse(activeSkill.tool_definitions);
-        const hasDomainLookup = toolDefs.some(t => t.name === 'get_domain_skill_context');
-        if (hasDomainLookup) {
-          const domainSkills = listSkills().filter(s => s.discipline !== 'agent');
-          if (domainSkills.length > 0) {
-            const skillLines = domainSkills.map(s =>
-              `- **${s.skill_name}** (${s.discipline})${s.development_context ? '' : ' — no context yet'}`
-            );
-            lines.push('');
-            lines.push('**Domain skills available via get_domain_skill_context:**');
-            lines.push('Call `get_domain_skill_context` with one of these names to load service-specific patterns, API contracts, or dev conventions before making technology or acceptance-criteria decisions:');
-            lines.push(skillLines.join('\n'));
-          }
-        }
-      } catch { /* malformed tool_definitions — skip */ }
-    }
 
     if (additionalContext) {
       lines.push('');
