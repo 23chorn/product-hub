@@ -1,20 +1,19 @@
 /**
- * Compute a unified-style diff between two texts and return a markdown document.
- * Uses LCS (Myers-style backtrack) on lines. Practical for typical LLM outputs
- * of up to ~2 000 lines — beyond that it falls back to a stats-only summary.
+ * Line-level diffing shared by the revision-diff markdown report and the
+ * Knowledge Studio commit history stats. Uses LCS (Myers-style backtrack) on
+ * lines. Practical for typical documents of up to ~2 000 lines — beyond that
+ * callers fall back to a stats-only summary.
  */
-export function computeRevisionDiff(oldText: string, newText: string, stageLabel: string): string {
-  const oldLines = oldText.split('\n');
-  const newLines = newText.split('\n');
+type Op = { op: '+' | '-' | '='; line: string };
+
+const MAX_CELLS = 2_000_000;
+
+/** Returns line-level edit operations, or null if the pair is too large to diff precisely. */
+function diffLines(oldLines: string[], newLines: string[]): Op[] | null {
   const m = oldLines.length;
   const n = newLines.length;
+  if (m * n > MAX_CELLS) return null;
 
-  // Safety cap: fall back to stats only for very large documents
-  if (m * n > 2_000_000) {
-    return `# Revision Diff — ${stageLabel}\n\n_Document too large for line-by-line diff._\n\n- Original: ${m} lines\n- Revised: ${n} lines\n`;
-  }
-
-  // Build LCS DP table
   const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
@@ -24,8 +23,6 @@ export function computeRevisionDiff(oldText: string, newText: string, stageLabel
     }
   }
 
-  // Backtrack to produce edit operations
-  type Op = { op: '+' | '-' | '='; line: string };
   const ops: Op[] = [];
   let i = m, j = n;
   while (i > 0 || j > 0) {
@@ -38,6 +35,18 @@ export function computeRevisionDiff(oldText: string, newText: string, stageLabel
     }
   }
   ops.reverse();
+  return ops;
+}
+
+/** Compute a unified-style diff between two texts and return a markdown document. */
+export function computeRevisionDiff(oldText: string, newText: string, stageLabel: string): string {
+  const oldLines = oldText.split('\n');
+  const newLines = newText.split('\n');
+  const ops = diffLines(oldLines, newLines);
+
+  if (!ops) {
+    return `# Revision Diff — ${stageLabel}\n\n_Document too large for line-by-line diff._\n\n- Original: ${oldLines.length} lines\n- Revised: ${newLines.length} lines\n`;
+  }
 
   // Emit unified diff with 3-line context windows
   const CONTEXT = 3;
@@ -76,4 +85,26 @@ export function computeRevisionDiff(oldText: string, newText: string, stageLabel
     chunks.join('\n~~\n'),
     '```',
   ].join('\n');
+}
+
+/** Line-level insertion/deletion counts between two texts, without building diff text. */
+export function countLineChanges(oldText: string, newText: string): { added: number; removed: number } {
+  const oldLines = oldText.split('\n');
+  const newLines = newText.split('\n');
+  const ops = diffLines(oldLines, newLines);
+
+  if (!ops) {
+    // Too large to diff precisely — approximate from the net line-count delta.
+    return {
+      added: Math.max(0, newLines.length - oldLines.length),
+      removed: Math.max(0, oldLines.length - newLines.length),
+    };
+  }
+
+  let added = 0, removed = 0;
+  for (const o of ops) {
+    if (o.op === '+') added++;
+    else if (o.op === '-') removed++;
+  }
+  return { added, removed };
 }

@@ -8,14 +8,10 @@ import { useAuthStore, isViewOnly } from '../../stores/authStore';
 import { CommentThread } from './CommentThread';
 import { FileHistoryPanel } from './FileHistoryPanel';
 import { ResizeHandle } from '../common/ResizeHandle';
+import { stripFrontmatter } from '../../utils/markdown';
 import type { KbFile, KbComment } from '@pap/shared';
 
 type RightTab = 'comments' | 'history';
-
-/** Strip the leading YAML frontmatter block before rendering — it's surfaced as badges instead. */
-function stripFrontmatter(raw: string): string {
-  return raw.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
-}
 
 export function DocFileViewer({ fileId }: { fileId: number }) {
   const { user, noAuth } = useAuthStore();

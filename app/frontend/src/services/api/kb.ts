@@ -50,8 +50,8 @@ export const kbApi = {
     return response.data;
   },
 
-  async getKbFileDiff(id: number, from: string, to: string): Promise<{ diff: string; from: string; to: string }> {
-    const response = await axios.get(`${API_BASE_URL}/api/kb/files/${id}/diff`, { params: { from, to } });
+  async getKbFileVersion(id: number, commitId: string): Promise<{ content: string; commitId: string }> {
+    const response = await axios.get(`${API_BASE_URL}/api/kb/files/${id}/version/${commitId}`);
     return response.data;
   },
 

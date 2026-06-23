@@ -5,7 +5,7 @@ import type { AuthRequest } from '../middleware/auth';
 import { AzureDevOpsClient } from '../integrations/azure-devops';
 import { syncRepo, type KbRepoRow } from '../integrations/kb-sync';
 import { runDocReview } from '../agents/kb-reviewer-agent';
-import { computeRevisionDiff } from '../utils/revision-diff';
+import { countLineChanges } from '../utils/revision-diff';
 import Logger from '../utils/logger';
 
 const logger = new Logger('KB-ROUTES');
@@ -294,19 +294,24 @@ kbRouter.get('/files/:id/history', async (req: AuthRequest, res: Response) => {
   try {
     const client = new AzureDevOpsClient();
     const commits = await client.listAdoFileCommits(info.repository, info.path, info.branch ?? undefined, info.project ?? undefined);
-    res.json({ commits });
+    // Fetch each commit's content once so we can diff consecutive (newest-first) pairs for line stats.
+    const contents = await Promise.all(
+      commits.map((c) => client.getAdoFileContentAtCommit(info.repository, info.path, c.commitId, info.project ?? undefined))
+    );
+    const withStats = commits.map((commit, i) => {
+      const olderContent = contents[i + 1]?.content ?? '';
+      const { added, removed } = countLineChanges(olderContent, contents[i].content);
+      return { ...commit, linesAdded: added, linesRemoved: removed };
+    });
+    res.json({ commits: withStats });
   } catch (err: any) {
     res.status(502).json({ error: `Failed to load history: ${err.message}` });
   }
 });
 
-kbRouter.get('/files/:id/diff', async (req: AuthRequest, res: Response) => {
+kbRouter.get('/files/:id/version/:commitId', async (req: AuthRequest, res: Response) => {
   const id = Number(req.params.id);
-  const { from, to } = req.query;
-  if (typeof from !== 'string' || typeof to !== 'string') {
-    res.status(400).json({ error: 'from and to commit ids are required' });
-    return;
-  }
+  const { commitId } = req.params;
 
   const info = loadFileRepoInfo(id);
   if (!info) {
@@ -316,14 +321,10 @@ kbRouter.get('/files/:id/diff', async (req: AuthRequest, res: Response) => {
 
   try {
     const client = new AzureDevOpsClient();
-    const [fromContent, toContent] = await Promise.all([
-      client.getAdoFileContentAtCommit(info.repository, info.path, from, info.project ?? undefined),
-      client.getAdoFileContentAtCommit(info.repository, info.path, to, info.project ?? undefined),
-    ]);
-    const diff = computeRevisionDiff(fromContent.content, toContent.content, info.path);
-    res.json({ diff, from, to });
+    const { content } = await client.getAdoFileContentAtCommit(info.repository, info.path, commitId, info.project ?? undefined);
+    res.json({ content, commitId });
   } catch (err: any) {
-    res.status(502).json({ error: `Failed to load diff: ${err.message}` });
+    res.status(502).json({ error: `Failed to load version: ${err.message}` });
   }
 });
 

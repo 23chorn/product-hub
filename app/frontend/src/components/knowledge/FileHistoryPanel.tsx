@@ -1,16 +1,30 @@
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 import { api } from '../../services/api';
+import { stripFrontmatter } from '../../utils/markdown';
 import type { KbFileCommit } from '@pap/shared';
+
+function LineStats({ commit }: { commit: KbFileCommit }) {
+  if (commit.linesAdded === 0 && commit.linesRemoved === 0) {
+    return <span className="text-[10px] text-surface-400 dark:text-surface-500">No line changes</span>;
+  }
+  return (
+    <span className="text-[10px] font-mono flex items-center gap-1.5">
+      {commit.linesAdded > 0 && <span className="text-green-600 dark:text-green-400">+{commit.linesAdded}</span>}
+      {commit.linesRemoved > 0 && <span className="text-red-600 dark:text-red-400">-{commit.linesRemoved}</span>}
+    </span>
+  );
+}
 
 export function FileHistoryPanel({ fileId }: { fileId: number }) {
   const [commits, setCommits] = useState<KbFileCommit[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedCommit, setExpandedCommit] = useState<string | null>(null);
-  const [diffs, setDiffs] = useState<Record<string, string>>({});
-  const [loadingDiff, setLoadingDiff] = useState<string | null>(null);
+  const [versions, setVersions] = useState<Record<string, string>>({});
+  const [loadingVersion, setLoadingVersion] = useState<string | null>(null);
 
   useEffect(() => {
     setIsLoading(true);
@@ -21,22 +35,21 @@ export function FileHistoryPanel({ fileId }: { fileId: number }) {
       .finally(() => setIsLoading(false));
   }, [fileId]);
 
-  const toggleDiff = async (commit: KbFileCommit, previous: KbFileCommit | undefined) => {
-    if (!previous) return;
+  const toggleVersion = async (commit: KbFileCommit) => {
     if (expandedCommit === commit.commitId) {
       setExpandedCommit(null);
       return;
     }
     setExpandedCommit(commit.commitId);
-    if (diffs[commit.commitId]) return;
-    setLoadingDiff(commit.commitId);
+    if (versions[commit.commitId] !== undefined) return;
+    setLoadingVersion(commit.commitId);
     try {
-      const { diff } = await api.getKbFileDiff(fileId, previous.commitId, commit.commitId);
-      setDiffs((prev) => ({ ...prev, [commit.commitId]: diff }));
+      const { content } = await api.getKbFileVersion(fileId, commit.commitId);
+      setVersions((prev) => ({ ...prev, [commit.commitId]: content }));
     } catch (err: any) {
-      setDiffs((prev) => ({ ...prev, [commit.commitId]: err?.response?.data?.error ?? 'Failed to load diff' }));
+      setVersions((prev) => ({ ...prev, [commit.commitId]: err?.response?.data?.error ?? 'Failed to load this version' }));
     } finally {
-      setLoadingDiff(null);
+      setLoadingVersion(null);
     }
   };
 
@@ -46,8 +59,7 @@ export function FileHistoryPanel({ fileId }: { fileId: number }) {
 
   return (
     <div className="space-y-2">
-      {commits.map((commit, i) => {
-        const previous = commits[i + 1];
+      {commits.map((commit) => {
         const isExpanded = expandedCommit === commit.commitId;
         return (
           <div key={commit.commitId} className="rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 p-3">
@@ -57,22 +69,23 @@ export function FileHistoryPanel({ fileId }: { fileId: number }) {
                 <p className="text-xs text-surface-400 dark:text-surface-500 mt-0.5">
                   {commit.authorName} · {new Date(commit.date).toLocaleString()} · <span className="font-mono">{commit.commitId.slice(0, 8)}</span>
                 </p>
+                <div className="mt-1">
+                  <LineStats commit={commit} />
+                </div>
               </div>
-              {previous && (
-                <button
-                  onClick={() => toggleDiff(commit, previous)}
-                  className="flex-shrink-0 text-xs px-2 py-1 rounded text-surface-600 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
-                >
-                  {isExpanded ? 'Hide changes' : 'View changes'}
-                </button>
-              )}
+              <button
+                onClick={() => toggleVersion(commit)}
+                className="flex-shrink-0 text-xs px-2 py-1 rounded text-surface-600 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
+              >
+                {isExpanded ? 'Hide' : 'View full version'}
+              </button>
             </div>
             {isExpanded && (
-              <div className="mt-2 text-xs prose prose-sm dark:prose-invert max-w-none">
-                {loadingDiff === commit.commitId ? (
-                  <p className="text-surface-400">Loading diff…</p>
+              <div className="mt-2 pt-2 border-t border-surface-100 dark:border-surface-700/60 text-xs prose prose-sm dark:prose-invert max-w-none">
+                {loadingVersion === commit.commitId ? (
+                  <p className="text-surface-400">Loading version…</p>
                 ) : (
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{diffs[commit.commitId] ?? ''}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{stripFrontmatter(versions[commit.commitId] ?? '')}</ReactMarkdown>
                 )}
               </div>
             )}

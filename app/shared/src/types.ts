@@ -484,5 +484,8 @@ export interface KbFileCommit {
   authorEmail: string;
   date: number;
   message: string;
+  /** Line-level change counts vs. the previous commit that touched this file. */
+  linesAdded: number;
+  linesRemoved: number;
 }
 
