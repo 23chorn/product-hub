@@ -14,6 +14,7 @@ import { ContextCuratorAgent } from './curator-agent';
 import { SpecialistAgent } from './specialist-agent';
 import { resolveAgentModel, getActiveProvider, type TokenUsage } from '../utils/ai-provider';
 import { computeRevisionDiff } from '../utils/revision-diff';
+import { summarizeRevisionDiff } from './revision-diff-summary';
 import {
   STAGE_SESSION_MAP, STAGE_MAX_OUTPUT_TOKENS, STAGE_ARTIFACT_TYPE,
   STAGE_ARTIFACT_LABEL, STAGE_TOOL_DEFINITIONS, stageProgressHeartbeat, stageProgressReview, stageProgressReviewComplete, stageProgressRevision, stageProgressSection, stageProgressWorking,
@@ -90,6 +91,7 @@ function createStageCheckpoint(
     autoApprove: boolean;
     criticDetails?: Record<string, unknown>;
     diffArtifactId?: number | null;
+    revisionSummary?: string;
     specialistTokenData: StageTokenData['specialist'] | null;
     criticTokenData?: StageTokenData['critic'] | null;
   }
@@ -107,6 +109,7 @@ function createStageCheckpoint(
     auto_approved: opts.autoApprove,
     ...(opts.criticDetails ? { critic: opts.criticDetails } : {}),
     ...(opts.diffArtifactId ? { diff_artifact_id: opts.diffArtifactId } : {}),
+    ...(opts.revisionSummary ? { revision_summary: opts.revisionSummary } : {}),
     ...(figmaFileUrl ? { figma_file_url: figmaFileUrl } : {}),
   };
 
@@ -136,7 +139,8 @@ function finishStage(
   itemId: string,
   stage: string,
   autoApprove: boolean,
-  logLabel: string
+  logLabel: string,
+  revisionRequestedBy?: string
 ): void {
   if (autoApprove) {
     logger.info(`${logLabel} — auto-advancing (demo mode)`);
@@ -158,7 +162,7 @@ function finishStage(
     stmts.updateWorkflowStatus.run('paused_at_checkpoint', Date.now(), workflowId);
     logger.info(`${logLabel} — paused for human review`);
     const titleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(itemId);
-    if (titleRow) notifyCheckpointPending(titleRow.title, stage);
+    if (titleRow) notifyCheckpointPending(titleRow.title, stage, undefined, revisionRequestedBy);
   }
 }
 
@@ -179,7 +183,8 @@ export async function runAutonomousStage(
   autoApprove: boolean,
   priorCriticIssues?: string[],
   priorDraftContent?: string,
-  skipCritic?: boolean
+  skipCritic?: boolean,
+  revisionRequestedBy?: string
 ): Promise<void> {
   // ── Backlog Merge Stage ──────────────────────────────────────────────────────
   // After all feature stages complete, merge their isolated artifacts into one final backlog.
@@ -496,16 +501,24 @@ export async function runAutonomousStage(
       });
     }
 
-    // If this is a revision run, compute and save a diff to disk
+    // If this is a revision run, compute and save a diff to disk, then summarise it for
+    // the reviewer so they can confirm their requested changes were addressed at a glance.
     let diffArtifactId: number | null = null;
+    let revisionSummary: string | undefined;
     if (priorDraftContent) {
       try {
         const stageLabel = STAGE_ARTIFACT_TYPE[stage] ?? stage;
         const diffText = computeRevisionDiff(priorDraftContent, artifactContent, stageLabel);
-        diffArtifactId = await saveDiffArtifact(itemId, stage, diffText, sessionId, stageMap.mode);
+        diffArtifactId = await saveDiffArtifact(itemId, stage, diffText, sessionId);
         if (diffArtifactId) logger.info(`Revision diff saved for stage "${stage}" (artifact ${diffArtifactId})`);
+        revisionSummary = await summarizeRevisionDiff({
+          stageLabel: STAGE_ARTIFACT_LABEL[stage] ?? stage,
+          requestContext: brief,
+          diffText,
+        }) || undefined;
+        if (revisionSummary) logger.info(`Revision summary generated for stage "${stage}"`);
       } catch (err: any) {
-        logger.warn(`Failed to compute revision diff for "${stage}": ${err.message}`);
+        logger.warn(`Failed to compute revision diff/summary for "${stage}": ${err.message}`);
       }
     }
 
@@ -527,7 +540,9 @@ export async function runAutonomousStage(
     let wikiUrl: string | null = null;
 
     const tryWikiPush = async (): Promise<string | null> => {
-      if (isAdoHandledStage || !artifactId) return null;
+      // Prototype output is an interactive HTML wireframe — it doesn't render as
+      // readable wiki markdown, so there's no point mirroring it to the wiki.
+      if (isAdoHandledStage || stage === 'prototype' || !artifactId) return null;
       try {
         const { appConfig } = require('../config/app-config');
         if (appConfig.integrations.knowledgeBase !== 'azure_wiki') return null;
@@ -636,7 +651,7 @@ export async function runAutonomousStage(
         const checkpointStatusCritic: 'approved' | 'pending' = autoApprove ? 'approved' : 'pending';
         createStageCheckpoint(workflowId, stage, artifactId, artifactContent, {
           sessionId, status: checkpointStatusCritic, autoApprove, criticDetails,
-          diffArtifactId, specialistTokenData, criticTokenData,
+          diffArtifactId, revisionSummary, specialistTokenData, criticTokenData,
         });
         const minorCount = review.issues.filter(i => i.severity === 'minor').length;
         const approveMsg = minorCount > 0
@@ -694,7 +709,7 @@ export async function runAutonomousStage(
       wikiUrl = await tryWikiPush();
       createStageCheckpoint(workflowId, stage, artifactId, artifactContent, {
         sessionId, status: autoApprove ? 'approved' : 'pending', autoApprove, criticDetails,
-        diffArtifactId, specialistTokenData, criticTokenData,
+        diffArtifactId, revisionSummary, specialistTokenData, criticTokenData,
       });
 
       if (autoApprove) {
@@ -748,7 +763,7 @@ export async function runAutonomousStage(
       wikiUrl = await tryWikiPush();
       createStageCheckpoint(workflowId, stage, artifactId, artifactContent, {
         sessionId, status: autoApprove ? 'approved' : 'pending', autoApprove, criticDetails: approveDetails,
-        diffArtifactId, specialistTokenData, criticTokenData,
+        diffArtifactId, revisionSummary, specialistTokenData, criticTokenData,
       });
       insertEvent(workflowId, 'critic_verdict', stage,
         'Quality review passed — no issues found. Approve to proceed.', approveDetails);
@@ -761,7 +776,7 @@ export async function runAutonomousStage(
     wikiUrl = await tryWikiPush();
     createStageCheckpoint(workflowId, stage, artifactId, artifactContent, {
       sessionId, status: autoApprove ? 'approved' : 'pending', autoApprove,
-      diffArtifactId, specialistTokenData, criticTokenData,
+      diffArtifactId, revisionSummary, specialistTokenData, criticTokenData,
     });
     // wiki_url is deliberately omitted here — tryWikiPush() above already inserted a
     // separate 'wiki_synced' event with the same link, so including it again would
@@ -769,7 +784,7 @@ export async function runAutonomousStage(
     insertEvent(workflowId, 'stage_completed', stage, `${stageLabel} complete.`,
       { excerpt, artifact_id: artifactId });
 
-    finishStage(workflowId, itemId, stage, autoApprove, `Autonomous stage "${stage}" complete`);
+    finishStage(workflowId, itemId, stage, autoApprove, `Autonomous stage "${stage}" complete`, revisionRequestedBy);
   } catch (err: any) {
     // Graceful exit when user cancelled — no error checkpoint needed
     if (err?.name === 'AbortError' || isCancelRequested(workflowId)) {

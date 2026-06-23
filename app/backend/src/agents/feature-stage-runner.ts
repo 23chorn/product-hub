@@ -236,9 +236,8 @@ interface SurgicalRevisionSpec {
   fallbackTokens: number;
   /** Artifact type to save the revised JSON under (e.g. backlog_F2, qa_tests). */
   artifactType(featureNum: number): string;
-  /** Title/mode passed to computeRevisionDiff / saveDiffArtifact. */
+  /** Title passed to computeRevisionDiff. */
   diffLabel(featureNum: number): string;
-  diffMode: string;
   /** Reload upstream artifacts and build the itemContext + anything postProcess needs. */
   loadContext(itemId: string, featureNum: number, platformScopeSection: string): Promise<{ itemContext?: string; extra: Record<string, any> }>;
   /** The surgical-edit directive appended as the final user turn. */
@@ -331,18 +330,31 @@ async function runFeatureSurgicalRevision(
   const artifactContent = JSON.stringify(revised, null, 2);
   const artifactId = await saveLocalArtifact(sessionId, spec.artifactType(featureNum), artifactContent, itemId);
 
-  // Compute and save diff so the reviewer can see exactly what changed
+  // Compute and save diff, then summarise it so the reviewer can confirm at a glance
+  // that the requested changes were applied.
+  let revisionSummary: string | undefined;
   try {
     const diffText = computeRevisionDiff(priorDraft, artifactContent, spec.diffLabel(featureNum));
-    const diffArtifactId = await saveDiffArtifact(itemId, stage, diffText, sessionId, spec.diffMode);
+    // Save the diff under the same folder as the revised artifact (artifactType, e.g. backlog_F2),
+    // not the suffixed stage name, so a feature's outputs stay together — see saveDiffArtifact.
+    const diffArtifactId = await saveDiffArtifact(itemId, spec.artifactType(featureNum), diffText, sessionId);
     if (diffArtifactId) logger.info(`[MULTI-AGENT REVISION] ${spec.noun} diff artifact saved (id: ${diffArtifactId})`);
+    const { summarizeRevisionDiff } = await import('./revision-diff-summary');
+    revisionSummary = await summarizeRevisionDiff({
+      stageLabel: spec.diffLabel(featureNum),
+      requestContext: brief,
+      diffText,
+    }) || undefined;
   } catch (err: any) {
-    logger.warn(`[MULTI-AGENT REVISION] Failed to save ${spec.noun} diff: ${err.message}`);
+    logger.warn(`[MULTI-AGENT REVISION] Failed to save ${spec.noun} diff/summary: ${err.message}`);
   }
 
   // Create checkpoint for human review
   const { pauseAtCheckpoint } = await import('./workflow-router');
-  pauseAtCheckpoint(workflowId, stage, artifactId, sessionId, { revision_mode: true, feature: featureNum });
+  pauseAtCheckpoint(workflowId, stage, artifactId, sessionId, {
+    revision_mode: true, feature: featureNum,
+    ...(revisionSummary ? { revision_summary: revisionSummary } : {}),
+  });
 
   insertEvent(workflowId, 'stage_completed', stage,
     `Targeted revision applied for Feature ${featureNum} — only affected ${spec.unitNoun} modified. Ready for review.`,
@@ -360,7 +372,6 @@ const STORY_REVISION_SPEC: SurgicalRevisionSpec = {
   fallbackTokens: 16_000,
   artifactType: (featureNum) => `backlog_F${featureNum}`,
   diffLabel: (featureNum) => `Feature ${featureNum} Backlog`,
-  diffMode: 'story-decomposition',
 
   async loadContext(itemId, featureNum, platformScopeSection) {
     const { loadLatestArtifactContent } = await import('./artifact-helpers');
@@ -413,7 +424,6 @@ const QA_REVISION_SPEC: SurgicalRevisionSpec = {
   fallbackTokens: 14_000,
   artifactType: () => 'qa_tests',
   diffLabel: (featureNum) => `Feature ${featureNum} QA Tests`,
-  diffMode: 'qa-engineer',
 
   async loadContext(itemId, featureNum, platformScopeSection) {
     // Reload fresh — a since-corrected PRD, or a backlog revision that dropped/changed

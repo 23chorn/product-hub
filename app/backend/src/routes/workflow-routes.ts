@@ -262,8 +262,8 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
           if (appConfig.integrations.workItems === 'ado') {
             const { pushEpicAndFeaturesToADO } = await import('../agents/feature-decomposition');
             const result = await pushEpicAndFeaturesToADO(workflowId);
-            const { AzureDevOpsClient } = await import('../integrations/azure-devops');
-            const client = new AzureDevOpsClient();
+            const { getAzureDevOpsClient } = await import('../integrations/azure-devops');
+            const client = getAzureDevOpsClient();
             const epicUrl = client.getEpicUrl(result.epicId);
             stampArtifactUrl(epicUrl);
             insertEvent(workflowId, 'ado_pushed', 'epic_feature_planner',
@@ -342,8 +342,8 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
             const { appConfig } = require('../config/app-config');
             if (appConfig.integrations.workItems === 'ado') {
               const result = await pushFeatureToADO(workflowId, featureIndex);
-              const { AzureDevOpsClient } = await import('../integrations/azure-devops');
-              const client = new AzureDevOpsClient();
+              const { getAzureDevOpsClient } = await import('../integrations/azure-devops');
+              const client = getAzureDevOpsClient();
               const featureUrl = `https://dev.azure.com/${client['organization']}/${client['project']}/_workitems/edit/${result.featureId}`;
               const testPlanUrl = result.testPlanUrl ?? null;
               stampArtifactUrl(featureUrl);
@@ -370,7 +370,7 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
 
       // ── Wiki-backed stages: update status from Draft → Approved ─────────────
       if (cpDetail?.artifact_id) {
-        approveWikiArtifact(cpDetail.artifact_id).catch(err =>
+        approveWikiArtifact(cpDetail.artifact_id, req.user?.name).catch(err =>
           logger.warn(`[CHECKPOINT] Wiki approval status update failed for artifact ${cpDetail.artifact_id}: ${err.message}`)
         );
       }
@@ -471,7 +471,7 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
       'SELECT stage, artifact_id FROM checkpoints WHERE id = ?'
     ).get(cpId);
 
-    await propagateFeedback(cpId, feedback);
+    await propagateFeedback(cpId, feedback, req.user?.name);
 
     // Generate revision event for this specific checkpoint
     const checkpointType = checkpointArtifactLabel(cpDetail?.stage ?? '');
@@ -563,6 +563,16 @@ workflowRoutes.post('/checkpoint/figma-complete', async (req: AuthRequest, res: 
           // Non-JSON artifact — skip patch, still advance
         }
       }
+
+      // Re-publish the wiki mirror so it reflects approval: this is a separate
+      // approval path from the generic checkpoint route (which already does this
+      // at line ~373), so without it the figma page keeps its "Draft — Pending
+      // review" banner and stale "Planned (write deferred)" badge. approveWikiArtifact
+      // re-reads the just-patched disk content (now figma_write_status reviewed/external)
+      // and no-ops if the artifact was never synced to a wiki.
+      approveWikiArtifact(cp.artifact_id, req.user?.name).catch(err =>
+        logger.warn(`[FIGMA-COMPLETE] Wiki approval status update failed for artifact ${cp.artifact_id}: ${err.message}`)
+      );
     }
 
     // Audit + resolve
@@ -609,7 +619,7 @@ workflowRoutes.post('/checkpoint/figma-complete', async (req: AuthRequest, res: 
  * Re-enters a completed workflow at a specific stage. The given stage and all
  * downstream stages are re-run with the user's feedback as context.
  */
-workflowRoutes.post('/:id/reiterate', async (req: Request, res: Response) => {
+workflowRoutes.post('/:id/reiterate', async (req: AuthRequest, res: Response) => {
   const { fromStage, feedback } = req.body as { fromStage?: string; feedback?: string };
   if (!fromStage || !feedback) {
     return res.status(400).json({ error: 'fromStage and feedback are required' });
@@ -619,7 +629,7 @@ workflowRoutes.post('/:id/reiterate', async (req: Request, res: Response) => {
   }
 
   try {
-    await reiterateFromStage(req.params.id, fromStage, feedback);
+    await reiterateFromStage(req.params.id, fromStage, feedback, undefined, req.user?.name);
     const status = getWorkflowStatus(req.params.id);
     res.json(status);
   } catch (err: any) {

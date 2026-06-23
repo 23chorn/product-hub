@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useWorkflowStore } from '../../stores/workflowStore';
 import { useConfigStore } from '../../stores/configStore';
 import { useAuthStore, canApprove, parseRequiredRoles, ROLE_LABELS } from '../../stores/authStore';
@@ -185,6 +187,18 @@ export function ArtifactViewer() {
       return null;
     } catch { return null; }
   })();
+  // AI-written summary of what the latest revision changed — surfaced above the document
+  // so a reviewer can confirm their requested changes were addressed before approving.
+  const revisionSummary: string | null = (() => {
+    try {
+      if (artifactCheckpoint?.coordinator_action) {
+        const s = JSON.parse(artifactCheckpoint.coordinator_action)?.revision_summary;
+        if (typeof s === 'string' && s.trim()) return s.trim();
+      }
+    } catch { /* ignore */ }
+    return null;
+  })();
+
   const showCriticPanel = showReviseForm && (criticData?.questions?.length ?? 0) > 0;
   const showSidePanel = showCriticPanel || showOpenQPanel;
   const hasIssues = (criticData?.issues?.length ?? 0) > 0;
@@ -404,6 +418,21 @@ export function ArtifactViewer() {
                 {/* Content — always takes full width, centered with max-w in fullscreen */}
                 <div className={`h-full ${isEditing ? 'flex flex-col px-4 py-4' : 'overflow-y-auto px-4 py-4'}`}>
                   <div className={`${isEditing ? 'flex-1 min-h-0 flex flex-col' : ''} ${isFullscreen ? 'mx-auto w-full max-w-4xl' : ''}`}>
+                    {revisionSummary && !isEditing && (
+                      <div className="mb-4 rounded-lg border border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-900/20 px-3.5 py-3">
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                          <svg className="w-3.5 h-3.5 text-brand-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                          </svg>
+                          <h3 className="text-[11px] font-semibold uppercase tracking-wide text-brand-700 dark:text-brand-300">
+                            AI revision summary
+                          </h3>
+                        </div>
+                        <div className="prose prose-sm dark:prose-invert max-w-none text-surface-700 dark:text-surface-300 [&_p]:my-1 [&_ul]:my-1 [&_li]:my-0.5">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{revisionSummary}</ReactMarkdown>
+                        </div>
+                      </div>
+                    )}
                     {loading ? (
                       <p className="text-sm text-surface-400 animate-pulse">Loading...</p>
                     ) : isEditing ? (

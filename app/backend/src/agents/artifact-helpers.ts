@@ -76,10 +76,11 @@ async function readArtifactRow(row: ArtifactRow): Promise<string | null> {
   return null;
 }
 
-function wikiStatusBanner(status: 'draft' | 'approved', date?: string): string {
+function wikiStatusBanner(status: 'draft' | 'approved', date?: string, approvedBy?: string): string {
   const dateStr = date ?? new Date().toISOString().slice(0, 10);
   if (status === 'approved') {
-    return `> **Status:** Approved — ${dateStr}\n\n---\n\n`;
+    const by = approvedBy ? ` by ${approvedBy}` : '';
+    return `> **Status:** Approved${by} — ${dateStr}\n\n---\n\n`;
   }
   return `> **Status:** Draft — Pending review\n\n---\n\n`;
 }
@@ -88,9 +89,9 @@ function stripStatusBanner(content: string): string {
   return content.replace(/^> \*\*Status:\*\*[^\n]*\n\n---\n\n/, '');
 }
 
-function toWikiContent(artifactType: string, rawContent: string, status: 'draft' | 'approved'): string {
+function toWikiContent(artifactType: string, rawContent: string, status: 'draft' | 'approved', approvedBy?: string): string {
   const clean = stripStatusBanner(rawContent);
-  return wikiStatusBanner(status) + convertArtifactToMarkdown(artifactType, clean);
+  return wikiStatusBanner(status, undefined, approvedBy) + convertArtifactToMarkdown(artifactType, clean);
 }
 
 /**
@@ -148,7 +149,7 @@ export async function syncArtifactToWiki(artifactId: number): Promise<string> {
  * Re-reads source content from the primary store (disk) and regenerates
  * the markdown, replacing the Draft banner.
  */
-export async function approveWikiArtifact(artifactId: number): Promise<void> {
+export async function approveWikiArtifact(artifactId: number, approvedBy?: string): Promise<void> {
   const artifact = db.prepare<[number], ArtifactRow>(
     'SELECT * FROM artifacts WHERE id = ?'
   ).get(artifactId);
@@ -161,11 +162,22 @@ export async function approveWikiArtifact(artifactId: number): Promise<void> {
     return;
   }
 
-  await saveToWiki(artifact.wiki_path, toWikiContent(artifact.type, content, 'approved'));
-  logger.info(`Artifact ${artifactId} wiki status updated to Approved`);
+  await saveToWiki(artifact.wiki_path, toWikiContent(artifact.type, content, 'approved', approvedBy));
+  logger.info(`Artifact ${artifactId} wiki status updated to Approved${approvedBy ? ` by ${approvedBy}` : ''}`);
 }
 
 // ── Local artifact save (disk only, no wiki push) ────────────────────────────
+
+/**
+ * One source of truth for where a stage's on-disk outputs live:
+ * data/sessions/<…>/<itemId>/<stage>/artifacts/. Both the artifact and its
+ * revision diff are written here, so everything for a stage stays in one folder
+ * (e.g. the analyst stage keeps its brief and brief-diff together). Callers must
+ * pass the same `stage` key for the artifact and its diff so they don't split.
+ */
+function stageArtifactDir(itemId: string, stage: string): string {
+  return path.join(itemSessionDir(itemId), stage, 'artifacts');
+}
 
 /**
  * Saves an artifact to disk under data/sessions/<itemId>/<stage>/artifacts/.
@@ -185,7 +197,7 @@ export async function saveLocalArtifact(
     : isTechRefinementFeatureStage ? 'backlog'
     : (STAGE_ARTIFACT_TYPE[stage] ?? stage);
 
-  const artifactDir = path.join(itemSessionDir(itemId), stage, 'artifacts');
+  const artifactDir = stageArtifactDir(itemId, stage);
   await fsAsync.mkdir(artifactDir, { recursive: true });
   // Every stage routed through here produces JSON by design (see STAGE_OUTPUT_FORMATS) — use
   // .json unconditionally rather than sniffing content, which mislabeled truncated/fenced JSON as .md.
@@ -233,20 +245,26 @@ export async function saveCriticArtifact(
 
 /**
  * Saves a revision diff document to disk. Returns the artifact row ID, or null on failure.
+ *
+ * The diff is written into the same `<stage>/artifacts/` folder as the stage's artifact
+ * (see saveLocalArtifact), so a stage's outputs stay together. Pass the same `stage` key
+ * that was used to save the artifact — for feature revisions that's the artifact type
+ * (e.g. 'backlog_F2'), not the suffixed stage name.
  */
 export async function saveDiffArtifact(
   itemId: string,
   stage: string,
   diffText: string,
-  sessionId: string,
-  mode: string
+  sessionId: string
 ): Promise<number | null> {
   const artifactType = `${stage}_diff`;
 
   try {
-    const diffDir = path.join(itemSessionDir(itemId), mode, 'artifacts');
+    const diffDir = stageArtifactDir(itemId, stage);
     await fsAsync.mkdir(diffDir, { recursive: true });
-    const diffPath = path.join(diffDir, `${Date.now()}-${stage}-diff.md`);
+    // Random suffix guards against collisions when sibling feature diffs (e.g. several
+    // qa_tests revisions) land in the same folder in the same millisecond — mirrors saveLocalArtifact.
+    const diffPath = path.join(diffDir, `${Date.now()}-${randomUUID().slice(0, 8)}-${stage}-diff.md`);
     await fsAsync.writeFile(diffPath, diffText, 'utf-8');
     const result = db.prepare(`
       INSERT INTO artifacts (session_id, type, file_path, created_at)

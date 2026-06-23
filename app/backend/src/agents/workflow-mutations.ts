@@ -32,7 +32,7 @@ function stageSession(stage: string): { mode: AppMode; agentType: AgentType } {
  * Generates a revised stage brief via the Coordinator and appends it as a user
  * message to the specialist's existing session, then marks the checkpoint as revised.
  */
-export async function propagateFeedback(checkpointId: number, feedback: string): Promise<void> {
+export async function propagateFeedback(checkpointId: number, feedback: string, requestedBy?: string): Promise<void> {
   const checkpoint = stmts.getCheckpoint.get(checkpointId);
   if (!checkpoint) throw new Error(`Checkpoint not found: ${checkpointId}`);
 
@@ -94,7 +94,7 @@ export async function propagateFeedback(checkpointId: number, feedback: string):
 
   // Skip critic on human-initiated revisions — the human is now the reviewer
   // Pass priorDraft so runAutonomousStage threads it as the assistant turn
-  runAutonomousStage(session.id, checkpoint.workflow_id, checkpoint.stage, workflow.item_id, brief, shouldAutoApprove, undefined, priorDraft, true)
+  runAutonomousStage(session.id, checkpoint.workflow_id, checkpoint.stage, workflow.item_id, brief, shouldAutoApprove, undefined, priorDraft, true, requestedBy)
     .catch(err => logger.error(`Revision re-run for stage "${checkpoint.stage}" failed: ${err.message}`));
 
   logger.info(`Revision re-run started — session ${session.id} for stage "${checkpoint.stage}" in workflow ${checkpoint.workflow_id}`);
@@ -109,7 +109,8 @@ export async function reiterateFromStage(
   workflowId: string,
   fromStage: string,
   feedback: string,
-  briefOverride?: string
+  briefOverride?: string,
+  requestedBy?: string
 ): Promise<void> {
   const workflow = stmts.getWorkflow.get(workflowId);
   if (!workflow) throw new Error(`Workflow not found: ${workflowId}`);
@@ -169,7 +170,7 @@ export async function reiterateFromStage(
 
   // Fire the autonomous stage — skip critic since this is human-initiated
   // Pass priorDraft so runAutonomousStage threads it as the assistant turn
-  runAutonomousStage(session.id, workflowId, fromStage, workflow.item_id, brief, shouldAutoApprove, undefined, priorDraft, true)
+  runAutonomousStage(session.id, workflowId, fromStage, workflow.item_id, brief, shouldAutoApprove, undefined, priorDraft, true, requestedBy)
     .catch(err => logger.error(`Reiteration re-run for stage "${fromStage}" failed: ${err.message}`));
 
   logger.info(`Reiteration started — session ${session.id} for stage "${fromStage}" in workflow ${workflowId}`);
@@ -280,6 +281,11 @@ export async function restartWorkflow(workflowId: string): Promise<void> {
     db.prepare(`DELETE FROM checkpoints WHERE workflow_id = ?`).run(workflowId);
     // Wipe all events — the new workflow_started event inserted below becomes the first entry
     db.prepare(`DELETE FROM workflow_events WHERE workflow_id = ?`).run(workflowId);
+    // Drop the previous run's ADO work-item map. It points at last run's epic/feature/story
+    // items, and a restart re-runs epic_feature_planner which creates fresh ADO items — without
+    // this, the re-push hits "UNIQUE constraint failed: ado_work_item_map.workflow_id, local_key"
+    // on the surviving rows (and silently orphans the new duplicate epic it just created in ADO).
+    db.prepare(`DELETE FROM ado_work_item_map WHERE workflow_id = ?`).run(workflowId);
     // Delete sessions (and their messages/artifacts via cascade) created during this workflow run
     db.prepare(`DELETE FROM sessions WHERE item_id = ? AND created_at >= ?`).run(workflow.item_id, workflow.created_at);
     // Collapse last run's feature-wave stages out of stage_sequence and clear wave
