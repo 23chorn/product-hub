@@ -9,7 +9,7 @@ import { stripReadyMarker } from '../../utils/coordinator-helpers';
 import { ConversationHeader } from './ConversationHeader';
 import { PrototypePreview, type PrototypeData } from './PrototypePreview';
 import { api } from '../../services/api';
-import { eventToMessage } from '../../utils/event-to-message';
+import { eventToMessage, lastProgressIndexForStage } from '../../utils/event-to-message';
 import { ChangeRequestSection } from './ChangeRequestSection';
 import { PipelineTerminalView } from '../workflow/PipelineTerminalView';
 
@@ -18,7 +18,7 @@ export function CoordinatorChat() {
     activeWorkflow, stageSequence, completedStages, currentStage, pendingStage, checkpoints,
     applyWorkflowStatus, resetWorkflow, setViewingArtifactId,
     planningPhase,
-    coordinatorMessages, addCoordinatorMessage, appendToLastCoordinatorMessage, replaceLastCoordinatorMessage,
+    coordinatorMessages, addCoordinatorMessage, appendToLastCoordinatorMessage, replaceLastCoordinatorMessage, upsertProgressMessage,
     isStreaming, setIsStreaming,
     lastEventId, setLastEventId,
   } = useWorkflowStore();
@@ -150,15 +150,10 @@ export function CoordinatorChat() {
               setRevisingStage(null);
             }
 
-            // Progress events replace the previous progress message (live-updating status line)
+            // Progress events update this stage's live status line in place (keyed by
+            // stage, so parallel feature refinements each keep their own line).
             if (event.event_type === 'stage_progress') {
-              const messages = useWorkflowStore.getState().coordinatorMessages;
-              const lastMsg = messages[messages.length - 1];
-              if (lastMsg?.role === 'coordinator' && lastMsg.isProgress) {
-                replaceLastCoordinatorMessage({ ...msg, isProgress: true });
-              } else {
-                addCoordinatorMessage({ ...msg, isProgress: true });
-              }
+              upsertProgressMessage({ ...msg, isProgress: true });
             } else {
               addCoordinatorMessage(msg);
             }
@@ -212,10 +207,11 @@ export function CoordinatorChat() {
       const msgs: Array<CoordinatorMessage> = [];
       for (const event of events) {
         if (event.event_type === 'stage_progress') {
-          // On replay, collapse progress events — only keep the latest one per stage
-          let lastIdx = -1;
-          for (let j = msgs.length - 1; j >= 0; j--) { if (msgs[j].isProgress) { lastIdx = j; break; } }
-          const progressMsg: CoordinatorMessage = { role: 'coordinator', content: event.summary, timestamp: event.created_at, isProgress: true };
+          // On replay, collapse progress events to the latest one *per stage* — so a
+          // parallel feature wave restores one live line per feature, not a single shared one.
+          const stage = event.stage ?? undefined;
+          const lastIdx = lastProgressIndexForStage(msgs, stage);
+          const progressMsg: CoordinatorMessage = { role: 'coordinator', content: event.summary, timestamp: event.created_at, isProgress: true, stage };
           if (lastIdx >= 0) {
             msgs[lastIdx] = progressMsg;
           } else {

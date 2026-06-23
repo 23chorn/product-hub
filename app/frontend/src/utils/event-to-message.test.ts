@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { eventToMessage } from './event-to-message';
+import { eventToMessage, lastProgressIndexForStage } from './event-to-message';
 
 const base = {
   id: 1,
@@ -63,5 +63,33 @@ describe('eventToMessage', () => {
   it('passes through undefined stage', () => {
     const msg = eventToMessage({ ...base, stage: null, event_type: 'heartbeat', summary: 'tick' });
     expect(msg!.stage).toBeUndefined();
+  });
+});
+
+describe('lastProgressIndexForStage', () => {
+  it('returns -1 when no progress line exists for the stage', () => {
+    const msgs = [{ isProgress: true, stage: 'story_decomposition_F1' }];
+    expect(lastProgressIndexForStage(msgs, 'story_decomposition_F2')).toBe(-1);
+  });
+
+  it('finds each parallel feature\'s own progress line independently', () => {
+    // Interleaved parallel-wave progress lines — one per feature stage.
+    const msgs = [
+      { isProgress: true, stage: 'story_decomposition_F1' },
+      { isProgress: true, stage: 'story_decomposition_F2' },
+      { isProgress: true, stage: 'story_decomposition_F3' },
+    ];
+    expect(lastProgressIndexForStage(msgs, 'story_decomposition_F1')).toBe(0);
+    expect(lastProgressIndexForStage(msgs, 'story_decomposition_F2')).toBe(1);
+    expect(lastProgressIndexForStage(msgs, 'story_decomposition_F3')).toBe(2);
+  });
+
+  it('ignores non-progress messages and returns the most recent match', () => {
+    const msgs = [
+      { isProgress: true, stage: 'analyst' },
+      { isProgress: false, stage: 'analyst' }, // a completed/verdict line, not live status
+      { isProgress: true, stage: 'analyst' },
+    ];
+    expect(lastProgressIndexForStage(msgs, 'analyst')).toBe(2);
   });
 });

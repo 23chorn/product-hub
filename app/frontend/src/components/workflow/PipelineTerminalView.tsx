@@ -520,7 +520,15 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                 {msgs.map((msg, i) => (
                   <EventRow key={i} msg={msg} />
                 ))}
-                {status === 'in-progress' && msgs.length === 0 && (
+                {/* A QA sub-stage has no events of its own — it rides on its parent
+                    feature stage. Don't leave it stuck on "initialising…" while the
+                    parent streams; show a placeholder and the "processing…" indicator. */}
+                {status === 'in-progress' && msgs.length === 0 && isQaSubStage && (
+                  <div className="px-4 py-1 text-[10px] text-surface-400 dark:text-surface-600 italic">
+                    Tests will be generated once the feature’s stories are finalised…
+                  </div>
+                )}
+                {status === 'in-progress' && msgs.length === 0 && !isQaSubStage && (
                   <div className="flex items-center gap-2 px-4 py-1.5 text-[10px] text-surface-500 dark:text-surface-600">
                     <svg className="w-2.5 h-2.5 animate-spin" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -529,7 +537,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                     initialising…
                   </div>
                 )}
-                {status === 'in-progress' && msgs.length > 0 && (
+                {status === 'in-progress' && (msgs.length > 0 || isQaSubStage) && (
                   <div className="flex items-center gap-2 px-4 py-1 text-[10px] text-brand-600 animate-pulse">
                     <span className="w-1 h-1 rounded-full bg-brand-600" />
                     processing…

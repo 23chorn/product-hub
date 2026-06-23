@@ -147,3 +147,19 @@ export function eventToMessage(event: WorkflowEvent): { role: 'coordinator'; con
     stage: event.stage ?? undefined,
   };
 }
+
+/**
+ * Index of the most recent progress ("live status") message for a given stage, or -1.
+ * Progress lines update in place keyed by stage so that parallel feature refinements
+ * (story_decomposition_F1/F2/F3 streaming phases at once) each keep their own line
+ * instead of stomping a single shared status line that flickers between features.
+ */
+export function lastProgressIndexForStage(
+  msgs: Array<{ isProgress?: boolean; stage?: string }>,
+  stage: string | undefined
+): number {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].isProgress && msgs[i].stage === stage) return i;
+  }
+  return -1;
+}

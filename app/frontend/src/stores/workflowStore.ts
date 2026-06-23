@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { lastProgressIndexForStage } from '../utils/event-to-message';
 
 const COORDINATOR_MESSAGES_KEY_PREFIX = 'workflow-coordinator-messages:';
 const LAST_EVENT_ID_KEY_PREFIX = 'workflow-last-event-id:';
@@ -129,6 +130,7 @@ interface WorkflowStoreState {
   addCoordinatorMessage: (msg: CoordinatorMessage) => void;
   appendToLastCoordinatorMessage: (chunk: string) => void;
   replaceLastCoordinatorMessage: (content: string | CoordinatorMessage) => void;
+  upsertProgressMessage: (msg: CoordinatorMessage) => void;
   clearCoordinatorMessages: () => void;
 
   // Streaming state
@@ -214,6 +216,19 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
       } else {
         msgs[msgs.length - 1] = content;
       }
+      const workflowId = state.activeWorkflow?.id;
+      if (workflowId) saveStoredMessages(workflowId, msgs);
+      return { coordinatorMessages: msgs };
+    }),
+  upsertProgressMessage: (msg) =>
+    set((state) => {
+      const msgs = [...state.coordinatorMessages];
+      // Update this stage's existing live status line in place, so parallel feature
+      // refinements each keep their own progress line instead of sharing (and flickering
+      // between) one. Falls back to appending a new line for a stage seen for the first time.
+      const idx = lastProgressIndexForStage(msgs, msg.stage);
+      if (idx >= 0) msgs[idx] = msg;
+      else msgs.push(msg);
       const workflowId = state.activeWorkflow?.id;
       if (workflowId) saveStoredMessages(workflowId, msgs);
       return { coordinatorMessages: msgs };
