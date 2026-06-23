@@ -83,6 +83,6 @@ The model dropdown in the UI header always reflects the current provider's model
 
 ## Adding models
 
-Edit `PROVIDER_MODELS` in `app/backend/src/utils/ai-provider.ts`. Also add the model ID to:
+Edit `PROVIDER_MODELS` in `app/backend/src/utils/model-config.ts`. Also add the model ID to:
 - `MODEL_MAX_OUTPUT_TOKENS` — max tokens for that model
 - `MODEL_PRICING` — cost per million tokens (enables the `[TOKENS]` cost log line)

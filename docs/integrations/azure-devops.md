@@ -4,7 +4,7 @@ Azure DevOps (ADO) is used to push backlog structures (epics, features, stories)
 
 ## When to use
 
-Use ADO if your engineering team tracks work in Azure DevOps. If you use Jira instead, see [jira.md](jira.md). If you don't want automatic push, set `WORK_ITEMS_INTEGRATION=none` — the "Push to ADO" button will be hidden and you can export backlog JSON manually.
+Use ADO if your engineering team tracks work in Azure DevOps — it's currently the only supported work-item tracker. If you don't want automatic push, set `WORK_ITEMS_INTEGRATION=none` — the "Push to ADO" button will be hidden and you can export backlog JSON manually.
 
 ## Setup
 

@@ -67,20 +67,26 @@ user_skill_level: intermediate   # beginner | intermediate | expert
 ## 3. Agent personas (`agents/personas/`) — optional
 
 Each agent has a persona markdown file that defines its role, tone, and
-behavior. You can edit these to adjust how agents communicate:
+behavior. You can edit these to adjust how agents communicate. `agents/personas/`
+has one file per agent — see the **Specialist agents** list in the root
+[README.md](../README.md) for the current persona roster (Sage, Rex, Atlas,
+Apex, Shard + platform engineers, Nova, Luma, Cass, Discovery Scout, Critic,
+Curator, Context Keeper). A few worth knowing by name:
 
 | File | Agent | What it controls |
 |------|-------|------------------|
-| `pm.md` | PM Strategy & PM Backlog | PRD writing style, backlog format |
-| `analyst.md` | Research Analyst | Research depth, analysis approach |
-| `architect.md` | Solution Architect | Architecture design approach |
+| `pm.md` | PM Strategy (Rex) | PRD writing style |
+| `analyst.md` | Analyst (Sage) | Research depth, analysis approach |
+| `architect.md` | Architect (Atlas) | Architecture design approach |
 | `coordinator.md` | Coordinator (Chief of Staff) | Goal decomposition, planning style |
-| `critic-core.md` | Critic | Review identity, output format, severity calibration (shared across every stage) |
-| `critic-<stage>.md` (e.g. `critic-prd.md`, `critic-backlog.md`) | Critic | Stage-specific review checks layered on top of `critic-core.md` |
-| `curator.md` | Context Curator | How context files are updated |
+| `story-decomposition.md` | Story team (Shard) | Backlog/story writing style |
+| `critic-core.md` | Critic (Flint) | Review identity, output format, severity calibration (shared across every stage) |
+| `critic-<stage>.md` (e.g. `critic-prd.md`, `critic-backlog.md`) | Critic (Flint) | Stage-specific review checks layered on top of `critic-core.md` |
+| `curator.md` | Context Curator (Ivy) | How context files are updated |
 
 Most users will not need to change these. Edit them if you want to shift the
 tone (e.g., more concise, more formal) or add domain-specific instructions.
+Personas can also be edited from the UI — click **Knowledge Studio → Agents**.
 
 ---
 
@@ -94,17 +100,19 @@ Templates define the structure of documents agents produce:
 | `prd.template.md` | Product Requirements Document (PM Strategy) |
 | `epic-features.template.md` | Epic + feature shells (Epic Feature Planner) |
 | `architecture.template.md` | Solution architecture document (Architect) |
-| `backlog.template.md` | Epic, feature, and story backlog (Story Decomposition) |
+| `backlog.template.md` | Stories with acceptance criteria (Story Decomposition team) |
 | `prototype.template.md` | Wireframe prototype spec (Prototype Builder) |
 | `figma-design.template.md` | Figma design brief (Figma Designer) |
 | `discovery.template.md` | Opportunity drafts (Discovery Scout) |
+| `doc-review.template.md` | Documentation review comments (Doc Reviewer) |
 
 Edit these to match your team's preferred document format. The section headings
 and structure guide the agent's output — keep the overall shape but adjust
 headings, add sections, or remove ones you don't need.
 
-Templates can also be edited from the UI — click **Templates** in the header.
-Saves require double-confirmation since changes affect all future outputs.
+Templates can also be edited from the UI — click **Knowledge Studio → Agents**,
+select a persona, and switch to its Template tab. Saves require
+double-confirmation since changes affect all future outputs.
 
 ---
 
@@ -137,7 +145,8 @@ AWS_REGION=us-east-1
 
 The model is selected at runtime from the UI header dropdown — you do not need
 to set a model in `.env`. To add or remove models from the dropdown, edit
-`PROVIDER_MODELS` in `app/backend/src/utils/ai-provider.ts`.
+`PROVIDER_MODELS` in `app/backend/src/utils/model-config.ts` (re-exported from
+`ai-provider.ts`, but defined there).
 
 ---
 
@@ -151,10 +160,10 @@ integration flags and adding the required credentials:
 ROADMAP_INTEGRATION=none        # none | airtable
 
 # Work item tracker — where backlog items are pushed
-WORK_ITEMS_INTEGRATION=none     # none | ado | jira
+WORK_ITEMS_INTEGRATION=none     # none | ado
 
-# Knowledge base — where PRDs are published
-KNOWLEDGE_BASE_INTEGRATION=none # none | notion | gitbook | azure_wiki
+# Knowledge base — where drafts are auto-published (Azure Wiki only; reuses ADO credentials)
+KNOWLEDGE_BASE_INTEGRATION=none # none | azure_wiki
 ```
 
 See `.env.example` for the full list of credentials needed for each integration.

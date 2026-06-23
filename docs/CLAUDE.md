@@ -117,7 +117,7 @@ Default pipeline: `['analyst', 'pm_prd', 'epic_feature_planner', 'story_decompos
 3. Add demo fixture in `app/backend/src/demo/fixtures/<stage-name>.<ext>`
 4. Update `stage-metadata.ts`: `STAGE_OUTPUT_FORMATS`, `STAGE_SESSION_MAP`, `STAGE_ARTIFACT_TYPE`, `STAGE_ARTIFACT_LABEL`, `STAGE_LABELS_BRIEF`, `stageGoal()`, `stageNotDecide()`
 5. Update `specialist-agent.ts`: add entry in `STAGE_TEMPLATE_MAP`
-6. Update `workflow-stage-runner.ts`: add to `specialistStages` set (~line 697), label ternary (~line 685), `adoBackedStages` if it creates ADO tickets (~line 688)
+6. Update `workflow-stage-runner.ts`: add the stage to the `specialistStages` set so it gets critic review + checkpoint event labeling, and add its label to the `STAGE_EVENT_LABEL` map in `stage-metadata.ts`. If the stage needs an ADO push, wire it into the checkpoint-resolution branch in `workflow-routes.ts` (alongside the `pushEpicAndFeaturesToADO()`/`pushFeatureToADO()` call sites) — ADO push is decided there, not in `workflow-stage-runner.ts`
 7. Update frontend `constants/stage-labels.ts`: `STAGE_LABELS` and optionally `STAGE_SHORT_LABELS`
 8. Update `demo-mode.ts`: `DEMO_FIXTURE_FILES` and `DEMO_STAGE_DELAY_MS`
 

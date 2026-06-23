@@ -41,7 +41,7 @@ export function HomeHeader({
             <h2 className="text-xl font-bold text-surface-900 dark:text-surface-100">Welcome to Product Hub</h2>
             <p className="text-sm text-surface-500 dark:text-surface-400 mt-1 max-w-xl leading-relaxed">
               {isAdmin
-                ? 'Describe a new product initiative and a team of AI agents runs the full pipeline — research, PRD, architecture, backlog, and QA — ready for engineering.'
+                ? 'Launch a roadmap initiative — synced from Airtable, or described ad hoc — and a team of AI agents runs the full pipeline: research, PRD, architecture, backlog, and QA, ready for engineering.'
                 : 'Review the research, PRDs, architecture, backlogs, and QA plans waiting on you, and approve or send back changes as initiatives move through the pipeline.'}
             </p>
           </div>

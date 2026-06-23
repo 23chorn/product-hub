@@ -1,10 +1,10 @@
 # Product Hub
 
-AI-powered product operations platform. Describe what you want to build and a coordinated team of AI agents researches it, writes the PRD, designs the architecture, produces a developer-ready backlog with QA test suite and technical refinements — then pushes it all to Azure DevOps with full story/test linkage. Human review at every stage.
+AI-powered product operations platform. Launch a roadmap initiative — synced from Airtable with a complete brief, or described ad hoc — and a coordinated team of AI agents researches it, writes the PRD, designs the architecture, produces a developer-ready backlog with QA test suite and technical refinements — then pushes it all to Azure DevOps with full story/test linkage. Human review at every stage.
 
 ## Overview
 
-You talk to one agent: the **Coordinator** (Chief of Staff). It gathers requirements, briefs specialist agents, and brings results back to you at structured checkpoints. Nothing moves forward without your approval.
+You talk to one agent: the **Coordinator** (Chief of Staff). It confirms the brief is complete — asking only if something's genuinely missing — briefs specialist agents, and brings results back to you at structured checkpoints. Nothing moves forward without your approval.
 
 **Specialist agents:**
 - **Analyst (Sage)** — market research, domain analysis, risk identification
@@ -34,7 +34,7 @@ You talk to one agent: the **Coordinator** (Chief of Staff). It gathers requirem
 | Database | SQLite via `better-sqlite3` (`db/product-ops.db`) |
 | Artifact storage | Disk, under `data/sessions/...` — SQLite holds a pointer row per file |
 | AI | Anthropic API, AWS Bedrock, or Ollama (local) — model selectable from UI |
-| Integrations | Airtable (roadmap items), Azure DevOps, Notion |
+| Integrations | Airtable (roadmap items), Azure DevOps (work items + wiki), Figma, Slack |
 
 ```
 product-agent/
@@ -52,8 +52,9 @@ product-agent/
 │   ├── behaviour/     Existing feature behaviour docs (.feature), injected into the PRD stage only
 │   └── README.md      Guidelines for filling in context files
 ├── db/
-│   ├── schema.sql     Canonical DB schema (tracked)
-│   └── product-ops.db Runtime database (gitignored)
+│   ├── schema.ts       Canonical Drizzle schema (tracked)
+│   ├── migrations/     Versioned SQL migrations, applied automatically on startup
+│   └── product-ops.db  Runtime database (gitignored)
 ├── data/              Artifact exports (gitignored)
 ├── docs/              Deployment, developer, integration, and setup guides
 └── scripts/           Setup and utility scripts
@@ -95,8 +96,8 @@ See [docs/setup/llm-providers.md](docs/setup/llm-providers.md) for detailed prov
 
 ## How It Works
 
-1. **Describe your goal** in the Coordinator chat — include who it's for, the core problem, key outcomes, and constraints
-2. **The Coordinator gathers context** — asks 1–3 rounds of clarifying questions, then launches the workflow
+1. **Launch an initiative** — normally a roadmap item synced from Airtable, already carrying a complete brief (problem, users, scope, constraints) by team convention; the in-app "New Initiative" form is the fallback for ad hoc work not yet in Airtable
+2. **The Coordinator checks the brief against four exit criteria** (problem, user, scope boundary, hard constraints) and launches immediately once it can state all four — it only asks clarifying questions (max 2 per message, up to 3 rounds) when the brief is genuinely missing one of them
 3. **Choose which stages to run** — toggle agents on/off before the workflow starts (at least one required)
 4. **Specialist agents run autonomously** — each produces a document, reviewed by the Critic for quality
 5. **Feature-by-feature refinement** — after high-level planning, each feature gets 7-agent collaborative refinement:
@@ -148,6 +149,8 @@ Every specialist stage pauses for human review. At each checkpoint you can:
 
 After a workflow completes, you can **redo from any stage** — provide a reason, and that stage plus all downstream stages rerun.
 
+**Slack notifications** — set `SLACK_WEBHOOK_URL` to post a message when a checkpoint needs review and when a workflow completes.
+
 ### Sprint Estimation
 
 The backlog stage automatically calculates sprint estimates using your team's velocity and capacity factor (configured in `agents/config.yaml`):
@@ -173,8 +176,9 @@ Which role a checkpoint requires is configurable per stage in **Settings → Acc
 ## UI Features
 
 ### Home Screen
-The home screen lists your initiatives as cards showing title, workflow status, and current stage progress. Cards auto-refresh when any workflow is active. Two ways to start a new workflow:
-- **New Initiative** — opens a form to describe the initiative; the Coordinator gathers requirements before launching
+The home screen lists your initiatives as cards showing title, workflow status, and current stage progress. Cards auto-refresh when any workflow is active. Ways to start a new workflow:
+- **Launch a synced initiative** — the normal path: click **Launch →** on a roadmap item synced from Airtable (via **Sync Airtable** in the header), already carrying a complete brief
+- **New Initiative** — opens a form to describe an ad hoc initiative not yet in Airtable; the Coordinator confirms the brief before launching
 - **Simulate webhook** — instantly creates and launches a full pipeline from a set of sample initiatives (In-App Messaging, Onboarding Redesign, Portfolio Analytics, Social Trading) — useful for demos showing multiple parallel workflows
 
 ### Pipeline Terminal View
@@ -228,7 +232,7 @@ The left sidebar shows local initiatives and Airtable roadmap items (when config
 
 ### Knowledge Studio
 Click **Knowledge Studio** in the header to manage everything that shapes agent behaviour and project documentation, organised into collapsible sections:
-- **Context** — edit the canonical `context/*.md` project files. Changes are picked up immediately by the next agent request — no server restart needed
+- **Context** — edit the canonical `context/*.md` project files. Changes are picked up immediately by the next agent request — no server restart needed. Includes **Airtable Sync**, a manual trigger that checks Airtable initiative statuses against the last-seen snapshot and, on request, runs the **Context Keeper** agent to propose `context/*.md` edits for material transitions (e.g. an initiative moving to Shipped)
 - **Behaviour Docs** — edit the `.feature` files in `context/behaviour/` that describe how existing functionality currently works; only surfaced to the PRD stage, matched by keyword relevance to the initiative
 - **Agents** — edit a persona's prompt, its output template, and its registered validator tools, with version history per file
 - **Tools** — review the structural validators each stage calls before returning output
@@ -278,31 +282,31 @@ ROADMAP_INTEGRATION=airtable
 AIRTABLE_API_KEY=pat...
 AIRTABLE_BASE_ID=app...
 
-# Work items (Azure DevOps or Jira)
-WORK_ITEMS_INTEGRATION=ado|jira|none
+# Work items (Azure DevOps)
+WORK_ITEMS_INTEGRATION=ado|none
 AZURE_DEVOPS_ORG=...
 AZURE_DEVOPS_PROJECT=...
 AZURE_DEVOPS_PAT=...
 AZURE_DEVOPS_STORY_TYPE=User Story  # or "Product Backlog Item" for Scrum template
 
-# Azure DevOps AI pipeline (optional — triggers a Claude Code pipeline run)
-AZURE_DEVOPS_AI_PIPELINE_ID=...
-
-# Knowledge base (Notion or GitBook)
-KNOWLEDGE_BASE_INTEGRATION=notion|gitbook|none
-NOTION_API_KEY=...
-NOTION_DATABASE_ID=...
-GITBOOK_API_TOKEN=...
-GITBOOK_SPACE_ID=...
+# Azure Wiki (optional — auto-publishes analyst/PRD/architecture/prototype/figma_design
+# drafts to the ADO wiki; reuses the AZURE_DEVOPS_* credentials above)
+KNOWLEDGE_BASE_INTEGRATION=azure_wiki|none
 
 # Figma (optional — lets the Figma Design stage check your design system
 # for gaps before writing the design brief)
 FIGMA_API_KEY=...
 FIGMA_DESIGN_SYSTEM_FILE=...
 FIGMA_MOCKUP_FILE=...
+
+# Slack (optional — posts a notification when a checkpoint needs review,
+# and when a workflow completes)
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
 ```
 
 See `docs/integrations/` for detailed setup guides.
+
+**Note:** `WORK_ITEMS_INTEGRATION=jira` and `KNOWLEDGE_BASE_INTEGRATION=notion|gitbook` were removed (see git history) and are no longer recognized — only `ado`/`none` and `azure_wiki`/`none` are valid today.
 
 ## Cost Optimisation
 
@@ -350,7 +354,7 @@ npm run dev              # Start frontend + backend concurrently
 npm run dev:backend      # Backend only (tsx watch)
 npm run dev:frontend     # Frontend only (Vite)
 npm run build            # Build all workspaces
-npm run test:unit        # Run Vitest unit tests
+npm test                 # Run Vitest unit tests (specs in tests/unit/)
 
 # After editing app/shared/src/types.ts:
 cd app/shared && npm run build
@@ -361,30 +365,36 @@ cd app/backend && npx tsc --noEmit
 
 See [CUSTOMIZING.md](CUSTOMIZING.md) for fork customization and [docs/developer-guide/adding-an-agent-stage.md](docs/developer-guide/adding-an-agent-stage.md) for adding new specialist stages.
 
-Setting up governance for your Product/QA team? Start from [docs/policies-and-procedures-template.md](docs/policies-and-procedures-template.md) — a template grounded in what this system actually enforces (roles, checkpoint gates, documentation review) versus what's left to your team's convention.
+Setting up governance for your Product/QA team? Start from [docs/policies-and-procedures-template.md](docs/policies-and-procedures-template.md) — a template grounded in what this system actually enforces (roles, checkpoint gates, documentation review) versus what's left to your team's convention. For a broader department-level policy doc that covers Product/QA activities beyond this tool, see [docs/product-qa-policies-and-procedures.md](docs/product-qa-policies-and-procedures.md).
 
 ## Storage
 
 ### SQLite (operational data)
-Schema in `db/schema.sql`, mirrored in `app/backend/src/data/database.ts`.
+Schema in `db/schema.ts` (Drizzle), with versioned migrations in `db/migrations/`; runtime connection in `app/backend/src/data/database.ts`, which applies any pending migrations on startup. See [docs/database-architecture.md](docs/database-architecture.md) for the storage dispatch flow, migration workflow, and the SQLite-vs-Postgres tradeoff analysis — this table is the quick-reference summary.
 
 | Table | Purpose |
 |-------|---------|
 | `items` | Work item registry (Airtable initiatives + local items) |
 | `sessions` | Agent conversation sessions |
 | `messages` | Full conversation history |
+| `skill_versions` | Versioned agent persona prompts, output templates, and dev context, edited from Knowledge Studio's Agents tab |
 | `artifacts` | Exported document metadata + file paths |
 | `workflows` | Goal-oriented orchestration units with cost tracking |
 | `checkpoints` | Human review pause points |
+| `checkpoint_audit` | Approve/reject/revise history per checkpoint, with the resolving user and notes |
 | `workflow_events` | Stage narration events for the UI |
 | `coordinator_sessions` | Coordinator planning conversation persistence |
-| `context_diffs` | Proposed edits to `context/*.md` files |
 | `policies` | Governance rules injected into Coordinator prompt |
-| `staged_decisions` | Candidate ADR entries |
-| `context_loads` | Context audit trail |
 | `change_requests` | Post-completion change requests with impact assessment and status |
 | `cr_artifact_versions` | Links change requests to new artifact versions and their parents |
 | `ado_work_item_map` | Maps local backlog keys to Azure DevOps work item IDs for sync |
+| `qa_test_plan_map` | Maps a workflow to its Azure DevOps Test Plan, suites, and test case IDs |
+| `workflow_skill_assignments` | Records which skill version ran each stage of a workflow, for audit |
+| `context_diffs` | Curator-proposed updates to `context/*.md` files, pending human approval |
+| `context_change_proposals` | Context Keeper-proposed edits to `context/*.md` triggered by an Airtable status change (e.g. an item moving to Shipped) |
+| `context_file_versions` | Version history for `context/*.md` and `context/behaviour/*.feature` edits made in Knowledge Studio |
+| `item_status_snapshots` | Last-seen Airtable status per item — diffed on sync to detect transitions for Context Keeper and shipped-item stamping |
+| `pipeline_runs` | Azure DevOps AI pipeline run tracking (`AZURE_DEVOPS_AI_PIPELINE_ID`) |
 | `discovery_sources` | Source documents (interviews, reviews, competitor notes) for Discovery Mode |
 | `discovery_runs` | One row per Discovery Scout batch run |
 | `discovery_opportunities` | Opportunity drafts surfaced by a run, reviewed/promoted/dismissed by a PM |
