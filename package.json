@@ -23,7 +23,9 @@
     "lint": "npm run lint --workspaces",
     "validate-env": "cd app/backend && npm run validate-env",
     "verify-schema": "tsx scripts/verify-schema.ts",
-    "test": "cd app/backend && npm run test",
+    "test": "npm run test:backend && npm run test:frontend",
+    "test:backend": "cd app/backend && npm run test",
+    "test:frontend": "cd app/frontend && npm run test",
     "test:pipeline": "tsx scripts/test-pipeline.ts"
   },
   "devDependencies": {

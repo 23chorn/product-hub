@@ -76,6 +76,7 @@ export function getDemoStatsDashboard(rangeDays: number): StatsDashboard {
     avgDwellHours: round2(jitter(s.baseDwellHours, s.baseDwellHours * 0.15)),
     medianDwellHours: round2(jitter(s.baseDwellHours * 0.85, s.baseDwellHours * 0.1)),
     avgHumanWaitHours: round2(jitter(s.baseDwellHours * 0.4, 2)),
+    avgLlmSeconds: round2(jitter(45, 15)),
   }));
 
   const stuckNow = [

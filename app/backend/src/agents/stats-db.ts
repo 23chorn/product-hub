@@ -161,7 +161,7 @@ export interface StatsDashboard {
   rejectionRate: { overallRate: number | null; totalResolved: number };
   throughput: { points: Array<{ weekStart: number; started: number; completed: number }> };
   bottlenecks: {
-    stageDurations: Array<{ stage: string; attempts: number; avgDwellHours: number; medianDwellHours: number; avgHumanWaitHours: number | null }>;
+    stageDurations: Array<{ stage: string; attempts: number; avgDwellHours: number; medianDwellHours: number; avgHumanWaitHours: number | null; avgLlmSeconds: number | null }>;
     stuckNow: Array<{
       checkpointId: number; workflowId: string; itemId: string; itemTitle: string; stage: string;
       requiredRoles: string[]; pendingSince: number; hoursPending: number; thresholdHours: number;
@@ -247,6 +247,26 @@ export function getStatsDashboard(rangeDays: number): StatsDashboard {
     }))
     .sort((a, b) => b.attempts - a.attempts);
 
+  // Average LLM compute time per stage — the seconds the model spent streaming the
+  // artifact, captured in each 'stage_completed' event's details (see workflow-stage-runner).
+  // Distinct from dwellHours (which includes human review wait). Demo/cancelled excluded.
+  const llmTimingRows = db.prepare(`
+    SELECT we.stage as stage, we.details as details
+    FROM workflow_events we
+    JOIN workflows w ON w.id = we.workflow_id
+    WHERE we.event_type = 'stage_completed' AND we.details IS NOT NULL AND ${EXCLUDE_DEMO_CANCELLED}
+  `).all() as Array<{ stage: string | null; details: string }>;
+  const llmSecondsByStage = new Map<string, number[]>();
+  for (const r of llmTimingRows) {
+    if (!r.stage) continue;
+    let seconds: number | undefined;
+    try { seconds = JSON.parse(r.details).llm_seconds; } catch { /* malformed details — skip */ }
+    if (typeof seconds !== 'number' || !Number.isFinite(seconds)) continue;
+    const stage = normalizeStage(r.stage);
+    if (!llmSecondsByStage.has(stage)) llmSecondsByStage.set(stage, []);
+    llmSecondsByStage.get(stage)!.push(seconds);
+  }
+
   // dwell/human-wait have no natural single timestamp to range-filter on — reflects all history for stable medians
   const durationsByStage = new Map<string, StageDuration[]>();
   for (const d of durations) {
@@ -257,12 +277,14 @@ export function getStatsDashboard(rangeDays: number): StatsDashboard {
     .map(([stage, ds]) => {
       const dwellValues = ds.map(d => d.dwellHours);
       const humanWaitValues = ds.map(d => d.humanWaitHours).filter((v): v is number => v != null);
+      const llmSeconds = llmSecondsByStage.get(stage) ?? [];
       return {
         stage,
         attempts: ds.length,
         avgDwellHours: round2(mean(dwellValues)!),
         medianDwellHours: round2(median(dwellValues)!),
         avgHumanWaitHours: humanWaitValues.length > 0 ? round2(mean(humanWaitValues)!) : null,
+        avgLlmSeconds: llmSeconds.length > 0 ? round2(mean(llmSeconds)!) : null,
       };
     })
     .sort((a, b) => b.avgDwellHours - a.avgDwellHours);

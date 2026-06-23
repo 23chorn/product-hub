@@ -159,10 +159,12 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
     }
   })();
   const canRestartDemo = !!isAdmin && isDemoWorkflow;
-  const lastTerminalEvent = [...coordinatorMessages]
-    .reverse()
-    .find(m => m.eventType === 'workflow_cancelled' || m.eventType === 'workflow_complete');
-  const isCancelled = isComplete && lastTerminalEvent?.eventType === 'workflow_cancelled';
+  // A stop OR a checkpoint rejection both emit a 'workflow_cancelled' event and mark
+  // the workflow complete (see requestCancel). Treat the workflow as stopped whenever
+  // that event is present — matching the home card's cancelledSet — rather than relying
+  // on it being the *last* terminal event, since a rejected flow can emit a trailing
+  // 'workflow_complete' that would otherwise flip the header back to "complete".
+  const isCancelled = isComplete && coordinatorMessages.some(m => m.eventType === 'workflow_cancelled');
 
   const handleStop = async () => {
     if (stopping || isComplete) return;

@@ -1,5 +1,15 @@
 import type { StageStatus } from '../stores/workflowStore';
 
+/**
+ * True for a per-feature multi-agent refinement checkpoint — the parallel
+ * `story_decomposition_F<n>` wave stages and their synthetic `_qa` siblings.
+ * These pause together as several concurrent checkpoints, so callers use this to
+ * avoid treating them like a single sequential stage (e.g. auto-opening previews).
+ */
+export function isFeatureRefinementStage(stage: string): boolean {
+  return /^story_decomposition_F\d+(_qa)?$/.test(stage);
+}
+
 export function deriveStageStatus(
   stageName: string,
   currentStage: string | null,

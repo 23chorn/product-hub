@@ -10,6 +10,7 @@ import { ConversationHeader } from './ConversationHeader';
 import { PrototypePreview, type PrototypeData } from './PrototypePreview';
 import { api } from '../../services/api';
 import { eventToMessage, lastProgressIndexForStage } from '../../utils/event-to-message';
+import { isFeatureRefinementStage } from '../../utils/stage-tracker-helpers';
 import { ChangeRequestSection } from './ChangeRequestSection';
 import { PipelineTerminalView } from '../workflow/PipelineTerminalView';
 
@@ -84,6 +85,10 @@ export function CoordinatorChat() {
     if (activeWorkflow?.status !== 'paused_at_checkpoint') return;
     const pending = checkpoints.find(c => c.status === 'pending');
     if (!pending?.artifact_id) return;
+    // Don't auto-open per-feature refinement checkpoints. A wave pauses as several
+    // concurrent feature checkpoints, so approving one would immediately pop the next
+    // feature's preview instead of returning the user to the main view.
+    if (isFeatureRefinementStage(pending.stage)) return;
     if (pending.id === autoOpenedCheckpointRef.current) return;
     autoOpenedCheckpointRef.current = pending.id;
 

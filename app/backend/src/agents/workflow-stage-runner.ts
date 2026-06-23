@@ -581,7 +581,7 @@ export async function runAutonomousStage(
     // Skip critic when a demo fixture was used — fixture content is pre-approved
     if (isSpecialistStage && criticEnabled && !skipCritic && demoFixture === null) {
       insertEvent(workflowId, 'stage_completed', stage, `${stageLabel} draft complete.`,
-        { excerpt, artifact_id: artifactId, ...(wikiUrl ? { wiki_url: wikiUrl } : {}) });
+        { excerpt, artifact_id: artifactId, llm_seconds: elapsed, ...(wikiUrl ? { wiki_url: wikiUrl } : {}) });
 
       // Brief pause before critic to reduce back-to-back API rate limit pressure
       await demoSleep(8_000);
@@ -729,7 +729,7 @@ export async function runAutonomousStage(
     // Demonstrates the revise → auto-revise → approve flow without any LLM calls.
     if (demoFixture !== null && stage === 'pm_prd') {
       insertEvent(workflowId, 'stage_completed', stage, `${stageLabel} draft complete.`,
-        { excerpt, artifact_id: artifactId, ...(wikiUrl ? { wiki_url: wikiUrl } : {}) });
+        { excerpt, artifact_id: artifactId, llm_seconds: elapsed, ...(wikiUrl ? { wiki_url: wikiUrl } : {}) });
       await demoSleep(600);
       insertEvent(workflowId, 'stage_progress', stage, stageProgressReview(stage));
       await demoSleep(1_800);
@@ -782,7 +782,7 @@ export async function runAutonomousStage(
     // separate 'wiki_synced' event with the same link, so including it again would
     // render a duplicate link line in the chat narration (eventToMessage).
     insertEvent(workflowId, 'stage_completed', stage, `${stageLabel} complete.`,
-      { excerpt, artifact_id: artifactId });
+      { excerpt, artifact_id: artifactId, llm_seconds: elapsed });
 
     finishStage(workflowId, itemId, stage, autoApprove, `Autonomous stage "${stage}" complete`, revisionRequestedBy);
   } catch (err: any) {

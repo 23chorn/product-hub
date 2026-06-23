@@ -30,6 +30,11 @@ function fmtHours(n: number | null): string {
   return n >= 48 ? `${(n / 24).toFixed(1)}d` : `${n.toFixed(0)}h`;
 }
 
+function fmtSeconds(n: number | null): string {
+  if (n == null) return '—';
+  return n >= 90 ? `${(n / 60).toFixed(1)}m` : `${n.toFixed(0)}s`;
+}
+
 function KpiCard({ label, value, sublabel, accent }: { label: string; value: string; sublabel?: string; accent?: string }) {
   return (
     <div className="bg-white dark:bg-surface-800/60 border border-surface-200 dark:border-surface-700 rounded-xl p-4">
@@ -209,6 +214,17 @@ export function StatsDashboardPanel() {
                     .slice(0, 8)
                     .map(s => ({ label: stageLabel(s.stage), value: s.avgDwellHours, sublabel: `n=${s.attempts}` }))}
                   valueFormat={fmtHours}
+                />
+              </Section>
+              <Section title="Slowest LLM Stages" subtitle="Avg time the model spends generating each stage's artifact, worst first">
+                <HorizontalBarList
+                  color="bg-violet-500"
+                  items={[...data.bottlenecks.stageDurations]
+                    .filter(s => s.avgLlmSeconds != null)
+                    .sort((a, b) => (b.avgLlmSeconds ?? 0) - (a.avgLlmSeconds ?? 0))
+                    .slice(0, 8)
+                    .map(s => ({ label: stageLabel(s.stage), value: s.avgLlmSeconds as number, sublabel: `n=${s.attempts}` }))}
+                  valueFormat={fmtSeconds}
                 />
               </Section>
               <Section title="Weakest Stages" subtitle="First-time approval rate by stage, worst first — points at prompts needing work">

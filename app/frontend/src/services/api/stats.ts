@@ -19,7 +19,7 @@ export interface StatsDashboard {
   rejectionRate: { overallRate: number | null; totalResolved: number };
   throughput: { points: Array<{ weekStart: number; started: number; completed: number }> };
   bottlenecks: {
-    stageDurations: Array<{ stage: string; attempts: number; avgDwellHours: number; medianDwellHours: number; avgHumanWaitHours: number | null }>;
+    stageDurations: Array<{ stage: string; attempts: number; avgDwellHours: number; medianDwellHours: number; avgHumanWaitHours: number | null; avgLlmSeconds: number | null }>;
     stuckNow: Array<{
       checkpointId: number; workflowId: string; itemId: string; itemTitle: string; stage: string;
       requiredRoles: string[]; pendingSince: number; hoursPending: number; thresholdHours: number;
