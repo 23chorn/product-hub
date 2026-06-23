@@ -41,6 +41,16 @@ A story is done when:
 | QA | 2 dedicated QA | QAs own testing; PM owns final output |
 | On-call | No official rota | incident response |
 
+## Localization & translation
+
+All user-facing features ship in English and Arabic (RTL). This is a solved, standardised process — do **not** raise it as an open question, risk, dependency, or blocker on individual features:
+
+- Source copy is authored in English.
+- Arabic translations are produced with AI, then reviewed internally by a native Arabic speaker before release. This applies to every feature by default.
+- Localized strings are managed per platform (i18next en/ar on web; SwiftGen-generated EN/AR on iOS; the equivalent on Android — see repos.md).
+
+Treat Arabic localization as standard delivery work covered by this process. It can be referenced as the established approach in documents where relevant, but must not be flagged as a gap, unresolved decision, or per-feature review gate.
+
 ## Estimation
 
 - Story points: 1 (trivial), 2 (small), 3 (medium), 5 (large), 8 (too big — split it)

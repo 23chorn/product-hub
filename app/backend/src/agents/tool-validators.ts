@@ -600,7 +600,8 @@ export function validateBacklogJson(input: Record<string, unknown>): string {
 
 // ── validate_epic_features_json ───────────────────────────────────────────────
 
-const VALID_PHASES = new Set(['MVP', 'Phase 1', 'Phase 2', 'Phase 3']);
+// MVP is conceptually the first phase, so the increments after it start at "Phase 2".
+const VALID_PHASES = new Set(['MVP', 'Phase 2', 'Phase 3', 'Phase 4']);
 const FR_ID_RE = /^FR-\d+$/;
 const NFR_ID_RE = /^NFR\d+$/i;
 const MAX_FEATURES_PER_PHASE = 5;
@@ -699,7 +700,7 @@ export function validateEpicFeaturesJson(input: Record<string, unknown>): string
 
   // New phases[] structure (required)
   if (!Array.isArray(p.phases) || p.phases.length === 0) {
-    issues.push('root: "phases" array is required — features must be nested under phases (MVP, Phase 1, Phase 2, Phase 3)');
+    issues.push('root: "phases" array is required — features must be nested under phases (MVP, Phase 2, Phase 3, Phase 4)');
   } else {
     if (p.phases.length > MAX_PHASES) {
       issues.push(`phases: ${p.phases.length} phases exceeds the maximum of ${MAX_PHASES} — consolidate or defer to outOfScope`);
@@ -720,7 +721,7 @@ export function validateEpicFeaturesJson(input: Record<string, unknown>): string
       req(phase, 'deliverable', pp, issues);
 
       if (phase.label && !VALID_PHASES.has(phase.label)) {
-        issues.push(`${pp}: "label" must be exactly "MVP", "Phase 1", "Phase 2", or "Phase 3" (got "${phase.label}")`);
+        issues.push(`${pp}: "label" must be exactly "MVP", "Phase 2", "Phase 3", or "Phase 4" (got "${phase.label}")`);
       }
       if (phase.label !== 'MVP') allMvp = false;
 
@@ -742,7 +743,7 @@ export function validateEpicFeaturesJson(input: Record<string, unknown>): string
     });
 
     if (allMvp && p.phases.length === 1 && totalFeatures > MAX_FEATURES_PER_PHASE) {
-      issues.push(`phases: all ${totalFeatures} features are in MVP — apply phase discipline. Split post-MVP work into Phase 1.`);
+      issues.push(`phases: all ${totalFeatures} features are in MVP — apply phase discipline. Split post-MVP work into Phase 2.`);
     }
   }
 

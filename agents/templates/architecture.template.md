@@ -17,7 +17,7 @@ Schema:
     "entities": [
       { "name": "Entity name", "primary_key": "pk field", "key_fields": "field1, field2, field3", "relationships": "1:N with OtherEntity", "notes": "Constraints, indexing, soft-delete" }
     ],
-    "entity_relationship_diagram": "ASCII diagram showing relationships and cardinality"
+    "entity_relationship_diagram": "ASCII diagram showing relationships and cardinality. MUST be drawn vertically (top-to-bottom) with each box/node on its own line, and the JSON string MUST use literal \\n newline escapes between every line — never emit the diagram as a single flat line, or it will not render."
   },
   "api_surface": [
     {
@@ -31,8 +31,8 @@ Schema:
     { "repo": "repo-name", "changes_required": "What changes", "notes": "" }
   ],
   "infrastructure": {
-    "hosting": "Hosting topology description",
-    "cost_estimate": "Per-component cost estimates"
+    "hosting": "Hosting topology — 3–4 sentences max, high-level only (where each service runs and how it scales; no exhaustive component-by-component walkthrough).",
+    "cost_estimate": "1–2 sentences max, high-level ballpark only (rough monthly range and the main cost drivers; not a per-component breakdown)."
   },
   "security_considerations": ["Security point 1", "Security point 2"],
   "new_dependencies": [
@@ -65,4 +65,4 @@ Rules:
 - For every repo in context/repos.md, include a repository_impact entry (use "No changes" if unaffected).
 - epic_features_enriched must reference the exact feature titles from the epic_feature_planner output.
 - new_dependencies: list every technology that does NOT already appear in context/tech-stack.md. If all choices reuse the existing stack, set this to an empty array `[]`. An empty array is a deliberate statement — it will be shown prominently to the PM reviewer as confirmation that no new dependencies are introduced.
-- This document is intentionally scoped down for reliability — keep every field concise (a few sentences, not essays). Diagrams, data-flow walkthroughs, deployment pipelines, and failure-mode tables are deferred for now and will be reintroduced once the stage is reliable at this smaller scope.
+- This document is intentionally scoped down for reliability — keep every field concise (a few sentences, not essays). The `entity_relationship_diagram` is the one permitted diagram — include it as specified above. Other diagrams, data-flow walkthroughs, deployment pipelines, and failure-mode tables are deferred for now and will be reintroduced once the stage is reliable at this smaller scope.

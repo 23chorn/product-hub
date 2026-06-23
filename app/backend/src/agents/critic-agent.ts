@@ -116,8 +116,9 @@ Focus on:
 - Does each feature include a rationale that explains why it is in this phase rather than earlier or later? Absent rationale is a MAJOR issue — it signals the phase plan was not thought through.
 - Are acceptance criteria specific enough that a QA engineer can write a test plan from them? Vague ACs like "performs well" or "works correctly" are MAJOR issues. ACs covering a feature constrained by an NFR must cite the measurable threshold from that NFR.
 - Are the nonFunctionalRequirements in prdRef accurate — do the referenced NFR IDs actually exist in the PRD, and do they genuinely constrain this feature? A feature that touches latency, security, compliance, or availability should reference the relevant NFR. An empty nonFunctionalRequirements on a latency-sensitive or compliance-relevant feature is suspicious — flag it.
-- Does the phasing tell a coherent story? MVP should contain the minimum to validate the core hypothesis — nothing more. Features in Phase 1+ that could have been in MVP without scope risk are a MAJOR issue. Features in MVP that are clearly non-essential are also a MAJOR issue.
+- Does the phasing tell a coherent story? MVP should contain the minimum to validate the core hypothesis — nothing more. Features in Phase 2+ that could have been in MVP without scope risk are a MAJOR issue. Features in MVP that are clearly non-essential are also a MAJOR issue.
 - Is the out-of-scope list explicit and credible? It should make clear what is NOT being built and why, not just list vague deferrals.
+- Is there a feature or AC about accessibility (screen reader support, TalkBack, VoiceOver, voice control, etc.) that isn't explicitly required by the PRD? Out of scope for this product — flag as MAJOR.
 - PM Questions should cover scope decisions and phase sequencing that only the PM can confirm — not implementation details.
 
 `;

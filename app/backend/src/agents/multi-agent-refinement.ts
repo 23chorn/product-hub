@@ -766,7 +766,7 @@ Merge all contributions into a single JSON artifact following the backlog templa
       "key": "F?",
       "title": "...",
       "description": "...",
-      "phase": "MVP | Phase 1 | Phase 2 | Phase 3",
+      "phase": "MVP | Phase 2 | Phase 3 | Phase 4",
       "acceptance_criteria": [
         "Feature-level condition 1 — what must be true when this feature is complete",
         "Feature-level condition 2",

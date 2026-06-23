@@ -9,6 +9,9 @@
  */
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import Logger from '../utils/logger';
+
+const logger = new Logger('BEHAVIOUR-CONTEXT');
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
 const BEHAVIOUR_DIR = path.join(PROJECT_ROOT, 'context', 'behaviour');
@@ -41,30 +44,46 @@ export async function loadRelevantBehaviourDocs(query: string, maxDocs = 4): Pro
     const raw = await fs.readFile(FEATURE_MAP_PATH, 'utf-8');
     featureMap = JSON.parse(raw);
   } catch {
+    logger.info(`No behaviour docs loaded — no feature-map.json at ${FEATURE_MAP_PATH}`);
     return '';
   }
-  if (!Array.isArray(featureMap.index) || featureMap.index.length === 0) return '';
+  if (!Array.isArray(featureMap.index) || featureMap.index.length === 0) {
+    logger.info('No behaviour docs loaded — feature-map.json has an empty index');
+    return '';
+  }
 
   const queryWords = tokenize(query);
-  if (queryWords.size === 0) return '';
+  if (queryWords.size === 0) {
+    logger.info('No behaviour docs loaded — query produced no searchable keywords');
+    return '';
+  }
 
   const scored = featureMap.index
     .map(entry => ({ entry, score: entry.keywords.filter(k => queryWords.has(k)).length }))
     .filter(s => s.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, maxDocs);
-  if (scored.length === 0) return '';
+  if (scored.length === 0) {
+    logger.info(`No behaviour docs matched — searched ${featureMap.index.length} indexed doc(s), no keyword overlap`);
+    return '';
+  }
 
   const sections = await Promise.all(scored.map(async ({ entry }) => {
     try {
       const content = await fs.readFile(path.join(FEATURES_DIR, entry.file), 'utf-8');
       return `### ${entry.feature} (\`${entry.file}\`)\n\n${content.trim()}`;
     } catch {
+      logger.warn(`Behaviour doc matched but could not be read: ${entry.file}`);
       return null;
     }
   }));
   const valid = sections.filter((s): s is string => s !== null);
-  if (valid.length === 0) return '';
+  if (valid.length === 0) {
+    logger.info('No behaviour docs loaded — all matched docs failed to read');
+    return '';
+  }
+
+  logger.info(`Loaded ${valid.length} behaviour doc(s) for PRD context: ${scored.map(s => `${s.entry.file} (score ${s.score})`).join(', ')}`);
 
   return `## Current Implementation — Behaviour Docs\nThese describe how related features currently work in production today (business rules, screen flows, validation). Use them to keep this PRD consistent with existing patterns, reference existing business rule numbering when extending it, and explicitly call out where you're proposing something new or different from current behavior.\n\n${valid.join('\n\n---\n\n')}`;
 }

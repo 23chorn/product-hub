@@ -3,7 +3,7 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
 ## Scope Rules (apply before writing a single feature)
 
 1. **Max 5 features per phase** — if a phase needs more, create a new phase instead.
-2. **Max 4 phases** — MVP, Phase 1, Phase 2, Phase 3. No custom labels.
+2. **Max 4 phases** — MVP, Phase 2, Phase 3, Phase 4. No custom labels. (MVP is the first phase, so numbering continues from 2.)
 3. **Feature scope check** — every feature must decompose into at most 6-8 user stories. If it would need more, split it into two features now.
 4. **Each phase must be independently deployable** — a phase that can't ship on its own is not a phase.
 
@@ -46,14 +46,14 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
       ]
     },
     {
-      "label": "Phase 1",
-      "epicTitle": "Phase 1 — [3-5 word deliverable name]",
-      "deliverable": "One sentence: what Phase 1 adds on top of MVP — must be independently deployable",
+      "label": "Phase 2",
+      "epicTitle": "Phase 2 — [3-5 word deliverable name]",
+      "deliverable": "One sentence: what Phase 2 adds on top of MVP — must be independently deployable",
       "features": []
     }
   ],
   "outOfScope": [
-    "Voice messaging — deferred to Phase 2",
+    "Voice messaging — deferred to Phase 3",
     "Video chat — not planned",
     "Desktop app — mobile-only MVP"
   ]
@@ -73,7 +73,7 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
 
 ### Phase
 
-- **label**: Exactly one of: `"MVP"`, `"Phase 1"`, `"Phase 2"`, `"Phase 3"`. Use in order.
+- **label**: Exactly one of: `"MVP"`, `"Phase 2"`, `"Phase 3"`, `"Phase 4"`. Use in order. (MVP is the first phase, so the increments after it start at Phase 2.)
 - **epicTitle**: The ADO/Jira epic title for this phase. Format: `"[Phase label] — [Short name]"`.
 - **deliverable**: One sentence on what the user can do after this phase ships. Must be independently releasable.
 - **features**: 1-5 features for this phase. Each is a narrow, independently implementable capability.
@@ -110,13 +110,14 @@ List anything explicitly NOT being built, or deferred to a later phase. Prevents
 1. **NO USER STORIES** — Do not write "As a user, I want...". That's the job of the story decomposition agent.
 2. **NO TECHNICAL TASKS** — Do not reference implementation details (databases, APIs, repos, frameworks).
 3. **MAX 5 FEATURES PER PHASE** — If you need more, add a phase. If you've used all 4 phases, defer to outOfScope.
-4. **MAX 4 PHASES** — MVP, Phase 1, Phase 2, Phase 3. No custom labels, no "Phase 4".
+4. **MAX 4 PHASES** — MVP, Phase 2, Phase 3, Phase 4. No custom labels, no "Phase 5".
 5. **FEATURE SCOPE CHECK** — Every feature must be decomposable into ≤8 user stories. Wide features must be split.
 6. **PHASE DELIVERABLES** — Every phase must have a `deliverable` describing what ships independently.
-7. **MVP DISCIPLINE** — MVP is the minimum to validate the hypothesis. Most features belong in Phase 1+.
-8. **PHASE LABELS** — Must be exactly "MVP", "Phase 1", "Phase 2", "Phase 3". No TBD or missing values.
+7. **MVP DISCIPLINE** — MVP is the minimum to validate the hypothesis. Most features belong in Phase 2+.
+8. **PHASE LABELS** — Must be exactly "MVP", "Phase 2", "Phase 3", "Phase 4". No TBD or missing values.
 9. **ACCEPTANCE CRITERIA** — Feature-level only. 3-5 per feature. Testable and outcome-focused.
 10. **DEPENDENCY DISCIPLINE** — Default every feature's `dependsOn` to `[]`. Only add a prerequisite when truly blocking. Over-tagging dependencies defeats parallel delivery; under-tagging risks rework. When in doubt, leave it empty.
+11. **NO ACCESSIBILITY SCOPE** — Do not propose accessibility-specific features or ACs (screen reader support, TalkBack, VoiceOver, voice control, etc.) — out of scope for this product unless the PRD explicitly calls for it.
 
 ---
 
@@ -176,8 +177,8 @@ List anything explicitly NOT being built, or deferred to a later phase. Prevents
         },
         {
           "title": "Ticker Card Sharing",
-          "description": "Users can embed a live-updating stock ticker card directly into any message, letting recipients navigate to the instrument detail page with a single tap. This is the feature that connects social discussion to trade execution — the primary conversion mechanism in the product hypothesis. Phase 1 (after MVP validates basic messaging) is the earliest it can ship with confidence.",
-          "rationale": "Requires stable message delivery from MVP before it can be built. Phase 1 is the correct slot — shipping it in MVP would risk over-scoping before core messaging is validated.",
+          "description": "Users can embed a live-updating stock ticker card directly into any message, letting recipients navigate to the instrument detail page with a single tap. This is the feature that connects social discussion to trade execution — the primary conversion mechanism in the product hypothesis. Phase 2 (after MVP validates basic messaging) is the earliest it can ship with confidence.",
+          "rationale": "Requires stable message delivery from MVP before it can be built. Phase 2 is the correct slot — shipping it in MVP would risk over-scoping before core messaging is validated.",
           "acceptanceCriteria": [
             "Ticker cards are attachable from any instrument detail screen via a 'Share to Chat' button",
             "Cards render current price and percentage change within 200ms of message open (NFR2 — Performance)",
@@ -196,13 +197,13 @@ List anything explicitly NOT being built, or deferred to a later phase. Prevents
       ]
     },
     {
-      "label": "Phase 1",
-      "epicTitle": "Phase 1 — Safety & Engagement",
+      "label": "Phase 2",
+      "epicTitle": "Phase 2 — Safety & Engagement",
       "deliverable": "Users are protected by automated content moderation and receive push notifications for new messages when the app is backgrounded",
       "features": [
         {
           "title": "Content Moderation",
-          "description": "The system automatically flags messages containing prohibited content (hate speech, pump-and-dump signals) for human review within 1 second of send. Without moderation, regulatory exposure and community degradation will erode the retention gains from core messaging. Phase 1 is the right slot — the MVP needs real usage data before tuning moderation thresholds accurately.",
+          "description": "The system automatically flags messages containing prohibited content (hate speech, pump-and-dump signals) for human review within 1 second of send. Without moderation, regulatory exposure and community degradation will erode the retention gains from core messaging. Phase 2 is the right slot — the MVP needs real usage data before tuning moderation thresholds accurately.",
           "rationale": "Requires real message volume from MVP to tune signal detection thresholds before automating enforcement. Manual review queue ships in MVP as interim mitigation.",
           "acceptanceCriteria": [
             "Messages containing hate speech or pump-and-dump signals are auto-flagged within 1 second of send (NFR4 — Compliance)",
@@ -222,7 +223,7 @@ List anything explicitly NOT being built, or deferred to a later phase. Prevents
         {
           "title": "Push Notifications",
           "description": "Users receive push notifications for new messages in joined channels when the app is backgrounded, with configurable muting per channel. Notifications close the re-engagement loop — without them, users must actively return to the app to see messages, which is the primary drop-off point for chat retention. Requires MVP message delivery to be stable before adding notification delivery complexity.",
-          "rationale": "Depends on stable message delivery from MVP. Phase 1 is the earliest slot where notification reliability can be validated without risking the MVP scope.",
+          "rationale": "Depends on stable message delivery from MVP. Phase 2 is the earliest slot where notification reliability can be validated without risking the MVP scope.",
           "acceptanceCriteria": [
             "Push notifications are delivered within 2 seconds of message send at p95 (NFR2 — Performance)",
             "Users can mute notifications per channel independently of membership",
@@ -244,9 +245,9 @@ List anything explicitly NOT being built, or deferred to a later phase. Prevents
   "outOfScope": [
     "Voice messaging — no audio infrastructure planned",
     "Video chat — not in scope for this initiative",
-    "Desktop app — mobile-only for MVP and Phase 1",
-    "Direct messages (DMs) — MVP and Phase 1 are group chats only",
-    "Message reactions (emoji) — Phase 2 after user feedback on core chat"
+    "Desktop app — mobile-only for MVP and Phase 2",
+    "Direct messages (DMs) — MVP and Phase 2 are group chats only",
+    "Message reactions (emoji) — Phase 3 after user feedback on core chat"
   ]
 }
 ```

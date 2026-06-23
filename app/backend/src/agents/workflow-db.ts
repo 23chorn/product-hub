@@ -223,7 +223,17 @@ export function createSafetyNetCheckpoint(
 ): void {
   try {
     const wf = stmts.getWorkflow.get(workflowId);
-    if (!wf || wf.status !== 'active') return;
+    // Terminal workflows have nothing left to pause (a stopped/rejected workflow also
+    // lands on 'complete' — see "Show rejected workflows as Stopped" commit).
+    if (!wf || wf.status === 'complete') return;
+    // If this stage already produced a checkpoint, it actually succeeded (or a safety net
+    // already fired) — don't pile a duplicate on top. We can't gate on the overall
+    // workflow status being 'active': in a parallel feature wave (story_decomposition_F1
+    // .. _Fn run together) a sibling feature completing flips the whole workflow to
+    // 'paused_at_checkpoint' while this stage is still running, so an 'active'-only guard
+    // would wrongly swallow this stage's failure and leave it stuck "in progress" with no
+    // checkpoint or error state.
+    if (stmts.getPendingCheckpointForStage.get(workflowId, stage)) return;
     const now = Date.now();
     insertEvent(workflowId, 'error', stage,
       `Stage "${stage}" failed unexpectedly: ${errorMessage}`,

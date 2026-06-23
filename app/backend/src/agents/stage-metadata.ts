@@ -103,12 +103,12 @@ The output template defines the exact JSON schema. Fill every field. Aim for dep
     format: `Produce a single valid JSON object wrapped in a \`\`\`json code block following the epic-features output template injected into your system prompt. No prose before or after the JSON block.
 
 Key requirements:
-- **Phases structure**: Output \`phases[]\` — one entry per deliverable phase (MVP, Phase 1, Phase 2, Phase 3). Features are nested under each phase, not in a top-level features array.
+- **Phases structure**: Output \`phases[]\` — one entry per deliverable phase (MVP, Phase 2, Phase 3, Phase 4). Features are nested under each phase, not in a top-level features array.
 - **Max 5 features per phase**: If a phase needs more, create a new phase instead.
 - **Max 4 phases**: MVP + up to 3 post-MVP phases. Defer anything beyond to outOfScope.
 - **Feature scope discipline**: Every feature must be decomposable into ≤8 user stories. Wide features must be split before output.
 - **Phase deliverable**: Each phase must have a \`deliverable\` field — one sentence on what ships independently in that phase.
-- **Phase labels**: Exactly \`"MVP"\`, \`"Phase 1"\`, \`"Phase 2"\`, \`"Phase 3"\` — no variations.
+- **Phase labels**: Exactly \`"MVP"\`, \`"Phase 2"\`, \`"Phase 3"\`, \`"Phase 4"\` — no variations (MVP is the first phase, so numbering continues from 2).
 - **Feature-level acceptance criteria**: 3-5 testable conditions per feature (outcome-focused, not story-level)
 - **PRD traceability**: Each feature must reference which FRs and user journeys it satisfies
 - **Out of scope section**: Explicitly list what's NOT being built or is deferred
@@ -380,7 +380,7 @@ export const STAGE_TOOL_DEFINITIONS: Record<string, StageToolDefinition[]> = {
   epic_feature_planner: [
     {
       name: 'validate_epic_features_json',
-      description: 'Validate your epic and feature plan JSON before returning it. Checks: epic header fields (title ≤6 words, description, businessValue, prdLink); phases[] structure (required — features must be nested under phases, not at root level); phase labels (exactly "MVP", "Phase 1", "Phase 2", "Phase 3"); max 5 features per phase; max 4 phases; each phase has a deliverable; per-feature checks: acceptance criteria (3–5, no user-story format), prdRef.functionalRequirements (FR-XX format), stories must be empty []; outOfScope list; TBD flags. Call after completing the full JSON object.',
+      description: 'Validate your epic and feature plan JSON before returning it. Checks: epic header fields (title ≤6 words, description, businessValue, prdLink); phases[] structure (required — features must be nested under phases, not at root level); phase labels (exactly "MVP", "Phase 2", "Phase 3", "Phase 4"); max 5 features per phase; max 4 phases; each phase has a deliverable; per-feature checks: acceptance criteria (3–5, no user-story format), prdRef.functionalRequirements (FR-XX format), stories must be empty []; outOfScope list; TBD flags. Call after completing the full JSON object.',
       input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete epic & features JSON string (may be wrapped in a ```json code block)' } }, required: ['json'] },
     },
   ],

@@ -39,5 +39,5 @@ want to offer investment capabilities without building core infrastructure
 ## Constraints (budget, timeline, regulatory)
 
 - iOS and Android must ship simultaneously — no platform-first releases
-- All trading flows must support both English and Arabic — design and copy must be reviewed by native Arabic speaker before release
+- All trading flows support both English and Arabic — Arabic localization follows the standard, established translation process (see process.md → "Localization & translation"); it is covered delivery work and does not need to be raised per feature
 - SCA regulatory compliance
