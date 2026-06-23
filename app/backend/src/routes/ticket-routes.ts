@@ -149,8 +149,8 @@ ticketRoutes.post('/tickets/push-to-ado', async (req: Request, res: Response) =>
       return res.status(400).json({ error: 'ADO integration is not configured' });
     }
 
-    const { AzureDevOpsClient } = require('../integrations/azure-devops');
-    const client = new AzureDevOpsClient();
+    const { getAzureDevOpsClient } = require('../integrations/azure-devops');
+    const client = getAzureDevOpsClient();
 
     const storyDescription = [
       persona ? `<b>As a</b> ${persona}` : '',

@@ -962,3 +962,12 @@ export class AzureDevOpsClient {
     }
   }
 }
+
+// Shared singleton — the client is stateless beyond env-derived config, so one
+// instance can be reused everywhere. Prefer this over `new AzureDevOpsClient()`.
+let _sharedClient: AzureDevOpsClient | null = null;
+
+export function getAzureDevOpsClient(): AzureDevOpsClient {
+  if (!_sharedClient) _sharedClient = new AzureDevOpsClient();
+  return _sharedClient;
+}

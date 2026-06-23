@@ -112,8 +112,8 @@ export async function pushBacklogToAdo(workflowId: string, itemId: string): Prom
       }
     }
 
-    const { AzureDevOpsClient } = require('../integrations/azure-devops');
-    const client = new AzureDevOpsClient();
+    const { getAzureDevOpsClient } = require('../integrations/azure-devops');
+    const client = getAzureDevOpsClient();
     const artifactId = artifactRow.id;
 
     const existingMappings = db.prepare<[string], { local_key: string; ado_id: number; title: string }>(
@@ -251,8 +251,8 @@ export async function pushTestPlanToAdo(workflowId: string, itemId: string): Pro
     ).get(workflowId);
     const planName = (workflow?.summary ?? workflow?.goal.split('\n')[0] ?? 'Test Plan').slice(0, 60);
 
-    const { AzureDevOpsClient } = require('../integrations/azure-devops');
-    const client = new AzureDevOpsClient();
+    const { getAzureDevOpsClient } = require('../integrations/azure-devops');
+    const client = getAzureDevOpsClient();
     const result = await client.pushQATestPlan({ planName, testCases, storyMap, existing });
 
     const now = Date.now();

@@ -16,7 +16,7 @@ import { insertEvent } from './workflow-db';
 import { loadArtifactContentById } from './artifact-helpers';
 import { loadPrdForItem, buildEpicEnrichment, buildFeatureEnrichment } from '../utils/prd-enrichment';
 import { convertArtifactToMarkdown } from '../utils/artifact-to-markdown';
-import { AzureDevOpsClient } from '../integrations/azure-devops';
+import { getAzureDevOpsClient } from '../integrations/azure-devops';
 import Logger from '../utils/logger';
 
 const logger = new Logger('WORKFLOW-EXPORT');
@@ -128,7 +128,7 @@ export async function pushBacklogToBoard(workflowId: string): Promise<PushToBoar
 
   // Push to the configured provider
   if (appConfig.integrations.workItems === 'ado') {
-    const client = new AzureDevOpsClient();
+    const client = getAzureDevOpsClient();
 
     // Check for existing ADO mappings
     const existingMappings = db.prepare<[string], { local_key: string; ado_id: number; title: string }>(
@@ -289,7 +289,7 @@ export async function pushTestPlan(workflowId: string): Promise<PushToTestPlansR
 
   const planName = (workflow.summary ?? workflow.goal.split('\n')[0]).slice(0, 60);
 
-  const client = new AzureDevOpsClient();
+  const client = getAzureDevOpsClient();
 
   const result = await client.pushQATestPlan({ planName, testCases, storyMap, existing });
 
@@ -367,7 +367,7 @@ export async function syncToWiki(workflowId: string, stages?: string[]): Promise
     }
   }
 
-  const client = new AzureDevOpsClient();
+  const client = getAzureDevOpsClient();
   const wikiId = client.wikiIdentifier;
 
   const results: Array<{ stage: string; pageName: string; url: string }> = [];

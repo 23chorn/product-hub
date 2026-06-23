@@ -396,8 +396,8 @@ export async function embedFigmaLinksInFrontendTickets(
 
   logger.info(`[FIGMA-ADO] Embedding Figma links in ${frontendStories.length} frontend stories`);
 
-  const { AzureDevOpsClient } = require('../integrations/azure-devops');
-  const client = new AzureDevOpsClient();
+  const { getAzureDevOpsClient } = require('../integrations/azure-devops');
+  const client = getAzureDevOpsClient();
 
   await Promise.allSettled(frontendStories.map(async story => {
     const adoId = adoIdByKey.get(story.story_id);

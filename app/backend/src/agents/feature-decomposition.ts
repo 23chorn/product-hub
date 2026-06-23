@@ -523,6 +523,22 @@ export async function pushEpicAndFeaturesToADO(
   const workflow = stmts.getWorkflow.get(workflowId);
   if (!workflow) throw new Error(`Workflow not found: ${workflowId}`);
 
+  // Idempotency guard: if this workflow already has epic work items mapped, a previous
+  // push already ran (e.g. the epic_feature_planner checkpoint was approved twice).
+  // Re-creating would orphan duplicate epics/features in ADO and then collide on the
+  // ado_work_item_map UNIQUE(workflow_id, local_key) constraint — so reuse what's there.
+  // A genuine restart wipes this map (see restartWorkflow), so it still re-pushes cleanly.
+  const existingEpics = db.prepare<[string], { ado_id: number }>(
+    `SELECT ado_id FROM ado_work_item_map WHERE workflow_id = ? AND ado_type = 'epic' ORDER BY created_at ASC`
+  ).all(workflowId);
+  if (existingEpics.length > 0) {
+    const existingFeatures = db.prepare<[string], { ado_id: number }>(
+      `SELECT ado_id FROM ado_work_item_map WHERE workflow_id = ? AND ado_type = 'feature' ORDER BY created_at ASC`
+    ).all(workflowId);
+    logger.info(`[EPIC PUSH] Workflow ${workflowId} already mapped (${existingEpics.length} epic(s), ${existingFeatures.length} feature(s)) — reusing, skipping re-push`);
+    return { epicId: existingEpics[0].ado_id, featureIds: existingFeatures.map(f => f.ado_id) };
+  }
+
   logger.info(`[EPIC PUSH] Looking for epic_features artifact for item_id=${workflow.item_id}`);
 
   // Load epic_features artifact. NOTE: 'epic_features_enriched' (written by the architect
@@ -558,8 +574,8 @@ export async function pushEpicAndFeaturesToADO(
     throw new Error('Invalid epic_features structure — missing epic header or no features found');
   }
 
-  const { AzureDevOpsClient } = await import('../integrations/azure-devops');
-  const client = new AzureDevOpsClient();
+  const { getAzureDevOpsClient } = await import('../integrations/azure-devops');
+  const client = getAzureDevOpsClient();
   const now = Date.now();
 
   // Shared tag + naming prefix so sibling phase epics (which have no parent-child relationship
@@ -783,8 +799,8 @@ export async function pushFeatureToADO(
   }
 
   // Create stories under the existing feature
-  const { AzureDevOpsClient } = await import('../integrations/azure-devops');
-  const client = new AzureDevOpsClient();
+  const { getAzureDevOpsClient } = await import('../integrations/azure-devops');
+  const client = getAzureDevOpsClient();
   const storyIds: number[] = [];
   const allTestCases: any[] = [];
 

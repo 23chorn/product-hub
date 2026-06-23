@@ -4,7 +4,7 @@
  */
 
 import db from '../data/database';
-import { AzureDevOpsClient } from './azure-devops';
+import { getAzureDevOpsClient } from './azure-devops';
 import Logger from '../utils/logger';
 
 const logger = new Logger('KB-SYNC');
@@ -49,7 +49,7 @@ export interface SyncResult {
 
 /** Re-fetch every `.md` file in a tracked repo and reconcile it against kb_files. */
 export async function syncRepo(repo: KbRepoRow): Promise<SyncResult> {
-  const client = new AzureDevOpsClient();
+  const client = getAzureDevOpsClient();
   const remoteFiles = await client.listAdoMarkdownFiles(repo.repository, repo.branch ?? undefined, repo.project ?? undefined);
 
   const existingRows = db.prepare('SELECT id, path FROM kb_files WHERE repo_id = ?').all(repo.id) as Array<{ id: number; path: string }>;

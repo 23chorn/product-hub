@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import db from '../data/database';
 import { requireAdmin, isViewOnly } from '../middleware/auth';
 import type { AuthRequest } from '../middleware/auth';
-import { AzureDevOpsClient } from '../integrations/azure-devops';
+import { getAzureDevOpsClient } from '../integrations/azure-devops';
 import { syncRepo, type KbRepoRow } from '../integrations/kb-sync';
 import { runDocReview } from '../agents/kb-reviewer-agent';
 import { countLineChanges } from '../utils/revision-diff';
@@ -50,7 +50,7 @@ kbRouter.post('/repos', requireAdmin, async (req: AuthRequest, res: Response) =>
   }
   const projectOverride = typeof project === 'string' && project.trim() ? project.trim() : undefined;
 
-  const client = new AzureDevOpsClient();
+  const client = getAzureDevOpsClient();
   let adoRepos;
   try {
     adoRepos = await client.listAdoRepositories(projectOverride);
@@ -292,7 +292,7 @@ kbRouter.get('/files/:id/history', async (req: AuthRequest, res: Response) => {
   }
 
   try {
-    const client = new AzureDevOpsClient();
+    const client = getAzureDevOpsClient();
     const commits = await client.listAdoFileCommits(info.repository, info.path, info.branch ?? undefined, info.project ?? undefined);
     // Fetch each commit's content once so we can diff consecutive (newest-first) pairs for line stats.
     const contents = await Promise.all(
@@ -320,7 +320,7 @@ kbRouter.get('/files/:id/version/:commitId', async (req: AuthRequest, res: Respo
   }
 
   try {
-    const client = new AzureDevOpsClient();
+    const client = getAzureDevOpsClient();
     const { content } = await client.getAdoFileContentAtCommit(info.repository, info.path, commitId, info.project ?? undefined);
     res.json({ content, commitId });
   } catch (err: any) {

@@ -286,9 +286,9 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
           // Delete external resources
           if (wikiPaths.length > 0 || adoWorkItemIds.length > 0 || adoTestPlanIds.length > 0) {
-            const { AzureDevOpsClient } = require('../integrations/azure-devops');
+            const { getAzureDevOpsClient } = require('../integrations/azure-devops');
             const { deleteFromWiki } = require('../integrations/document-store/azure-wiki-store');
-            const client = new AzureDevOpsClient();
+            const client = getAzureDevOpsClient();
 
             // Delete wiki pages (individual pages, then the feature folder placeholder)
             for (const wikiPath of wikiPaths) {

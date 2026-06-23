@@ -1,4 +1,4 @@
-import { AzureDevOpsClient } from '../azure-devops';
+import { getAzureDevOpsClient } from '../azure-devops';
 import Logger from '../../utils/logger';
 
 const logger = new Logger('WIKI-STORE');
@@ -25,12 +25,9 @@ export function wikiPathForArtifact(itemTitle: string, stage: string): string {
   return `${BASE_PATH}/${safeName}/${pageLabel}`;
 }
 
-// Lazily-initialized client — avoids instantiation at import time before dotenv runs
-let _client: AzureDevOpsClient | null = null;
-function getClient(): AzureDevOpsClient {
-  if (!_client) _client = new AzureDevOpsClient();
-  return _client;
-}
+// Reuse the shared client (lazily created — avoids instantiation at import time
+// before dotenv runs).
+const getClient = getAzureDevOpsClient;
 
 /**
  * Save content to the wiki at the given path.
