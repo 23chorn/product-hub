@@ -15,8 +15,9 @@ const IMPACT_COLORS: Record<string, string> = {
 };
 
 export function OpenQuestionsPanel({ questions, onSubmit, onCancel, loading }: OpenQuestionsPanelProps) {
-  const [answers, setAnswers]   = useState<Record<number, string>>({});
-  const [leftOpen, setLeftOpen] = useState<Set<number>>(new Set());
+  const [answers, setAnswers]       = useState<Record<number, string>>({});
+  const [leftOpen, setLeftOpen]     = useState<Set<number>>(new Set());
+  const [revisionNote, setRevisionNote] = useState('');
 
   function setAnswer(idx: number, value: string) {
     setAnswers(prev => ({ ...prev, [idx]: value }));
@@ -31,34 +32,53 @@ export function OpenQuestionsPanel({ questions, onSubmit, onCancel, loading }: O
   }
 
   function handleSubmit() {
-    const lines: string[] = ['## Open Questions — Human Answers\n'];
+    const lines: string[] = [];
+    const note = revisionNote.trim();
 
-    questions.forEach((q, i) => {
-      lines.push(`**${q.id || `Q${i + 1}`} (${q.type}): ${q.description}**`);
-      if (q.impact) lines.push(`Impact: ${q.impact}${q.owner ? ` | Owner: ${q.owner}` : ''}`);
-      if (leftOpen.has(i)) {
-        lines.push('Decision: Leave open — answer not yet available\n');
-      } else {
-        lines.push(`Answer: ${answers[i]?.trim() || 'No answer provided'}`);
-        lines.push('Decision: Mark as Resolved\n');
-      }
-    });
+    // Only emit the open-questions section if the user actually acted on a
+    // question — otherwise a note-only submit would mark every question
+    // "No answer provided / Resolved".
+    if (hasQuestionAction) {
+      lines.push('## Open Questions — Human Answers\n');
 
-    lines.push('');
-    lines.push(
-      'Instructions: Update the open_questions section. ' +
-      'For each question marked "Mark as Resolved", set status to "Resolved" and incorporate ' +
-      'the answer into the relevant functional requirements, constraints, or notes. ' +
-      'Leave questions marked "Leave open" with status "Open" unchanged.'
-    );
+      questions.forEach((q, i) => {
+        lines.push(`**${q.id || `Q${i + 1}`} (${q.type}): ${q.description}**`);
+        if (q.impact) lines.push(`Impact: ${q.impact}${q.owner ? ` | Owner: ${q.owner}` : ''}`);
+        if (leftOpen.has(i)) {
+          lines.push('Decision: Leave open — answer not yet available\n');
+        } else {
+          lines.push(`Answer: ${answers[i]?.trim() || 'No answer provided'}`);
+          lines.push('Decision: Mark as Resolved\n');
+        }
+      });
+
+      lines.push('');
+      lines.push(
+        'Instructions: Update the open_questions section. ' +
+        'For each question marked "Mark as Resolved", set status to "Resolved" and incorporate ' +
+        'the answer into the relevant functional requirements, constraints, or notes. ' +
+        'Leave questions marked "Leave open" with status "Open" unchanged.'
+      );
+    }
+
+    // Free-form revision requests, applied alongside the open-question updates.
+    if (note) {
+      if (lines.length) lines.push('');
+      lines.push('## Additional Revision Requests\n');
+      lines.push(note);
+      lines.push('');
+      lines.push('Instructions: Apply these revision requests in addition to the changes above.');
+    }
 
     onSubmit(lines.join('\n'));
   }
 
-  const answeredCount  = Object.values(answers).filter(a => a.trim()).length;
-  const leftOpenCount  = leftOpen.size;
-  const hasAnyAction   = answeredCount + leftOpenCount > 0;
-  const pendingCount   = questions.length - answeredCount - leftOpenCount;
+  const answeredCount   = Object.values(answers).filter(a => a.trim()).length;
+  const leftOpenCount   = leftOpen.size;
+  const hasQuestionAction = answeredCount + leftOpenCount > 0;
+  const hasRevisionNote = revisionNote.trim().length > 0;
+  const hasAnyAction    = hasQuestionAction || hasRevisionNote;
+  const pendingCount    = questions.length - answeredCount - leftOpenCount;
 
   return (
     <div className="flex flex-col h-full">
@@ -127,14 +147,29 @@ export function OpenQuestionsPanel({ questions, onSubmit, onCancel, loading }: O
         })}
       </div>
 
+      {/* Additional revision requests — sent together with the answers above */}
+      <div className="flex-shrink-0 pt-3 border-t border-surface-200 dark:border-surface-700 space-y-1.5">
+        <label className="text-[11px] font-medium uppercase tracking-wide text-surface-400 dark:text-surface-500">
+          Additional changes <span className="font-normal normal-case">(optional)</span>
+        </label>
+        <textarea
+          value={revisionNote}
+          onChange={(e) => setRevisionNote(e.target.value)}
+          placeholder="Other revisions to make in the same pass…"
+          rows={2}
+          className="w-full text-sm resize-none rounded-md border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-900 px-2.5 py-1.5 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-1 focus:ring-brand-500"
+        />
+      </div>
+
       {/* Progress summary + actions */}
-      <div className="flex-shrink-0 pt-3 border-t border-surface-200 dark:border-surface-700 space-y-2">
+      <div className="flex-shrink-0 pt-3 space-y-2">
         {hasAnyAction && (
           <p className="text-[11px] text-surface-400 dark:text-surface-500">
             {answeredCount > 0 && <span>{answeredCount} answered</span>}
             {answeredCount > 0 && leftOpenCount > 0 && <span> · </span>}
             {leftOpenCount > 0 && <span>{leftOpenCount} left open</span>}
             {pendingCount > 0 && <span className="ml-1 text-surface-300 dark:text-surface-600">· {pendingCount} pending</span>}
+            {hasRevisionNote && <span className="ml-1">· + revision note</span>}
           </p>
         )}
         <div className="flex gap-2">
@@ -143,7 +178,7 @@ export function OpenQuestionsPanel({ questions, onSubmit, onCancel, loading }: O
             disabled={!hasAnyAction || loading}
             className="flex-1 py-2 px-3 bg-brand-600 hover:bg-brand-700 disabled:bg-surface-300 dark:disabled:bg-surface-700 text-white text-sm font-medium rounded-lg transition-colors"
           >
-            {loading ? 'Sending…' : 'Submit Answers'}
+            {loading ? 'Sending…' : 'Send Revision'}
           </button>
           <button
             onClick={onCancel}
