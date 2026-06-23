@@ -8,13 +8,17 @@ import type { AIProvider } from './ai-provider';
  * For Ollama: add the exact model tag as installed via `ollama pull <model>`.
  * Example: { id: 'llama3.2', label: 'Llama 3.2', description: 'Local · Meta' }
  *
- * Bedrock: model ID format depends on account/region setup. Some accounts need the
- * global.* cross-region inference profile prefix (required for me-central-1/UAE,
- * where regional profiles like us.* and eu.* aren't reachable); others invoke the
- * bare `anthropic.<model>` id directly. Use whatever ID the Bedrock console shows
- * for your account. global.* routes across all commercial regions, so prompt
- * cache hits are opportunistic there (same region must be selected twice) —
- * direct regional ids cache normally.
+ * Bedrock: model ID format depends on account/region setup. Claude 4.x models on
+ * Bedrock are on-demand only via a cross-region inference profile — the bare
+ * `anthropic.<model>` id throws "on-demand throughput isn't supported" — so the
+ * id must carry a profile prefix (`global.anthropic.<model>`, or a regional one
+ * like `us.anthropic.<model>` where your account has that profile). Verified
+ * against this account: `global.*` is invokable from AWS_REGION=us-east-1 but
+ * returns ResourceNotFoundException from AWS_REGION=me-central-1 — the global
+ * profile isn't reachable as a source from every Bedrock region. Use whatever ID
+ * the Bedrock console shows for your account/region. global.* routes across all
+ * commercial regions, so prompt cache hits are opportunistic there (same region
+ * must be selected twice) — direct regional ids cache normally.
  */
 export const PROVIDER_MODELS: Record<AIProvider, ModelOption[]> = {
   anthropic: [
@@ -23,8 +27,8 @@ export const PROVIDER_MODELS: Record<AIProvider, ModelOption[]> = {
     { id: 'claude-opus-4-6', label: 'Opus 4.6', description: 'Highest capability' },
   ],
   bedrock: [
-    { id: 'anthropic.claude-haiku-4-5-20251001-v1:0', label: 'Haiku 4.5 (Bedrock)', description: 'Fast · Low cost' },
-    { id: 'anthropic.claude-sonnet-4-6', label: 'Sonnet 4.6 (Bedrock)', description: 'Main · Med. cost' },
+    { id: 'global.anthropic.claude-haiku-4-5-20251001-v1:0', label: 'Haiku 4.5 (Bedrock)', description: 'Fast · Low cost' },
+    { id: 'global.anthropic.claude-sonnet-4-5-20250929-v1:0', label: 'Sonnet 4.5 (Bedrock)', description: 'Main · Med. cost' },
   ],
   // ── Ollama (local) ──────────────────────────────────────────────────────────
   // Each `id` must exactly match the model tag returned by `ollama list`.
@@ -61,29 +65,29 @@ export const ANTHROPIC_AGENT_MODELS: Record<string, string> = {
  * structured brief for a human designer to act on, not a polished deliverable.
  */
 export const BEDROCK_AGENT_MODELS: Record<string, string> = {
-  coordinator:          'anthropic.claude-haiku-4-5-20251001-v1:0',
-  critic:               'anthropic.claude-haiku-4-5-20251001-v1:0',
-  curator:              'anthropic.claude-haiku-4-5-20251001-v1:0',
-  prototype:            'anthropic.claude-haiku-4-5-20251001-v1:0',
-  figma_design:         'anthropic.claude-haiku-4-5-20251001-v1:0',
-  doc_review:           'anthropic.claude-haiku-4-5-20251001-v1:0',
-  analyst:              'anthropic.claude-sonnet-4-6',
-  pm_prd:               'anthropic.claude-sonnet-4-6',
-  epic_feature_planner: 'anthropic.claude-sonnet-4-6',
-  solution_architect:   'anthropic.claude-sonnet-4-6',
-  discovery:            'anthropic.claude-sonnet-4-6',
+  coordinator:          'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+  critic:               'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+  curator:              'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+  prototype:            'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+  figma_design:         'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+  doc_review:           'global.anthropic.claude-haiku-4-5-20251001-v1:0',
+  analyst:              'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+  pm_prd:               'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+  epic_feature_planner: 'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+  solution_architect:   'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+  discovery:            'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
 
   // Multi-agent refinement participants (story_decomposition_F* + their _qa siblings),
   // keyed by persona agentType rather than stage — every participant runs under the
   // same persona across all features and all three Draft/Refine/Refine phases, so one
   // tier per agentType is the natural grain (see multi-agent-refinement.ts PARTICIPANTS
   // and feature-stage-runner.ts's surgical revision specs).
-  'story-decomposition': 'anthropic.claude-sonnet-4-6',              // Shard — owns the final story artifact pushed to ADO
-  'qa-engineer':          'anthropic.claude-haiku-4-5-20251001-v1:0', // Vera — output is gated by the strict QA JSON validator
-  'backend-engineer':     'anthropic.claude-haiku-4-5-20251001-v1:0', // Finn/Remi/Cole/Dex contribute technical notes that
-  'web-engineer':         'anthropic.claude-haiku-4-5-20251001-v1:0', // Shard distills into the final stories — not the
-  'ios-engineer':         'anthropic.claude-haiku-4-5-20251001-v1:0', // artifact of record themselves
-  'android-engineer':     'anthropic.claude-haiku-4-5-20251001-v1:0',
+  'story-decomposition': 'global.anthropic.claude-sonnet-4-5-20250929-v1:0',              // Shard — owns the final story artifact pushed to ADO
+  'qa-engineer':          'global.anthropic.claude-haiku-4-5-20251001-v1:0', // Vera — output is gated by the strict QA JSON validator
+  'backend-engineer':     'global.anthropic.claude-haiku-4-5-20251001-v1:0', // Finn/Remi/Cole/Dex contribute technical notes that
+  'web-engineer':         'global.anthropic.claude-haiku-4-5-20251001-v1:0', // Shard distills into the final stories — not the
+  'ios-engineer':         'global.anthropic.claude-haiku-4-5-20251001-v1:0', // artifact of record themselves
+  'android-engineer':     'global.anthropic.claude-haiku-4-5-20251001-v1:0',
 };
 
 const AGENT_MODELS_BY_PROVIDER: Partial<Record<AIProvider, Record<string, string>>> = {
@@ -117,8 +121,8 @@ export const MODEL_MAX_OUTPUT_TOKENS: Record<string, number> = {
   'claude-sonnet-4-5-20250929': 64_000,
   'claude-opus-4-6':            64_000,
   // Bedrock
-  'anthropic.claude-haiku-4-5-20251001-v1:0': 64_000,
-  'anthropic.claude-sonnet-4-6':              64_000,
+  'global.anthropic.claude-haiku-4-5-20251001-v1:0':  64_000,
+  'global.anthropic.claude-sonnet-4-5-20250929-v1:0': 64_000,
   // Ollama (local)
   'llama3.2:1b': 2_048,
 };

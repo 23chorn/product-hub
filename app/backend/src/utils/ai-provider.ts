@@ -40,7 +40,7 @@ export function getActiveProvider(): AIProvider {
  */
 const DEFAULT_MODELS: Record<AIProvider, string> = {
   anthropic: 'claude-haiku-4-5-20251001',
-  bedrock:   'anthropic.claude-sonnet-4-6',
+  bedrock:   'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
   ollama:    'llama3.2:1b',
 };
 

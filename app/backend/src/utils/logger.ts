@@ -63,7 +63,7 @@ class Logger {
       else console.error(error);
     }
     const detail = error
-      ? (error.stack ?? String(error))
+      ? (error.stack ?? (typeof error === 'string' ? error : JSON.stringify(error)))
       : undefined;
     writeToFile(detail ? `${line}\n${detail}` : line);
   }
