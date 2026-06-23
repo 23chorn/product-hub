@@ -37,7 +37,7 @@ export { propagateFeedback, reiterateFromStage, retryCurrentStage, restartWorkfl
 export { deleteWorkflow } from './workflow-lifecycle';
 import Logger from '../utils/logger';
 import { getCoordinator, getCritic, getCurator } from './workflow-agents';
-import { workflowOps, rolesJson } from './workflow-db';
+import { workflowOps, rolesJson, createSafetyNetCheckpoint } from './workflow-db';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
 
@@ -521,58 +521,6 @@ No changes needed to tech-stack.md or process.md — those remain accurate as wr
   }
 
   return { stage: nextStage, sessionId: null };
-}
-
-/**
- * Safety net: if runAutonomousStage's inner try/catch didn't create a checkpoint for a
- * failed stage, create one here so the workflow doesn't get stuck in 'active' forever.
- * Shared by the single-stage kickoff path and every member of a multi-member wave, so one
- * failing wave member gets its own visible error checkpoint instead of silently wedging
- * the whole wave (siblings still complete and create their own checkpoints normally).
- */
-function createSafetyNetCheckpoint(
-  workflowId: string,
-  stage: string,
-  stageMap: { mode: AppMode; agentType: AgentType } | undefined,
-  errorMessage: string
-): void {
-  try {
-    const wf = stmts.getWorkflow.get(workflowId);
-    if (!wf || wf.status !== 'active') return;
-    const now = Date.now();
-    insertEvent(workflowId, 'error', stage,
-      `Stage "${stage}" failed unexpectedly: ${errorMessage}`,
-      { error: errorMessage });
-
-    // Try to recover the artifact that may have been saved before the error.
-    // This mirrors the logic in workflow-lifecycle.ts stale recovery.
-    let artifactId: number | null = null;
-    const artifactType = STAGE_ARTIFACT_TYPE[stage];
-    if (stageMap && artifactType) {
-      const latestArtifact = db.prepare<[string, string, string], { id: number }>(
-        `SELECT a.id FROM artifacts a
-         JOIN sessions s ON a.session_id = s.id
-         WHERE s.item_id = (SELECT item_id FROM workflows WHERE id = ?)
-           AND s.mode = ?
-           AND a.type = ?
-         ORDER BY a.created_at DESC LIMIT 1`
-      ).get(workflowId, stageMap.mode, artifactType);
-      artifactId = latestArtifact?.id ?? null;
-      if (artifactId) {
-        logger.info(`Safety net: recovered artifact ${artifactId} for failed stage "${stage}"`);
-      }
-    }
-
-    stmts.insertCheckpoint.run(
-      workflowId, stage, artifactId, 'pending',
-      JSON.stringify({ error: errorMessage, autonomous: true, safety_net: true }),
-      rolesJson(stage), now
-    );
-    stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
-    logger.info(`Safety net: created error checkpoint for stuck workflow ${workflowId}${artifactId ? ` with artifact ${artifactId}` : ''}`);
-  } catch (inner) {
-    logger.error(`Safety net checkpoint creation also failed: ${(inner as Error).message}`);
-  }
 }
 
 // Register advanceStage for late-binding (breaks circular dep with runAutonomousStage)

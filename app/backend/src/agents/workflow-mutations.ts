@@ -12,11 +12,11 @@ import { sessionManager } from '../session/session-manager';
 import type { AppMode, AgentType } from '@pap/shared';
 import {
   STAGE_SESSION_MAP, STAGE_LABELS_INTERNAL, STAGE_ARTIFACT_TYPE,
-  stageProgressWorking, stageStartedNarration,
+  stageProgressWorking, stageStartedNarration, stageProgressBriefing, stageProgressBriefReceived,
 } from './stage-metadata';
 import { loadArtifactContentById, loadLatestArtifactContent, resolveArtifactPath, isJsonArtifactContent } from './artifact-helpers';
 import {
-  logger, stmts, insertEvent, workflowOps,
+  logger, stmts, insertEvent, workflowOps, createSafetyNetCheckpoint,
 } from './workflow-db';
 import {
   runAutonomousStage, getCoordinator, SILENT_STAGES, clearCancelFlag,
@@ -304,17 +304,31 @@ export async function restartWorkflow(workflowId: string): Promise<void> {
 
   insertEvent(workflowId, 'stage_started', firstStage, stageStartedNarration(firstStage));
 
-  // Generate a fresh brief for the first stage (no prior draft)
-  const brief = await getCoordinator().generateStageBrief(workflowId, firstStage);
-
   const stageMap = stageSession(firstStage);
+  const policyOverrides: Record<string, string> = workflow.policy_overrides
+    ? JSON.parse(workflow.policy_overrides)
+    : {};
+  const isDemoAutoApprove = policyOverrides['demo_auto_approve'] === 'true';
+
+  // Generate a fresh brief for the first stage (no prior draft) — skip the LLM call for
+  // demo workflows, same as the normal advance path, since the demo fixture overrides
+  // whatever the brief says anyway.
+  insertEvent(workflowId, 'stage_progress', firstStage, stageProgressBriefing(firstStage));
+  const brief = policyOverrides.demo_mode === 'true' || isDemoAutoApprove
+    ? `## Goal\nDemo mode — running with fixture data.\n\n## Output required\nSee fixture.`
+    : await getCoordinator().generateStageBrief(workflowId, firstStage);
+
   const session = sessionManager.createSpecialistSession(workflow.item_id, stageMap.mode, stageMap.agentType);
   sessionManager.updateWorkflow(session.id, workflowId, brief);
+  insertEvent(workflowId, 'stage_progress', firstStage, stageProgressBriefReceived(firstStage));
 
-  const shouldAutoApprove = SILENT_STAGES.has(firstStage);
+  const shouldAutoApprove = SILENT_STAGES.has(firstStage) || isDemoAutoApprove;
 
   runAutonomousStage(session.id, workflowId, firstStage, workflow.item_id, brief, shouldAutoApprove)
-    .catch(err => logger.error(`Restart run for stage "${firstStage}" failed: ${err.message}`));
+    .catch(err => {
+      logger.error(`Restart run for stage "${firstStage}" failed: ${err.message}`);
+      createSafetyNetCheckpoint(workflowId, firstStage, stageMap, err.message);
+    });
 
   logger.info(`Workflow ${workflowId} restarted from stage "${firstStage}" — wiped ${artifactFiles.length} artifact(s)`);
 }
