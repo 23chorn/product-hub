@@ -1,6 +1,7 @@
 import { AgentType } from '@pap/shared';
 import { streamAI, resolveModelId, getActiveProvider, type SystemPrompt, type TokenUsage, type ToolDefinition } from '../utils/ai-provider';
 import Logger from '../utils/logger';
+import { getUserSettings } from '../config/settings-store';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -71,7 +72,6 @@ export class SpecialistAgent {
   private agentType: AgentType;
   private model: string;
   private persona: string | null = null;
-  private userConfig: Record<string, string> | null = null;
   private isAutonomous = false;
 
   constructor(agentType: AgentType) {
@@ -147,10 +147,7 @@ export class SpecialistAgent {
    */
   async buildSystemPrompt(persona: string, workflowContext?: string, itemContext?: string, autonomous?: boolean, stage?: string): Promise<SystemPrompt> {
     this.isAutonomous = autonomous ?? false;
-    const config = await this.loadUserConfig();
-    const userName = config.user_name ?? 'User';
-    const language = config.communication_language ?? 'English';
-    const skillLevel = config.user_skill_level ?? 'intermediate';
+    const { userName, communicationLanguage: language, skillLevel } = getUserSettings();
 
     let stable = autonomous
       ? `You are executing a document-production task as part of an automated workflow.
@@ -340,37 +337,6 @@ Your responses have a token ceiling. A document that is cut off is always worse 
     _contextFilesCache = null;
     _contextByStageCache.clear();
     logger.info('Project context cache cleared — will reload on next request');
-  }
-
-  // --- Private helpers ---
-
-  /**
-   * Load user-identity fields from agents/config.yaml.
-   * Only reads non-path keys (user_name, communication_language, etc.).
-   * If config.yaml is missing, copy config.example.yaml and customise it.
-   */
-  private async loadUserConfig(): Promise<Record<string, string>> {
-    if (this.userConfig) return this.userConfig;
-
-    const USER_KEYS = new Set([
-      'user_name', 'communication_language', 'document_output_language',
-      'user_skill_level', 'project_name',
-    ]);
-    const result: Record<string, string> = {};
-
-    try {
-      const raw = await fs.readFile(path.join(AGENTS_ROOT, 'config.yaml'), 'utf-8');
-      for (const line of raw.split('\n')) {
-        const match = line.match(/^(\w+):\s*["']?(.+?)["']?\s*$/);
-        if (match && USER_KEYS.has(match[1])) result[match[1]] = match[2];
-      }
-      logger.info('Loaded user config from agents/config.yaml');
-    } catch {
-      logger.warn('Could not load agents/config.yaml — using defaults. Copy config.example.yaml to config.yaml to customise.');
-    }
-
-    this.userConfig = result;
-    return result;
   }
 
 }

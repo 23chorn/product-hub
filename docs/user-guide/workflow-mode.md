@@ -156,10 +156,10 @@ After a workflow completes, you can revisit any stage:
 
 ## Sprint Estimation
 
-The backlog automatically calculates sprint estimates using your team's velocity and capacity factor (configured in `agents/config.yaml`):
+The backlog automatically calculates sprint estimates using your team's velocity and capacity factor (configured in the in-app **Settings** panel):
 - **Epic level** — total story points divided by effective velocity
 - **Feature level** — per-feature sprint estimates shown in the backlog preview
-- **AI-assisted estimates** — when `ai_assisted_development.enabled: true`, shows AI vs. traditional hour comparisons
+- **AI-assisted estimates** — when AI-assisted development is enabled in Settings, shows AI vs. traditional hour comparisons
 
 ---
 

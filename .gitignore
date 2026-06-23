@@ -44,9 +44,6 @@ coverage/
 .claude/
 
 
-# Agent config (user-specific; config.example.yaml is tracked)
-agents/config.yaml
-
 # Only ignore root-level templates/ (not agents/templates/)
 /templates/
 

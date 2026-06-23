@@ -1,10 +1,7 @@
-import * as fsAsync from 'fs/promises';
-import * as path from 'path';
 import Logger from '../utils/logger';
+import { getSprintSettings } from '../config/settings-store';
 
 const logger = new Logger('SPRINT-ESTIMATION');
-
-const AGENTS_ROOT = path.resolve(__dirname, '../../../../agents');
 
 /** Default hours-per-point mapping (non-linear — larger stories have more overhead). */
 const DEFAULT_HOURS_PER_POINT: Record<number, number> = { 1: 2, 2: 4, 3: 8, 5: 16, 8: 28 };
@@ -12,8 +9,12 @@ const DEFAULT_HOURS_PER_POINT: Record<number, number> = { 1: 2, 2: 4, 3: 8, 5: 1
 /** Default AI-assisted hours-per-point mapping (AI accelerates routine work more than complex work). */
 const DEFAULT_AI_HOURS_PER_POINT: Record<number, number> = { 1: 0.5, 2: 1.5, 3: 3, 5: 8, 8: 18 };
 
-/** Read sprint_velocity, capacity_factor, hours_per_point, and ai_assisted_development from agents/config.yaml. */
-export async function loadSprintConfig(): Promise<{
+/**
+ * Resolve sprint config. Velocity, capacity, and the AI-assist toggle come from
+ * the settings store (policies table). The hours-per-point curves and test
+ * fractions are non-tunable defaults — they had no UI and are kept as constants.
+ */
+export function loadSprintConfig(): {
   sprintVelocity: number;
   capacityFactor: number;
   hoursPerPoint: Record<number, number>;
@@ -21,56 +22,17 @@ export async function loadSprintConfig(): Promise<{
   aiHoursPerPoint: Record<number, number>;
   testFraction: number;
   aiTestReductionFactor: number;
-}> {
-  let sprintVelocity = 25;
-  let capacityFactor = 0.7;
-  const hoursPerPoint: Record<number, number> = { ...DEFAULT_HOURS_PER_POINT };
-  let aiAssisted = false;
-  const aiHoursPerPoint: Record<number, number> = { ...DEFAULT_AI_HOURS_PER_POINT };
-  let testFraction = 0.25;
-  let aiTestReductionFactor = 0.10;
-  try {
-    const raw = await fsAsync.readFile(path.join(AGENTS_ROOT, 'config.yaml'), 'utf-8');
-    let inHoursPerPoint = false;
-    let inAiSection = false;
-    let inAiHoursPerPoint = false;
-    for (const line of raw.split('\n')) {
-      const intMatch = line.match(/^sprint_velocity:\s*(\d+)/);
-      if (intMatch) { sprintVelocity = parseInt(intMatch[1], 10); inHoursPerPoint = false; inAiSection = false; inAiHoursPerPoint = false; continue; }
-      const floatMatch = line.match(/^capacity_factor:\s*([\d.]+)/);
-      if (floatMatch) { capacityFactor = parseFloat(floatMatch[1]); inHoursPerPoint = false; inAiSection = false; inAiHoursPerPoint = false; continue; }
-      if (/^hours_per_point:\s*$/.test(line)) { inHoursPerPoint = true; inAiSection = false; inAiHoursPerPoint = false; continue; }
-      if (/^ai_assisted_development:\s*$/.test(line)) { inAiSection = true; inHoursPerPoint = false; inAiHoursPerPoint = false; continue; }
-      if (inHoursPerPoint) {
-        const hppMatch = line.match(/^\s+(\d+):\s*([\d.]+)/);
-        if (hppMatch) {
-          hoursPerPoint[parseInt(hppMatch[1], 10)] = parseFloat(hppMatch[2]);
-        } else if (/^\S/.test(line)) {
-          inHoursPerPoint = false;
-        }
-      }
-      if (inAiSection) {
-        const enabledMatch = line.match(/^\s+enabled:\s*(true|false)/);
-        if (enabledMatch) { aiAssisted = enabledMatch[1] === 'true'; continue; }
-        if (/^\s+ai_hours_per_point:\s*$/.test(line)) { inAiHoursPerPoint = true; continue; }
-        const testFractionMatch = line.match(/^\s+test_fraction:\s*([\d.]+)/);
-        if (testFractionMatch) { testFraction = parseFloat(testFractionMatch[1]); inAiHoursPerPoint = false; continue; }
-        const aiTestRedMatch = line.match(/^\s+ai_test_reduction_factor:\s*([\d.]+)/);
-        if (aiTestRedMatch) { aiTestReductionFactor = parseFloat(aiTestRedMatch[1]); inAiHoursPerPoint = false; continue; }
-        if (inAiHoursPerPoint) {
-          const hppMatch = line.match(/^\s+(\d+):\s*([\d.]+)/);
-          if (hppMatch) {
-            aiHoursPerPoint[parseInt(hppMatch[1], 10)] = parseFloat(hppMatch[2]);
-          } else if (/^\S/.test(line)) {
-            inAiSection = false;
-            inAiHoursPerPoint = false;
-          }
-        }
-        if (/^\S/.test(line)) { inAiSection = false; inAiHoursPerPoint = false; }
-      }
-    }
-  } catch { /* fall through */ }
-  return { sprintVelocity, capacityFactor, hoursPerPoint, aiAssisted, aiHoursPerPoint, testFraction, aiTestReductionFactor };
+} {
+  const { sprintVelocity, capacityFactor, aiAssisted } = getSprintSettings();
+  return {
+    sprintVelocity,
+    capacityFactor,
+    aiAssisted,
+    hoursPerPoint: { ...DEFAULT_HOURS_PER_POINT },
+    aiHoursPerPoint: { ...DEFAULT_AI_HOURS_PER_POINT },
+    testFraction: 0.25,
+    aiTestReductionFactor: 0.10,
+  };
 }
 
 /**
@@ -88,7 +50,7 @@ export async function injectSprintEstimates(parsed: any): Promise<string> {
     : parsed.story
     ? [parsed.story]
     : [];
-  const { sprintVelocity, capacityFactor, hoursPerPoint, aiAssisted, aiHoursPerPoint, testFraction, aiTestReductionFactor } = await loadSprintConfig();
+  const { sprintVelocity, capacityFactor, hoursPerPoint, aiAssisted, aiHoursPerPoint, testFraction, aiTestReductionFactor } = loadSprintConfig();
 
   // Build hours-from-effort mapper for a given mapping table
   const buildPointToHours = (mapping: Record<number, number>) => (effort: number): number => {

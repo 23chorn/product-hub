@@ -45,17 +45,7 @@ else
   echo "       install sqlite3 and re-run this script."
 fi
 
-# ---- 5. Seed agent config ----
-echo ""
-if [ ! -f agents/config.yaml ]; then
-  cp agents/config.example.yaml agents/config.yaml
-  echo "[OK] Created agents/config.yaml from config.example.yaml"
-  echo "     Edit it to set your name, project, and preferences."
-else
-  echo "[SKIP] agents/config.yaml already exists"
-fi
-
-# ---- 7. Seed context files ----
+# ---- 5. Seed context files ----
 echo ""
 for example_file in context/*.example.md; do
   [ -f "$example_file" ] || continue
@@ -68,7 +58,7 @@ for example_file in context/*.example.md; do
   fi
 done
 
-# ---- 8. Check for Ollama ----
+# ---- 6. Check for Ollama ----
 echo ""
 if command -v ollama &>/dev/null; then
   OLLAMA_VERSION=$(ollama --version 2>&1 || true)

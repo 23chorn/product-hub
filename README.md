@@ -45,9 +45,7 @@ product-agent/
 │   └── shared/        Compiled TypeScript types (@pap/shared)
 ├── agents/
 │   ├── personas/      Agent persona markdown files (coordinator, analyst, pm, architect, critic, curator, qa-engineer, doc-reviewer, prototype-builder, platform engineers)
-│   ├── templates/     Output templates (research, prd, architecture, backlog, qa-tests, prototype)
-│   ├── config.example.yaml  Template for user config (tracked)
-│   └── config.yaml    User identity and preferences (gitignored)
+│   └── templates/     Output templates (research, prd, architecture, backlog, qa-tests, prototype)
 ├── context/           Project context files injected into every agent prompt
 │   ├── behaviour/     Existing feature behaviour docs (.feature), injected into the PRD stage only
 │   └── README.md      Guidelines for filling in context files
@@ -153,10 +151,10 @@ After a workflow completes, you can **redo from any stage** — provide a reason
 
 ### Sprint Estimation
 
-The backlog stage automatically calculates sprint estimates using your team's velocity and capacity factor (configured in `agents/config.yaml`):
+The backlog stage automatically calculates sprint estimates using your team's velocity and capacity factor (configured in the in-app **Settings** panel):
 - **Epic level** — total story points divided by effective velocity
 - **Feature level** — per-feature sprint estimates shown in the backlog preview
-- **AI-assisted estimates** — when `ai_assisted_development.enabled: true`, shows AI vs traditional hour comparisons
+- **AI-assisted estimates** — when AI-assisted development is enabled in Settings, shows AI vs traditional hour comparisons
 
 ## Roles & Access Control
 

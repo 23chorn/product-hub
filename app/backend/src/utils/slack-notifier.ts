@@ -73,14 +73,26 @@ function getAppUrl(): string {
   return process.env.APP_URL || 'http://localhost:5173';
 }
 
-export function notifyCheckpointPending(initiativeTitle: string, stage: string, workflowId?: string): void {
+export function notifyCheckpointPending(
+  initiativeTitle: string,
+  stage: string,
+  workflowId?: string,
+  revisionRequestedBy?: string,
+): void {
   const label = checkpointArtifactLabel(stage);
   const mentions = buildMentions(stage);
   const appUrl = getAppUrl();
 
+  // A revision return reads differently from a first-run review so the reviewer
+  // knows their requested changes are back, not that a brand-new draft landed.
+  const headline = revisionRequestedBy
+    ? `*${label}* revision requested by ${revisionRequestedBy} is now ready for review`
+    : `*${label}* ready for review`;
+  const emoji = revisionRequestedBy ? ':arrows_counterclockwise:' : ':eyes:';
+
   const text = mentions
-    ? `${mentions} — *${label}* ready for review on "${initiativeTitle}"`
-    : `${label} ready for review — ${initiativeTitle}`;
+    ? `${mentions} — ${headline} on "${initiativeTitle}"`
+    : `${headline} — ${initiativeTitle}`;
 
   const blocks: object[] = [
     {
@@ -88,8 +100,8 @@ export function notifyCheckpointPending(initiativeTitle: string, stage: string, 
       text: {
         type: 'mrkdwn',
         text: mentions
-          ? `:eyes: *${label}* is ready for review\n*Initiative:* ${initiativeTitle}\n${mentions}`
-          : `:eyes: *${label}* is ready for your review\n*Initiative:* ${initiativeTitle}`,
+          ? `${emoji} ${headline}\n*Initiative:* ${initiativeTitle}\n${mentions}`
+          : `${emoji} ${headline}\n*Initiative:* ${initiativeTitle}`,
       },
     },
   ];

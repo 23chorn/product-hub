@@ -39,7 +39,6 @@ app/
 agents/
   personas/  Agent persona .md files
   templates/ Output templates (research, prd, backlog, architecture, prototype)
-  config.yaml  User identity and preferences (gitignored)
 context/     Project context files loaded into every agent system prompt
   behaviour/ xCube Docs from Azure Wiki — current implementation reference for PRD and story phases
 db/          SQLite database (product-ops.db, gitignored) + schema.ts (Drizzle schema) + migrations/
@@ -223,7 +222,7 @@ Editable from the UI: Agent Studio (Skill Manager) has a "Behaviour" section alo
 ### Output templates (`agents/templates/`)
 `research.template.md`, `prd.template.md`, `architecture.template.md`, `backlog.template.md`. Read from disk per-stage (no caching), so UI edits take effect immediately on the next run.
 
-Sprint estimation runs after backlog specialist: reads `agents/config.yaml` for `sprint_velocity`, `capacity_factor`, `hours_per_point`, and `ai_assisted_development`. Injects sprint metadata into backlog JSON via `agents/sprint-estimation.ts`.
+Sprint estimation runs after backlog specialist: reads sprint velocity, capacity factor, and the AI-assist toggle from the settings store (`config/settings-store.ts`, backed by the `policies` table). The hours-per-point curves and test fractions are non-tunable constants in `agents/sprint-estimation.ts`, which injects sprint metadata into the backlog JSON.
 
 ### Integration providers
 Configured via `app/backend/src/config/app-config.ts`:

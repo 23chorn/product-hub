@@ -46,21 +46,18 @@ See `context/README.md` for detailed guidelines on each file.
 
 ---
 
-## 2. Agent config (`agents/config.yaml`)
+## 2. Agent config (in-app **Settings** panel)
 
-Controls how agents address you and what language they use:
+Controls how agents address you and what language they use. Edit these in the
+app's **Settings** panel (they persist to the database, not a file):
 
-```yaml
-user_name: Your Name
-communication_language: English
-document_output_language: English
-project_name: My Product
-user_skill_level: intermediate   # beginner | intermediate | expert
-```
+- `name` — agents greet you by this name
+- `projectName` — used in document titles and references
+- `skillLevel` — `beginner | intermediate | expert`; affects how much explanation agents provide
+- `communicationLanguage` — language agents use when talking to you
 
-- `user_name` — agents greet you by this name
-- `project_name` — used in document titles and references
-- `user_skill_level` — affects how much explanation agents provide
+The same panel also holds sprint planning (velocity, capacity factor, AI-assist
+toggle) and the pipeline stage on/off switches.
 
 ---
 

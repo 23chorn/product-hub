@@ -49,17 +49,7 @@ if ($sqlite) {
     Write-Host "       install sqlite3 and re-run this script."
 }
 
-# ---- 5. Seed agent config ----
-Write-Host ""
-if (-not (Test-Path "agents/config.yaml")) {
-    Copy-Item "agents/config.example.yaml" "agents/config.yaml"
-    Write-Host "[OK] Created agents/config.yaml from config.example.yaml"
-    Write-Host "     Edit it to set your name, project, and preferences."
-} else {
-    Write-Host "[SKIP] agents/config.yaml already exists"
-}
-
-# ---- 6. Seed context files ----
+# ---- 5. Seed context files ----
 Write-Host ""
 Get-ChildItem "context/*.example.md" -ErrorAction SilentlyContinue | ForEach-Object {
     $target = "context/" + ($_.Name -replace '\.example\.md$', '.md')
@@ -71,7 +61,7 @@ Get-ChildItem "context/*.example.md" -ErrorAction SilentlyContinue | ForEach-Obj
     }
 }
 
-# ---- 7. Check for Ollama ----
+# ---- 6. Check for Ollama ----
 Write-Host ""
 $ollama = Get-Command ollama -ErrorAction SilentlyContinue
 if ($ollama) {
