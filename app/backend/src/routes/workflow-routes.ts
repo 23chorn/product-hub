@@ -10,7 +10,6 @@ import {
   resolveCheckpoint,
   getWorkflowStatus,
   propagateFeedback,
-  markWorkflowComplete,
   reiterateFromStage,
   retryCurrentStage,
   restartWorkflow,
@@ -165,7 +164,7 @@ workflowRoutes.post('/complete-stage', (req: Request, res: Response) => {
  * Body: { checkpointId, status: 'approved'|'rejected'|'revised', feedback? }
  *
  * - approved: resolveCheckpoint + advanceStage; returns nextStage + sessionId
- * - rejected: resolveCheckpoint + markWorkflowComplete; workflow ends
+ * - rejected: resolveCheckpoint + requestCancel; workflow stops (shows as "Stopped", not "Done")
  * - revised:  propagateFeedback (rolls stage back for re-run)
  *
  * Returns: { workflow: WorkflowStatus, nextStage?, nextSessionId?, complete? }
@@ -459,7 +458,7 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
         `${checkpointType} rejected by ${req.user?.name ?? 'System'}`,
         { checkpoint_id: cpId, artifact_id: cpDetail?.artifact_id ?? null, feedback });
 
-      markWorkflowComplete(workflowId);
+      requestCancel(workflowId);
       const workflowStatus = getWorkflowStatus(workflowId);
       return res.json({ workflow: workflowStatus, complete: true });
     }

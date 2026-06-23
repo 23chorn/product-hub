@@ -576,20 +576,6 @@ export function completeStage(workflowId: string): void {
 }
 
 /**
- * Force a workflow's status to 'complete' (e.g. after a rejection decision).
- */
-export function markWorkflowComplete(workflowId: string): void {
-  stmts.updateWorkflowStatus.run('complete', Date.now(), workflowId);
-  insertEvent(workflowId, 'workflow_complete', null, 'Workflow ended.');
-  const wf = db.prepare<[string], { item_id: string }>('SELECT item_id FROM workflows WHERE id = ?').get(workflowId);
-  if (wf) {
-    const titleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(wf.item_id);
-    if (titleRow) notifyWorkflowComplete(titleRow.title);
-  }
-  logger.info(`Workflow ${workflowId} marked complete`);
-}
-
-/**
  * Pause a workflow at a checkpoint, waiting for human review.
  * The optional sessionId is stored in coordinator_action for later feedback propagation.
  */
