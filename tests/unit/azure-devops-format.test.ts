@@ -10,6 +10,7 @@ import {
   deriveTeamTags,
   buildTestCaseDescription,
   buildTestStepsXml,
+  parseStoryRefs,
   SUITE_TYPE_LABELS,
   TC_PRIORITY_MAP,
 } from '../../app/backend/src/integrations/azure-devops-format';
@@ -124,6 +125,22 @@ describe('Test Plans constants', () => {
   });
 });
 
+describe('parseStoryRefs', () => {
+  it('returns a single local_key ref as-is', () => {
+    expect(parseStoryRefs('F1.S3')).toEqual(['F1.S3']);
+  });
+  it('extracts every local_key from a platform-split ref', () => {
+    expect(parseStoryRefs('F1.S9 (iOS utility) / F1.S10 (Android utility)')).toEqual(['F1.S9', 'F1.S10']);
+  });
+  it('falls back to the trimmed raw ref when no local_key pattern matches (e.g. a story title)', () => {
+    expect(parseStoryRefs(' Some Story Title ')).toEqual(['Some Story Title']);
+  });
+  it('handles a genuine array of refs, not just a slash-joined string', () => {
+    expect(parseStoryRefs(['iOS-CIRCUIT-1', 'ANDROID-CIRCUIT-1'])).toEqual(['iOS-CIRCUIT-1', 'ANDROID-CIRCUIT-1']);
+    expect(parseStoryRefs(['F2.S1', 'F2.S2'])).toEqual(['F2.S1', 'F2.S2']);
+  });
+});
+
 describe('buildTestCaseDescription', () => {
   it('returns empty string for a bare test case', () => {
     expect(buildTestCaseDescription({ title: 'x' })).toBe('');
@@ -141,6 +158,13 @@ describe('buildTestCaseDescription', () => {
     expect(html).toContain('<li>user exists</li>');
     expect(html).toContain('<b>Given</b> on login');
     expect(html).toContain('<b>Then</b> see home');
+  });
+  it('renders an array story_ref without crashing (regression: QA agents sometimes emit an array, not a string)', () => {
+    const html = buildTestCaseDescription({
+      title: 'Cross-platform check',
+      story_ref: ['iOS-CIRCUIT-1', 'ANDROID-CIRCUIT-1'],
+    });
+    expect(html).toContain('<b>Linked Story:</b> iOS-CIRCUIT-1, ANDROID-CIRCUIT-1');
   });
   it('uses expectedResult only for procedural (non-scenario) cases', () => {
     expect(buildTestCaseDescription({ title: 'x', expectedResult: 'works' }))

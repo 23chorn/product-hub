@@ -286,6 +286,16 @@ export async function restartWorkflow(workflowId: string): Promise<void> {
     // this, the re-push hits "UNIQUE constraint failed: ado_work_item_map.workflow_id, local_key"
     // on the surviving rows (and silently orphans the new duplicate epic it just created in ADO).
     db.prepare(`DELETE FROM ado_work_item_map WHERE workflow_id = ?`).run(workflowId);
+    // Same problem as ado_work_item_map above, but for the QA test plan: it points at
+    // last run's ADO Test Plan, and pushQATestPlan() treats that row's presence as
+    // "this plan is still current" — it reuses the plan and merges new test cases into
+    // it instead of starting fresh. Across repeated restarts that plan silently
+    // accumulates every prior attempt's test cases (orphaned ones never get pruned),
+    // so without this it keeps growing forever. Same trade-off as the ADO map above:
+    // we drop the local pointer and let the old plan go stale in ADO rather than
+    // deleting it here (deletion needs a network round-trip + Test API, not a fit for
+    // this DB transaction — see scripts/cleanup-ado-work-items.js --test-plan for that).
+    db.prepare(`DELETE FROM qa_test_plan_map WHERE workflow_id = ?`).run(workflowId);
     // Delete sessions (and their messages/artifacts via cascade) created during this workflow run
     db.prepare(`DELETE FROM sessions WHERE item_id = ? AND created_at >= ?`).run(workflow.item_id, workflow.created_at);
     // Collapse last run's feature-wave stages out of stage_sequence and clear wave

@@ -167,14 +167,29 @@ export interface TestCaseInput {
   title: string;
   type?: string;
   priority?: string;
-  story_ref?: string | null;
-  linkedStory?: string | null;
+  story_ref?: string | string[] | null;
+  linkedStory?: string | string[] | null;
   tags?: string[];
   scenario?: { given: string[]; when?: string[]; then: string[] };
   steps?: string[];
   expectedResult?: string;
   preconditions?: string[];
   description?: string;
+}
+
+/**
+ * Resolve a test case's story_ref to every local story key it references.
+ * Most refs are a single local_key (e.g. "F1.S3"), but QA agents sometimes write a
+ * platform-split ref like "F1.S9 (iOS utility) / F1.S10 (Android utility)" — or hand
+ * back a genuine array, e.g. ["iOS-CIRCUIT-1", "ANDROID-CIRCUIT-1"] — when one test
+ * case covers both platforms' stories. Extract every F#.S# token from each ref instead
+ * of only ever matching the first, and fall back to the raw ref (trimmed) per element
+ * so exact-title/ad-hoc matches (fixtures or QA-agent refs that aren't local_keys)
+ * still work.
+ */
+export function parseStoryRefs(storyRef: string | string[]): string[] {
+  const refs = Array.isArray(storyRef) ? storyRef : [storyRef];
+  return refs.flatMap(ref => ref.match(/F\d+\.S\d+/g) ?? [ref.trim()]);
 }
 
 /**
@@ -196,7 +211,8 @@ export function buildTestCaseDescription(tc: TestCaseInput): string {
     metadata.push(`<b>Type:</b> ${escapeHtml(typeLabel)}`);
   }
   if (tc.story_ref || tc.linkedStory) {
-    metadata.push(`<b>Linked Story:</b> ${escapeHtml(tc.story_ref ?? tc.linkedStory!)}`);
+    const refDisplay = parseStoryRefs(tc.story_ref ?? tc.linkedStory!).join(', ');
+    metadata.push(`<b>Linked Story:</b> ${escapeHtml(refDisplay)}`);
   }
   if (metadata.length) {
     parts.push(metadata.join(' | '));

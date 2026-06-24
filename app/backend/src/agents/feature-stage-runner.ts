@@ -15,7 +15,7 @@ import { validateBacklogJson, validateQaTestsJson } from './tool-validators';
 import { isCancelRequested } from './workflow-cancel';
 import { resolveAgentModel } from '../utils/ai-provider';
 import { progressHeartbeatLine, collectStreamWithHeartbeat, STAGE_MAX_OUTPUT_TOKENS } from './stage-metadata';
-import { stripJsonFence } from '../utils/json-repair';
+import { stripJsonFence, repairTruncatedJson } from '../utils/json-repair';
 import type { ProductAreaScope } from './multi-agent-refinement';
 
 /**
@@ -136,7 +136,9 @@ export async function runMultiAgentFeatureStage(
     }
 
     const strippedBacklog = stripJsonFence(result.backlog);
-    const newFeature = JSON.parse(strippedBacklog);
+    // The synthesis call can hit its maxTokens ceiling on a dense feature, leaving the
+    // tail of the JSON mid-string — repair before parsing instead of crashing the stage.
+    const newFeature = JSON.parse(repairTruncatedJson(strippedBacklog));
 
     // Save this feature in isolation (not accumulated).
     // Each feature stage gets its own artifact: backlog_F1, backlog_F2, backlog_F3
@@ -469,7 +471,7 @@ const QA_REVISION_SPEC: SurgicalRevisionSpec = {
         }
       }
       const { filterQaTestCasesByStoryIds } = await import('./multi-agent-refinement');
-      const { qaTests, dropped } = filterQaTestCasesByStoryIds(JSON.stringify(revised), validStoryIds);
+      const { qaTests, dropped } = filterQaTestCasesByStoryIds(JSON.stringify(revised), validStoryIds, `F${featureNum}`);
       if (dropped > 0) {
         logger.warn(`[MULTI-AGENT REVISION] Feature ${featureNum} QA revision — stripped ${dropped} test case(s) referencing stories that no longer exist`);
         return JSON.parse(qaTests);

@@ -23,6 +23,54 @@ export default {
       fontFamily: {
         sans: ['"Space Grotesk"', 'system-ui', '-apple-system', 'sans-serif'],
       },
+      // @tailwindcss/typography ships hardcoded slate/gray hex colors for `prose` content
+      // that don't respond to our `--surface-*`/`--brand-*` CSS variables, so markdown-
+      // rendered previewers (PRD, Architecture, knowledge docs) looked theme-broken next to
+      // the hand-styled structured views (QATestsView, BacklogView). Re-point every prose
+      // color variable at our own ramp so `.prose`/`.prose-invert` follow the active theme
+      // and match the rest of the app, in one place.
+      typography: {
+        DEFAULT: {
+          css: {
+            '--tw-prose-body': 'rgb(var(--surface-700))',
+            '--tw-prose-headings': 'rgb(var(--surface-900))',
+            '--tw-prose-lead': 'rgb(var(--surface-600))',
+            '--tw-prose-links': 'rgb(var(--brand-600))',
+            '--tw-prose-bold': 'rgb(var(--surface-900))',
+            '--tw-prose-counters': 'rgb(var(--surface-500))',
+            '--tw-prose-bullets': 'rgb(var(--surface-300))',
+            '--tw-prose-hr': 'rgb(var(--surface-200))',
+            '--tw-prose-quotes': 'rgb(var(--surface-900))',
+            '--tw-prose-quote-borders': 'rgb(var(--surface-200))',
+            '--tw-prose-captions': 'rgb(var(--surface-500))',
+            '--tw-prose-kbd': 'rgb(var(--surface-900))',
+            '--tw-prose-kbd-shadows': 'rgb(var(--surface-900) / 10%)',
+            '--tw-prose-code': 'rgb(var(--surface-700))',
+            '--tw-prose-pre-code': 'rgb(var(--surface-200))',
+            '--tw-prose-pre-bg': 'rgb(var(--surface-800))',
+            '--tw-prose-th-borders': 'rgb(var(--surface-300))',
+            '--tw-prose-td-borders': 'rgb(var(--surface-200))',
+            '--tw-prose-invert-body': 'rgb(var(--surface-300))',
+            '--tw-prose-invert-headings': 'rgb(var(--surface-100))',
+            '--tw-prose-invert-lead': 'rgb(var(--surface-400))',
+            '--tw-prose-invert-links': 'rgb(var(--brand-400))',
+            '--tw-prose-invert-bold': 'rgb(var(--surface-100))',
+            '--tw-prose-invert-counters': 'rgb(var(--surface-400))',
+            '--tw-prose-invert-bullets': 'rgb(var(--surface-600))',
+            '--tw-prose-invert-hr': 'rgb(var(--surface-700))',
+            '--tw-prose-invert-quotes': 'rgb(var(--surface-100))',
+            '--tw-prose-invert-quote-borders': 'rgb(var(--surface-700))',
+            '--tw-prose-invert-captions': 'rgb(var(--surface-400))',
+            '--tw-prose-invert-kbd': 'rgb(var(--surface-100))',
+            '--tw-prose-invert-kbd-shadows': 'rgb(var(--surface-100) / 10%)',
+            '--tw-prose-invert-code': 'rgb(var(--surface-300))',
+            '--tw-prose-invert-pre-code': 'rgb(var(--surface-300))',
+            '--tw-prose-invert-pre-bg': 'rgb(var(--surface-900) / 50%)',
+            '--tw-prose-invert-th-borders': 'rgb(var(--surface-600))',
+            '--tw-prose-invert-td-borders': 'rgb(var(--surface-700))',
+          },
+        },
+      },
       boxShadow: {
         'glow-brand': '0 0 15px -3px rgb(var(--brand-500) / 0.3)',
         'glow-brand-sm': '0 0 8px -2px rgb(var(--brand-500) / 0.25)',

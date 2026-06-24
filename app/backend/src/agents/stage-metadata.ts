@@ -20,7 +20,7 @@ export const STAGE_MAX_OUTPUT_TOKENS: Record<string, number> = {
   pm_prd:               12_000,
   epic_feature_planner: 16_000,
   solution_architect:   32_000,  // heaviest stage: full data model/API surface/infra plus epic_features_enriched for every feature
-  story_decomposition:  16_000,  // single feature backlog (epic + ~8 stories with prd_ref/technical detail)
+  story_decomposition:  24_000,  // single feature backlog — up to the validator's 12-story limit with full prd_ref/technical detail; 16k was observed hitting the ceiling on a dense feature
   qa_engineer:          14_000,  // 10-15 test cases per feature with full test detail
   prototype:            64_000,
   figma_design:         16_000,

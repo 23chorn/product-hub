@@ -55,6 +55,41 @@ describe('eventToMessage', () => {
     expect(msg!.content).toContain('→ https://ado/42');
   });
 
+  it('shows the feature link on a story_decomposition_F* base-stage push', () => {
+    const msg = eventToMessage({
+      ...base,
+      stage: 'story_decomposition_F1',
+      event_type: 'ado_pushed',
+      summary: 'Feature 1 stories pushed to Azure DevOps',
+      details: JSON.stringify({ feature_url: 'https://ado/feature/1' }),
+    });
+    expect(msg!.content).toBe('Feature 1 stories pushed to Azure DevOps\n→ View Feature: https://ado/feature/1');
+  });
+
+  it('shows the test plan link on a story_decomposition_F*_qa push', () => {
+    const msg = eventToMessage({
+      ...base,
+      stage: 'story_decomposition_F1_qa',
+      event_type: 'ado_pushed',
+      summary: 'Feature 1 test cases pushed to Azure DevOps',
+      details: JSON.stringify({ test_plan_url: 'https://ado/plan/1' }),
+    });
+    expect(msg!.content).toBe('Feature 1 test cases pushed to Azure DevOps\n→ View Test Plan: https://ado/plan/1');
+  });
+
+  it('shows both links when a single event carries both (legacy combined push)', () => {
+    const msg = eventToMessage({
+      ...base,
+      stage: 'story_decomposition_F1_qa',
+      event_type: 'ado_pushed',
+      summary: 'Feature 1 stories & test cases pushed to Azure DevOps',
+      details: JSON.stringify({ feature_url: 'https://ado/feature/1', test_plan_url: 'https://ado/plan/1' }),
+    });
+    expect(msg!.content).toBe(
+      'Feature 1 stories & test cases pushed to Azure DevOps\n→ View Feature: https://ado/feature/1\n→ View Test Plan: https://ado/plan/1'
+    );
+  });
+
   it('falls back to the raw summary on malformed details', () => {
     const msg = eventToMessage({ ...base, event_type: 'critic_verdict', summary: 'raw', details: '{bad json' });
     expect(msg!.content).toBe('raw');

@@ -34,17 +34,9 @@
 
 ## Active work
 
-- **Top Movers Discovery Expansion (5 → 50)** — Specification complete, pre-development (workflow 33e16ae0)
-  - "See All" affordance on existing Top 5 widget navigates to a dedicated page showing up to 50 ranked stocks per category (Value/Volume/Winners/Losers) and exchange (DFM/ADX), served by a new cached REST endpoint in the existing monolith.
-  - Blockers: Dory API commercial contract confirmation (increased payload size must be covered by current contract); CleverTap baseline instrumentation must be live pre-launch (depends on CleverTap integration completing)
-
 - **Exchange Circuit Limit Display & Client-Side Validation** — Specification complete, pre-development (workflow 58c2910a)
   - Surfaces DFN-provided daily limit up/down values on the trade screen (iOS and Android only) with client-side validation blocking out-of-range limit orders; backend passthrough via new CircuitLimitsController in MarketDataService reading a daily-refreshed DB view into IMemoryCache.
-  - Blockers: None identified
-
-- **Recurring Card Payments (Card)** — Specification complete, pre-development (workflow 65c2a1a4)
-  - Automated monthly credit/debit card deposits via Worldpay MIT flow with xCube-owned Hangfire scheduler, single active schedule per user, Manage Funds portal for lifecycle management (pause/resume/cancel), and 4-attempt retry with auto-pause on exhaustion.
-  - Blockers: None identified
+  - Blockers: vw_InstrumentCircuitLimits DDL validation must execute successfully in SIT over DFN-sourced tables with ≥10 representative DFM/ADX instruments populated before sprint 1 starts; if validation fails, hardcoded ±5% fallback is implemented with technical debt ticket logged for Phase 2 actual exchange-specific thresholds.
 
 ## Known debt and issues
 

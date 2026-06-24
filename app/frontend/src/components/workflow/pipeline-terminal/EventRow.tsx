@@ -97,10 +97,9 @@ export function EventRow({ msg }: { msg: CoordinatorMessage }) {
               >
                 {link.label
                   ? `${link.label} in Azure Boards ↗`
-                  : msg.stage === 'epic_feature_planner'
-                  ? 'Open in Azure Boards ↗'
-                  : isFeatureStage
-                  ? 'View Feature in Azure Boards ↗'
+                  // Unlabeled fallback (legacy ado_url-only events) — don't guess which
+                  // work item this is from the stage name alone; a story_decomposition_F*
+                  // stage can carry a test-plan link just as easily as a feature link.
                   : 'Open in Azure DevOps ↗'}
               </a>
             ))}

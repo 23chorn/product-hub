@@ -6,6 +6,7 @@ import {
   TC_PRIORITY_MAP,
   buildTestCaseDescription,
   buildTestStepsXml,
+  parseStoryRefs,
   type TestCaseInput,
 } from './azure-devops-format';
 
@@ -62,14 +63,14 @@ async function createTestSuite(
   }
 }
 
-/** Create a Test Case work item with steps XML and optional TestedBy link. */
+/** Create a Test Case work item with steps XML and optional TestedBy link(s). */
 async function createTestCaseWorkItem(ctx: TestPlanContext, params: {
   title: string;
   description?: string;
   stepsXml: string;
   priority: number;
   tags?: string;
-  storyAdoId?: number;
+  storyAdoIds?: number[];
 }): Promise<{ testCaseId: number }> {
   const operations: any[] = [
     { op: 'add', path: '/fields/System.Title', value: params.title },
@@ -85,13 +86,13 @@ async function createTestCaseWorkItem(ctx: TestPlanContext, params: {
     operations.push({ op: 'add', path: '/fields/System.Tags', value: params.tags });
   }
 
-  if (params.storyAdoId) {
+  for (const storyAdoId of params.storyAdoIds ?? []) {
     operations.push({
       op: 'add',
       path: '/relations/-',
       value: {
         rel: 'Microsoft.VSTS.Common.TestedBy-Reverse',
-        url: `https://dev.azure.com/${ctx.organization}/${ctx.project}/_apis/wit/workItems/${params.storyAdoId}`,
+        url: `https://dev.azure.com/${ctx.organization}/${ctx.project}/_apis/wit/workItems/${storyAdoId}`,
       },
     });
   }
@@ -255,25 +256,29 @@ export async function pushQATestPlan(ctx: TestPlanContext, params: {
       const description = buildTestCaseDescription(tc);
       const priority = TC_PRIORITY_MAP[(tc.priority ?? 'medium').toLowerCase()] ?? 3;
       const tags = Array.isArray(tc.tags) && tc.tags.length ? tc.tags.join('; ') : undefined;
+      // A ref can name more than one story (e.g. "F1.S9 (iOS) / F1.S10 (Android)" for a
+      // test case that covers both platforms' stories) — resolve every key it contains.
       const storyRef = tc.story_ref ?? tc.linkedStory ?? null;
-      const storyAdoId = storyRef ? storyMap.get(storyRef) : undefined;
+      const storyAdoIds = storyRef
+        ? [...new Set(parseStoryRefs(storyRef).map(key => storyMap.get(key)).filter((id): id is number => id !== undefined))]
+        : [];
 
-      if (storyRef && !storyAdoId) {
+      if (storyRef && storyAdoIds.length === 0) {
         logger.warn(`Test case ${tc.id} references story "${storyRef}" but no ADO ID found in storyMap`);
       }
 
       if (tc.id && testCaseIds[tc.id]) {
         await updateTestCaseWorkItem(ctx, testCaseIds[tc.id], { title: tc.title, description, stepsXml, priority, tags });
-        if (storyAdoId) {
+        for (const storyAdoId of storyAdoIds) {
           logger.info(`Adding TestedBy link: tc #${testCaseIds[tc.id]} → story #${storyAdoId} (${storyRef})`);
           await addTestedByLink(ctx, testCaseIds[tc.id], storyAdoId);
         }
         updated++;
       } else {
-        if (storyAdoId) {
-          logger.info(`Creating test case with TestedBy link: "${tc.title}" → story #${storyAdoId} (${storyRef})`);
+        if (storyAdoIds.length) {
+          logger.info(`Creating test case with TestedBy link(s): "${tc.title}" → stor${storyAdoIds.length > 1 ? 'ies' : 'y'} #${storyAdoIds.join(', #')} (${storyRef})`);
         }
-        const { testCaseId } = await createTestCaseWorkItem(ctx, { title: tc.title, description, stepsXml, priority, tags, storyAdoId });
+        const { testCaseId } = await createTestCaseWorkItem(ctx, { title: tc.title, description, stepsXml, priority, tags, storyAdoIds });
         if (tc.id) testCaseIds[tc.id] = testCaseId;
         newTestCaseAdoIds.push(testCaseId);
         created++;

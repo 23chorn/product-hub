@@ -107,7 +107,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  for (const t of ['checkpoint_audit', 'context_diffs', 'ado_work_item_map', 'checkpoints', 'workflow_events', 'artifacts', 'sessions', 'workflows', 'items']) {
+  for (const t of ['checkpoint_audit', 'context_diffs', 'ado_work_item_map', 'qa_test_plan_map', 'checkpoints', 'workflow_events', 'artifacts', 'sessions', 'workflows', 'items']) {
     db.prepare(`DELETE FROM ${t}`).run();
   }
 });
@@ -219,6 +219,19 @@ describe('restartWorkflow', () => {
     expect(evts.some(e => e.event_type === 'stage_progress' && e.stage === 'pm_prd')).toBe(false);
     expect(evts.some(e => e.event_type === 'workflow_started')).toBe(true);
     expect(runAutonomousStage).toHaveBeenCalledOnce();
+  });
+
+  it('drops the stale qa_test_plan_map row so a re-push starts a fresh ADO test plan', async () => {
+    seedWorkflow('wf-1', { status: 'active', currentStage: 'solution_architect', sequence: ['analyst', 'pm_prd', 'solution_architect'] });
+    db.prepare(`
+      INSERT INTO qa_test_plan_map (workflow_id, plan_id, plan_url, suite_ids, test_case_ids, test_case_count, created_at)
+      VALUES ('wf-1', 999, 'https://dev.azure.com/org/proj/_testPlans/define?planId=999', '{}', '{}', 5, ?)
+    `).run(Date.now());
+
+    await restartWorkflow('wf-1');
+
+    const row = db.prepare('SELECT * FROM qa_test_plan_map WHERE workflow_id = ?').get('wf-1');
+    expect(row).toBeUndefined();
   });
 
   it('collapses leftover feature-wave stages back to a single placeholder', async () => {

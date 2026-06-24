@@ -1,0 +1,62 @@
+# Agent User Configuration
+# Fill in your details below. These values are injected into every agent session.
+
+# Your name — agents will address you by this in conversation
+user_name: Chris
+
+# Language for all agent communication and document output
+communication_language: English
+document_output_language: English
+
+# Your product / project name (used in document titles and context)
+project_name: xCube
+
+# Your experience level — affects how much context agents provide
+# Options: beginner, intermediate, expert
+user_skill_level: expert
+
+# Sprint planning — used to estimate sprints required at the epic level
+# sprint_velocity: total story points your team can complete per 2-week sprint at full capacity.
+# capacity_factor: proportion of each sprint available for planned feature work (0.0–1.0).
+#   Accounts for prod issues, BAU, meetings, unplanned work, etc.
+#   e.g. 0.7 means 30% of sprint capacity is consumed by non-feature work.
+# Effective feature velocity = sprint_velocity × capacity_factor
+sprint_velocity: 64
+capacity_factor: 0.625
+
+# Hours per story point — maps Fibonacci effort scores to estimated dev hours.
+# Used to calculate per-story and total hour estimates in the backlog preview.
+# Adjust to match your team's observed velocity. Non-linear because larger
+# stories carry more integration/testing overhead per point.
+hours_per_point:
+  1: 2
+  2: 4
+  3: 8
+  5: 16
+  8: 28
+
+# AI-assisted development — adjusts hour estimates for teams using AI coding agents
+# (e.g. Claude Code with Opus). AI changes the effort-to-hours curve: routine work
+# (low-point stories) gets a larger speedup than complex cross-cutting work.
+# Set enabled: true to use ai_hours_per_point instead of hours_per_point.
+ai_assisted_development:
+  enabled: false
+  # Hours per story point when developers are using AI coding agents.
+  # Lower than traditional because AI accelerates implementation, testing scaffolding,
+  # and boilerplate — but complex integration/architecture work sees less benefit.
+  ai_hours_per_point:
+    1: 0.5
+    2: 1.5
+    3: 3
+    5: 8
+    8: 18
+
+# Enabled specialist stages — toggle agents on/off without code changes.
+# Set to false to hide a stage from the UI entirely.
+enabled_stages:
+  analyst: true
+  pm_prd: true
+  solution_architect: true
+  pm_backlog: true
+  gtm_strategy: false
+  feature_marketing: false

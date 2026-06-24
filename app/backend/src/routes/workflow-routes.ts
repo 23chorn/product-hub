@@ -335,7 +335,8 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
       // resolves the feature index whichever of the pair triggered it.
       if (cpDetail && cpDetail.stage.startsWith('story_decomposition_F') && ownGroupComplete) {
         const { parseFeatureStage, pushFeatureToADO } = await import('../agents/feature-decomposition');
-        const featureIndex = parseFeatureStage(cpDetail.stage.replace(/_qa$/, ''));
+        const baseStage = cpDetail.stage.replace(/_qa$/, '');
+        const featureIndex = parseFeatureStage(baseStage);
 
         if (featureIndex !== null) {
           try {
@@ -346,14 +347,31 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
               const client = getAzureDevOpsClient();
               const featureUrl = `https://dev.azure.com/${client['organization']}/${client['project']}/_workitems/edit/${result.featureId}`;
               const testPlanUrl = result.testPlanUrl ?? null;
-              stampArtifactUrl(featureUrl);
-              // No epic_url here — the epic link is already shown on epic_feature_planner's
-              // own event; this checkpoint's event only carries the link(s) it owns.
-              const eventMeta: Record<string, any> = { feature_url: featureUrl };
-              if (testPlanUrl) eventMeta.test_plan_url = testPlanUrl;
-              insertEvent(workflowId, 'ado_pushed', cpDetail.stage,
-                `Feature ${featureIndex + 1} stories & test cases pushed to Azure DevOps`,
-                eventMeta);
+
+              // This pair has two sibling checkpoints with two separate artifacts (stories
+              // + QA tests) — stamp each with its own link and emit one event per stage so
+              // "Refinement — F<n>" only ever shows the feature link and "QA Tests — F<n>"
+              // only ever shows the test plan link. A single combined event tagged with
+              // whichever sibling happened to be approved last (the old behavior) put both
+              // links on one stage, leaving the other section link-less.
+              const siblings = db.prepare<[string, string, string], { stage: string; artifact_id: number | null }>(
+                `SELECT stage, artifact_id FROM checkpoints WHERE workflow_id = ? AND stage IN (?, ?)`
+              ).all(workflowId, baseStage, `${baseStage}_qa`);
+              for (const sibling of siblings) {
+                const url = sibling.stage.endsWith('_qa') ? testPlanUrl : featureUrl;
+                if (sibling.artifact_id && url) {
+                  db.prepare('UPDATE artifacts SET external_url = ? WHERE id = ?').run(url, sibling.artifact_id);
+                }
+              }
+
+              insertEvent(workflowId, 'ado_pushed', baseStage,
+                `Feature ${featureIndex + 1} stories pushed to Azure DevOps`,
+                { feature_url: featureUrl });
+              if (testPlanUrl) {
+                insertEvent(workflowId, 'ado_pushed', `${baseStage}_qa`,
+                  `Feature ${featureIndex + 1} test cases pushed to Azure DevOps`,
+                  { test_plan_url: testPlanUrl });
+              }
               logger.info(`[CHECKPOINT] Feature ${featureIndex + 1} approved → pushed to ADO: epic #${result.epicId}, feature #${result.featureId}, ${result.storyIds.length} stories`);
             }
           } catch (err: any) {

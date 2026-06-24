@@ -18,6 +18,7 @@ import { resolveAgentModel } from '../utils/ai-provider';
 import { progressHeartbeatLine, collectStreamWithHeartbeat, STAGE_MAX_OUTPUT_TOKENS } from './stage-metadata';
 import { stripJsonFence, parseJsonLoose } from '../utils/json-repair';
 import { readProductArea } from './item-metadata';
+import { featureLocalKey } from '../integrations/azure-devops-format';
 import type { AgentType } from '@pap/shared';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -169,18 +170,34 @@ export function filterBacklogStoriesByScope(
  * Strip QA test cases whose story_ref no longer points at a surviving story (i.e. its
  * story was dropped by filterBacklogStoriesByScope). Pass survivorStoryIds = null to
  * skip filtering (unscoped feature).
+ *
+ * currentFeatureKey scopes the check to THIS feature's own refs only — survivorStoryIds
+ * only ever holds this feature's own story_ids, so a cross-feature ref (e.g. "F1.S5"
+ * cited from F2's test suite) was never going to be in there. Validating it against
+ * this guard would wrongly strip a legitimate cross-feature link; that ref's integrity
+ * isn't this guard's concern, so refs outside currentFeatureKey pass through untouched.
  */
 export function filterQaTestCasesByStoryIds(
   qaTests: string,
-  survivorStoryIds: Set<string> | null
+  survivorStoryIds: Set<string> | null,
+  currentFeatureKey: string
 ): { qaTests: string; dropped: number } {
   if (!survivorStoryIds) return { qaTests, dropped: 0 };
 
   const qaJson = parseJsonLoose(qaTests);
   if (!qaJson || !Array.isArray(qaJson.test_cases)) return { qaTests, dropped: 0 };
 
+  const isOwnFeatureRef = (ref: unknown): ref is string =>
+    typeof ref === 'string' && ref.startsWith(`${currentFeatureKey}.`);
+
   const before = qaJson.test_cases.length;
-  qaJson.test_cases = qaJson.test_cases.filter((tc: any) => !tc?.story_ref || survivorStoryIds.has(tc.story_ref));
+  qaJson.test_cases = qaJson.test_cases.filter((tc: any) => {
+    if (!tc?.story_ref) return true;
+    const refs = Array.isArray(tc.story_ref) ? tc.story_ref : [tc.story_ref];
+    const ownRefs = refs.filter(isOwnFeatureRef);
+    if (ownRefs.length === 0) return true; // no ref claims to be this feature's own — not our concern
+    return ownRefs.some((r: string) => survivorStoryIds.has(r));
+  });
   const dropped = before - qaJson.test_cases.length;
   if (dropped === 0) return { qaTests, dropped: 0 };
 
@@ -196,17 +213,36 @@ export function filterQaTestCasesByStoryIds(
 function enforcePlatformScope(
   backlog: string,
   qaTests: string,
-  scope: ProductAreaScope
+  scope: ProductAreaScope,
+  currentFeatureKey: string
 ): { backlog: string; qaTests: string } {
   const { backlog: filteredBacklog, survivorStoryIds, dropped } = filterBacklogStoriesByScope(backlog, scope);
   if (dropped === 0) return { backlog: filteredBacklog, qaTests };
 
-  const { qaTests: filteredQaTests, dropped: droppedTests } = filterQaTestCasesByStoryIds(qaTests, survivorStoryIds);
+  const { qaTests: filteredQaTests, dropped: droppedTests } = filterQaTestCasesByStoryIds(qaTests, survivorStoryIds, currentFeatureKey);
   if (droppedTests > 0) {
     logger.warn(`[MULTI-AGENT] Platform scope "${scope.area}" — stripped ${droppedTests} test case(s) referencing out-of-scope stories`);
   }
 
   return { backlog: filteredBacklog, qaTests: filteredQaTests };
+}
+
+/**
+ * Summarize other already-decomposed features' user-facing stories (local_key + title)
+ * so the QA synthesis step can cite a real cross-feature story_ref instead of inventing
+ * a placeholder when this feature's own behavior surfaces through another feature's UI
+ * (e.g. a backend-only caching feature whose effect is only observable via another
+ * feature's Order Entry screen). Only stories already pushed to ADO are visible here —
+ * a feature that hasn't run yet simply isn't available to reference.
+ */
+function buildCrossFeatureStorySummary(workflowId: string, currentFeatureKey: string): string {
+  const rows = db.prepare<[string, string], { local_key: string; title: string }>(
+    `SELECT local_key, title FROM ado_work_item_map
+     WHERE workflow_id = ? AND ado_type = 'story' AND local_key NOT LIKE ?
+     ORDER BY local_key`
+  ).all(workflowId, `${currentFeatureKey}.%`);
+  if (rows.length === 0) return '';
+  return rows.map(r => `- ${r.local_key}: ${r.title}`).join('\n');
 }
 
 export interface RefinementResult {
@@ -432,12 +468,14 @@ Any story whose UI surfaces one of these screens must cite the screen's frame_ur
     refine2: qaParticipant ? refined2.get(qaParticipant.name) ?? '' : '',
   };
 
+  const crossFeatureStories = buildCrossFeatureStorySummary(workflowId, featureLocalKey(featureIndex));
+
   const [rawBacklog, rawQaTests] = await Promise.all([
     synthesizeFinalArtifact(workflowId, stage, featureBrief, refined2),
-    synthesizeQaArtifact(workflowId, stage, featureBrief, featureNum, veraOutputs, refined2, activeParticipants),
+    synthesizeQaArtifact(workflowId, stage, featureBrief, featureNum, veraOutputs, refined2, activeParticipants, crossFeatureStories),
   ]);
 
-  const { backlog, qaTests } = enforcePlatformScope(rawBacklog, rawQaTests, platformScope);
+  const { backlog, qaTests } = enforcePlatformScope(rawBacklog, rawQaTests, platformScope, featureLocalKey(featureIndex));
 
   logger.info(`[MULTI-AGENT] Feature ${featureNum} refinement complete — backlog: ${backlog.length} chars, QA tests: ${qaTests.length} chars`);
   return { backlog, qaTests };
@@ -878,7 +916,8 @@ async function synthesizeQaArtifact(
   featureNum: number,
   veraOutputs: { draft: string; refine1: string; refine2: string },
   refined2: Map<string, string>,
-  participants: RefinementParticipant[]
+  participants: RefinementParticipant[],
+  crossFeatureStories: string
 ): Promise<string> {
   const facilitator = findParticipant(participants, 'story-decomposition');
   const shardFinalStories = (facilitator ? refined2.get(facilitator.name) : undefined) ?? '';
@@ -907,6 +946,11 @@ ${veraOutputs.refine2 || '(none)'}
 ${shardFinalStories || '(none)'}
 
 ---
+${crossFeatureStories ? `**Other Features' User-Facing Stories (already in ADO — cite these by their real story_id when THIS feature's behavior surfaces through another feature's UI, e.g. a backend-only feature whose effect is only observable on another feature's screen):**
+${crossFeatureStories}
+
+---
+` : ''}
 
 **Your Task — Produce a Standalone QA Test Suite:**
 Using your testability notes and the finalised story list above, produce a JSON test suite covering the **user-facing flows** of this feature — what an end user does and observes. This is not a technical/API test suite; a separate specialist owns contract-level testing for backend-only stories.
@@ -950,7 +994,7 @@ Requirements:
   - Priority: the happy path for each major user flow first, then spend remaining budget on the highest-risk user-visible failure modes (validation errors, blocked actions, misleading states)
   - Focus on the most critical test scenarios — comprehensive, not exhaustive
 - Each test_case id must use the pattern TC-F${featureNum}-NNN (three-digit counter)
-- story_ref must match a user-facing story_id from the final story list
+- story_ref must match a real story_id — from the final story list above, or from "Other Features' User-Facing Stories" when this feature's own list has no user-facing story for the flow being tested. Never invent a placeholder story_id (e.g. "iOS-CIRCUIT-1") — if no real story_id exists for the relevant UI yet, omit story_ref entirely rather than fabricate one
 - prd_ref must list the functional requirement ID(s) (e.g. "FR-01") this test verifies — copy from the referenced story's prd_ref
 - type must be exactly one of: happy_path, negative, edge, boundary, security, performance — at least one negative-type case is required, and at least 20% of cases should be negative/edge
 - tags must be a non-empty array using only: @smoke, @regression, @negative, @edge, @security, @performance — tag at least one critical happy-path case @smoke

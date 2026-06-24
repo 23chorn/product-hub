@@ -715,8 +715,11 @@ export async function pushEpicAndFeaturesToADO(
   }
 
   const epicId = firstEpicId!;
-  insertEvent(workflowId, 'ado_push', 'epic_feature_planner',
-    `Pushed ${Array.isArray(epicFeatures.phases) ? epicFeatures.phases.length + ' phase epic(s)' : 'epic'} + ${featureIds.length} features to Azure DevOps. Stories will be added as each feature is decomposed.`);
+  // No event inserted here — every caller (workflow-routes.ts's checkpoint handler,
+  // scripts/manual-fix-limit-up-down.ts) already inserts its own 'ado_pushed' event
+  // with the epic link once this returns, so an internal one here was always a
+  // redundant duplicate (and, since it used the wrong event_type 'ado_push' instead
+  // of 'ado_pushed', the frontend's eventToMessage() never rendered the link anyway).
 
   return { epicId, featureIds };
 }
@@ -908,17 +911,24 @@ export async function pushFeatureToADO(
   let testPlanUrl: string | null = null;
   if (allTestCases.length > 0) {
     try {
-      // Build story map for linking test cases to stories
+      // Build story map for linking test cases to stories. Include every feature's
+      // stories already pushed to ADO in this workflow (by local_key and ADO title) —
+      // a QA test case sometimes describes user-facing behavior actually owned by a
+      // different feature's stories (e.g. a backend-only feature's test cases verify
+      // outcomes surfaced through another feature's UI), so resolution must span the
+      // whole workflow, not just the feature currently being pushed. Also keep this
+      // feature's own stories by their raw backlog title (pre-prefix) for exact-title refs.
       const storyMap = new Map<string, number>();
       for (let i = 0; i < targetFeature.stories.length; i++) {
         const story = targetFeature.stories[i];
-        const storyId = storyIds[i];
-        if (story.story_id) {
-          storyMap.set(story.story_id, storyId);
-        }
-        if (story.title) {
-          storyMap.set(story.title, storyId);
-        }
+        if (story.title) storyMap.set(story.title, storyIds[i]);
+      }
+      const workflowStoryMappings = db.prepare<[string], { local_key: string; ado_id: number; title: string }>(
+        `SELECT local_key, ado_id, title FROM ado_work_item_map WHERE workflow_id = ? AND ado_type = 'story'`
+      ).all(workflowId);
+      for (const m of workflowStoryMappings) {
+        storyMap.set(m.local_key, m.ado_id);
+        if (m.title) storyMap.set(m.title, m.ado_id);
       }
 
       // Check if test plan already exists for this workflow (epic-level plan shared across features)
@@ -966,8 +976,10 @@ export async function pushFeatureToADO(
     }
   }
 
-  insertEvent(workflowId, 'ado_push', `story_decomposition_F${featureIndex + 1}`,
-    `Added ${storyIds.length} stories to feature "${targetFeature.title}" in Azure DevOps`);
+  // No event inserted here — workflow-routes.ts's checkpoint handler (the only caller)
+  // already inserts its own 'ado_pushed' event with the feature/test-plan links once
+  // this returns. Same redundant-duplicate issue as pushEpicAndFeaturesToADO() above —
+  // this one used the wrong event_type 'ado_push' too, so it never linked to anything.
 
   return { epicId, featureId, storyIds, testPlanId, testPlanUrl, testCaseCount: allTestCases.length };
 }

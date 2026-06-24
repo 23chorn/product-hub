@@ -87,22 +87,41 @@ describe('filterQaTestCasesByStoryIds', () => {
   });
 
   it('skips filtering when survivorStoryIds is null', () => {
-    const result = filterQaTestCasesByStoryIds(qa, null);
+    const result = filterQaTestCasesByStoryIds(qa, null, 'F1');
     expect(result.dropped).toBe(0);
     expect(result.qaTests).toBe(qa);
   });
 
   it('drops test cases whose story_ref was filtered out', () => {
     const survivors = new Set(['F1.S1']);
-    const result = filterQaTestCasesByStoryIds(qa, survivors);
+    const result = filterQaTestCasesByStoryIds(qa, survivors, 'F1');
     expect(result.dropped).toBe(1);
     const parsed = JSON.parse(result.qaTests);
     expect(parsed.test_cases.map((t: any) => t.id)).toEqual(['T1', 'T3']);
   });
 
   it('is a safe no-op on malformed QA JSON', () => {
-    const result = filterQaTestCasesByStoryIds('not json', new Set(['F1.S1']));
+    const result = filterQaTestCasesByStoryIds('not json', new Set(['F1.S1']), 'F1');
     expect(result.dropped).toBe(0);
     expect(result.qaTests).toBe('not json');
+  });
+
+  it('never drops a cross-feature ref — survivorStoryIds only ever covers the current feature', () => {
+    // F2's own survivor set obviously never contains an F1 key — this guard isn't
+    // the place to validate cross-feature link integrity (regression: it used to
+    // strip these unconditionally since it only ever checked the current feature's
+    // own survivor set against every ref, regardless of which feature it named).
+    const qaWithCrossRef = JSON.stringify({
+      test_cases: [
+        { id: 'T1', story_ref: 'F2.S1' },     // own feature, survives
+        { id: 'T2', story_ref: 'F1.S5' },     // cross-feature — not this guard's concern
+        { id: 'T3', story_ref: 'F2.S9' },     // own feature, dropped story — stripped
+      ],
+    });
+    const survivors = new Set(['F2.S1']);
+    const result = filterQaTestCasesByStoryIds(qaWithCrossRef, survivors, 'F2');
+    expect(result.dropped).toBe(1);
+    const parsed = JSON.parse(result.qaTests);
+    expect(parsed.test_cases.map((t: any) => t.id)).toEqual(['T1', 'T2']);
   });
 });
