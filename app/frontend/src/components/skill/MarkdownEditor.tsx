@@ -1,7 +1,5 @@
 import { useRef } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkBreaks from 'remark-breaks';
+import { MarkdownContent } from '../common/MarkdownContent';
 
 /** Markdown editor with a 50/50 source + live preview split and synced scrolling. */
 export function MarkdownEditor({
@@ -57,11 +55,7 @@ export function MarkdownEditor({
         className="w-1/2 h-full overflow-y-auto rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/60 p-4"
       >
         {value.trim() ? (
-          <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:font-semibold prose-headings:text-surface-800 dark:prose-headings:text-surface-100 prose-p:text-surface-700 dark:prose-p:text-surface-300 prose-li:text-surface-700 dark:prose-li:text-surface-300 prose-code:text-brand-600 dark:prose-code:text-brand-400 prose-pre:bg-surface-100 dark:prose-pre:bg-surface-900">
-            <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
-              {value}
-            </ReactMarkdown>
-          </div>
+          <MarkdownContent breaks>{value}</MarkdownContent>
         ) : (
           <p className="text-xs text-surface-400 dark:text-surface-500 italic">Preview will appear here…</p>
         )}

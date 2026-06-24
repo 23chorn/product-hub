@@ -2,13 +2,13 @@ import { useState } from 'react';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-interface PrdRef {
+export interface PrdRef {
   functionalRequirements?: string[];
   nonFunctionalRequirements?: string[];
   userJourneys?: string[];
 }
 
-interface EpicFeature {
+export interface EpicFeature {
   title: string;
   description?: string;
   rationale?: string;
@@ -21,7 +21,7 @@ interface EpicFeature {
   phase?: string;
 }
 
-interface EpicPhase {
+export interface EpicPhase {
   label: string;
   epicTitle?: string;
   deliverable?: string;
@@ -83,7 +83,7 @@ export function toPhases(data: EpicFeaturesData): EpicPhase[] {
 
 // ── Sub-components ───────────────────────────────────────────────────────────
 
-function PrdRefTags({ prdRef }: { prdRef: PrdRef }) {
+export function PrdRefTags({ prdRef }: { prdRef: PrdRef }) {
   const frs = prdRef.functionalRequirements ?? [];
   const nfrs = prdRef.nonFunctionalRequirements ?? [];
   const journeys = prdRef.userJourneys ?? [];
@@ -182,7 +182,7 @@ function FeatureCard({ feature, idx }: { feature: EpicFeature; idx: number }) {
   );
 }
 
-const PHASE_COLORS: Record<string, string> = {
+export const PHASE_COLORS: Record<string, string> = {
   MVP:      'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800',
   'Phase 1':'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800',
   'Phase 2':'bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800',
@@ -218,7 +218,9 @@ export function EpicFeaturesView({ data }: { data: EpicFeaturesData }) {
   const totalFeatures = phases.reduce((sum, p) => sum + p.features.length, 0);
 
   return (
-    <div className="space-y-6 text-sm">
+    // font-sans: this view can render inside the font-mono pipeline terminal subtree
+    // (e.g. the Stories/Tests overview); pin the app font so it never inherits monospace.
+    <div className="space-y-6 text-sm font-sans">
       {/* Epic header */}
       <div className="space-y-2">
         <div className="flex items-start gap-3">

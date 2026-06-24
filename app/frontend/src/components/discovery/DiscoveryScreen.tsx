@@ -1,14 +1,13 @@
 import { useEffect, useState, useCallback } from 'react';
 import type { DiscoverySource, DiscoveryOpportunity } from '@pap/shared';
 import { api } from '../../services/api';
-import { useDiscoveryStore } from '../../stores/discoveryStore';
 import { useAuthStore, canLaunchWorkflow, isViewOnly } from '../../stores/authStore';
+import { PageHeaderActions } from '../common/PageHeaderActions';
 import { SourceDocumentsPanel } from './SourceDocumentsPanel';
 import { OpportunityFeed } from './OpportunityFeed';
 import { PromoteOpportunityModal } from './PromoteOpportunityModal';
 
 export function DiscoveryScreen() {
-  const { closeDiscovery } = useDiscoveryStore();
   const { user, noAuth } = useAuthStore();
   const canRun = canLaunchWorkflow(user, noAuth);
   const canMutate = !isViewOnly(user, noAuth);
@@ -86,49 +85,32 @@ export function DiscoveryScreen() {
   };
 
   return (
-    <div className="h-full bg-white dark:bg-surface-800 rounded-xl shadow-2xl border border-surface-200 dark:border-surface-700 flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-surface-200 dark:border-surface-700 flex-shrink-0">
-        <div>
-          <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">Discovery</h2>
-          <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
-            Surface opportunities from interviews, reviews, and competitor notes
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {canRun ? (
-            <button
-              onClick={handleRunDiscovery}
-              disabled={selectedIds.size === 0 || running}
-              className="text-sm px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium transition-colors"
-            >
-              {running ? (
-                <span className="flex items-center gap-2">
-                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  Running discovery...
-                </span>
-              ) : `Run Discovery${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
-            </button>
-          ) : (
-            <span title="Only Product or Admin users can run discovery" className="cursor-not-allowed">
-              <button disabled className="text-sm px-4 py-2 rounded-lg border border-surface-200 dark:border-surface-700 text-surface-400 dark:text-surface-600 font-medium pointer-events-none">
-                Run Discovery
-              </button>
-            </span>
-          )}
+    <div className="h-full bg-surface-50 dark:bg-surface-950 flex flex-col overflow-hidden">
+      <PageHeaderActions>
+        {canRun ? (
           <button
-            onClick={closeDiscovery}
-            className="p-2 rounded-lg text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
+            onClick={handleRunDiscovery}
+            disabled={selectedIds.size === 0 || running}
+            className="text-sm px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium transition-colors"
           >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            {running ? (
+              <span className="flex items-center gap-2">
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Running discovery...
+              </span>
+            ) : `Run Discovery${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
           </button>
-        </div>
-      </div>
+        ) : (
+          <span title="Only Product or Admin users can run discovery" className="cursor-not-allowed">
+            <button disabled className="text-sm px-4 py-2 rounded-lg border border-surface-200 dark:border-surface-700 text-surface-400 dark:text-surface-600 font-medium pointer-events-none">
+              Run Discovery
+            </button>
+          </span>
+        )}
+      </PageHeaderActions>
 
       {runError && (
         <div className="mx-6 mt-3 p-2.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-xs text-red-700 dark:text-red-300 flex-shrink-0">

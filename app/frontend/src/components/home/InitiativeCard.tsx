@@ -37,6 +37,14 @@ export function InitiativeCard({
   const needsReview = eff === 'paused_at_checkpoint';
   const pendingApprovals = needsReview ? wf?.pendingApprovals ?? [] : [];
 
+  // Collapse to one badge per distinct required-role set. During refinement many parallel
+  // stages await the same role, which otherwise renders a row of identical "Needs X" badges.
+  const approvalBadges = [...new Set(
+    pendingApprovals.map(({ roles }) =>
+      roles.length > 0 ? roles.map(r => ROLE_LABELS[r] ?? r).join('/') : 'approval'
+    ),
+  )];
+
   return (
     <div
       title={item.description || undefined}
@@ -130,13 +138,13 @@ export function InitiativeCard({
           </span>
         )}
         <StatusBadge wf={wf} />
-        {isAdmin && pendingApprovals.map((approval, i) => (
+        {isAdmin && approvalBadges.map((label) => (
           <span
-            key={`${approval.stage}-${i}`}
+            key={label}
             className="flex-shrink-0 inline-flex items-center text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400"
-            title={`Requires approval from: ${approval.roles.map(r => ROLE_LABELS[r] ?? r).join(' or ') || 'any role'}`}
+            title={`Requires approval from: ${label === 'approval' ? 'any role' : label.replace(/\//g, ' or ')}`}
           >
-            Needs {approval.roles.length > 0 ? approval.roles.map(r => ROLE_LABELS[r] ?? r).join('/') : 'approval'}
+            Needs {label}
           </span>
         ))}
       </div>

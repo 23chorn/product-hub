@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { MarkdownContent } from '../common/MarkdownContent';
 import { useWorkflowStore } from '../../stores/workflowStore';
 import { useConfigStore } from '../../stores/configStore';
 import { useAuthStore, canApprove, parseRequiredRoles, ROLE_LABELS } from '../../stores/authStore';
@@ -428,9 +427,7 @@ export function ArtifactViewer() {
                             AI revision summary
                           </h3>
                         </div>
-                        <div className="prose prose-sm dark:prose-invert max-w-none text-surface-700 dark:text-surface-300 [&_p]:my-1 [&_ul]:my-1 [&_li]:my-0.5">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{revisionSummary}</ReactMarkdown>
-                        </div>
+                        <MarkdownContent className="[&_p]:my-1 [&_ul]:my-1 [&_li]:my-0.5">{revisionSummary}</MarkdownContent>
                       </div>
                     )}
                     {loading ? (
@@ -445,6 +442,7 @@ export function ArtifactViewer() {
                     ) : content ? renderStructuredArtifact(content, {
                       artifactType,
                       activeWorkflow,
+                      checkpoints,
                       pendingCheckpoint,
                       hasApprovePermission,
                       resolveLoading,

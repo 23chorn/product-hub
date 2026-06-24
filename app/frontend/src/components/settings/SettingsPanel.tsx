@@ -92,6 +92,7 @@ export function SettingsPanel() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
     api.getSettings()
@@ -123,6 +124,21 @@ export function SettingsPanel() {
       toast.error(err.response?.data?.error || 'Failed to save settings');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSyncAirtable = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      await api.getItemsPipelineReady();
+      // Items are now persisted in the DB — let the Home screen (if mounted) refresh its list.
+      window.dispatchEvent(new CustomEvent('refresh-initiatives'));
+      toast.success('Synced from Airtable');
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.message || 'Failed to sync from Airtable');
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -211,6 +227,29 @@ export function SettingsPanel() {
                 </div>
               </FieldRow>
             </div>
+
+            {canAccessAdminTabs && (
+              <div className="mt-5">
+                <SectionHeader
+                  title="Airtable sync"
+                  description="Airtable is the source of truth for initiatives — they aren't created manually in Product Hub."
+                />
+                <div className="rounded-lg border border-surface-200 dark:border-surface-700 overflow-hidden">
+                  <FieldRow label="Sync now" hint="Fetches initiatives marked Pipeline Ready in Airtable.">
+                    <button
+                      onClick={handleSyncAirtable}
+                      disabled={syncing}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 bg-white dark:bg-surface-800/50 hover:bg-surface-50 dark:hover:bg-surface-700/70 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <svg className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      {syncing ? 'Syncing…' : 'Sync Airtable'}
+                    </button>
+                  </FieldRow>
+                </div>
+              </div>
+            )}
 
             {canAccessAdminTabs && !loading && draft && (
               <div className="mt-5">

@@ -9,24 +9,33 @@ import { DiscoveryScreen } from './components/discovery/DiscoveryScreen';
 import { SettingsPanel } from './components/settings/SettingsPanel';
 import { QuickTicketPanel } from './components/ticket/QuickTicketPanel';
 import { CompletedInitiativesPage } from './components/completed-initiatives/CompletedInitiativesPage';
+import { PageHeader } from './components/common/PageHeader';
+import { PageHeaderTitle } from './components/common/PageHeaderTitle';
 import { LoginPage } from './pages/LoginPage';
 import { useModelStore } from './stores/modelStore';
-import { useSkillManagerStore } from './stores/skillManagerStore';
-import { useDiscoveryStore } from './stores/discoveryStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { useConfigStore } from './stores/configStore';
 import { useWorkflowStore } from './stores/workflowStore';
-import { useCompletedInitiativesViewStore } from './stores/completedInitiativesViewStore';
-import { useHomeActionsStore } from './stores/homeActionsStore';
+import { usePageNavStore, type PageKey } from './stores/pageNavStore';
 import { useAuthStore, ROLE_LABELS, canLaunchWorkflow } from './stores/authStore';
 import { api } from './services/api';
 
-// Top-level page nav tabs. Discovery and Knowledge Studio may join this list later
-// if/when they move from overlay buttons to pages of their own.
-const NAV_TABS = [
+// Top-level page nav tabs shown in the header strip below the title.
+const NAV_TABS: Array<{ key: PageKey; label: string; visible?: (ctx: { canLaunch: boolean }) => boolean }> = [
   { key: 'home', label: 'Home' },
-  { key: 'completed', label: 'Completed Initiatives' },
-] as const;
+  { key: 'completed', label: 'Progress Tracker' },
+  { key: 'discovery', label: 'Discovery', visible: ({ canLaunch }) => canLaunch },
+  { key: 'knowledge', label: 'Knowledge Studio' },
+];
+
+// Description shown in the shared PageHeader's title slot for whichever tab is active
+// (the page name itself is already shown by the active nav tab).
+const PAGE_DESCRIPTIONS: Record<PageKey, string> = {
+  home: 'Browse, launch, and track initiatives across the pipeline.',
+  completed: 'Azure DevOps ticket state for initiatives whose pipeline has finished.',
+  discovery: 'Surface opportunities from interviews, reviews, and competitor notes.',
+  knowledge: 'Manage project context, behaviour docs, agent personas, output templates, and repo documentation review.',
+};
 
 function DemoToast({ title, onDismiss }: { title: string; onDismiss: () => void }) {
   useEffect(() => {
@@ -48,17 +57,11 @@ function DemoToast({ title, onDismiss }: { title: string; onDismiss: () => void 
 
 function App() {
   const { setAvailableModels, setAgentModels } = useModelStore();
-  const { isOpen: isSMOpen, openSkillManager } = useSkillManagerStore();
-  const { isOpen: isDiscoveryOpen, openDiscovery } = useDiscoveryStore();
   const { isOpen: isSettingsOpen, openSettings, closeSettings, setDemoMode } = useSettingsStore();
-  const { isActive: isCompletedInitiativesActive, showCompletedInitiatives, showHome } = useCompletedInitiativesViewStore();
+  const { activePage, setActivePage } = usePageNavStore();
   const { setConfig } = useConfigStore();
   const { activeWorkflow, viewingArtifactId } = useWorkflowStore();
   const { user, realUser, noAuth, loading: authLoading, setUser, setNoAuth, setLoading: setAuthLoading, logout: authLogout, impersonating, impersonate, stopImpersonating } = useAuthStore();
-  const syncing = useHomeActionsStore(s => s.syncing);
-  const onSync = useHomeActionsStore(s => s.onSync);
-  const onNewInitiative = useHomeActionsStore(s => s.onNewInitiative);
-  const isAdmin = noAuth || !!user?.is_admin;
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
   const [isQTOpen, setIsQTOpen] = useState(false);
   const [demoToast, setDemoToast] = useState<string | null>(null);
@@ -172,74 +175,15 @@ function App() {
       {/* Header */}
       <header className="bg-white/90 dark:bg-surface-900/80 backdrop-blur-lg border-b border-surface-200 dark:border-surface-700">
         <div className="flex items-center justify-between px-6 pt-4 pb-3">
-          <div>
+          <div className="flex items-baseline gap-2">
             <h1 className="text-2xl font-bold text-surface-900 dark:text-surface-100">
               Product Hub
             </h1>
-            <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">
+            <p className="text-sm text-surface-500 dark:text-surface-400">
               The Self-Documenting Product & Quality Workflow
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {/* Sync Airtable + New Initiative — placed where Discovery/Knowledge Studio
-                sit today; those two move into the nav tab strip below once they become pages. */}
-            {isAdmin && onSync && onNewInitiative && (
-              <>
-                <button
-                  onClick={onSync}
-                  disabled={syncing}
-                  title="Sync Pipeline Ready initiatives from Airtable"
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 bg-white dark:bg-surface-800/50 hover:bg-surface-50 dark:hover:bg-surface-700/70 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
-                >
-                  <svg className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  {syncing ? 'Syncing…' : 'Sync Airtable'}
-                </button>
-                <button
-                  onClick={onNewInitiative}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-brand-600 hover:bg-brand-700 text-white transition-colors shadow-sm"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  New Initiative
-                </button>
-              </>
-            )}
-
-            {/* Discovery Button */}
-            {canLaunchWorkflow(user, noAuth) && (
-              <button
-                onClick={openDiscovery}
-                className="flex items-center px-3 py-1.5 rounded-lg text-sm font-medium border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 bg-white dark:bg-surface-800/50 hover:bg-surface-50 dark:hover:bg-surface-700/70 hover:border-surface-400 dark:hover:border-surface-500 transition-colors shadow-sm"
-                title="Open Discovery"
-              >
-                Discovery
-              </button>
-            )}
-
-            {/* Knowledge Studio Button */}
-            <button
-              onClick={openSkillManager}
-              className="flex items-center px-3 py-1.5 rounded-lg text-sm font-medium border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 bg-white dark:bg-surface-800/50 hover:bg-surface-50 dark:hover:bg-surface-700/70 hover:border-surface-400 dark:hover:border-surface-500 transition-colors shadow-sm"
-              title="Open Knowledge Studio"
-            >
-              Knowledge Studio
-            </button>
-
-            {/* Settings Button */}
-            <button
-              onClick={openSettings}
-              className="p-2 rounded-lg text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700 hover:text-surface-700 dark:hover:text-surface-200 transition-colors"
-              title="Settings"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </button>
-
             {/* Admin user switcher */}
             {realUser?.is_admin && allUsers.length > 1 && (() => {
               const rect = switcherBtnRef.current?.getBoundingClientRect();
@@ -317,10 +261,22 @@ function App() {
               );
             })()}
 
-            {/* User badge + logout */}
-            {user && (
-              <div className="flex items-center gap-2 pl-1">
+            {/* User badge + settings + logout */}
+            <div className="flex items-center gap-2 pl-1">
+              {user && (
                 <span className="text-xs font-medium text-surface-700 dark:text-surface-300">{user.name}</span>
+              )}
+              <button
+                onClick={openSettings}
+                className="p-2 rounded-lg text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700 hover:text-surface-700 dark:hover:text-surface-200 transition-colors"
+                title="Settings"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </button>
+              {user && (
                 <button
                   onClick={handleLogout}
                   title="Sign out"
@@ -330,20 +286,19 @@ function App() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                   </svg>
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Page nav — Home / Completed Initiatives. Discovery and Knowledge Studio stay as
-            overlay buttons above for now; they can join this tab strip if they become pages. */}
+        {/* Page nav */}
         <nav className="flex items-center gap-1 px-6">
-          {NAV_TABS.map(tab => {
-            const active = (tab.key === 'completed') === isCompletedInitiativesActive;
+          {NAV_TABS.filter(tab => tab.visible ? tab.visible({ canLaunch: canLaunchWorkflow(user, noAuth) }) : true).map(tab => {
+            const active = activePage === tab.key;
             return (
               <button
                 key={tab.key}
-                onClick={() => (tab.key === 'completed' ? showCompletedInitiatives() : showHome())}
+                onClick={() => setActivePage(tab.key)}
                 className={`px-3 py-2.5 text-sm font-medium border-b-2 transition-colors ${
                   active
                     ? 'border-brand-500 text-brand-600 dark:text-brand-400'
@@ -359,12 +314,26 @@ function App() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden relative">
-        <main className="flex-1 overflow-hidden min-w-0 relative">
-          {isCompletedInitiativesActive
-            ? <CompletedInitiativesPage />
-            : activeWorkflow
+        <main className="flex-1 flex flex-col overflow-hidden min-w-0 relative">
+          <PageHeader />
+          {/* When an initiative is open, the pipeline view portals its own back
+              button/name/status into the title slot instead of this description. */}
+          {!(activePage === 'home' && activeWorkflow) && (
+            <PageHeaderTitle>
+              <p className="text-xs text-surface-500 dark:text-surface-400 truncate">{PAGE_DESCRIPTIONS[activePage]}</p>
+            </PageHeaderTitle>
+          )}
+          <div className="flex-1 overflow-hidden">
+            {activePage === 'home' && activeWorkflow
               ? <CoordinatorChat />
-              : <HomeScreen />}
+              : activePage === 'completed'
+                ? <CompletedInitiativesPage />
+                : activePage === 'discovery'
+                  ? <DiscoveryScreen />
+                  : activePage === 'knowledge'
+                    ? <SkillManagerPanel />
+                    : <HomeScreen />}
+          </div>
         </main>
 
         <div className="shrink-0 flex justify-end px-4 py-2 border-t border-surface-200 dark:border-surface-800/60 bg-white/80 dark:bg-surface-950/80 backdrop-blur-sm">
@@ -380,20 +349,6 @@ function App() {
             </span>
           </div>
         </div>
-
-        {/* Agent Studio Modal Overlay */}
-        {isSMOpen && (
-          <div className="absolute inset-0 z-50 p-3">
-            <SkillManagerPanel />
-          </div>
-        )}
-
-        {/* Discovery Modal Overlay */}
-        {isDiscoveryOpen && (
-          <div className="absolute inset-0 z-50 p-3">
-            <DiscoveryScreen />
-          </div>
-        )}
 
         {/* Settings Modal Overlay */}
         {isSettingsOpen && (

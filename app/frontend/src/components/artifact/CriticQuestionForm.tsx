@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { MarkdownContent } from '../common/MarkdownContent';
 
 interface CriticQuestionFormProps {
   questions: string[];
@@ -68,9 +67,7 @@ export function CriticQuestionForm({ questions, onSubmit, onCancel, loading }: C
               <div className="flex items-start justify-between gap-2">
                 <div className="text-sm font-medium text-surface-900 dark:text-surface-100">
                   <span className="text-surface-500 dark:text-surface-400 mr-1">Q{idx + 1}:</span>
-                  <div className="inline prose prose-sm dark:prose-invert max-w-none [&_p]:my-0.5 [&_p:first-child]:inline">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{question}</ReactMarkdown>
-                  </div>
+                  <MarkdownContent className="inline [&_p]:my-0.5 [&_p:first-child]:inline">{question}</MarkdownContent>
                 </div>
                 <label className="flex items-center gap-1 flex-shrink-0 cursor-pointer">
                   <input
@@ -162,9 +159,7 @@ export function CriticIssuesPanel({ issues }: { issues: Array<{ severity: string
       {issues.map((issue, i) => (
         <div key={i} className={`text-sm px-3 py-2 rounded-lg border ${SEVERITY_STYLES[issue.severity] ?? SEVERITY_STYLES.minor}`}>
           <span className="font-semibold uppercase text-[11px] tracking-wide">{issue.severity}</span>
-          <div className="mt-1 text-surface-800 dark:text-surface-200 prose prose-sm dark:prose-invert max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{issue.description}</ReactMarkdown>
-          </div>
+          <MarkdownContent className="mt-1 [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0">{issue.description}</MarkdownContent>
         </div>
       ))}
     </div>

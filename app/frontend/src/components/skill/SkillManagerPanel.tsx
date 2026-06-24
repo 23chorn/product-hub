@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Group, Panel, usePanelRef } from 'react-resizable-panels';
 import { api, type AgentFile } from '../../services/api';
-import { useSkillManagerStore } from '../../stores/skillManagerStore';
-import { useThemeStore } from '../../stores/themeStore';
 import { useAuthStore } from '../../stores/authStore';
 import { getAgentDisplayName } from '../../utils/agent-display-names';
 import { ContextFileEditor } from './ContextFileEditor';
@@ -12,14 +10,13 @@ import { SkillManagerSidebar } from './SkillManagerSidebar';
 import { AirtableSyncPanel } from './AirtableSyncPanel';
 import { DocFileViewer } from '../knowledge/DocFileViewer';
 import { ResizeHandle } from '../common/ResizeHandle';
+import { PageHeaderActions } from '../common/PageHeaderActions';
 import { useContextKeeperStore } from '../../stores/contextKeeperStore';
 import type { PanelSelection, ContextFile } from './types';
 
 // ─── Main panel ───────────────────────────────────────────────────────────────
 
 export function SkillManagerPanel() {
-  const { closeSkillManager } = useSkillManagerStore();
-  const { isDark } = useThemeStore();
   const { user, noAuth } = useAuthStore();
   const { pendingCount: pendingProposalCount } = useContextKeeperStore();
 
@@ -254,30 +251,14 @@ export function SkillManagerPanel() {
   const selectedAgentFile = selectedAgentFileKey ? agentFiles.find((f) => f.key === selectedAgentFileKey) ?? null : null;
 
   return (
-    <div className={`h-full flex flex-col rounded-2xl overflow-hidden shadow-2xl ring-1 ring-surface-900/10 dark:ring-surface-100/10 ${isDark ? 'bg-surface-900' : 'bg-surface-100'}`}>
-      {/* Header */}
-      <header className="bg-white dark:bg-surface-800 border-b border-surface-200 dark:border-surface-700 px-6 py-4 flex items-center justify-between flex-shrink-0">
-        <div>
-          <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">Knowledge Studio</h2>
-          <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">Manage project context, behaviour docs, agent personas, output templates, and repo documentation review</p>
-        </div>
-        <div className="flex items-center space-x-3">
-          {toast && (
-            <span className={`text-xs font-medium ${toast.ok ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-              {toast.msg}
-            </span>
-          )}
-
-          <button
-            onClick={closeSkillManager}
-            className="p-1.5 rounded-lg text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-      </header>
+    <div className="h-full flex flex-col overflow-hidden bg-surface-50 dark:bg-surface-950">
+      {toast && (
+        <PageHeaderActions>
+          <span className={`text-xs font-medium ${toast.ok ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+            {toast.msg}
+          </span>
+        </PageHeaderActions>
+      )}
 
       {/* Body */}
       <Group orientation="horizontal" className="flex-1 overflow-hidden" id="knowledge-studio-layout">

@@ -6,12 +6,12 @@ import { useConfigStore } from '../../stores/configStore';
 import { useWorkflowStore } from '../../stores/workflowStore';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { useHomeActionsStore } from '../../stores/homeActionsStore';
 import { useToast } from '../../hooks/useToast';
 import { TOGGLEABLE_STAGES } from '../../constants/stage-labels';
 import { extractReadyPayload } from '../../utils/coordinator-helpers';
 import { InitiativeCard } from './InitiativeCard';
 import { HomeHeader } from './HomeHeader';
+import { PageHeaderActions } from '../common/PageHeaderActions';
 import { NewInitiativeForm } from './NewInitiativeForm';
 import { LaunchPipelineModal } from './LaunchPipelineModal';
 import { effectiveStatus, STATUS_FILTERS, type EnrichedItem, type LaunchPhase, type StatusFilter } from './types';
@@ -31,14 +31,6 @@ export function resetHomeScreenFilter(): void {
 export function HomeScreen() {
   const [localItems, setLocalItemsRaw] = useState<EnrichedItem[]>(_cachedLocalItems);
   const [loading, setLoading] = useState(_cachedLocalItems.length === 0);
-  // Selector-scoped (not a whole-store destructure): HomeScreen only needs to re-render on
-  // `syncing` changes. registerHandlers() below also writes onSync/onNewInitiative on every
-  // render — subscribing to the whole store here would re-trigger this component on its own
-  // write and loop forever.
-  const syncing = useHomeActionsStore(s => s.syncing);
-  const setSyncing = useHomeActionsStore(s => s.setSyncing);
-  const registerHandlers = useHomeActionsStore(s => s.registerHandlers);
-  const clearHandlers = useHomeActionsStore(s => s.clearHandlers);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilterRaw] = useState<StatusFilter>(_cachedStatusFilter);
   const setStatusFilter = (f: StatusFilter) => { _cachedStatusFilter = f; setStatusFilterRaw(f); };
@@ -146,20 +138,6 @@ export function HomeScreen() {
     const id = setInterval(loadLocalItems, 4000);
     return () => clearInterval(id);
   }, [localItems, loadLocalItems]);
-
-  const handleSyncAirtable = async () => {
-    if (syncing) return;
-    setSyncing(true);
-    try {
-      await api.getItemsPipelineReady();
-      // Items are now persisted in the DB — reload the full list to show them
-      await loadLocalItems();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || err.message || 'Failed to sync from Airtable');
-    } finally {
-      setSyncing(false);
-    }
-  };
 
   const cancelForm = () => { setFormTitle(''); setFormDesc(''); setShowForm(false); };
 
@@ -334,14 +312,6 @@ export function HomeScreen() {
     Promise.resolve().then(() => titleInputRef.current?.focus());
   };
 
-  // Surface sync/new-initiative actions to the app-level header (App.tsx) while Home is
-  // mounted. No dependency array — handleSyncAirtable/openForm aren't memoized, so this
-  // re-registers fresh closures every render and clears them on unmount.
-  useEffect(() => {
-    registerHandlers({ onSync: handleSyncAirtable, onNewInitiative: openForm });
-    return () => clearHandlers();
-  });
-
   const hasResults = filteredLocalItems.length > 0;
   const hasActiveFilters = !!searchQuery || statusFilter !== 'all' || productAreaFilter !== 'all' || themeFilter !== 'all';
   const clearFilters = () => {
@@ -354,23 +324,25 @@ export function HomeScreen() {
   return (
     <div className="flex flex-col h-full overflow-hidden bg-surface-50 dark:bg-surface-950">
 
-      {/* Sticky page header with search + filters */}
-      <HomeHeader
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        searchInputRef={searchInputRef}
-        statusFilter={statusFilter}
-        onStatusFilterChange={setStatusFilter}
-        statusCounts={statusCounts}
-        myPendingCount={myPendingCount}
-        showMineFilter={!noAuth && !!user}
-        productAreas={productAreas}
-        productAreaFilter={productAreaFilter}
-        onProductAreaFilterChange={setProductAreaFilter}
-        themes={themes}
-        themeFilter={themeFilter}
-        onThemeFilterChange={setThemeFilter}
-      />
+      {/* Search + filters, portaled into the shared PageHeader */}
+      <PageHeaderActions>
+        <HomeHeader
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          searchInputRef={searchInputRef}
+          statusFilter={statusFilter}
+          onStatusFilterChange={setStatusFilter}
+          statusCounts={statusCounts}
+          myPendingCount={myPendingCount}
+          showMineFilter={!noAuth && !!user}
+          productAreas={productAreas}
+          productAreaFilter={productAreaFilter}
+          onProductAreaFilterChange={setProductAreaFilter}
+          themes={themes}
+          themeFilter={themeFilter}
+          onThemeFilterChange={setThemeFilter}
+        />
+      </PageHeaderActions>
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto">

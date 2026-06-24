@@ -38,6 +38,10 @@ export interface BacklogFeature {
   title: string;
   description?: string;
   phase?: string;
+  // Feature-level conditions of done (distinct from each story's own acceptance criteria) —
+  // the synthesis schema emits this, but it went unparsed until the merged Stories overview
+  // needed it for parity with the epic/feature planning preview.
+  acceptance_criteria?: string[];
   stories: BacklogStory[];
 }
 

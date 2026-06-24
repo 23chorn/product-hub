@@ -96,9 +96,28 @@ const PRIORITY_CONFIG: Record<string, { label: string; color: string }> = {
 
 const TYPE_ORDER = ['happy_path', 'negative', 'edge', 'boundary', 'security', 'performance'];
 
+/** Resolve display metadata for a test type, with a generic fallback for types outside TYPE_ORDER
+ *  (e.g. legacy fixtures) so every test case still gets a labeled, colored category. */
+function typeMeta(type: string): { label: string; color: string; dot: string } {
+  return TYPE_CONFIG[type] ?? {
+    label: type.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase()),
+    color: 'bg-surface-100 dark:bg-surface-800 text-surface-600 dark:text-surface-400',
+    dot: 'bg-surface-400',
+  };
+}
+
+/** Group test cases by their actual `type` value — known TYPE_ORDER types first (in that
+ *  order), then any other types in first-seen order — so every category present in the data
+ *  gets its own square and section instead of being lumped into a catch-all "Other" bucket. */
+function groupByType(testCases: TestCase[]): Array<[string, TestCase[]]> {
+  const present = Array.from(new Set(testCases.map(tc => tc.type)));
+  const ordered = [...TYPE_ORDER.filter(t => present.includes(t)), ...present.filter(t => !TYPE_ORDER.includes(t))];
+  return ordered.map(type => [type, testCases.filter(tc => tc.type === type)]);
+}
+
 function TestCaseCard({ tc }: { tc: TestCase }) {
   const [open, setOpen] = useState(false);
-  const typeConf = TYPE_CONFIG[tc.type] ?? { label: tc.type, color: 'bg-surface-100 text-surface-600', dot: 'bg-surface-400' };
+  const typeConf = typeMeta(tc.type);
   const prioConf = PRIORITY_CONFIG[tc.priority] ?? { label: tc.priority, color: 'bg-surface-100 text-surface-500' };
 
   const hasScenario = tc.scenario && (tc.scenario.given?.length || tc.scenario.when?.length || tc.scenario.then?.length);
@@ -218,21 +237,17 @@ function TestCaseCard({ tc }: { tc: TestCase }) {
 
 export function QATestsView({ data }: { data: QATestSuite }) {
   const cov = data.coverage;
-  const grouped = TYPE_ORDER.reduce<Record<string, TestCase[]>>((acc, type) => {
-    acc[type] = data.test_cases.filter(tc => tc.type === type);
-    return acc;
-  }, {});
-  const other = data.test_cases.filter(tc => !TYPE_ORDER.includes(tc.type));
-
-  // Build coverage breakdown: any numeric key besides 'total'
-  const coverageBreakdown = cov
-    ? Object.entries(cov).filter(([k, v]) => k !== 'total' && k !== 'by_priority' && k !== 'by_fr' && typeof v === 'number') as [string, number][]
-    : [];
-
-  const totalCount = cov?.total ?? data.test_cases.length;
+  // Category counts are derived from the test cases themselves rather than the artifact's
+  // separate `coverage` field — that field is frequently absent (current multi-agent QA
+  // artifacts don't populate it) or stale (a merged/filtered test_cases list doesn't recompute
+  // it), so test_cases is the only count that's always correct.
+  const groupedByType = groupByType(data.test_cases);
+  const totalCount = data.test_cases.length;
 
   return (
-    <div className="space-y-5">
+    // font-sans: this view can render inside the font-mono pipeline terminal subtree
+    // (the per-refinement Stories/Tests overview); pin the app font so it never inherits monospace.
+    <div className="space-y-5 font-sans">
       {/* Header */}
       <div>
         <h2 className="text-base font-bold text-surface-900 dark:text-surface-100">{data.suite ?? 'QA Test Suite'}</h2>
@@ -244,39 +259,19 @@ export function QATestsView({ data }: { data: QATestSuite }) {
         )}
       </div>
 
-      {/* Coverage summary */}
-      {cov && (
-        <div className={`grid gap-2 ${coverageBreakdown.length > 0 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-2 sm:grid-cols-4'}`}>
+      {/* Category counts */}
+      {totalCount > 0 && (
+        <div className="grid gap-2 grid-cols-2 sm:grid-cols-4">
           <div className="bg-surface-50 dark:bg-surface-800 rounded-lg px-3 py-2.5 text-center">
             <p className="text-xl font-bold text-surface-900 dark:text-surface-100">{totalCount}</p>
             <p className="text-[10px] text-surface-400 dark:text-surface-500 uppercase tracking-wide mt-0.5">Total</p>
           </div>
-          {/* Old format breakdown */}
-          {cov.happy_paths !== undefined && (
-            <div className="bg-green-50 dark:bg-green-900/20 rounded-lg px-3 py-2.5 text-center">
-              <p className="text-xl font-bold text-green-700 dark:text-green-400">{cov.happy_paths}</p>
-              <p className="text-[10px] text-green-600 dark:text-green-500 uppercase tracking-wide mt-0.5">Happy paths</p>
-            </div>
-          )}
-          {cov.bad_paths !== undefined && (
-            <div className="bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-2.5 text-center">
-              <p className="text-xl font-bold text-red-700 dark:text-red-400">{cov.bad_paths}</p>
-              <p className="text-[10px] text-red-600 dark:text-red-500 uppercase tracking-wide mt-0.5">Bad paths</p>
-            </div>
-          )}
-          {cov.edge_cases !== undefined && (
-            <div className="bg-fuchsia-50 dark:bg-fuchsia-900/20 rounded-lg px-3 py-2.5 text-center">
-              <p className="text-xl font-bold text-fuchsia-700 dark:text-fuchsia-400">{cov.edge_cases}</p>
-              <p className="text-[10px] text-fuchsia-600 dark:text-fuchsia-500 uppercase tracking-wide mt-0.5">Edge cases</p>
-            </div>
-          )}
-          {/* New format breakdown (functional/performance/compliance) */}
-          {coverageBreakdown.filter(([k]) => !['happy_paths','bad_paths','edge_cases'].includes(k)).map(([k, v]) => {
-            const conf = TYPE_CONFIG[k];
+          {groupedByType.map(([type, cases]) => {
+            const meta = typeMeta(type);
             return (
-              <div key={k} className="bg-surface-50 dark:bg-surface-800 rounded-lg px-3 py-2.5 text-center">
-                <p className="text-xl font-bold text-surface-900 dark:text-surface-100">{v}</p>
-                <p className="text-[10px] text-surface-500 dark:text-surface-400 uppercase tracking-wide mt-0.5">{conf?.label ?? k}</p>
+              <div key={type} className={`${meta.color} rounded-lg px-3 py-2.5 text-center`}>
+                <p className="text-xl font-bold">{cases.length}</p>
+                <p className="text-[10px] uppercase tracking-wide mt-0.5 opacity-80">{meta.label}</p>
               </div>
             );
           })}
@@ -298,15 +293,13 @@ export function QATestsView({ data }: { data: QATestSuite }) {
       )}
 
       {/* Test case groups */}
-      {TYPE_ORDER.map(type => {
-        const cases = grouped[type];
-        if (!cases || cases.length === 0) return null;
-        const conf = TYPE_CONFIG[type];
+      {groupedByType.map(([type, cases]) => {
+        const meta = typeMeta(type);
         return (
           <div key={type}>
             <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-2">
-              <span className={`w-1.5 h-1.5 rounded-full ${conf.dot}`} />
-              {conf.label}s
+              <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
+              {meta.label}
               <span className="font-normal text-surface-400">({cases.length})</span>
             </h3>
             <div className="space-y-2">
@@ -315,15 +308,6 @@ export function QATestsView({ data }: { data: QATestSuite }) {
           </div>
         );
       })}
-
-      {other.length > 0 && (
-        <div>
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-2">Other ({other.length})</h3>
-          <div className="space-y-2">
-            {other.map(tc => <TestCaseCard key={tc.id} tc={tc} />)}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

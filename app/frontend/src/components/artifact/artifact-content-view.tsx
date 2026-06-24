@@ -1,18 +1,20 @@
 import type { ReactNode } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { tryParseBacklog, isBacklogArtifactType } from '../../utils/backlog-helpers';
+import { deriveFeatureButtons, deriveEpicFeaturesArtifactId } from '../../utils/feature-artifacts';
 import { BacklogView } from './BacklogView';
+import { BacklogStoriesTests } from './BacklogOverviewModal';
 import { EpicFeaturesView, tryParseEpicFeatures } from './EpicFeaturesView';
 import { QATestsView, tryParseQATests } from './QATestsView';
 import { TechRefinementView, tryParseTechRefinement } from './TechRefinementView';
 import { PrototypePreview, type PrototypeData } from '../coordinator/PrototypePreview';
 import { convertArtifactToMarkdown, isDocumentArtifact } from '../../utils/artifact-to-markdown';
+import { MarkdownContent } from '../common/MarkdownContent';
 import type { WorkflowRow, WorkflowCheckpoint } from '../../stores/workflowStore';
 
 export interface ArtifactViewContext {
   artifactType: string;
   activeWorkflow: WorkflowRow | null;
+  checkpoints: WorkflowCheckpoint[];
   pendingCheckpoint?: WorkflowCheckpoint;
   hasApprovePermission: boolean;
   resolveLoading: boolean;
@@ -31,7 +33,21 @@ export interface ArtifactViewContext {
  * finally a raw-markdown fallback.
  */
 export function renderStructuredArtifact(content: string, ctx: ArtifactViewContext): ReactNode {
-  const { artifactType, activeWorkflow, pendingCheckpoint, hasApprovePermission, resolveLoading, rerunStage, onClose } = ctx;
+  const { artifactType, activeWorkflow, checkpoints, pendingCheckpoint, hasApprovePermission, resolveLoading, rerunStage, onClose } = ctx;
+
+  // The final cross-feature merge ('backlog' exactly, not the per-feature 'backlog_F<n>'
+  // artifacts) — show the same Stories/Tests tabbed view as the pipeline's "Stories/Tests"
+  // button, rather than a bare read of this one snapshot with no tests alongside it and no
+  // epic_features enrichment.
+  if (artifactType === 'backlog') {
+    return (
+      <BacklogStoriesTests
+        featureButtons={deriveFeatureButtons(checkpoints)}
+        initiativeTitle={activeWorkflow?.summary ?? activeWorkflow?.goal?.split('\n')[0]}
+        epicFeaturesArtifactId={deriveEpicFeaturesArtifactId(checkpoints)}
+      />
+    );
+  }
 
   const epicFeaturesData = artifactType === 'epic_features' ? tryParseEpicFeatures(content) : null;
   const backlogData = isBacklogArtifactType(artifactType) ? tryParseBacklog(content) : null;
@@ -95,15 +111,11 @@ export function renderStructuredArtifact(content: string, ctx: ArtifactViewConte
     const md = convertArtifactToMarkdown(artifactType, content);
     if (md !== null) {
       return (
-        <div className="prose prose-sm dark:prose-invert max-w-none">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{md}</ReactMarkdown>
-        </div>
+        <MarkdownContent>{md}</MarkdownContent>
       );
     }
   }
   return (
-    <div className="prose prose-sm dark:prose-invert max-w-none">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-    </div>
+    <MarkdownContent>{content}</MarkdownContent>
   );
 }

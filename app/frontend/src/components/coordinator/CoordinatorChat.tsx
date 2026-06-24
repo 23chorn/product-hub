@@ -1,7 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkBreaks from 'remark-breaks';
+import { MarkdownContent } from '../common/MarkdownContent';
 import { useWorkflowStore, type WorkflowEvent, type WorkflowStatus, type CoordinatorMessage } from '../../stores/workflowStore';
 import { ContextDiffPanel } from './ContextDiffPanel';
 import { STAGE_LABELS } from '../../constants/stage-labels';
@@ -316,9 +314,7 @@ export function CoordinatorChat() {
                   </div>
                 ) : (
                   <div className="rounded border border-surface-700/40 bg-surface-800/30 px-3 py-2 text-xs font-sans">
-                    <div className="prose prose-xs dark:prose-invert max-w-none [&_p]:my-1">
-                      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{content}</ReactMarkdown>
-                    </div>
+                    <MarkdownContent size="xs" breaks className="[&_p]:my-1">{content}</MarkdownContent>
                   </div>
                 )}
               </div>

@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Group, Panel, usePanelRef } from 'react-resizable-panels';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkBreaks from 'remark-breaks';
+import { MarkdownContent } from '../common/MarkdownContent';
 import { api } from '../../services/api';
 import { useAuthStore, isViewOnly } from '../../stores/authStore';
 import { CommentThread } from './CommentThread';
@@ -107,9 +105,7 @@ export function DocFileViewer({ fileId }: { fileId: number }) {
       <Group orientation="horizontal" className="flex-1 min-h-0" id="doc-file-viewer-layout">
         <Panel id="doc-content" minSize="30%">
           <div className="h-full overflow-y-auto px-6 py-4">
-            <div className="prose prose-sm dark:prose-invert max-w-none bg-white dark:bg-surface-900 rounded-lg p-4">
-              <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{stripFrontmatter(file.content)}</ReactMarkdown>
-            </div>
+            <MarkdownContent breaks className="bg-white dark:bg-surface-900 rounded-lg p-4">{stripFrontmatter(file.content)}</MarkdownContent>
           </div>
         </Panel>
 

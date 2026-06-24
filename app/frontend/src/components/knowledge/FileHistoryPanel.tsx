@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkBreaks from 'remark-breaks';
+import { MarkdownContent } from '../common/MarkdownContent';
 import { api } from '../../services/api';
 import { stripFrontmatter } from '../../utils/markdown';
 import type { KbFileCommit } from '@pap/shared';
@@ -81,11 +79,11 @@ export function FileHistoryPanel({ fileId }: { fileId: number }) {
               </button>
             </div>
             {isExpanded && (
-              <div className="mt-2 pt-2 border-t border-surface-100 dark:border-surface-700/60 text-xs prose prose-sm dark:prose-invert max-w-none">
+              <div className="mt-2 pt-2 border-t border-surface-100 dark:border-surface-700/60 text-xs">
                 {loadingVersion === commit.commitId ? (
                   <p className="text-surface-400">Loading version…</p>
                 ) : (
-                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{stripFrontmatter(versions[commit.commitId] ?? '')}</ReactMarkdown>
+                  <MarkdownContent breaks>{stripFrontmatter(versions[commit.commitId] ?? '')}</MarkdownContent>
                 )}
               </div>
             )}

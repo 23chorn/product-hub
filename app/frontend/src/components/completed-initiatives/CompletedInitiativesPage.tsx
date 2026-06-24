@@ -29,13 +29,6 @@ export function CompletedInitiativesPage() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-surface-50 dark:bg-surface-950">
-      <div className="px-6 py-4 border-b border-surface-200 dark:border-surface-800 flex-shrink-0">
-        <h2 className="text-base font-semibold text-surface-900 dark:text-surface-100">Completed Initiatives</h2>
-        <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
-          Azure DevOps ticket state for initiatives whose pipeline has finished.
-        </p>
-      </div>
-
       <div className="flex-1 overflow-y-auto px-6 py-4">
         {loading ? (
           <p className="text-sm text-surface-400 animate-pulse">Loading...</p>

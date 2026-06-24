@@ -1,7 +1,7 @@
 import type { WorkItemStateBucket } from '@pap/shared';
 
 /** Single source of truth for displaying a WorkItemStateBucket — used by the
- * Completed Initiatives list cards and the BacklogView state pills. */
+ * Progress Tracker list cards and the BacklogView state pills. */
 export const WORK_ITEM_STATE_BUCKETS: WorkItemStateBucket[] = ['not_started', 'in_progress', 'done', 'removed'];
 
 export const WORK_ITEM_STATE_BUCKET_LABELS: Record<WorkItemStateBucket, string> = {

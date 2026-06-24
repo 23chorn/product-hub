@@ -1,5 +1,4 @@
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { MarkdownContent } from '../common/MarkdownContent';
 import { CriticIssuesPanel } from './CriticQuestionForm';
 
 interface CriticReviewFlyoutProps {
@@ -47,9 +46,7 @@ export function CriticReviewFlyout({ issues, questions, onClose }: CriticReviewF
               {questions.map((q: string, i: number) => (
                 <div key={i} className="text-sm rounded-lg border border-surface-200 dark:border-surface-700 p-3">
                   <span className="text-xs font-medium text-surface-400 dark:text-surface-500 mr-1">Q{i + 1}:</span>
-                  <div className="mt-1 text-surface-800 dark:text-surface-200 prose prose-sm dark:prose-invert max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{q}</ReactMarkdown>
-                  </div>
+                  <MarkdownContent className="mt-1 [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0">{q}</MarkdownContent>
                 </div>
               ))}
             </div>
