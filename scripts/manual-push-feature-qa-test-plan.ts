@@ -23,7 +23,7 @@ import db from '../app/backend/src/data/database';
 import { insertEvent } from '../app/backend/src/agents/workflow-db';
 import { loadArtifactContentById } from '../app/backend/src/agents/artifact-helpers';
 import { getAzureDevOpsClient } from '../app/backend/src/integrations/azure-devops';
-import { featureLocalKey } from '../app/backend/src/integrations/azure-devops-format';
+import { featureLocalKey } from '@pap/shared';
 
 async function main() {
   const [workflowId, featureNumberRaw] = process.argv.slice(2);

@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import db from './database';
 import { resolveArtifactPath } from '../agents/artifact-helpers';
+import { nextItemSeqNum } from '../agents/item-metadata';
 import type { Session, ChatMessage, AppMode } from '@pap/shared';
 
 // ---------------------------------------------------------------------------
@@ -81,8 +82,8 @@ const stmts = {
     `SELECT id, source, title FROM items WHERE id = ?`
   ),
   upsertItem: db.prepare(
-    `INSERT INTO items (id, type, title, description, status, source, airtable_id, created_at, updated_at)
-     VALUES (?, 'initiative', ?, NULL, 'active', ?, ?, ?, ?)
+    `INSERT INTO items (id, type, title, description, status, source, airtable_id, seq_num, created_at, updated_at)
+     VALUES (?, 'initiative', ?, NULL, 'active', ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET title = excluded.title, updated_at = excluded.updated_at`
   ),
 
@@ -221,7 +222,7 @@ class SessionStore {
 
   upsertItem(itemId: string, title: string, source: string, sourceId?: string): void {
     const now = Date.now();
-    stmts.upsertItem.run(itemId, title, source, sourceId ?? null, now, now);
+    stmts.upsertItem.run(itemId, title, source, sourceId ?? null, nextItemSeqNum(), now, now);
   }
 
   getItemSource(itemId: string): string | null {

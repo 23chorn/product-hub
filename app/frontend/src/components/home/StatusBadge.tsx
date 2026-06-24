@@ -3,7 +3,13 @@ import { effectiveStatus, type WorkflowInfo } from './types';
 
 /** Small coloured status pill for an initiative's workflow (Running / Review / Done / Stopped). */
 export function StatusBadge({ wf }: { wf?: WorkflowInfo }) {
-  if (!wf) return null;
+  if (!wf) {
+    return (
+      <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400">
+        Not started
+      </span>
+    );
+  }
   const eff = effectiveStatus(wf);
   const pendingStageLabel = wf.pendingStage
     ? STAGE_SHORT_LABELS[wf.pendingStage] ?? wf.pendingStage.replace(/_/g, ' ')

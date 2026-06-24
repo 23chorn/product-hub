@@ -12,11 +12,13 @@ export const items = sqliteTable('items', {
   airtable_id: text('airtable_id'),
   metadata:    text('metadata'),           // JSON blob
   shipped_at:  integer('shipped_at'),      // set when Airtable Status is detected as 'Shipped'
+  seq_num:     integer('seq_num'),         // human-facing display number, assigned once at insert time — see nextItemSeqNum() in item-metadata.ts
   created_at:  integer('created_at').notNull(),
   updated_at:  integer('updated_at').notNull(),
 }, (t) => [
   index('idx_items_source').on(t.source),
   index('idx_items_status').on(t.status),
+  uniqueIndex('idx_items_seq_num').on(t.seq_num),
 ]);
 
 export const sessions = sqliteTable('sessions', {
@@ -224,15 +226,17 @@ export const crArtifactVersions = sqliteTable('cr_artifact_versions', {
 // ── ADO / QA integration ──────────────────────────────────────────────────────
 
 export const adoWorkItemMap = sqliteTable('ado_work_item_map', {
-  id:          integer('id').primaryKey({ autoIncrement: true }),
-  workflow_id: text('workflow_id').notNull().references(() => workflows.id),
-  artifact_id: integer('artifact_id').references(() => artifacts.id),
-  ado_id:      integer('ado_id').notNull(),
-  ado_type:    text('ado_type', { enum: ['epic', 'feature', 'story'] }).notNull(),
-  ado_url:     text('ado_url'),
-  local_key:   text('local_key').notNull(),
-  title:       text('title').notNull(),
-  created_at:  integer('created_at').notNull(),
+  id:              integer('id').primaryKey({ autoIncrement: true }),
+  workflow_id:     text('workflow_id').notNull().references(() => workflows.id),
+  artifact_id:     integer('artifact_id').references(() => artifacts.id),
+  ado_id:          integer('ado_id').notNull(),
+  ado_type:        text('ado_type', { enum: ['epic', 'feature', 'story'] }).notNull(),
+  ado_url:         text('ado_url'),
+  local_key:       text('local_key').notNull(),
+  title:           text('title').notNull(),
+  state:           text('state'),            // raw ADO System.State, null until first refresh
+  state_synced_at: integer('state_synced_at'), // epoch ms of last successful refresh
+  created_at:      integer('created_at').notNull(),
 }, (t) => [
   uniqueIndex('idx_ado_map_key').on(t.workflow_id, t.local_key),
 ]);

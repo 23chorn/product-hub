@@ -8,7 +8,7 @@ import { SkillManagerPanel } from './components/skill/SkillManagerPanel';
 import { DiscoveryScreen } from './components/discovery/DiscoveryScreen';
 import { SettingsPanel } from './components/settings/SettingsPanel';
 import { QuickTicketPanel } from './components/ticket/QuickTicketPanel';
-import { StatsDashboardPanel } from './components/stats/StatsDashboardPanel';
+import { CompletedInitiativesPage } from './components/completed-initiatives/CompletedInitiativesPage';
 import { LoginPage } from './pages/LoginPage';
 import { useModelStore } from './stores/modelStore';
 import { useSkillManagerStore } from './stores/skillManagerStore';
@@ -16,9 +16,17 @@ import { useDiscoveryStore } from './stores/discoveryStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { useConfigStore } from './stores/configStore';
 import { useWorkflowStore } from './stores/workflowStore';
-import { useStatsStore } from './stores/statsStore';
-import { useAuthStore, ROLE_LABELS, canViewStats, canLaunchWorkflow } from './stores/authStore';
+import { useCompletedInitiativesViewStore } from './stores/completedInitiativesViewStore';
+import { useHomeActionsStore } from './stores/homeActionsStore';
+import { useAuthStore, ROLE_LABELS, canLaunchWorkflow } from './stores/authStore';
 import { api } from './services/api';
+
+// Top-level page nav tabs. Discovery and Knowledge Studio may join this list later
+// if/when they move from overlay buttons to pages of their own.
+const NAV_TABS = [
+  { key: 'home', label: 'Home' },
+  { key: 'completed', label: 'Completed Initiatives' },
+] as const;
 
 function DemoToast({ title, onDismiss }: { title: string; onDismiss: () => void }) {
   useEffect(() => {
@@ -43,10 +51,14 @@ function App() {
   const { isOpen: isSMOpen, openSkillManager } = useSkillManagerStore();
   const { isOpen: isDiscoveryOpen, openDiscovery } = useDiscoveryStore();
   const { isOpen: isSettingsOpen, openSettings, closeSettings, setDemoMode } = useSettingsStore();
-  const { isOpen: isStatsOpen, openStats } = useStatsStore();
+  const { isActive: isCompletedInitiativesActive, showCompletedInitiatives, showHome } = useCompletedInitiativesViewStore();
   const { setConfig } = useConfigStore();
   const { activeWorkflow, viewingArtifactId } = useWorkflowStore();
   const { user, realUser, noAuth, loading: authLoading, setUser, setNoAuth, setLoading: setAuthLoading, logout: authLogout, impersonating, impersonate, stopImpersonating } = useAuthStore();
+  const syncing = useHomeActionsStore(s => s.syncing);
+  const onSync = useHomeActionsStore(s => s.onSync);
+  const onNewInitiative = useHomeActionsStore(s => s.onNewInitiative);
+  const isAdmin = noAuth || !!user?.is_admin;
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
   const [isQTOpen, setIsQTOpen] = useState(false);
   const [demoToast, setDemoToast] = useState<string | null>(null);
@@ -158,17 +170,44 @@ function App() {
       <ToastContainer />
 
       {/* Header */}
-      <header className="bg-white/90 dark:bg-surface-900/80 backdrop-blur-lg border-b border-surface-200 dark:border-surface-700 px-6 py-4">
-        <div className="flex items-center justify-between">
+      <header className="bg-white/90 dark:bg-surface-900/80 backdrop-blur-lg border-b border-surface-200 dark:border-surface-700">
+        <div className="flex items-center justify-between px-6 pt-4 pb-3">
           <div>
             <h1 className="text-2xl font-bold text-surface-900 dark:text-surface-100">
               Product Hub
             </h1>
             <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">
-              Chief of Staff-driven product workflow
+              The Self-Documenting Product & Quality Workflow
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {/* Sync Airtable + New Initiative — placed where Discovery/Knowledge Studio
+                sit today; those two move into the nav tab strip below once they become pages. */}
+            {isAdmin && onSync && onNewInitiative && (
+              <>
+                <button
+                  onClick={onSync}
+                  disabled={syncing}
+                  title="Sync Pipeline Ready initiatives from Airtable"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 bg-white dark:bg-surface-800/50 hover:bg-surface-50 dark:hover:bg-surface-700/70 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                >
+                  <svg className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  {syncing ? 'Syncing…' : 'Sync Airtable'}
+                </button>
+                <button
+                  onClick={onNewInitiative}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-brand-600 hover:bg-brand-700 text-white transition-colors shadow-sm"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  New Initiative
+                </button>
+              </>
+            )}
+
             {/* Discovery Button */}
             {canLaunchWorkflow(user, noAuth) && (
               <button
@@ -188,17 +227,6 @@ function App() {
             >
               Knowledge Studio
             </button>
-
-            {/* Stats Dashboard Button */}
-            {canViewStats(user, noAuth) && (
-              <button
-                onClick={openStats}
-                className="flex items-center px-3 py-1.5 rounded-lg text-sm font-medium border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 bg-white dark:bg-surface-800/50 hover:bg-surface-50 dark:hover:bg-surface-700/70 hover:border-surface-400 dark:hover:border-surface-500 transition-colors shadow-sm"
-                title="Open Stats Dashboard"
-              >
-                Stats
-              </button>
-            )}
 
             {/* Settings Button */}
             <button
@@ -306,14 +334,37 @@ function App() {
             )}
           </div>
         </div>
+
+        {/* Page nav — Home / Completed Initiatives. Discovery and Knowledge Studio stay as
+            overlay buttons above for now; they can join this tab strip if they become pages. */}
+        <nav className="flex items-center gap-1 px-6">
+          {NAV_TABS.map(tab => {
+            const active = (tab.key === 'completed') === isCompletedInitiativesActive;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => (tab.key === 'completed' ? showCompletedInitiatives() : showHome())}
+                className={`px-3 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                  active
+                    ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                    : 'border-transparent text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200'
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
       </header>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden relative">
         <main className="flex-1 overflow-hidden min-w-0 relative">
-          {activeWorkflow
-            ? <CoordinatorChat />
-            : <HomeScreen />}
+          {isCompletedInitiativesActive
+            ? <CompletedInitiativesPage />
+            : activeWorkflow
+              ? <CoordinatorChat />
+              : <HomeScreen />}
         </main>
 
         <div className="shrink-0 flex justify-end px-4 py-2 border-t border-surface-200 dark:border-surface-800/60 bg-white/80 dark:bg-surface-950/80 backdrop-blur-sm">
@@ -341,13 +392,6 @@ function App() {
         {isDiscoveryOpen && (
           <div className="absolute inset-0 z-50 p-3">
             <DiscoveryScreen />
-          </div>
-        )}
-
-        {/* Stats Dashboard Modal Overlay */}
-        {isStatsOpen && (
-          <div className="absolute inset-0 z-50 p-3">
-            <StatsDashboardPanel />
           </div>
         )}
 

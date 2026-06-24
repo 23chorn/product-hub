@@ -8,7 +8,7 @@
 import db, { getPolicies } from '../data/database';
 import { stmts, insertEvent, logger } from './workflow-db';
 import { loadLatestArtifactContent } from './artifact-helpers';
-import { featureLocalKey, storyLocalKey } from '../integrations/azure-devops-format';
+import { featureLocalKey, storyLocalKey } from '@pap/shared';
 import * as fs from 'fs';
 import * as path from 'path';
 

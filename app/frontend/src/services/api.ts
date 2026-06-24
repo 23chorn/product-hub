@@ -15,11 +15,10 @@ import { ticketsApi } from './api/tickets';
 import { demoApi } from './api/demo';
 import { usersApi } from './api/users';
 import { discoveryApi } from './api/discovery';
-import { statsApi } from './api/stats';
 import { kbApi } from './api/kb';
+import { completedInitiativesApi } from './api/completed-initiatives';
 
 export type { AgentFile, AgentFileContent } from './api/types';
-export type { StatsDashboard } from './api/stats';
 
 export const api = {
   ...configApi,
@@ -33,6 +32,6 @@ export const api = {
   ...demoApi,
   ...usersApi,
   ...discoveryApi,
-  ...statsApi,
   ...kbApi,
+  ...completedInitiativesApi,
 };

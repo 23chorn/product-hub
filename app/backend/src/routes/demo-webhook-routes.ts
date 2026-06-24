@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import * as fs from 'fs';
 import db from '../data/database';
-import { itemSessionDir } from '../agents/item-metadata';
+import { itemSessionDir, nextItemSeqNum } from '../agents/item-metadata';
 import { createWorkflow, advanceStage } from '../agents/workflow-router';
 import Logger from '../utils/logger';
 
@@ -272,9 +272,9 @@ demoWebhookRoutes.post('/demo/webhook/trigger', async (req: Request, res: Respon
 
       // Create the initiative in the items table
       db.prepare(
-        `INSERT INTO items (id, type, title, description, status, source, airtable_id, created_at, updated_at)
-         VALUES (?, 'initiative', ?, ?, 'active', 'local', NULL, ?, ?)`
-      ).run(itemId, sample.title, sample.description, now, now);
+        `INSERT INTO items (id, type, title, description, status, source, airtable_id, seq_num, created_at, updated_at)
+         VALUES (?, 'initiative', ?, ?, 'active', 'local', NULL, ?, ?, ?)`
+      ).run(itemId, sample.title, sample.description, nextItemSeqNum(), now, now);
 
       // Build goal string (same format as manual launch path)
       const goal = `${sample.title}\n\n${sample.description}`;

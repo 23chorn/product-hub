@@ -8,6 +8,7 @@ import type { DiscoverySource, DiscoveryOpportunity, DiscoverySourceType, Discov
 import { runDiscovery } from '../agents/discovery-agent';
 import { AirtableClient } from '../integrations/airtable';
 import { appConfig } from '../config/app-config';
+import { nextItemSeqNum } from '../agents/item-metadata';
 
 const logger = new Logger('DISCOVERY');
 
@@ -300,9 +301,9 @@ discoveryRoutes.post('/opportunities/:id/promote', async (req: AuthRequest, res:
   const now = Date.now();
   try {
     db.prepare(`
-      INSERT INTO items (id, type, title, description, status, source, airtable_id, created_at, updated_at)
-      VALUES (?, 'initiative', ?, ?, 'active', 'airtable', ?, ?, ?)
-    `).run(airtableItem.id, opportunity.title, opportunity.description, airtableItem.id, now, now);
+      INSERT INTO items (id, type, title, description, status, source, airtable_id, seq_num, created_at, updated_at)
+      VALUES (?, 'initiative', ?, ?, 'active', 'airtable', ?, ?, ?, ?)
+    `).run(airtableItem.id, opportunity.title, opportunity.description, airtableItem.id, nextItemSeqNum(), now, now);
   } catch (error: any) {
     // Airtable record now exists with no local tracking row — rare, logged loudly for manual reconciliation
     // rather than building saga/compensation logic for what should be an unlikely failure.

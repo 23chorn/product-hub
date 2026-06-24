@@ -1,6 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import Logger from '../utils/logger';
-import { BacklogStructure } from '@pap/shared';
+import { BacklogStructure, featureLocalKey, storyLocalKey } from '@pap/shared';
 import {
   adoErrorMessage,
   toNearestFibonacci,
@@ -10,8 +10,6 @@ import {
   buildTechnicalSuggestions,
   buildPlatformNotes,
   deriveTeamTags,
-  featureLocalKey,
-  storyLocalKey,
 } from './azure-devops-format';
 import {
   pushQATestPlan as pushQATestPlanImpl,
@@ -691,6 +689,34 @@ export class AzureDevOpsClient {
       throw new Error(
         `Azure DevOps API error: ${adoErrorMessage(error)}`
       );
+    }
+  }
+
+  /**
+   * Batch-fetch work items by id (ADO caps a single batch at 200 ids — chunk and
+   * concatenate). Used by the Completed Initiatives "Refresh" action to pull current
+   * `System.State` for every work item on an initiative in as few round trips as possible.
+   */
+  async getWorkItemsBatch(ids: number[], fields?: string[]): Promise<WorkItem[]> {
+    if (ids.length === 0) return [];
+
+    const chunks: number[][] = [];
+    for (let i = 0; i < ids.length; i += 200) chunks.push(ids.slice(i, i + 200));
+
+    const results: WorkItem[] = [];
+    try {
+      for (const chunk of chunks) {
+        const response = await this.client.post(
+          '/wit/workitemsbatch',
+          { ids: chunk, ...(fields ? { fields } : {}) },
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+        results.push(...response.data.value);
+      }
+      return results;
+    } catch (error: any) {
+      logger.error('Failed to batch-fetch work items', error);
+      throw new Error(`Azure DevOps API error: ${adoErrorMessage(error)}`);
     }
   }
 

@@ -15,7 +15,7 @@ import db from '../data/database';
 import { loadArtifactContentById } from './artifact-helpers';
 import { loadPrdForItem, buildEpicEnrichment, buildFeatureEnrichment } from '../utils/prd-enrichment';
 import { insertEvent } from './workflow-db';
-import { featureLocalKey, storyLocalKey } from '../integrations/azure-devops-format';
+import { featureLocalKey, storyLocalKey } from '@pap/shared';
 import Logger from '../utils/logger';
 
 const logger = new Logger('ADO-PUSH');

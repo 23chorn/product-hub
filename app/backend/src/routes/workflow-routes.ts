@@ -23,6 +23,7 @@ import {
 } from '../agents/change-request';
 import db from '../data/database';
 import { insertEvent, parseRoles } from '../agents/workflow-db';
+import { nextItemSeqNum } from '../agents/item-metadata';
 import { resolveArtifactPath, loadArtifactContentById, updateArtifactContent, approveWikiArtifact } from '../agents/artifact-helpers';
 import { pushItemStatusToAirtable } from '../agents/ado-stage-push';
 import { airtableStatusForStage, checkpointArtifactLabel } from '../agents/stage-metadata';
@@ -74,9 +75,9 @@ workflowRoutes.post('/start', async (req: AuthRequest, res: Response) => {
     const title = goal.slice(0, 100) + (goal.length > 100 ? '...' : '');
     const metadata = productArea ? JSON.stringify({ productArea }) : null;
     db.prepare(`
-      INSERT INTO items (id, type, title, description, status, source, airtable_id, metadata, created_at, updated_at)
-      VALUES (?, 'initiative', ?, ?, 'active', 'local', NULL, ?, ?, ?)
-    `).run(id, title, goal.slice(0, 500), metadata, now, now);
+      INSERT INTO items (id, type, title, description, status, source, airtable_id, metadata, seq_num, created_at, updated_at)
+      VALUES (?, 'initiative', ?, ?, 'active', 'local', NULL, ?, ?, ?, ?)
+    `).run(id, title, goal.slice(0, 500), metadata, nextItemSeqNum(), now, now);
     itemId = id;
     logger.info(`Auto-created local item ${id} for workflow`);
   } else {
@@ -86,9 +87,9 @@ workflowRoutes.post('/start', async (req: AuthRequest, res: Response) => {
       const title = goal.slice(0, 100) + (goal.length > 100 ? '...' : '');
       const metadata = productArea ? JSON.stringify({ productArea }) : null;
       db.prepare(`
-        INSERT INTO items (id, type, title, description, status, source, airtable_id, metadata, created_at, updated_at)
-        VALUES (?, 'initiative', ?, ?, 'active', 'airtable', ?, ?, ?, ?)
-      `).run(itemId, title, goal.slice(0, 500), itemId, metadata, now, now);
+        INSERT INTO items (id, type, title, description, status, source, airtable_id, metadata, seq_num, created_at, updated_at)
+        VALUES (?, 'initiative', ?, ?, 'active', 'airtable', ?, ?, ?, ?, ?)
+      `).run(itemId, title, goal.slice(0, 500), itemId, metadata, nextItemSeqNum(), now, now);
       logger.info(`Created shadow item ${itemId} for Airtable initiative`);
     } else if (productArea && !existing.metadata) {
       // Backfill productArea onto existing items that didn't have it

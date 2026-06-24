@@ -32,7 +32,7 @@ import { demoWebhookRoutes } from './routes/demo-webhook-routes';
 import settingsRoutes from './routes/settings-routes';
 import authRoutes from './routes/auth-routes';
 import userRoutes from './routes/user-routes';
-import { statsRoutes } from './routes/stats-routes';
+import completedInitiativesRoutes from './routes/completed-initiatives-routes';
 import { authMiddleware } from './middleware/auth';
 
 const logger = new Logger('SERVER');
@@ -116,7 +116,7 @@ app.use('/api', ticketRoutes);
 app.use('/api/skills', skillRoutes);
 app.use('/api', demoWebhookRoutes);
 app.use('/api/settings', settingsRoutes);
-app.use('/api/stats', statsRoutes);
+app.use('/api/completed-initiatives', completedInitiativesRoutes);
 
 app.get('/api', (req, res) => {
   res.json({

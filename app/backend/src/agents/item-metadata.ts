@@ -40,6 +40,17 @@ export function readProductArea(itemId: string): string | null {
   return coerceProductArea(readItemMetadata(itemId)?.productArea);
 }
 
+/**
+ * Next human-facing display number for a new item, e.g. for an "Initiative #42" badge.
+ * Must be called and inserted within the same synchronous call stack as the INSERT — Node's
+ * single-threaded event loop guarantees no other db write can interleave between this read
+ * and that write, so no two items can ever be assigned the same number.
+ */
+export function nextItemSeqNum(): number {
+  const row = db.prepare<[], { next: number }>('SELECT COALESCE(MAX(seq_num), 0) + 1 AS next FROM items').get();
+  return row!.next;
+}
+
 /** 'YYYY-MM' for the month an item was created, in local time. Falls back to the
  * current month if the item row can't be found (e.g. disk writes racing the insert). */
 export function itemStartMonth(itemId: string): string {

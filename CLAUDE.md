@@ -71,3 +71,6 @@ These are the shape every future change should follow:
 - `npm test` (from `app/backend/`) must pass.
 - Re-read your diff: did you leave a dead import, a second copy of something, or a
   block that should have been a call to a shared helper? Fix it before handing off.
+- **Don't start the dev server or drive a browser to verify UI/frontend changes.**
+  The user tests those manually. Typecheck and existing tests are sufficient
+  verification on your end — say so plainly instead of claiming visual confirmation.

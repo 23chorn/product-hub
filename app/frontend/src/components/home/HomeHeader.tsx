@@ -2,9 +2,6 @@ import type { RefObject } from 'react';
 import { STATUS_FILTERS, type StatusFilter } from './types';
 
 interface HomeHeaderProps {
-  syncing: boolean;
-  onSync: () => void;
-  onNewInitiative: () => void;
   searchQuery: string;
   onSearchChange: (v: string) => void;
   searchInputRef: RefObject<HTMLInputElement>;
@@ -13,14 +10,16 @@ interface HomeHeaderProps {
   statusCounts: Record<StatusFilter, number>;
   myPendingCount: number;
   showMineFilter: boolean;
-  isAdmin: boolean;
+  productAreas: string[];
+  productAreaFilter: string;
+  onProductAreaFilterChange: (v: string) => void;
+  themes: string[];
+  themeFilter: string;
+  onThemeFilterChange: (v: string) => void;
 }
 
-/** Sticky Product Hub header: title, sync/new actions, search box, and status filter chips. */
+/** Sticky Home screen header: search box, status filter chips, and product area/theme filters. */
 export function HomeHeader({
-  syncing,
-  onSync,
-  onNewInitiative,
   searchQuery,
   onSearchChange,
   searchInputRef,
@@ -29,50 +28,18 @@ export function HomeHeader({
   statusCounts,
   myPendingCount,
   showMineFilter,
-  isAdmin,
+  productAreas,
+  productAreaFilter,
+  onProductAreaFilterChange,
+  themes,
+  themeFilter,
+  onThemeFilterChange,
 }: HomeHeaderProps) {
   return (
     <div className="flex-shrink-0 bg-white/90 dark:bg-surface-900/80 backdrop-blur-sm border-b border-surface-200 dark:border-surface-700 py-4">
-      <div className="max-w-4xl mx-auto px-6 space-y-3">
-
-        {/* Title row */}
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-bold text-surface-900 dark:text-surface-100">Welcome to Product Hub</h2>
-            <p className="text-sm text-surface-500 dark:text-surface-400 mt-1 max-w-xl leading-relaxed">
-              {isAdmin
-                ? 'Launch a roadmap initiative — synced from Airtable, or described ad hoc — and a team of AI agents runs the full pipeline: research, PRD, architecture, backlog, and QA, ready for engineering.'
-                : 'Review the research, PRDs, architecture, backlogs, and QA plans waiting on you, and approve or send back changes as initiatives move through the pipeline.'}
-            </p>
-          </div>
-          {isAdmin && (
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <button
-                onClick={onSync}
-                disabled={syncing}
-                title="Sync Pipeline Ready initiatives from Airtable"
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 bg-white dark:bg-surface-800/50 hover:bg-surface-50 dark:hover:bg-surface-700/70 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
-              >
-                <svg className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                {syncing ? 'Syncing…' : 'Sync Airtable'}
-              </button>
-              <button
-                onClick={onNewInitiative}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-brand-600 hover:bg-brand-700 text-white transition-colors shadow-sm"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                New Initiative
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Search + status filters */}
+      <div className="max-w-4xl mx-auto px-6">
         <div className="flex items-center gap-3 flex-wrap">
+
           <div className="relative flex-1 min-w-[160px] max-w-xs">
             <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-surface-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -135,6 +102,28 @@ export function HomeHeader({
               );
             })}
           </div>
+
+          {/* Product area + theme filters */}
+          {productAreas.length > 0 && (
+            <select
+              value={productAreaFilter}
+              onChange={e => onProductAreaFilterChange(e.target.value)}
+              className="text-xs px-2.5 py-1.5 rounded-lg border border-surface-200 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-600 dark:text-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            >
+              <option value="all">All product areas</option>
+              {productAreas.map(area => <option key={area} value={area}>{area}</option>)}
+            </select>
+          )}
+          {themes.length > 0 && (
+            <select
+              value={themeFilter}
+              onChange={e => onThemeFilterChange(e.target.value)}
+              className="text-xs px-2.5 py-1.5 rounded-lg border border-surface-200 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-600 dark:text-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            >
+              <option value="all">All themes</option>
+              {themes.map(theme => <option key={theme} value={theme}>{theme}</option>)}
+            </select>
+          )}
         </div>
       </div>
     </div>

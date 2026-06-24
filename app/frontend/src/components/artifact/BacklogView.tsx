@@ -1,6 +1,24 @@
 import { useState } from 'react';
+import type { WorkItemStateBucket } from '@pap/shared';
+import { featureLocalKey, storyLocalKey } from '@pap/shared';
 import type { BacklogData, BacklogStory } from '../../utils/backlog-helpers';
 import { backlogTier, getSprintMeta, getAllStories, getAllFeatures } from '../../utils/backlog-helpers';
+import { WORK_ITEM_STATE_BUCKET_LABELS, WORK_ITEM_STATE_BUCKET_COLORS } from '../../utils/work-item-state-bucket';
+
+/**
+ * Small state-bucket pill shown next to a story/feature title when `stateByLocalKey` is
+ * provided. Fragile by construction: the local key is recomputed from the story/feature's
+ * positional index in the *merged* `features` array, which only matches push-time order
+ * because mergeBacklogs sorts by `num` ascending — nothing enforces that invariant here.
+ */
+function StateBucketPill({ bucket }: { bucket?: WorkItemStateBucket }) {
+  if (!bucket) return null;
+  return (
+    <span className={`flex-shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${WORK_ITEM_STATE_BUCKET_COLORS[bucket]}`}>
+      {WORK_ITEM_STATE_BUCKET_LABELS[bucket]}
+    </span>
+  );
+}
 
 /** Render hours with AI comparison: "3h (was 8h)" or just "8h" when not AI-assisted. */
 function HoursDisplay({ story, aiAssisted }: { story: BacklogStory; aiAssisted: boolean }) {
@@ -42,7 +60,7 @@ function AggregateHours({ hours, traditionalHours, aiAssisted }: { hours: number
   return <> · {hours}h</>;
 }
 
-export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data: BacklogData; isFeaturePreview?: boolean; initiativeTitle?: string }) {
+export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLocalKey }: { data: BacklogData; isFeaturePreview?: boolean; initiativeTitle?: string; stateByLocalKey?: Map<string, WorkItemStateBucket> }) {
   const [expandedStories, setExpandedStories] = useState<Set<string>>(new Set());
 
   const toggleStory = (key: string) => {
@@ -338,7 +356,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
 
       {/* Stories renderer — for Tier 2 and 3 */}
       {tier !== 1 && (() => {
-        const renderStory = (story: BacklogStory, si: number, prefix: string) => {
+        const renderStory = (story: BacklogStory, si: number, prefix: string, stateBucket?: WorkItemStateBucket) => {
           const key = `${prefix}-${si}`;
           const isExpanded = expandedStories.has(key);
           return (
@@ -367,6 +385,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
                         {story.effort}<HoursDisplay story={story} aiAssisted={aiAssisted} />
                       </span>
                     )}
+                    <StateBucketPill bucket={stateBucket} />
                   </div>
                   {(story.persona || story.as_a) && !isExpanded && (
                     <p className="text-xs text-surface-400 dark:text-surface-500 mt-0.5 truncate">{story.as_a || story.persona}</p>
@@ -516,7 +535,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
           return (
             <div className="rounded-lg border border-surface-200 dark:border-surface-700">
               <div className="divide-y divide-surface-100 dark:divide-surface-700">
-                {features[0].stories.map((story, si) => renderStory(story, si, '1'))}
+                {features[0].stories.map((story, si) => renderStory(story, si, '1', stateByLocalKey?.get(storyLocalKey(featureLocalKey(0), si))))}
               </div>
             </div>
           );
@@ -528,6 +547,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
             const featureEffort = feature.stories.reduce((s, st) => s + (st.effort ?? 0), 0);
             const featureHours = feature.stories.reduce((s, st) => s + (st.estimatedHours ?? 0), 0);
             const featureTraditionalHours = feature.stories.reduce((s, st) => s + (st.traditionalHours ?? st.estimatedHours ?? 0), 0);
+            const featureKey = featureLocalKey(fi);
             return (
               <div key={fi} className="rounded-lg border border-surface-200 dark:border-surface-700">
                 <div className="px-4 py-3 bg-surface-50 dark:bg-surface-800/60 border-b border-surface-200 dark:border-surface-700 rounded-t-lg">
@@ -551,6 +571,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
                         )}
                       </span>
                     )}
+                    <StateBucketPill bucket={stateByLocalKey?.get(featureKey)} />
                   </div>
                   <h4 className="text-sm font-semibold text-surface-900 dark:text-surface-100">{feature.title}</h4>
                   {feature.description && (
@@ -558,7 +579,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
                   )}
                 </div>
                 <div className="divide-y divide-surface-100 dark:divide-surface-700">
-                  {feature.stories.map((story, si) => renderStory(story, si, `${fi + 1}`))}
+                  {feature.stories.map((story, si) => renderStory(story, si, `${fi + 1}`, stateByLocalKey?.get(storyLocalKey(featureKey, si))))}
                 </div>
               </div>
             );
@@ -570,7 +591,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
           return (
             <div className="rounded-lg border border-surface-200 dark:border-surface-700">
               <div className="divide-y divide-surface-100 dark:divide-surface-700">
-                {data.feature.stories.map((story, si) => renderStory(story, si, '1'))}
+                {data.feature.stories.map((story, si) => renderStory(story, si, '1', stateByLocalKey?.get(storyLocalKey(featureLocalKey(0), si))))}
               </div>
             </div>
           );
@@ -581,7 +602,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle }: { data:
         return (
           <div className="rounded-lg border border-surface-200 dark:border-surface-700">
             <div className="divide-y divide-surface-100 dark:divide-surface-700">
-              {flatStories.map((story, si) => renderStory(story, si, '1'))}
+              {flatStories.map((story, si) => renderStory(story, si, '1', stateByLocalKey?.get(storyLocalKey(featureLocalKey(0), si))))}
             </div>
           </div>
         );

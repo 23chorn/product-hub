@@ -43,6 +43,9 @@ export interface AirtableItem {
   // System fields
   createdAt: string;
   lastModified?: string;
+
+  /** Local DB display number (items.seq_num) — human-facing "Initiative #N" identifier. Null for rows that predate this column and haven't been backfilled. */
+  seqNum?: number | null;
 }
 
 // ============================================
@@ -487,5 +490,47 @@ export interface KbFileCommit {
   /** Line-level change counts vs. the previous commit that touched this file. */
   linesAdded: number;
   linesRemoved: number;
+}
+
+// ============================================
+// Completed Initiatives: ADO ticket-state review
+// ============================================
+
+export type WorkItemStateBucket = 'not_started' | 'in_progress' | 'done' | 'removed';
+
+export interface CompletedInitiativeSummary {
+  itemId: string;
+  seqNum: number | null;
+  title: string;
+  epicAdoUrl: string | null;
+  epicCount: number;
+  featureCount: number;
+  storyCount: number;
+  stateBuckets: Record<WorkItemStateBucket, number>;
+  testCaseCount: number;
+  lastRefreshedAt: number | null;
+}
+
+export interface CompletedInitiativeWorkItemRow {
+  localKey: string;
+  adoId: number;
+  adoType: 'epic' | 'feature' | 'story';
+  adoUrl: string | null;
+  title: string;
+  state: string | null;
+  stateBucket: WorkItemStateBucket | null;
+  stateSyncedAt: number | null;
+  artifactId: number | null;
+}
+
+export interface CompletedInitiativeTestPlanRow {
+  planId: number;
+  planUrl: string;
+  testCaseCount: number | null;
+}
+
+export interface CompletedInitiativeDetail extends CompletedInitiativeSummary {
+  workItems: CompletedInitiativeWorkItemRow[];
+  testPlans: CompletedInitiativeTestPlanRow[];
 }
 

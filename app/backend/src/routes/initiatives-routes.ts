@@ -4,7 +4,7 @@ import db from '../data/database';
 import Logger from '../utils/logger';
 import { parseRoles } from '../agents/workflow-db';
 import { isDemoWorkflow } from '../demo/demo-mode';
-import { itemSessionDir } from '../agents/item-metadata';
+import { itemSessionDir, nextItemSeqNum } from '../agents/item-metadata';
 import type { AirtableItem, LocalInitiative } from '@pap/shared';
 
 const logger = new Logger('INITIATIVES');
@@ -16,6 +16,7 @@ interface InitiativeRow {
   description: string | null;
   source: string;
   metadata: string | null;
+  seq_num: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -31,11 +32,13 @@ function toAirtableItem(row: InitiativeRow): AirtableItem {
     estimate: 'M',
     confidence: 0.8,
     createdAt: new Date(row.created_at).toISOString(),
+    seqNum: row.seq_num,
   };
   if (row.source === 'airtable' && row.metadata) {
     try {
       const meta = JSON.parse(row.metadata);
-      return { ...base, ...meta };
+      // seqNum is DB-internal — never let synced Airtable metadata shadow it.
+      return { ...base, ...meta, seqNum: row.seq_num };
     } catch { /* ignore malformed metadata */ }
   }
   return base;
@@ -53,16 +56,16 @@ function toLocalInitiative(row: InitiativeRow): LocalInitiative {
 
 const stmts = {
   list: db.prepare(
-    `SELECT id, title, description, source, metadata, created_at, updated_at FROM items
+    `SELECT id, title, description, source, metadata, seq_num, created_at, updated_at FROM items
      WHERE source IN ('local', 'airtable') AND status != 'archived' ORDER BY created_at DESC`
   ),
   get: db.prepare(
-    `SELECT id, title, description, source, metadata, created_at, updated_at FROM items
+    `SELECT id, title, description, source, metadata, seq_num, created_at, updated_at FROM items
      WHERE id = ? AND source = 'local'`
   ),
   insert: db.prepare(
-    `INSERT INTO items (id, type, title, description, status, source, airtable_id, created_at, updated_at)
-     VALUES (?, 'initiative', ?, ?, 'active', 'local', NULL, ?, ?)`
+    `INSERT INTO items (id, type, title, description, status, source, airtable_id, seq_num, created_at, updated_at)
+     VALUES (?, 'initiative', ?, ?, 'active', 'local', NULL, ?, ?, ?)`
   ),
   update: db.prepare(
     `UPDATE items SET title = ?, description = ?, updated_at = ?
@@ -195,7 +198,7 @@ router.post('/', (req: Request, res: Response) => {
   try {
     const id = uuidv4();
     const now = Date.now();
-    stmts.insert.run(id, title.trim(), description?.trim() || null, now, now);
+    stmts.insert.run(id, title.trim(), description?.trim() || null, nextItemSeqNum(), now, now);
     const row = stmts.get.get(id) as InitiativeRow;
     logger.info(`Created local initiative: ${id} ("${title.trim()}")`);
     res.status(201).json(toLocalInitiative(row));

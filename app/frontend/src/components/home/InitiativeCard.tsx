@@ -40,59 +40,23 @@ export function InitiativeCard({
   return (
     <div
       title={item.description || undefined}
-      className="relative group rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/80 hover:border-surface-300 dark:hover:border-surface-600 hover:shadow-sm transition-all"
+      className="relative group rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/80 hover:border-surface-300 dark:hover:border-surface-600 hover:shadow-sm transition-all p-4 space-y-1.5"
     >
-      <div className="p-4 flex items-start gap-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-start gap-2 flex-wrap">
-            <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100 leading-snug break-words min-w-0">
-              {wf?.summary || item.initiative}
-            </h3>
-            {wf?.isDemo && (
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-700">
-                Demo
-              </span>
-            )}
-            <StatusBadge wf={wf} />
-            {isAdmin && pendingApprovals.map((approval, i) => (
-              <span
-                key={`${approval.stage}-${i}`}
-                className="flex-shrink-0 inline-flex items-center text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400"
-                title={`Requires approval from: ${approval.roles.map(r => ROLE_LABELS[r] ?? r).join(' or ') || 'any role'}`}
-              >
-                Needs {approval.roles.length > 0 ? approval.roles.map(r => ROLE_LABELS[r] ?? r).join('/') : 'approval'}
-              </span>
-            ))}
-          </div>
-          {wf?.currentStage && wf.status === 'active' ? (
-            <p className="text-[10px] text-surface-400 dark:text-surface-500 mt-1">
-              {`Running ${wf.currentStage.replace(/_/g, ' ')}`}
-            </p>
-          ) : item.description ? (
-            <p className="text-xs text-surface-500 dark:text-surface-400 mt-1 line-clamp-2">{item.description}</p>
-          ) : null}
-          {wf?.updatedAt && (
-            <p className="text-[10px] text-surface-400 dark:text-surface-500 mt-1">
-              Updated {formatUpdatedAt(wf.updatedAt)}
-            </p>
-          )}
-          {(item.productArea || item.strategicTheme) && (
-            <div className="flex flex-wrap gap-1 mt-1.5">
-              {item.productArea && (
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400">
-                  {item.productArea}
-                </span>
-              )}
-              {item.strategicTheme && (
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400">
-                  {item.strategicTheme}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
+      {/* Row 1: number + title + action button (title truncates so this always fits one line) */}
+      <div className="flex items-center gap-2">
+        {item.seqNum != null && (
+          <span
+            title={`Initiative #${item.seqNum}`}
+            className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400"
+          >
+            #{item.seqNum}
+          </span>
+        )}
+        <h3 className="flex-1 min-w-0 text-sm font-semibold text-surface-900 dark:text-surface-100 leading-snug truncate">
+          {wf?.summary || item.initiative}
+        </h3>
 
-        <div className="flex items-center gap-1.5 flex-shrink-0 mt-0.5">
+        <div className="flex items-center gap-1.5 flex-shrink-0">
           {/* Action button */}
           {!isConfirmingDelete && (
             isActive ? (
@@ -157,6 +121,57 @@ export function InitiativeCard({
           )}
         </div>
       </div>
+
+      {/* Row 2: status badges */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {wf?.isDemo && (
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-700">
+            Demo
+          </span>
+        )}
+        <StatusBadge wf={wf} />
+        {isAdmin && pendingApprovals.map((approval, i) => (
+          <span
+            key={`${approval.stage}-${i}`}
+            className="flex-shrink-0 inline-flex items-center text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400"
+            title={`Requires approval from: ${approval.roles.map(r => ROLE_LABELS[r] ?? r).join(' or ') || 'any role'}`}
+          >
+            Needs {approval.roles.length > 0 ? approval.roles.map(r => ROLE_LABELS[r] ?? r).join('/') : 'approval'}
+          </span>
+        ))}
+      </div>
+
+      {/* Row 3: description / running-stage line */}
+      {wf?.currentStage && wf.status === 'active' ? (
+        <p className="text-[10px] text-surface-400 dark:text-surface-500">
+          {`Running ${wf.currentStage.replace(/_/g, ' ')}`}
+        </p>
+      ) : item.description ? (
+        <p className="text-xs text-surface-500 dark:text-surface-400 line-clamp-2">{item.description}</p>
+      ) : null}
+
+      {/* Row 4: product area + theme */}
+      {(item.productArea || item.strategicTheme) && (
+        <div className="flex flex-wrap gap-1">
+          {item.productArea && (
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400">
+              {item.productArea}
+            </span>
+          )}
+          {item.strategicTheme && (
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400">
+              {item.strategicTheme}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Row 5: last updated, bottom */}
+      {wf?.updatedAt && (
+        <p className="text-[10px] text-surface-400 dark:text-surface-500">
+          Updated {formatUpdatedAt(wf.updatedAt)}
+        </p>
+      )}
     </div>
   );
 }

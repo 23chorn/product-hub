@@ -8,9 +8,9 @@ const wf = (over: Partial<WorkflowInfo>): WorkflowInfo => ({
 });
 
 describe('<StatusBadge>', () => {
-  it('renders nothing without a workflow', () => {
-    const { container } = render(<StatusBadge />);
-    expect(container).toBeEmptyDOMElement();
+  it('shows "Not started" without a workflow', () => {
+    render(<StatusBadge />);
+    expect(screen.getByText('Not started')).toBeInTheDocument();
   });
 
   it('shows "Running" for an active workflow', () => {

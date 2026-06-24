@@ -19,7 +19,7 @@ interface Props {
 }
 
 /** Merge each feature's isolated artifact (epic + its own single-feature array) into one epic + multi-feature backlog. */
-function mergeBacklogs(parsed: Array<{ num: number; data: BacklogData }>): BacklogData | null {
+export function mergeBacklogs(parsed: Array<{ num: number; data: BacklogData }>): BacklogData | null {
   if (parsed.length === 0) return null;
   const sorted = [...parsed].sort((a, b) => a.num - b.num);
   return {

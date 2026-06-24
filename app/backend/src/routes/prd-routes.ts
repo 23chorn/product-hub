@@ -3,6 +3,7 @@ import { AirtableClient } from '../integrations/airtable';
 import { appConfig } from '../config/app-config';
 import db from '../data/database';
 import Logger from '../utils/logger';
+import { nextItemSeqNum } from '../agents/item-metadata';
 import type { AirtableItem } from '@pap/shared';
 
 const logger = new Logger('PRD-ROUTES');
@@ -18,8 +19,8 @@ function getAirtableClient() {
 }
 
 const upsertAirtableItem = db.prepare(`
-  INSERT INTO items (id, type, title, description, status, source, airtable_id, metadata, created_at, updated_at)
-  VALUES (?, 'initiative', ?, ?, 'active', 'airtable', ?, ?, ?, ?)
+  INSERT INTO items (id, type, title, description, status, source, airtable_id, metadata, seq_num, created_at, updated_at)
+  VALUES (?, 'initiative', ?, ?, 'active', 'airtable', ?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
     title       = excluded.title,
     description = excluded.description,
@@ -47,7 +48,7 @@ router.get('/items/pipelineReady', async (req: Request, res: Response) => {
     const upsertMany = db.transaction((rows: AirtableItem[]) => {
       for (const item of rows) {
         const { id, initiative, description, ...rest } = item;
-        upsertAirtableItem.run(id, initiative, description ?? null, id, JSON.stringify(rest), now, now);
+        upsertAirtableItem.run(id, initiative, description ?? null, id, JSON.stringify(rest), nextItemSeqNum(), now, now);
       }
     });
     if (items.length > 0) upsertMany(items);

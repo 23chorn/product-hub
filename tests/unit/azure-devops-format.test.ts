@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import {
   adoErrorMessage,
   toNearestFibonacci,
@@ -13,6 +13,8 @@ import {
   parseStoryRefs,
   SUITE_TYPE_LABELS,
   TC_PRIORITY_MAP,
+  getStateBucketMap,
+  bucketWorkItemState,
 } from '../../app/backend/src/integrations/azure-devops-format';
 
 describe('adoErrorMessage', () => {
@@ -192,5 +194,37 @@ describe('buildTestStepsXml', () => {
     const xml = buildTestStepsXml({ title: 'Run <it>' });
     expect((xml.match(/<step /g) || []).length).toBe(2);
     expect(xml).toContain('Execute: Run &lt;it&gt;');
+  });
+});
+
+describe('getStateBucketMap / bucketWorkItemState', () => {
+  const ORIGINAL_ENV = { ...process.env };
+  afterEach(() => { process.env = { ...ORIGINAL_ENV }; });
+
+  it('maps the default Agile states to their buckets', () => {
+    delete process.env.AZURE_DEVOPS_STATE_BUCKETS_JSON;
+    expect(bucketWorkItemState('New')).toBe('not_started');
+    expect(bucketWorkItemState('Active')).toBe('in_progress');
+    expect(bucketWorkItemState('Closed')).toBe('done');
+    expect(bucketWorkItemState('Removed')).toBe('removed');
+  });
+
+  it('defaults an unrecognized state to in_progress, not done', () => {
+    delete process.env.AZURE_DEVOPS_STATE_BUCKETS_JSON;
+    expect(bucketWorkItemState('Some Custom State')).toBe('in_progress');
+  });
+
+  it('honors an AZURE_DEVOPS_STATE_BUCKETS_JSON override', () => {
+    process.env.AZURE_DEVOPS_STATE_BUCKETS_JSON = JSON.stringify({ Backlog: 'not_started', Shipped: 'done' });
+    expect(getStateBucketMap()).toEqual({ Backlog: 'not_started', Shipped: 'done' });
+    expect(bucketWorkItemState('Shipped')).toBe('done');
+  });
+
+  it('falls back to the default map and logs a warning when the override JSON is malformed', () => {
+    process.env.AZURE_DEVOPS_STATE_BUCKETS_JSON = '{not valid json';
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(bucketWorkItemState('New')).toBe('not_started');
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 });

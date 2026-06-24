@@ -6,6 +6,7 @@ import { useConfigStore } from '../../stores/configStore';
 import { useWorkflowStore } from '../../stores/workflowStore';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useHomeActionsStore } from '../../stores/homeActionsStore';
 import { useToast } from '../../hooks/useToast';
 import { TOGGLEABLE_STAGES } from '../../constants/stage-labels';
 import { extractReadyPayload } from '../../utils/coordinator-helpers';
@@ -30,10 +31,19 @@ export function resetHomeScreenFilter(): void {
 export function HomeScreen() {
   const [localItems, setLocalItemsRaw] = useState<EnrichedItem[]>(_cachedLocalItems);
   const [loading, setLoading] = useState(_cachedLocalItems.length === 0);
-  const [syncing, setSyncing] = useState(false);
+  // Selector-scoped (not a whole-store destructure): HomeScreen only needs to re-render on
+  // `syncing` changes. registerHandlers() below also writes onSync/onNewInitiative on every
+  // render — subscribing to the whole store here would re-trigger this component on its own
+  // write and loop forever.
+  const syncing = useHomeActionsStore(s => s.syncing);
+  const setSyncing = useHomeActionsStore(s => s.setSyncing);
+  const registerHandlers = useHomeActionsStore(s => s.registerHandlers);
+  const clearHandlers = useHomeActionsStore(s => s.clearHandlers);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilterRaw] = useState<StatusFilter>(_cachedStatusFilter);
   const setStatusFilter = (f: StatusFilter) => { _cachedStatusFilter = f; setStatusFilterRaw(f); };
+  const [productAreaFilter, setProductAreaFilter] = useState<string>('all');
+  const [themeFilter, setThemeFilter] = useState<string>('all');
   const [myPendingCount, setMyPendingCount] = useState(0);
   const [mineWorkflowIds, setMineWorkflowIds] = useState<Set<string>>(new Set());
   const [itemsLoaded, setItemsLoaded] = useState(false);
@@ -291,6 +301,15 @@ export function HomeScreen() {
     return c;
   }, [visibleItems, myPendingCount]);
 
+  const productAreas = useMemo(
+    () => Array.from(new Set(visibleItems.map(i => i.productArea).filter((v): v is string => !!v))).sort(),
+    [visibleItems]
+  );
+  const themes = useMemo(
+    () => Array.from(new Set(visibleItems.map(i => i.strategicTheme).filter((v): v is string => !!v))).sort(),
+    [visibleItems]
+  );
+
   const filteredLocalItems = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     return visibleItems.filter(item => {
@@ -303,26 +322,40 @@ export function HomeScreen() {
       if (statusFilter === 'done' && s !== 'complete') return false;
       if (statusFilter === 'stopped' && s !== 'cancelled') return false;
       if (statusFilter === 'new' && item.workflow) return false;
+      if (productAreaFilter !== 'all' && item.productArea !== productAreaFilter) return false;
+      if (themeFilter !== 'all' && item.strategicTheme !== themeFilter) return false;
       if (!q) return true;
       return item.initiative.toLowerCase().includes(q) || (item.description?.toLowerCase().includes(q) ?? false);
     });
-  }, [visibleItems, statusFilter, searchQuery, mineWorkflowIds]);
+  }, [visibleItems, statusFilter, searchQuery, mineWorkflowIds, productAreaFilter, themeFilter]);
 
   const openForm = () => {
     setShowForm(true);
     Promise.resolve().then(() => titleInputRef.current?.focus());
   };
 
+  // Surface sync/new-initiative actions to the app-level header (App.tsx) while Home is
+  // mounted. No dependency array — handleSyncAirtable/openForm aren't memoized, so this
+  // re-registers fresh closures every render and clears them on unmount.
+  useEffect(() => {
+    registerHandlers({ onSync: handleSyncAirtable, onNewInitiative: openForm });
+    return () => clearHandlers();
+  });
+
   const hasResults = filteredLocalItems.length > 0;
+  const hasActiveFilters = !!searchQuery || statusFilter !== 'all' || productAreaFilter !== 'all' || themeFilter !== 'all';
+  const clearFilters = () => {
+    setSearchQuery('');
+    setStatusFilter('all');
+    setProductAreaFilter('all');
+    setThemeFilter('all');
+  };
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-surface-50 dark:bg-surface-950">
 
       {/* Sticky page header with search + filters */}
       <HomeHeader
-        syncing={syncing}
-        onSync={handleSyncAirtable}
-        onNewInitiative={openForm}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         searchInputRef={searchInputRef}
@@ -331,7 +364,12 @@ export function HomeScreen() {
         statusCounts={statusCounts}
         myPendingCount={myPendingCount}
         showMineFilter={!noAuth && !!user}
-        isAdmin={noAuth || !!user?.is_admin}
+        productAreas={productAreas}
+        productAreaFilter={productAreaFilter}
+        onProductAreaFilterChange={setProductAreaFilter}
+        themes={themes}
+        themeFilter={themeFilter}
+        onThemeFilterChange={setThemeFilter}
       />
 
       {/* Scrollable content */}
@@ -353,15 +391,17 @@ export function HomeScreen() {
           )}
 
           {/* No results state */}
-          {!loading && (searchQuery || statusFilter !== 'all') && !hasResults && (
+          {!loading && hasActiveFilters && !hasResults && (
             <div className="py-16 text-center">
               <p className="text-sm text-surface-400 dark:text-surface-500">
                 No initiatives match
                 {searchQuery && <> "<span className="font-medium">{searchQuery}</span>"</>}
                 {statusFilter !== 'all' && <> with status <span className="font-medium">{STATUS_FILTERS.find(f => f.key === statusFilter)?.label}</span></>}
+                {productAreaFilter !== 'all' && <> in <span className="font-medium">{productAreaFilter}</span></>}
+                {themeFilter !== 'all' && <> themed <span className="font-medium">{themeFilter}</span></>}
               </p>
               <button
-                onClick={() => { setSearchQuery(''); setStatusFilter('all'); }}
+                onClick={clearFilters}
                 className="mt-2 text-xs text-brand-600 dark:text-brand-400 hover:underline"
               >
                 Clear filters

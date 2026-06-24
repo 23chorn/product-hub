@@ -5,6 +5,11 @@
  * unit-testable in isolation. Consumed by integrations/azure-devops.ts.
  */
 
+import type { WorkItemStateBucket } from '@pap/shared';
+import Logger from '../utils/logger';
+
+const logger = new Logger('ADO-FORMAT');
+
 /** Extract the most useful message from a failed Azure DevOps API call. */
 export function adoErrorMessage(error: any): string {
   return error?.response?.data?.message || error?.message || 'Unknown error';
@@ -20,21 +25,6 @@ export function toNearestFibonacci(n: number): number {
 /** Strip leading user-story prefixes that the model may have included in the JSON fields. */
 export function stripStoryPrefix(text: string, prefix: RegExp): string {
   return text.replace(prefix, '').trim();
-}
-
-/**
- * Local key for a feature's position in the backlog (1-based) — e.g. "F1".
- * Single source of truth for this numbering: used both as the ado_work_item_map
- * lookup key and as the title prefix stamped onto the ADO ticket itself, so the
- * two always agree.
- */
-export function featureLocalKey(featureIndex: number): string {
-  return `F${featureIndex + 1}`;
-}
-
-/** Local key for a story's position within its feature (1-based) — e.g. "F1.S2". */
-export function storyLocalKey(featureKey: string, storyIndex: number): string {
-  return `${featureKey}.S${storyIndex + 1}`;
 }
 
 /** Escape special HTML characters to prevent injection in ADO rich-text fields */
@@ -287,4 +277,30 @@ export function buildTestStepsXml(tc: TestCaseInput): string {
   }).join('');
 
   return `<steps id="0" last="${stepItems.length}">${stepXml}</steps>`;
+}
+
+// ── Work item state bucketing (Completed Initiatives page) ───────────────────
+
+const DEFAULT_STATE_BUCKETS: Record<string, WorkItemStateBucket> = {
+  'New': 'not_started', 'To Do': 'not_started', 'Approved': 'not_started',
+  'Active': 'in_progress', 'Committed': 'in_progress', 'In Progress': 'in_progress', 'Resolved': 'in_progress',
+  'Closed': 'done', 'Done': 'done',
+  'Removed': 'removed',
+};
+
+/** ADO `System.State` → bucket map. Overridable via `AZURE_DEVOPS_STATE_BUCKETS_JSON`. */
+export function getStateBucketMap(): Record<string, WorkItemStateBucket> {
+  const raw = process.env.AZURE_DEVOPS_STATE_BUCKETS_JSON;
+  if (!raw) return DEFAULT_STATE_BUCKETS;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    logger.warn('Invalid AZURE_DEVOPS_STATE_BUCKETS_JSON — falling back to the default Agile state-bucket map');
+    return DEFAULT_STATE_BUCKETS;
+  }
+}
+
+/** Bucket a raw ADO work item state. Unmapped states default to 'in_progress' rather than silently "done". */
+export function bucketWorkItemState(state: string): WorkItemStateBucket {
+  return getStateBucketMap()[state] ?? 'in_progress';
 }

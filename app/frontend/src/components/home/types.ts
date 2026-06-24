@@ -1,18 +1,8 @@
 /** Shared types and status helper for the HomeScreen and its sub-components. */
-import type { AirtableItem } from '@pap/shared';
+import type { AirtableItem, WorkflowInfo } from '@pap/shared';
 
-export type WorkflowInfo = {
-  id: string;
-  status: string;
-  currentStage: string | null;
-  summary: string | null;
-  pipelineStatus?: string;
-  isCancelled?: boolean;
-  isDemo?: boolean;
-  pendingStage?: string | null;
-  pendingApprovals?: Array<{ stage: string; roles: string[] }>;
-  updatedAt?: number;
-};
+export type { WorkflowInfo } from '@pap/shared';
+export { effectiveStatus } from '@pap/shared';
 
 export type EnrichedItem = AirtableItem & { source?: string; workflow?: WorkflowInfo };
 
@@ -35,10 +25,3 @@ export const STATUS_FILTERS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'stopped', label: 'Stopped' },
   { key: 'new',    label: 'Not started' },
 ];
-
-/** Collapse a workflow's raw status into a display status, accounting for cancellation and pipeline state. */
-export function effectiveStatus(wf: WorkflowInfo): string {
-  if (wf.isCancelled) return 'cancelled';
-  if (wf.status === 'complete' && wf.pipelineStatus && wf.pipelineStatus !== 'complete') return 'active';
-  return wf.status;
-}

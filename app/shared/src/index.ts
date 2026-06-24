@@ -9,3 +9,5 @@ export { STAGE_PERSONAS, stagePersonaLabel } from './stage-personas';
 export type { StagePersonaInfo } from './stage-personas';
 export { renderArtifactMarkdown, isDocumentArtifact } from './artifact-markdown';
 export type { MarkdownVariant } from './artifact-markdown';
+export { effectiveStatus, featureLocalKey, storyLocalKey } from './initiative-status';
+export type { WorkflowInfo } from './initiative-status';
