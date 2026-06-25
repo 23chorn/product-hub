@@ -541,9 +541,20 @@ export interface CompletedInitiativeTestPlanRow {
 export interface CompletedInitiativeDetail extends CompletedInitiativeSummary {
   workItems: CompletedInitiativeWorkItemRow[];
   testPlans: CompletedInitiativeTestPlanRow[];
-  /** Latest research/analyst-brief and PRD artifact ids for this item, if either stage ran —
-   *  lets the detail page cycle through every produced document, not just tickets/tests. */
+  /** Latest research/analyst-brief, PRD, architecture, and Figma artifact ids for this item, if
+   *  the stage ran — lets the detail page cycle through every produced document, not just
+   *  tickets/tests. Resolved independent of the ADO push tables (see getDocumentArtifactIds in
+   *  completed-initiatives-routes.ts for why those can't be trusted here). */
   researchArtifactId: number | null;
   prdArtifactId: number | null;
+  architectureArtifactId: number | null;
+  figmaArtifactId: number | null;
+  /** The merged final backlog artifact (backlog_merge output) — already combines every
+   *  feature, so the detail page can read it directly with no per-feature merge. */
+  ticketArtifactId: number | null;
+  /** One qa_tests artifact id per feature (latest approved story_decomposition_F<n>_qa
+   *  checkpoint) — qa_tests has no per-feature-suffixed type, so these must be merged
+   *  client-side the same way the per-feature backlog/QA Stories+Tests view already does. */
+  testArtifactIds: number[];
 }
 

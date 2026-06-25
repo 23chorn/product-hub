@@ -53,9 +53,11 @@ router.get('/items/pipelineReady', async (req: Request, res: Response) => {
     });
     if (items.length > 0) upsertMany(items);
 
-    // Also refresh metadata for existing airtable items not in the pipeline-ready set,
-    // and archive any whose Airtable record has been deleted — Airtable is the source
-    // of truth for whether an initiative should exist here.
+    // Archive existing airtable items that are no longer Pipeline Ready = Yes — either the
+    // record was deleted in Airtable, or someone changed the field away from Yes (e.g. to
+    // "Old"). Airtable is the source of truth for whether an initiative should still appear
+    // here, so either case is treated the same way: refresh metadata if the record still
+    // exists, then archive unless a reviewer is mid-workflow.
     if (!appConfig.server.useMockData) {
       const pipelineReadyIds = new Set(items.map(i => i.id));
       const existingIds = (db.prepare(`SELECT id FROM items WHERE source = 'airtable' AND status != 'archived'`).all() as { id: string }[])
@@ -66,29 +68,25 @@ router.get('/items/pipelineReady', async (req: Request, res: Response) => {
         try {
           const refreshed = await client.listItems(formula);
           if (refreshed.length > 0) upsertMany(refreshed);
-
-          // Anything Airtable no longer returned for these record IDs was deleted there.
           const refreshedIds = new Set(refreshed.map(i => i.id));
-          const missingIds = existingIds.filter(id => !refreshedIds.has(id));
-          if (missingIds.length > 0) {
-            // Don't yank an initiative out from under a reviewer mid-workflow —
-            // skip archiving while it has an active or in-progress workflow.
-            const activeItemIds = new Set(
-              (db.prepare(`
-                SELECT DISTINCT item_id FROM workflows
-                WHERE item_id IN (${missingIds.map(() => '?').join(',')})
-                  AND status IN ('active', 'paused_at_checkpoint')
-              `).all(...missingIds) as { item_id: string }[]).map(r => r.item_id)
-            );
-            const archivedAt = Date.now();
-            for (const id of missingIds) {
-              if (activeItemIds.has(id)) {
-                logger.warn(`[AIRTABLE SYNC] Item ${id} deleted in Airtable but has an active workflow — skipping archive`);
-                continue;
-              }
-              archiveItem.run(archivedAt, id);
-              logger.info(`[AIRTABLE SYNC] Item ${id} deleted in Airtable — archived locally`);
+
+          // Don't yank an initiative out from under a reviewer mid-workflow —
+          // skip archiving while it has an active or in-progress workflow.
+          const activeItemIds = new Set(
+            (db.prepare(`
+              SELECT DISTINCT item_id FROM workflows
+              WHERE item_id IN (${existingIds.map(() => '?').join(',')})
+                AND status IN ('active', 'paused_at_checkpoint')
+            `).all(...existingIds) as { item_id: string }[]).map(r => r.item_id)
+          );
+          const archivedAt = Date.now();
+          for (const id of existingIds) {
+            if (activeItemIds.has(id)) {
+              logger.warn(`[AIRTABLE SYNC] Item ${id} no longer Pipeline Ready but has an active workflow — skipping archive`);
+              continue;
             }
+            archiveItem.run(archivedAt, id);
+            logger.info(`[AIRTABLE SYNC] Item ${id} ${refreshedIds.has(id) ? 'no longer Pipeline Ready' : 'deleted'} in Airtable — archived locally`);
           }
         } catch { /* non-fatal — pipeline-ready items still synced */ }
       }

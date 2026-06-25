@@ -256,11 +256,30 @@ function toWorkItemRow(row: RawWorkItemRow): CompletedInitiativeWorkItemRow {
   };
 }
 
-/** Latest research/analyst-brief and PRD artifact ids for an item, independent of any ADO
- *  push — these are whole-initiative documents, not per-work-item like the backlog/QA
- *  artifacts above. Same "latest artifact of this type for this item" query the ADO test-plan
- *  push already relies on (see pushTestPlanToAdo in ado-stage-push.ts). */
-function getKeyArtifactIds(itemId: string): { researchArtifactId: number | null; prdArtifactId: number | null } {
+/**
+ * Document artifact ids for the detail page's tabs, resolved independent of the ADO
+ * push-tracking tables above. `ado_work_item_map.artifact_id` / `qa_test_plan_map.artifact_id`
+ * are unreliable: the multi-feature push path (feature-decomposition.ts pushEpicAndFeaturesToADO
+ * / pushFeatureToADO, used by every epic_feature_planner-based workflow) hardcodes them to NULL
+ * for every epic/feature/story/test-plan row it inserts — it was simply never wired up there.
+ * So every document here is instead resolved straight from artifacts/checkpoints:
+ *  - research/PRD/architecture/figma: whole-initiative documents, one each — "latest artifact
+ *    of this type for this item" (same query pushTestPlanToAdo's qa_tests lookup already uses).
+ *  - tickets: the single backlog_merge output ('backlog' type) already combines every feature,
+ *    so no per-feature merge is needed here the way the frontend has to for QA.
+ *  - test cases: qa_tests is not a per-feature-suffixed type (unlike backlog_F<n>), so "latest"
+ *    alone can't be trusted to mean "every feature's latest" — resolve one artifact id per
+ *    story_decomposition_F<n>_qa checkpoint instead, mirroring how pushFeatureToADO itself
+ *    looks up a single feature's QA checkpoint (feature-decomposition.ts).
+ */
+function getDocumentArtifactIds(itemId: string): {
+  researchArtifactId: number | null;
+  prdArtifactId: number | null;
+  architectureArtifactId: number | null;
+  figmaArtifactId: number | null;
+  ticketArtifactId: number | null;
+  testArtifactIds: number[];
+} {
   const latestOfType = (types: string[]): number | null => {
     const row = db.prepare(`
       SELECT a.id FROM artifacts a
@@ -270,9 +289,29 @@ function getKeyArtifactIds(itemId: string): { researchArtifactId: number | null;
     `).get(itemId, ...types) as { id: number } | undefined;
     return row?.id ?? null;
   };
+
+  const qaCheckpointRows = db.prepare(`
+    SELECT c.stage, c.artifact_id, c.created_at
+    FROM checkpoints c
+    JOIN workflows w ON w.id = c.workflow_id
+    WHERE w.item_id = ? AND c.status = 'approved' AND c.artifact_id IS NOT NULL
+  `).all(itemId) as Array<{ stage: string; artifact_id: number; created_at: number }>;
+
+  const latestQaPerFeature = new Map<string, { artifact_id: number; created_at: number }>();
+  for (const row of qaCheckpointRows) {
+    const match = /^story_decomposition_F(\d+)_qa$/.exec(row.stage);
+    if (!match) continue;
+    const existing = latestQaPerFeature.get(match[1]);
+    if (!existing || row.created_at > existing.created_at) latestQaPerFeature.set(match[1], row);
+  }
+
   return {
     researchArtifactId: latestOfType(['analyst', 'research']),
     prdArtifactId: latestOfType(['prd']),
+    architectureArtifactId: latestOfType(['architecture']),
+    figmaArtifactId: latestOfType(['figma_design']),
+    ticketArtifactId: latestOfType(['backlog']),
+    testArtifactIds: Array.from(latestQaPerFeature.values()).map(r => r.artifact_id),
   };
 }
 
@@ -284,7 +323,7 @@ function buildDetail(item: CandidateRow): CompletedInitiativeDetail {
     ...summary,
     workItems: workItemRows.map(toWorkItemRow),
     testPlans: testPlanRows.map(r => ({ planId: r.plan_id, planUrl: r.plan_url, testCaseCount: r.test_case_count, artifactId: r.artifact_id })),
-    ...getKeyArtifactIds(item.id),
+    ...getDocumentArtifactIds(item.id),
   };
 }
 

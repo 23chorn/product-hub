@@ -7,7 +7,7 @@ import {
   type BacklogData, type TicketPlatform,
 } from '../../utils/backlog-helpers';
 import { isDocumentArtifact, convertArtifactToMarkdown } from '../../utils/artifact-to-markdown';
-import { mergeBacklogs, mergeQaTests, type QATestSuite } from '../artifact/BacklogOverviewModal';
+import { mergeQaTests, type QATestSuite } from '../artifact/BacklogOverviewModal';
 import { BacklogView } from '../artifact/BacklogView';
 import { tryParseQATests, QATestsView, groupByType, typeMeta } from '../artifact/QATestsView';
 import { MarkdownContent } from '../common/MarkdownContent';
@@ -17,18 +17,32 @@ interface Props {
   onBack: () => void;
 }
 
-type DocTab = 'research' | 'prd' | 'tickets' | 'tests';
-type DocKey = 'research' | 'prd';
+type SingleDocTab = 'research' | 'prd' | 'architecture' | 'figma';
+type DocTab = SingleDocTab | 'tickets' | 'tests';
 type DocState = { content: string; type: string } | null | 'loading';
+
+const SINGLE_DOC_TABS: SingleDocTab[] = ['research', 'prd', 'architecture', 'figma'];
 
 const TABS: Array<{ key: DocTab; label: string }> = [
   { key: 'research', label: 'Research' },
   { key: 'prd', label: 'PRD' },
+  { key: 'architecture', label: 'Architecture' },
+  { key: 'figma', label: 'Figma' },
   { key: 'tickets', label: 'Tickets' },
   { key: 'tests', label: 'Test Cases' },
 ];
 
 const PLATFORM_ORDER: TicketPlatform[] = ['backend', 'web', 'ios', 'android'];
+
+function singleDocArtifactId(detail: CompletedInitiativeDetailData | null, tab: SingleDocTab): number | null {
+  if (!detail) return null;
+  switch (tab) {
+    case 'research': return detail.researchArtifactId;
+    case 'prd': return detail.prdArtifactId;
+    case 'architecture': return detail.architectureArtifactId;
+    case 'figma': return detail.figmaArtifactId;
+  }
+}
 
 function PercentBar({ percent }: { percent: number | null }) {
   return (
@@ -44,23 +58,66 @@ function PercentBar({ percent }: { percent: number | null }) {
   );
 }
 
-/** Markdown document render for the Research/PRD tabs — same JSON→markdown conversion the
- *  artifact viewer uses for non-structured document types, just without its checkpoint chrome. */
+/** Markdown document render for the Research/PRD/Architecture tabs — same JSON→markdown
+ *  conversion the artifact viewer uses for non-structured document types, just without its
+ *  checkpoint chrome. Constrained to a comfortable reading width rather than the full page —
+ *  long-form prose stretched across the whole browser is hard to read. */
 function DocumentTabContent({ state }: { state: DocState | undefined }) {
   if (state === undefined || state === 'loading') return <p className="text-sm text-surface-400 animate-pulse">Loading...</p>;
   if (state === null) return <p className="text-sm text-surface-400 italic">No document was produced for this stage.</p>;
   const md = isDocumentArtifact(state.type) ? convertArtifactToMarkdown(state.type, state.content) : null;
-  return <MarkdownContent>{md ?? state.content}</MarkdownContent>;
+  return (
+    <div className="max-w-4xl mx-auto">
+      <MarkdownContent>{md ?? state.content}</MarkdownContent>
+    </div>
+  );
+}
+
+function FigmaTabContent({ state }: { state: DocState | undefined }) {
+  if (state === undefined || state === 'loading') return <p className="text-sm text-surface-400 animate-pulse">Loading...</p>;
+  if (state === null) return <p className="text-sm text-surface-400 italic">No Figma design was produced for this initiative.</p>;
+
+  let figmaUrl: string | null = null;
+  try {
+    const cleaned = state.content.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+    figmaUrl = JSON.parse(cleaned).figma_file_url ?? null;
+  } catch { /* non-JSON artifact */ }
+
+  if (!figmaUrl) return <p className="text-sm text-surface-400 italic">No Figma link found in this artifact.</p>;
+
+  return (
+    <a
+      href={figmaUrl}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-2 px-4 py-2 bg-[#1E1E1E] hover:bg-[#333] text-white text-sm font-medium rounded-lg transition-colors"
+    >
+      <svg width="14" height="14" viewBox="0 0 38 57" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M19 28.5A9.5 9.5 0 1 1 28.5 19 9.5 9.5 0 0 1 19 28.5Z" fill="#1ABCFE"/>
+        <path d="M0 47.5A9.5 9.5 0 0 1 9.5 38H19V47.5A9.5 9.5 0 0 1 0 47.5Z" fill="#0ACF83"/>
+        <path d="M19 0V19H28.5A9.5 9.5 0 0 0 19 0Z" fill="#FF7262"/>
+        <path d="M0 9.5A9.5 9.5 0 0 0 9.5 19H19V0H9.5A9.5 9.5 0 0 0 0 9.5Z" fill="#F24E1E"/>
+        <path d="M0 28.5A9.5 9.5 0 0 0 9.5 38H19V19H9.5A9.5 9.5 0 0 0 0 28.5Z" fill="#FF7262"/>
+      </svg>
+      Open in Figma ↗
+    </a>
+  );
 }
 
 /**
  * Full-page drill-down for a single completed initiative — replaces the Progress Tracker
  * grid in place (not a side panel). Shows ticket/test-case rollups, ADO % complete, and a
- * tab switcher to cycle through every produced artifact (research, PRD, tickets, test cases).
- * The merged backlog/QA content (read from the same artifacts the ADO push used) loads once
- * from the cached GET; only "Refresh" ever calls ADO, and it swaps in just the new state map —
- * never re-fetches artifact content. Research/PRD documents are whole-initiative artifacts, so
- * they're fetched lazily, only once their tab is opened.
+ * tab switcher to cycle through every produced artifact (research, PRD, architecture, Figma,
+ * tickets, test cases).
+ *
+ * Every document is resolved from artifacts/checkpoints directly, not from the ADO
+ * push-tracking tables (ado_work_item_map / qa_test_plan_map) — their `artifact_id` columns
+ * are unreliable for any workflow that went through the multi-feature pipeline (see
+ * getDocumentArtifactIds in completed-initiatives-routes.ts), so this page never depends on
+ * them. Tickets are the single backlog_merge artifact (already combines every feature); test
+ * cases are one qa_tests artifact per feature, merged client-side the same way the live
+ * Stories/Tests view does. Research/PRD/Architecture/Figma are whole-initiative documents,
+ * fetched lazily once their tab is opened.
  */
 export function CompletedInitiativeDetail({ itemId, onBack }: Props) {
   const [detail, setDetail] = useState<CompletedInitiativeDetailData | null>(null);
@@ -69,7 +126,7 @@ export function CompletedInitiativeDetail({ itemId, onBack }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<DocTab>('tickets');
-  const [docCache, setDocCache] = useState<Partial<Record<DocKey, DocState>>>({});
+  const [docCache, setDocCache] = useState<Partial<Record<SingleDocTab, DocState>>>({});
 
   useEffect(() => {
     let stale = false;
@@ -81,19 +138,16 @@ export function CompletedInitiativeDetail({ itemId, onBack }: Props) {
       if (stale) return;
       setDetail(data);
 
-      const ticketArtifactIds = [...new Set(data.workItems.map(w => w.artifactId).filter((id): id is number => id != null))];
-      const testArtifactIds = [...new Set(data.testPlans.map(p => p.artifactId).filter((id): id is number => id != null))];
-
-      const [ticketResults, testResults] = await Promise.all([
-        Promise.all(ticketArtifactIds.map((id, num) =>
-          api.getArtifactContent(id).then(({ content }) => ({ num, data: tryParseBacklog(content) })).catch(() => null)
-        )),
-        Promise.all(testArtifactIds.map((id, num) =>
+      const [ticketResult, testResults] = await Promise.all([
+        data.ticketArtifactId != null
+          ? api.getArtifactContent(data.ticketArtifactId).then(({ content }) => tryParseBacklog(content)).catch(() => null)
+          : Promise.resolve(null),
+        Promise.all(data.testArtifactIds.map((id, num) =>
           api.getArtifactContent(id).then(({ content }) => ({ num, data: tryParseQATests(content) })).catch(() => null)
         )),
       ]);
       if (stale) return;
-      setBacklog(mergeBacklogs(ticketResults.filter((p): p is { num: number; data: BacklogData } => !!p?.data)));
+      setBacklog(ticketResult);
       setQa(mergeQaTests(testResults.filter((p): p is { num: number; data: QATestSuite } => !!p?.data)));
     }).finally(() => { if (!stale) setLoading(false); });
 
@@ -101,14 +155,15 @@ export function CompletedInitiativeDetail({ itemId, onBack }: Props) {
   }, [itemId]);
 
   useEffect(() => {
-    if (tab !== 'research' && tab !== 'prd') return;
-    if (docCache[tab] !== undefined) return;
-    const artifactId = tab === 'research' ? detail?.researchArtifactId : detail?.prdArtifactId;
-    if (!artifactId) { setDocCache(c => ({ ...c, [tab]: null })); return; }
-    setDocCache(c => ({ ...c, [tab]: 'loading' }));
+    if (!SINGLE_DOC_TABS.includes(tab as SingleDocTab)) return;
+    const key = tab as SingleDocTab;
+    if (docCache[key] !== undefined) return;
+    const artifactId = singleDocArtifactId(detail, key);
+    if (!artifactId) { setDocCache(c => ({ ...c, [key]: null })); return; }
+    setDocCache(c => ({ ...c, [key]: 'loading' }));
     api.getArtifactContent(artifactId)
-      .then(({ content, type }) => setDocCache(c => ({ ...c, [tab]: { content, type } })))
-      .catch(() => setDocCache(c => ({ ...c, [tab]: null })));
+      .then(({ content, type }) => setDocCache(c => ({ ...c, [key]: { content, type } })))
+      .catch(() => setDocCache(c => ({ ...c, [key]: null })));
   }, [tab, detail]);
 
   const handleRefresh = async () => {
@@ -252,7 +307,8 @@ export function CompletedInitiativeDetail({ itemId, onBack }: Props) {
                   </div>
                 )}
 
-                {(tab === 'research' || tab === 'prd') && <DocumentTabContent state={docCache[tab]} />}
+                {tab === 'figma' && <FigmaTabContent state={docCache.figma} />}
+                {(tab === 'research' || tab === 'prd' || tab === 'architecture') && <DocumentTabContent state={docCache[tab]} />}
               </div>
             </div>
           </>
