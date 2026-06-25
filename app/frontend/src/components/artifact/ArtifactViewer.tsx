@@ -7,7 +7,7 @@ import { api } from '../../services/api';
 import { CriticQuestionForm, CriticIssuesPanel } from './CriticQuestionForm';
 import { OpenQuestionsPanel } from './OpenQuestionsPanel';
 import { ARTIFACT_TYPE_LABELS, STAGE_LABELS } from '../../constants/stage-labels';
-import { tryParseBacklog, isBacklogArtifactType } from '../../utils/backlog-helpers';
+import { tryParseBacklog, isBacklogArtifactType } from '@pap/shared';
 import { extractPersonas, PersonaPanel } from './PersonaPanel';
 import { parseOpenQuestions, type OpenQuestion } from '../../utils/artifact-to-markdown';
 import { ArtifactSyncActions } from './ArtifactSyncActions';

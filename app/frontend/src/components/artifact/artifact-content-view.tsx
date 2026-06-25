@@ -1,10 +1,12 @@
 import type { ReactNode } from 'react';
-import { tryParseBacklog, isBacklogArtifactType, removeStoryFromBacklog, removeTestCaseFromStory } from '../../utils/backlog-helpers';
+import { tryParseBacklog, isBacklogArtifactType } from '@pap/shared';
+import { removeStoryFromBacklog, removeTestCaseFromStory } from '../../utils/backlog-helpers';
 import { deriveFeatureButtons, deriveEpicFeaturesArtifactId } from '../../utils/feature-artifacts';
 import { BacklogView } from './BacklogView';
 import { BacklogStoriesTests } from './BacklogOverviewModal';
 import { EpicFeaturesView, tryParseEpicFeatures, removePhase, removeFeatureFromPhase } from './EpicFeaturesView';
-import { QATestsView, tryParseQATests, removeTestCase } from './QATestsView';
+import { tryParseQATests } from '@pap/shared';
+import { QATestsView, removeTestCase } from './QATestsView';
 import { TechRefinementView, tryParseTechRefinement } from './TechRefinementView';
 import { PrototypePreview, type PrototypeData } from '../coordinator/PrototypePreview';
 import { convertArtifactToMarkdown, isDocumentArtifact } from '../../utils/artifact-to-markdown';

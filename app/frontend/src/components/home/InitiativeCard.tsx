@@ -1,7 +1,10 @@
+import { useState } from 'react';
 import { resolveDisplayTitle } from '@pap/shared';
 import { effectiveStatus, type EnrichedItem } from './types';
 import { StatusBadge } from './StatusBadge';
 import { useAuthStore, ROLE_LABELS, canLaunchWorkflow } from '../../stores/authStore';
+import { CardContextMenu } from '../common/CardContextMenu';
+import { ArchiveConfirmModal } from '../common/ArchiveConfirmModal';
 
 /** Format a workflow's last state-change timestamp, e.g. "18 Jun, 14:32". */
 function formatUpdatedAt(ms: number): string {
@@ -11,20 +14,29 @@ function formatUpdatedAt(ms: number): string {
   return `${date}, ${time}`;
 }
 
-/** Card for one initiative in the HomeScreen grid: title, status, tags, and launch/resume/delete actions. */
+/** Card for one initiative in the HomeScreen grid: title, status, tags, and launch/resume/delete actions.
+ *  Admins also get a right-click menu to archive an initiative that's already completed its
+ *  pipeline run — same archive endpoint and confirm dialog as the Progress Tracker page. */
 export function InitiativeCard({
   item, isDeleting, isConfirmingDelete, isAnalysing,
+  isArchiving, isConfirmingArchive,
   onLaunch, onResume, onRequestDelete, onConfirmDelete, onCancelDelete,
+  onRequestArchive, onConfirmArchive, onCancelArchive,
 }: {
   item: EnrichedItem;
   isDeleting: boolean;
   isConfirmingDelete: boolean;
   isAnalysing: boolean;
+  isArchiving: boolean;
+  isConfirmingArchive: boolean;
   onLaunch: () => void;
   onResume: () => void;
   onRequestDelete: () => void;
   onConfirmDelete: () => void;
   onCancelDelete: () => void;
+  onRequestArchive: () => void;
+  onConfirmArchive: () => void;
+  onCancelArchive: () => void;
 }) {
   const { user, noAuth } = useAuthStore();
   const isAdmin = noAuth || !!user?.is_admin;
@@ -38,6 +50,14 @@ export function InitiativeCard({
   const needsReview = eff === 'paused_at_checkpoint';
   const pendingApprovals = needsReview ? wf?.pendingApprovals ?? [] : [];
 
+  const canArchive = isAdmin && isComplete;
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const handleContextMenu = (e: React.MouseEvent) => {
+    if (!canArchive) return; // not eligible — let the native browser menu show
+    e.preventDefault();
+    setMenuPos({ x: e.clientX, y: e.clientY });
+  };
+
   // Collapse to one badge per distinct required-role set. During refinement many parallel
   // stages await the same role, which otherwise renders a row of identical "Needs X" badges.
   const approvalBadges = [...new Set(
@@ -49,8 +69,28 @@ export function InitiativeCard({
   return (
     <div
       title={item.description || undefined}
+      onContextMenu={handleContextMenu}
       className="relative group rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/80 hover:border-surface-300 dark:hover:border-surface-600 hover:shadow-sm transition-all p-4 space-y-1.5"
     >
+      {menuPos && (
+        <CardContextMenu
+          x={menuPos.x}
+          y={menuPos.y}
+          onClose={() => setMenuPos(null)}
+          items={[{ label: 'Archive Initiative', danger: true, onClick: onRequestArchive }]}
+        />
+      )}
+
+      {isConfirmingArchive && (
+        <ArchiveConfirmModal
+          mode="archive"
+          itemTitle={item.initiative}
+          loading={isArchiving}
+          onCancel={onCancelArchive}
+          onConfirm={onConfirmArchive}
+        />
+      )}
+
       {/* Row 1: number + title + action button (title truncates so this always fits one line) */}
       <div className="flex items-center gap-2">
         {item.seqNum != null && (

@@ -1,20 +1,25 @@
 import { useEffect, useState } from 'react';
 import type { CompletedInitiativeDetail as CompletedInitiativeDetailData, WorkItemStateBucket } from '@pap/shared';
-import { api } from '../../services/api';
-import { relativeTime } from '../../utils/relative-time';
 import {
-  tryParseBacklog, getAllStories, countTicketsByPlatform, PLATFORM_LABELS,
-  type BacklogData, type TicketPlatform,
-} from '../../utils/backlog-helpers';
+  tryParseBacklog, getAllStories, countTicketsByPlatform, PLATFORM_LABELS, tryParseQATests, mergeQaTests,
+  type BacklogData, type TicketPlatform, type QATestSuite,
+} from '@pap/shared';
+import { api } from '../../services/api';
+import { useAuthStore } from '../../stores/authStore';
+import { relativeTime } from '../../utils/relative-time';
 import { isDocumentArtifact, convertArtifactToMarkdown } from '../../utils/artifact-to-markdown';
-import { mergeQaTests, type QATestSuite } from '../artifact/BacklogOverviewModal';
 import { BacklogView } from '../artifact/BacklogView';
-import { tryParseQATests, QATestsView, groupByType, typeMeta } from '../artifact/QATestsView';
+import { QATestsView, groupByType, typeMeta } from '../artifact/QATestsView';
 import { MarkdownContent } from '../common/MarkdownContent';
+import { ArchiveConfirmModal } from '../common/ArchiveConfirmModal';
 
 interface Props {
   itemId: string;
+  /** True when reviewing this item from the admin-only Archived Initiatives list. */
+  archived?: boolean;
   onBack: () => void;
+  /** Called after a successful archive/unarchive — parent should navigate back and refresh its list. */
+  onArchiveChange?: () => void;
 }
 
 type SingleDocTab = 'research' | 'prd' | 'architecture' | 'figma';
@@ -119,7 +124,10 @@ function FigmaTabContent({ state }: { state: DocState | undefined }) {
  * Stories/Tests view does. Research/PRD/Architecture/Figma are whole-initiative documents,
  * fetched lazily once their tab is opened.
  */
-export function CompletedInitiativeDetail({ itemId, onBack }: Props) {
+export function CompletedInitiativeDetail({ itemId, archived = false, onBack, onArchiveChange }: Props) {
+  const { user, noAuth } = useAuthStore();
+  const isAdmin = noAuth || !!user?.is_admin;
+
   const [detail, setDetail] = useState<CompletedInitiativeDetailData | null>(null);
   const [backlog, setBacklog] = useState<BacklogData | null>(null);
   const [qa, setQa] = useState<QATestSuite | null>(null);
@@ -127,6 +135,8 @@ export function CompletedInitiativeDetail({ itemId, onBack }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [tab, setTab] = useState<DocTab>('tickets');
   const [docCache, setDocCache] = useState<Partial<Record<SingleDocTab, DocState>>>({});
+  const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
+  const [archiving, setArchiving] = useState(false);
 
   useEffect(() => {
     let stale = false;
@@ -134,7 +144,7 @@ export function CompletedInitiativeDetail({ itemId, onBack }: Props) {
     setDocCache({});
     setTab('tickets');
 
-    api.getCompletedInitiative(itemId).then(async (data) => {
+    api.getCompletedInitiative(itemId, archived).then(async (data) => {
       if (stale) return;
       setDetail(data);
 
@@ -152,7 +162,7 @@ export function CompletedInitiativeDetail({ itemId, onBack }: Props) {
     }).finally(() => { if (!stale) setLoading(false); });
 
     return () => { stale = true; };
-  }, [itemId]);
+  }, [itemId, archived]);
 
   useEffect(() => {
     if (!SINGLE_DOC_TABS.includes(tab as SingleDocTab)) return;
@@ -169,10 +179,22 @@ export function CompletedInitiativeDetail({ itemId, onBack }: Props) {
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      const updated = await api.refreshCompletedInitiative(itemId);
+      const updated = await api.refreshCompletedInitiative(itemId, archived);
       setDetail(updated);
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  const handleArchiveToggle = async () => {
+    setArchiving(true);
+    try {
+      if (archived) await api.unarchiveCompletedInitiative(itemId);
+      else await api.archiveCompletedInitiative(itemId);
+      setShowArchiveConfirm(false);
+      onArchiveChange?.();
+    } finally {
+      setArchiving(false);
     }
   };
 
@@ -214,6 +236,19 @@ export function CompletedInitiativeDetail({ itemId, onBack }: Props) {
           >
             {refreshing ? 'Refreshing...' : 'Refresh'}
           </button>
+          {isAdmin && (
+            <button
+              onClick={() => setShowArchiveConfirm(true)}
+              disabled={loading}
+              className={`px-2.5 py-1 text-xs font-medium rounded-md border transition-colors disabled:opacity-50 ${
+                archived
+                  ? 'border-green-300 dark:border-green-700 text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20'
+                  : 'border-red-300 dark:border-red-700 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
+              }`}
+            >
+              {archived ? 'Unarchive' : 'Archive'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -314,6 +349,16 @@ export function CompletedInitiativeDetail({ itemId, onBack }: Props) {
           </>
         )}
       </div>
+
+      {showArchiveConfirm && (
+        <ArchiveConfirmModal
+          mode={archived ? 'unarchive' : 'archive'}
+          itemTitle={detail?.title ?? ''}
+          loading={archiving}
+          onCancel={() => setShowArchiveConfirm(false)}
+          onConfirm={handleArchiveToggle}
+        />
+      )}
     </div>
   );
 }

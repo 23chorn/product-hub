@@ -54,6 +54,8 @@ export function HomeScreen() {
   const [savingForm, setSavingForm] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmArchiveId, setConfirmArchiveId] = useState<string | null>(null);
+  const [archivingId, setArchivingId] = useState<string | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -177,6 +179,21 @@ export function HomeScreen() {
       toast.error(err.response?.data?.error || err.message || 'Failed to delete');
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handleArchiveInitiative = async (item: AirtableItem) => {
+    if (archivingId) return;
+    setConfirmArchiveId(null);
+    try {
+      setArchivingId(item.id);
+      await api.archiveCompletedInitiative(item.id);
+      setLocalItems(localItems.filter(i => i.id !== item.id));
+      toast.success('Initiative archived');
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.message || 'Failed to archive');
+    } finally {
+      setArchivingId(null);
     }
   };
 
@@ -430,12 +447,17 @@ export function HomeScreen() {
                       item={item}
                       isDeleting={deletingId === item.id}
                       isConfirmingDelete={confirmDeleteId === item.id}
+                      isArchiving={archivingId === item.id}
+                      isConfirmingArchive={confirmArchiveId === item.id}
                       isAnalysing={launchItem?.id === item.id && (launchPhase === 'analyzing' || launchPhase === 'launching')}
                       onLaunch={() => handleInitiateLaunch(item)}
                       onResume={() => handleResumeWorkflow(item)}
                       onRequestDelete={() => setConfirmDeleteId(item.id)}
                       onConfirmDelete={() => handleDeleteInitiative(item)}
                       onCancelDelete={() => setConfirmDeleteId(null)}
+                      onRequestArchive={() => setConfirmArchiveId(item.id)}
+                      onConfirmArchive={() => handleArchiveInitiative(item)}
+                      onCancelArchive={() => setConfirmArchiveId(null)}
                     />
                   ))}
                 </div>

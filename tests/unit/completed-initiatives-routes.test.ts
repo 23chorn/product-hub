@@ -89,6 +89,34 @@ describe('completed-initiatives completion gate', () => {
   });
 });
 
+describe('completed-initiatives archive/unarchive gate', () => {
+  it('excludes an archived item from the default (active) candidate list', () => {
+    const itemId = seedItem({ status: 'archived' });
+    const workflowId = seedWorkflow(itemId, { status: 'complete' });
+    seedMapping(workflowId);
+
+    expect(getCandidateItems().map(c => c.id)).not.toContain(itemId);
+    expect(getCandidateItems(true).map(c => c.id)).toContain(itemId);
+  });
+
+  it('only finds an archived item via getCompletedItemOrUndefined when archived=true is passed', () => {
+    const itemId = seedItem({ status: 'archived' });
+    const workflowId = seedWorkflow(itemId, { status: 'complete' });
+    seedMapping(workflowId);
+
+    expect(getCompletedItemOrUndefined(itemId)).toBeUndefined();
+    expect(getCompletedItemOrUndefined(itemId, true)?.id).toBe(itemId);
+  });
+
+  it('does not surface a non-archived item in the archived-only list', () => {
+    const itemId = seedItem({ status: 'active' });
+    const workflowId = seedWorkflow(itemId, { status: 'complete' });
+    seedMapping(workflowId);
+
+    expect(getCandidateItems(true).map(c => c.id)).not.toContain(itemId);
+  });
+});
+
 describe('completed-initiatives display title', () => {
   it('prefers the latest workflow summary over the raw item title, matching the Home page', () => {
     const itemId = seedItem({ title: 'Limit Up & Down' });

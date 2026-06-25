@@ -9,7 +9,7 @@ import {
   countTicketsByPlatform,
   type BacklogData,
   type BacklogStory,
-} from './backlog-helpers';
+} from '@pap/shared';
 
 const story = (title: string) => ({ title });
 

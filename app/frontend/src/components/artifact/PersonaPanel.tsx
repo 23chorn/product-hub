@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { BacklogData, BacklogStory } from '../../utils/backlog-helpers';
+import type { BacklogData, BacklogStory } from '@pap/shared';
 
 /** Extract personas from backlog data for the sidebar panel */
 export function extractPersonas(data: BacklogData) {

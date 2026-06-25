@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../services/api';
-import { tryParseBacklog, type BacklogData } from '../../utils/backlog-helpers';
+import { tryParseBacklog, tryParseQATests, mergeQaTests, type BacklogData, type QATestSuite } from '@pap/shared';
 import { type FeatureArtifactRef } from '../../utils/feature-artifacts';
 import { BacklogView } from './BacklogView';
-import { tryParseQATests, QATestsView } from './QATestsView';
+import { QATestsView } from './QATestsView';
 import { tryParseEpicFeatures, type EpicFeaturesData } from './EpicFeaturesView';
-
-export type QATestSuite = NonNullable<ReturnType<typeof tryParseQATests>>;
 
 interface StoriesTestsProps {
   featureButtons: FeatureArtifactRef[];
@@ -30,17 +28,6 @@ export function mergeBacklogs(parsed: Array<{ num: number; data: BacklogData }>)
     epic: sorted.find(p => p.data.epic)?.data.epic,
     features: sorted.flatMap(p => p.data.features ?? []),
   };
-}
-
-/** Merge each feature's standalone QA suite into one combined test-case list.
- *  No `coverage` field is computed here — QATestsView derives its category counts directly
- *  from test_cases, so a separately merged coverage summary would just be a second, driftable
- *  source of truth for the same numbers. */
-export function mergeQaTests(parsed: Array<{ num: number; data: QATestSuite }>): QATestSuite | null {
-  if (parsed.length === 0) return null;
-  const sorted = [...parsed].sort((a, b) => a.num - b.num);
-  const test_cases = sorted.flatMap(p => p.data.test_cases ?? []);
-  return { suite: 'Combined QA Test Suite', test_cases };
 }
 
 /**

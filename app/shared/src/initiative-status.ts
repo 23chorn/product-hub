@@ -46,3 +46,15 @@ export function featureLocalKey(featureIndex: number): string {
 export function storyLocalKey(featureKey: string, storyIndex: number): string {
   return `${featureKey}.S${storyIndex + 1}`;
 }
+
+/** Inverse of featureLocalKey — parse "F1" back to its 0-based feature index, or null if malformed. */
+export function parseFeatureLocalKey(key: string): number | null {
+  const m = /^F(\d+)$/.exec(key);
+  return m ? Number(m[1]) - 1 : null;
+}
+
+/** Inverse of storyLocalKey — parse "F1.S2" back to 0-based { featureIndex, storyIndex }, or null if malformed. */
+export function parseStoryLocalKey(key: string): { featureIndex: number; storyIndex: number } | null {
+  const m = /^F(\d+)\.S(\d+)$/.exec(key);
+  return m ? { featureIndex: Number(m[1]) - 1, storyIndex: Number(m[2]) - 1 } : null;
+}

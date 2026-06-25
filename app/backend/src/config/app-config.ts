@@ -66,9 +66,9 @@ function buildConfigFromEnv(): AppConfig {
   // production, but an explicit ENABLE_*_TAB env var always wins either way.
   const navTabs = {
     progressTracker: resolveNavTabFlag('ENABLE_PROGRESS_TRACKER_TAB', nodeEnv),
-    // Hidden by default for now regardless of environment — flip on with
-    // ENABLE_DISCOVERY_TAB=true once it's ready to ship.
-    discovery: resolveNavTabFlag('ENABLE_DISCOVERY_TAB', nodeEnv, false),
+    // Shipped — same on-outside-production/off-in-production default as the other tabs.
+    // Still gated to Product/Admin users via canLaunchWorkflow regardless of this flag.
+    discovery: resolveNavTabFlag('ENABLE_DISCOVERY_TAB', nodeEnv),
     knowledgeStudio: resolveNavTabFlag('ENABLE_KNOWLEDGE_STUDIO_TAB', nodeEnv),
   };
 

@@ -8,13 +8,31 @@ export const completedInitiativesApi = {
     return response.data;
   },
 
-  async getCompletedInitiative(itemId: string): Promise<CompletedInitiativeDetail> {
-    const response = await axios.get(`${API_BASE_URL}/api/completed-initiatives/${itemId}`);
+  /** Admin-only review list — initiatives manually archived off the default list above. */
+  async getArchivedInitiatives(): Promise<CompletedInitiativeSummary[]> {
+    const response = await axios.get(`${API_BASE_URL}/api/completed-initiatives/archived`);
     return response.data;
   },
 
-  async refreshCompletedInitiative(itemId: string): Promise<CompletedInitiativeDetail & { refreshed: number; notFound: number }> {
-    const response = await axios.post(`${API_BASE_URL}/api/completed-initiatives/${itemId}/refresh`);
+  async getCompletedInitiative(itemId: string, archived = false): Promise<CompletedInitiativeDetail> {
+    const response = await axios.get(`${API_BASE_URL}/api/completed-initiatives/${itemId}`, { params: archived ? { archived: true } : undefined });
+    return response.data;
+  },
+
+  async refreshCompletedInitiative(itemId: string, archived = false): Promise<CompletedInitiativeDetail & { refreshed: number; notFound: number }> {
+    const response = await axios.post(`${API_BASE_URL}/api/completed-initiatives/${itemId}/refresh`, undefined, { params: archived ? { archived: true } : undefined });
+    return response.data;
+  },
+
+  /** Admin-only — hides a completed initiative from the default Progress Tracker list. */
+  async archiveCompletedInitiative(itemId: string): Promise<{ ok: true }> {
+    const response = await axios.post(`${API_BASE_URL}/api/completed-initiatives/${itemId}/archive`);
+    return response.data;
+  },
+
+  /** Admin-only — restores a manually archived initiative to the default list. */
+  async unarchiveCompletedInitiative(itemId: string): Promise<{ ok: true }> {
+    const response = await axios.post(`${API_BASE_URL}/api/completed-initiatives/${itemId}/unarchive`);
     return response.data;
   },
 };

@@ -7,6 +7,7 @@
 import { Router, Request, Response } from 'express';
 import db from '../data/database';
 import Logger from '../utils/logger';
+import { requireAdmin } from '../middleware/auth';
 import { effectiveStatus, resolveDisplayTitle } from '@pap/shared';
 import type {
   WorkflowInfo,
@@ -17,6 +18,10 @@ import type {
 } from '@pap/shared';
 import { bucketWorkItemState, workItemStatePercent } from '../integrations/azure-devops-format';
 import { refreshItemAdoState } from '../integrations/ado-state-sync';
+import {
+  getWorkItemRowsByItem, getTestPlanRowsByItem, getDocumentArtifactIds,
+  type AdoWorkItemRow, type QaTestPlanRow,
+} from '../data/work-item-queries';
 
 const logger = new Logger('COMPLETED-INITIATIVES');
 const router = Router();
@@ -27,46 +32,31 @@ interface CandidateRow {
   seq_num: number | null;
 }
 
-interface RawWorkItemRow {
-  itemId: string;
-  ado_id: number;
-  ado_type: 'epic' | 'feature' | 'story';
-  ado_url: string | null;
-  local_key: string;
-  title: string;
-  state: string | null;
-  state_synced_at: number | null;
-  artifact_id: number | null;
-  created_at: number;
-}
-
-interface RawTestPlanRow {
-  itemId: string;
-  plan_id: number;
-  plan_url: string;
-  test_case_count: number | null;
-  artifact_id: number | null;
-}
-
 const EMPTY_BUCKETS: Record<WorkItemStateBucket, number> = { not_started: 0, in_progress: 0, done: 0, removed: 0 };
 
 const MAPPED_TO_ADO_EXISTS = `
   EXISTS (SELECT 1 FROM ado_work_item_map m JOIN workflows w ON w.id = m.workflow_id WHERE w.item_id = i.id)
 `;
 
-/** Items pushed to ADO at least once, source local/airtable, not archived. */
-export function getCandidateItems(): CandidateRow[] {
+/** Shared WHERE clause for both the active and the admin-only archived candidate queries. */
+function candidatesPredicate(archived: boolean): string {
+  return `i.source IN ('local', 'airtable') AND i.status ${archived ? '=' : '!='} 'archived' AND ${MAPPED_TO_ADO_EXISTS}`;
+}
+
+/** Items pushed to ADO at least once, source local/airtable. Archived ones are excluded
+ *  by default; pass `archived: true` for the admin-only archived review list. */
+export function getCandidateItems(archived = false): CandidateRow[] {
   return db.prepare(`
     SELECT DISTINCT i.id, i.title, i.seq_num FROM items i
-    WHERE i.source IN ('local', 'airtable') AND i.status != 'archived' AND ${MAPPED_TO_ADO_EXISTS}
+    WHERE ${candidatesPredicate(archived)}
     ORDER BY i.created_at DESC
   `).all() as CandidateRow[];
 }
 
-function getCandidateItem(itemId: string): CandidateRow | undefined {
+function getCandidateItem(itemId: string, archived = false): CandidateRow | undefined {
   return db.prepare(`
     SELECT i.id, i.title, i.seq_num FROM items i
-    WHERE i.id = ? AND i.source IN ('local', 'airtable') AND i.status != 'archived' AND ${MAPPED_TO_ADO_EXISTS}
+    WHERE i.id = ? AND ${candidatesPredicate(archived)}
   `).get(itemId) as CandidateRow | undefined;
 }
 
@@ -138,52 +128,18 @@ function withDisplayTitle(candidate: CandidateRow, workflowInfoByItem: Map<strin
   return { ...candidate, title: resolveDisplayTitle(candidate.title, workflowInfoByItem.get(candidate.id)?.summary) };
 }
 
-/** All ado_work_item_map rows across every workflow of each item, grouped by item id. */
-function getWorkItemRowsByItem(itemIds: string[]): Map<string, RawWorkItemRow[]> {
-  const map = new Map<string, RawWorkItemRow[]>();
-  if (itemIds.length === 0) return map;
-  const rows = db.prepare(`
-    SELECT w.item_id as itemId, m.ado_id, m.ado_type, m.ado_url, m.local_key, m.title, m.state, m.state_synced_at, m.artifact_id, m.created_at
-    FROM ado_work_item_map m
-    JOIN workflows w ON w.id = m.workflow_id
-    WHERE w.item_id IN (${itemIds.map(() => '?').join(',')})
-  `).all(...itemIds) as RawWorkItemRow[];
-  for (const row of rows) {
-    if (!map.has(row.itemId)) map.set(row.itemId, []);
-    map.get(row.itemId)!.push(row);
-  }
-  return map;
-}
-
-/** All qa_test_plan_map rows across every workflow of each item, grouped by item id. */
-function getTestPlanRowsByItem(itemIds: string[]): Map<string, RawTestPlanRow[]> {
-  const map = new Map<string, RawTestPlanRow[]>();
-  if (itemIds.length === 0) return map;
-  const rows = db.prepare(`
-    SELECT w.item_id as itemId, q.plan_id, q.plan_url, q.test_case_count, q.artifact_id
-    FROM qa_test_plan_map q
-    JOIN workflows w ON w.id = q.workflow_id
-    WHERE w.item_id IN (${itemIds.map(() => '?').join(',')})
-  `).all(...itemIds) as RawTestPlanRow[];
-  for (const row of rows) {
-    if (!map.has(row.itemId)) map.set(row.itemId, []);
-    map.get(row.itemId)!.push(row);
-  }
-  return map;
-}
-
 /** The work items whose state should drive the % complete rollup: stories are the most
  *  granular unit actually worked, so they win whenever any exist; an initiative with
  *  features that were never decomposed into stories falls back to the features themselves
  *  so it isn't left without a progress figure. */
-function progressRows(workItemRows: RawWorkItemRow[]): RawWorkItemRow[] {
+function progressRows(workItemRows: AdoWorkItemRow[]): AdoWorkItemRow[] {
   const stories = workItemRows.filter(r => r.ado_type === 'story');
   return stories.length > 0 ? stories : workItemRows.filter(r => r.ado_type === 'feature');
 }
 
 /** Average ADO status progress across the progress rows that have a synced state. Null when
  *  none of them have synced yet, so the UI can distinguish "0% done" from "not yet known". */
-export function computePercentComplete(workItemRows: RawWorkItemRow[]): number | null {
+export function computePercentComplete(workItemRows: AdoWorkItemRow[]): number | null {
   const synced = progressRows(workItemRows).filter(r => r.state != null);
   if (synced.length === 0) return null;
   const total = synced.reduce((sum, r) => sum + workItemStatePercent(r.state!), 0);
@@ -194,8 +150,8 @@ function buildSummary(
   itemId: string,
   seqNum: number | null,
   title: string,
-  workItemRows: RawWorkItemRow[],
-  testPlanRows: RawTestPlanRow[]
+  workItemRows: AdoWorkItemRow[],
+  testPlanRows: QaTestPlanRow[]
 ): CompletedInitiativeSummary {
   const stateBuckets: Record<WorkItemStateBucket, number> = { ...EMPTY_BUCKETS };
   let epicCount = 0, featureCount = 0, storyCount = 0;
@@ -241,7 +197,7 @@ function buildSummary(
   };
 }
 
-function toWorkItemRow(row: RawWorkItemRow): CompletedInitiativeWorkItemRow {
+function toWorkItemRow(row: AdoWorkItemRow): CompletedInitiativeWorkItemRow {
   return {
     localKey: row.local_key,
     adoId: row.ado_id,
@@ -253,65 +209,6 @@ function toWorkItemRow(row: RawWorkItemRow): CompletedInitiativeWorkItemRow {
     statePercent: row.state != null ? workItemStatePercent(row.state) : null,
     stateSyncedAt: row.state_synced_at,
     artifactId: row.artifact_id,
-  };
-}
-
-/**
- * Document artifact ids for the detail page's tabs, resolved independent of the ADO
- * push-tracking tables above. `ado_work_item_map.artifact_id` / `qa_test_plan_map.artifact_id`
- * are unreliable: the multi-feature push path (feature-decomposition.ts pushEpicAndFeaturesToADO
- * / pushFeatureToADO, used by every epic_feature_planner-based workflow) hardcodes them to NULL
- * for every epic/feature/story/test-plan row it inserts — it was simply never wired up there.
- * So every document here is instead resolved straight from artifacts/checkpoints:
- *  - research/PRD/architecture/figma: whole-initiative documents, one each — "latest artifact
- *    of this type for this item" (same query pushTestPlanToAdo's qa_tests lookup already uses).
- *  - tickets: the single backlog_merge output ('backlog' type) already combines every feature,
- *    so no per-feature merge is needed here the way the frontend has to for QA.
- *  - test cases: qa_tests is not a per-feature-suffixed type (unlike backlog_F<n>), so "latest"
- *    alone can't be trusted to mean "every feature's latest" — resolve one artifact id per
- *    story_decomposition_F<n>_qa checkpoint instead, mirroring how pushFeatureToADO itself
- *    looks up a single feature's QA checkpoint (feature-decomposition.ts).
- */
-function getDocumentArtifactIds(itemId: string): {
-  researchArtifactId: number | null;
-  prdArtifactId: number | null;
-  architectureArtifactId: number | null;
-  figmaArtifactId: number | null;
-  ticketArtifactId: number | null;
-  testArtifactIds: number[];
-} {
-  const latestOfType = (types: string[]): number | null => {
-    const row = db.prepare(`
-      SELECT a.id FROM artifacts a
-      JOIN sessions s ON a.session_id = s.id
-      WHERE s.item_id = ? AND a.type IN (${types.map(() => '?').join(',')})
-      ORDER BY a.created_at DESC LIMIT 1
-    `).get(itemId, ...types) as { id: number } | undefined;
-    return row?.id ?? null;
-  };
-
-  const qaCheckpointRows = db.prepare(`
-    SELECT c.stage, c.artifact_id, c.created_at
-    FROM checkpoints c
-    JOIN workflows w ON w.id = c.workflow_id
-    WHERE w.item_id = ? AND c.status = 'approved' AND c.artifact_id IS NOT NULL
-  `).all(itemId) as Array<{ stage: string; artifact_id: number; created_at: number }>;
-
-  const latestQaPerFeature = new Map<string, { artifact_id: number; created_at: number }>();
-  for (const row of qaCheckpointRows) {
-    const match = /^story_decomposition_F(\d+)_qa$/.exec(row.stage);
-    if (!match) continue;
-    const existing = latestQaPerFeature.get(match[1]);
-    if (!existing || row.created_at > existing.created_at) latestQaPerFeature.set(match[1], row);
-  }
-
-  return {
-    researchArtifactId: latestOfType(['analyst', 'research']),
-    prdArtifactId: latestOfType(['prd']),
-    architectureArtifactId: latestOfType(['architecture']),
-    figmaArtifactId: latestOfType(['figma_design']),
-    ticketArtifactId: latestOfType(['backlog']),
-    testArtifactIds: Array.from(latestQaPerFeature.values()).map(r => r.artifact_id),
   };
 }
 
@@ -328,13 +225,33 @@ function buildDetail(item: CandidateRow): CompletedInitiativeDetail {
 }
 
 /** Same completion + ADO-mapping gate as the list, for a single item. Undefined if it doesn't qualify. */
-export function getCompletedItemOrUndefined(itemId: string): CandidateRow | undefined {
-  const item = getCandidateItem(itemId);
+export function getCompletedItemOrUndefined(itemId: string, archived = false): CandidateRow | undefined {
+  const item = getCandidateItem(itemId, archived);
   if (!item) return undefined;
   const workflowInfoByItem = getLatestWorkflowInfo([item.id]);
   const completed = filterCompleted([item], workflowInfoByItem)[0];
   return completed && withDisplayTitle(completed, workflowInfoByItem);
 }
+
+/** Builds the summary list for either the default (active) or admin-only archived view. */
+function listCompletedSummaries(archived: boolean): CompletedInitiativeSummary[] {
+  const candidates = getCandidateItems(archived);
+  const workflowInfoByItem = getLatestWorkflowInfo(candidates.map(c => c.id));
+  const completedItems = filterCompleted(candidates, workflowInfoByItem)
+    .map(c => withDisplayTitle(c, workflowInfoByItem));
+  if (completedItems.length === 0) return [];
+
+  const itemIds = completedItems.map(c => c.id);
+  const workItemRowsByItem = getWorkItemRowsByItem(itemIds);
+  const testPlanRowsByItem = getTestPlanRowsByItem(itemIds);
+
+  return completedItems.map(c =>
+    buildSummary(c.id, c.seq_num, c.title, workItemRowsByItem.get(c.id) ?? [], testPlanRowsByItem.get(c.id) ?? [])
+  );
+}
+
+const setItemStatus = db.prepare(`UPDATE items SET status = ?, updated_at = ? WHERE id = ?`);
+const getShippedAt = db.prepare(`SELECT shipped_at FROM items WHERE id = ?`);
 
 /**
  * GET /api/completed-initiatives
@@ -342,20 +259,7 @@ export function getCompletedItemOrUndefined(itemId: string): CandidateRow | unde
  */
 router.get('/', (_req: Request, res: Response) => {
   try {
-    const candidates = getCandidateItems();
-    const workflowInfoByItem = getLatestWorkflowInfo(candidates.map(c => c.id));
-    const completedItems = filterCompleted(candidates, workflowInfoByItem)
-      .map(c => withDisplayTitle(c, workflowInfoByItem));
-    if (completedItems.length === 0) return res.json([]);
-
-    const itemIds = completedItems.map(c => c.id);
-    const workItemRowsByItem = getWorkItemRowsByItem(itemIds);
-    const testPlanRowsByItem = getTestPlanRowsByItem(itemIds);
-
-    const summaries: CompletedInitiativeSummary[] = completedItems.map(c =>
-      buildSummary(c.id, c.seq_num, c.title, workItemRowsByItem.get(c.id) ?? [], testPlanRowsByItem.get(c.id) ?? [])
-    );
-    res.json(summaries);
+    res.json(listCompletedSummaries(false));
   } catch (error: any) {
     logger.error('Failed to list completed initiatives', error);
     res.status(500).json({ error: error.message || 'Failed to list completed initiatives' });
@@ -363,12 +267,26 @@ router.get('/', (_req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/completed-initiatives/archived
+ * Admin-only review list — initiatives manually archived off the default list above.
+ */
+router.get('/archived', requireAdmin, (_req: Request, res: Response) => {
+  try {
+    res.json(listCompletedSummaries(true));
+  } catch (error: any) {
+    logger.error('Failed to list archived initiatives', error);
+    res.status(500).json({ error: error.message || 'Failed to list archived initiatives' });
+  }
+});
+
+/**
  * GET /api/completed-initiatives/:itemId
  * Cached drill-down — full work item + test plan rows. No ADO call.
+ * ?archived=true looks it up among archived initiatives instead (admin review view).
  */
 router.get('/:itemId', (req: Request, res: Response) => {
   try {
-    const item = getCompletedItemOrUndefined(req.params.itemId);
+    const item = getCompletedItemOrUndefined(req.params.itemId, req.query.archived === 'true');
     if (!item) return res.status(404).json({ error: 'Completed initiative not found' });
     res.json(buildDetail(item));
   } catch (error: any) {
@@ -383,13 +301,50 @@ router.get('/:itemId', (req: Request, res: Response) => {
  */
 router.post('/:itemId/refresh', async (req: Request, res: Response) => {
   try {
-    const item = getCompletedItemOrUndefined(req.params.itemId);
+    const item = getCompletedItemOrUndefined(req.params.itemId, req.query.archived === 'true');
     if (!item) return res.status(404).json({ error: 'Completed initiative not found' });
     const { refreshed, notFound } = await refreshItemAdoState(item.id);
     res.json({ ...buildDetail(item), refreshed, notFound });
   } catch (error: any) {
     logger.error('Failed to refresh ADO state', error);
     res.status(500).json({ error: error.message || 'Failed to refresh ADO state' });
+  }
+});
+
+/**
+ * POST /api/completed-initiatives/:itemId/archive
+ * Admin-only manual archive — hides a completed initiative that's already been run
+ * locally from the default Progress Tracker list, without touching its workflow/ADO state.
+ */
+router.post('/:itemId/archive', requireAdmin, (req: Request, res: Response) => {
+  try {
+    const item = getCompletedItemOrUndefined(req.params.itemId);
+    if (!item) return res.status(404).json({ error: 'Completed initiative not found' });
+    setItemStatus.run('archived', Date.now(), item.id);
+    logger.info(`Archived completed initiative ${item.id} ("${item.title}")`);
+    res.json({ ok: true });
+  } catch (error: any) {
+    logger.error('Failed to archive completed initiative', error);
+    res.status(500).json({ error: error.message || 'Failed to archive completed initiative' });
+  }
+});
+
+/**
+ * POST /api/completed-initiatives/:itemId/unarchive
+ * Admin-only restore — returns to 'shipped' if the item was ever marked shipped, else
+ * 'active', so it reappears in the default Progress Tracker list.
+ */
+router.post('/:itemId/unarchive', requireAdmin, (req: Request, res: Response) => {
+  try {
+    const item = getCompletedItemOrUndefined(req.params.itemId, true);
+    if (!item) return res.status(404).json({ error: 'Archived initiative not found' });
+    const row = getShippedAt.get(item.id) as { shipped_at: number | null };
+    setItemStatus.run(row.shipped_at != null ? 'shipped' : 'active', Date.now(), item.id);
+    logger.info(`Unarchived completed initiative ${item.id} ("${item.title}")`);
+    res.json({ ok: true });
+  } catch (error: any) {
+    logger.error('Failed to unarchive completed initiative', error);
+    res.status(500).json({ error: error.message || 'Failed to unarchive completed initiative' });
   }
 });
 

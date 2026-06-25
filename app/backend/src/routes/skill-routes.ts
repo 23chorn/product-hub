@@ -29,6 +29,10 @@ const AGENT_EDIT_ROLES: Record<string, string[]> = {
   'story-decomposition':    ['product'],
   'backlog.template':       ['product'],
   curator:                  ['product'],
+  'doc-reviewer':           ['product'],
+  'doc-review.template':    ['product'],
+  'discovery-scout':        ['product'],
+  'discovery.template':     ['product'],
   // Technical agents
   architect:                ['tech_lead'],
   'architecture.template':  ['tech_lead'],

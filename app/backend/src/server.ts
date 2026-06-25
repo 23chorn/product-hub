@@ -37,6 +37,7 @@ import settingsRoutes from './routes/settings-routes';
 import authRoutes from './routes/auth-routes';
 import userRoutes from './routes/user-routes';
 import completedInitiativesRoutes from './routes/completed-initiatives-routes';
+import devTicketsRoutes from './routes/dev-tickets-routes';
 import { authMiddleware } from './middleware/auth';
 
 const logger = new Logger('SERVER');
@@ -142,6 +143,7 @@ app.use('/api/skills', skillRoutes);
 app.use('/api', demoWebhookRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/completed-initiatives', completedInitiativesRoutes);
+app.use('/api/dev/initiatives', devTicketsRoutes);
 
 app.get('/api', (req, res) => {
   res.json({
