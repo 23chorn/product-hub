@@ -48,8 +48,21 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 // Built frontend assets (npm run build --workspace=app/frontend).
 const FRONTEND_DIST = path.join(REPO_ROOT, 'app/frontend/dist');
 
-// Security middleware
-app.use(helmet());
+// Security middleware. Helmet's defaults assume HTTPS — `upgrade-insecure-requests` rewrites
+// every same-page http:// asset request to https://, and HSTS pins the host to https for
+// future visits. Both break the plain-HTTP internal deployment this app also runs in (see
+// docs/setup/windows-server-deployment.md): the browser ends up requesting CSS/JS over https
+// against a server that only ever listens on http, failing with ERR_SSL_PROTOCOL_ERROR /
+// ERR_CONNECTION_RESET and leaving a blank page. Disable both; everything else stays default.
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      'upgrade-insecure-requests': null,
+    },
+  },
+  hsts: false,
+}));
 app.use(cors({
   origin: function(origin, callback) {
     // Allow requests from localhost, file://, and the frontend URL
