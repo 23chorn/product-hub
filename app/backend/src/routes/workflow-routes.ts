@@ -510,9 +510,12 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
 
 // ── POST /api/workflow/checkpoint/figma-complete ──────────────────────────────
 
+const FIGMA_URL_REGEX = /^https?:\/\/(www\.)?figma\.com\//i;
+const isFigmaUrl = (url: string) => FIGMA_URL_REGEX.test(url);
+
 /**
  * POST /api/workflow/checkpoint/figma-complete
- * Body: { checkpointId: number, figmaUrl?: string, notes?: string }
+ * Body: { checkpointId: number, figmaUrl?: string, notes?: string, screenLinks?: Record<string, string> }
  *
  * Signals that the designer has finished their Figma edits. The backend fetches
  * the current state of FIGMA_MOCKUP_FILE, patches the artifact with
@@ -520,17 +523,36 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
  * as approved and advances the workflow.
  *
  * When figma_design ran in bypass mode (no agent-written file), `figmaUrl` is the
- * link the designer pasted in after building/updating the design themselves —
- * it gets stamped onto the artifact as figma_file_url with figma_write_status: 'external'.
+ * whole-file link the designer pasted in after building/updating the design
+ * themselves — it gets stamped onto the artifact as figma_file_url with
+ * figma_write_status: 'external'. `screenLinks` (screen name -> frame URL) lets the
+ * designer cite each generated screen's own frame instead of one link for the whole
+ * file; entries are matched onto `screens_created` by name and stamped as `frame_url`.
+ * If no figma_file_url exists yet, one is derived from the first screen link so
+ * epic-level reference links and "Open in Figma" still have a file to point at.
  */
 workflowRoutes.post('/checkpoint/figma-complete', async (req: AuthRequest, res: Response) => {
-  const { checkpointId, figmaUrl, notes } = req.body as { checkpointId?: number; figmaUrl?: string; notes?: string };
+  const { checkpointId, figmaUrl, notes, screenLinks } = req.body as {
+    checkpointId?: number; figmaUrl?: string; notes?: string; screenLinks?: Record<string, string>;
+  };
   const cpId = typeof checkpointId === 'number' ? checkpointId : parseInt(String(checkpointId), 10);
   if (isNaN(cpId)) return res.status(400).json({ error: 'checkpointId must be a number' });
 
   const trimmedFigmaUrl = figmaUrl?.trim();
-  if (trimmedFigmaUrl && !/^https?:\/\/(www\.)?figma\.com\//i.test(trimmedFigmaUrl)) {
+  if (trimmedFigmaUrl && !isFigmaUrl(trimmedFigmaUrl)) {
     return res.status(400).json({ error: 'figmaUrl must be a figma.com link' });
+  }
+
+  const trimmedScreenLinks: Record<string, string> = {};
+  if (screenLinks && typeof screenLinks === 'object') {
+    for (const [screenName, url] of Object.entries(screenLinks)) {
+      const trimmed = url?.trim();
+      if (!trimmed) continue;
+      if (!isFigmaUrl(trimmed)) {
+        return res.status(400).json({ error: `Link for screen "${screenName}" must be a figma.com link` });
+      }
+      trimmedScreenLinks[screenName] = trimmed;
+    }
   }
 
   try {
@@ -570,8 +592,24 @@ workflowRoutes.post('/checkpoint/figma-complete', async (req: AuthRequest, res: 
           parsed.designer_reviewed = true;
           parsed.designer_reviewed_at = new Date().toISOString();
           if (figmaSnapshot) parsed.figma_snapshot = figmaSnapshot.slice(0, 8000);
+
+          if (Object.keys(trimmedScreenLinks).length && Array.isArray(parsed.screens_created)) {
+            parsed.screens_created = parsed.screens_created.map((screen: any) =>
+              screen?.name && trimmedScreenLinks[screen.name]
+                ? { ...screen, frame_url: trimmedScreenLinks[screen.name] }
+                : screen
+            );
+          }
+
           if (trimmedFigmaUrl) {
             parsed.figma_file_url = trimmedFigmaUrl;
+            parsed.figma_write_status = 'external';
+          } else if (!parsed.figma_file_url && Object.keys(trimmedScreenLinks).length) {
+            // No whole-file link known yet — derive one from the first screen's frame
+            // link (strip the node-id query/fragment) so epic pushes and "Open in
+            // Figma" still have a file-level URL to point at.
+            const [firstLink] = Object.values(trimmedScreenLinks);
+            parsed.figma_file_url = firstLink.split('?')[0].split('#')[0];
             parsed.figma_write_status = 'external';
           } else {
             parsed.figma_write_status = 'reviewed';

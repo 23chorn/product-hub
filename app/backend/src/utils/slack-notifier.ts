@@ -8,19 +8,13 @@ import { normalizeStageForRoles } from '../agents/workflow-db';
 const logger = new Logger('SLACK');
 
 function getWebhookUrl(): string | null {
-  try {
-    const row = db.prepare(`SELECT rule_value FROM policies WHERE scope = 'global' AND rule_key = 'slack_webhook_url'`).get() as { rule_value: string } | undefined;
-    if (row?.rule_value) return row.rule_value;
-  } catch (err: any) {
-    logger.warn(`Failed to read slack_webhook_url policy from DB: ${err.message}`);
-  }
   return process.env.SLACK_WEBHOOK_URL ?? null;
 }
 
 function post(payload: object): void {
   const webhookUrl = getWebhookUrl();
   if (!webhookUrl) {
-    logger.warn('No Slack webhook URL configured (policies.slack_webhook_url / SLACK_WEBHOOK_URL env var) — notification skipped');
+    logger.warn('No Slack webhook URL configured (SLACK_WEBHOOK_URL env var) — notification skipped');
     return;
   }
 

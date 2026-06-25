@@ -24,12 +24,12 @@ export function useCheckpointActions({ pendingCheckpoint, activeWorkflow, setErr
   const { user } = useAuthStore();
   const [resolveLoading, setResolveLoading] = useState(false);
 
-  async function figmaComplete(figmaUrl?: string) {
+  async function figmaComplete(figmaUrl?: string, notes?: string, screenLinks?: Record<string, string>) {
     if (!pendingCheckpoint || !activeWorkflow) return;
     setResolveLoading(true);
     setError(null);
     try {
-      const result = await api.figmaComplete(pendingCheckpoint.id, figmaUrl);
+      const result = await api.figmaComplete(pendingCheckpoint.id, figmaUrl, notes, screenLinks);
       applyWorkflowStatus(result.workflow);
       addCoordinatorMessage({ role: 'coordinator', content: 'Figma mockups marked complete. Syncing latest frame data and advancing to the next stage.', timestamp: Date.now() });
       setViewingArtifactId(null);

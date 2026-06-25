@@ -81,11 +81,12 @@ export const changeRequestApi = {
     return response.data;
   },
 
-  async figmaComplete(checkpointId: number, figmaUrl?: string, notes?: string) {
+  async figmaComplete(checkpointId: number, figmaUrl?: string, notes?: string, screenLinks?: Record<string, string>) {
     const response = await axios.post(`${API_BASE_URL}/api/workflow/checkpoint/figma-complete`, {
       checkpointId,
       ...(figmaUrl ? { figmaUrl } : {}),
       ...(notes ? { notes } : {}),
+      ...(screenLinks && Object.keys(screenLinks).length ? { screenLinks } : {}),
     });
     return response.data;
   },

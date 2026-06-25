@@ -17,6 +17,8 @@ import { RejectConfirmModal } from './RejectConfirmModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { useCheckpointActions } from '../../hooks/useCheckpointActions';
 import { renderStructuredArtifact } from './artifact-content-view';
+import { FigmaDesignActions } from './FigmaDesignActions';
+import { parseFigmaDesignContent } from '../../utils/figma-design';
 
 export function ArtifactViewer() {
   const { viewingArtifactId, setViewingArtifactId, checkpoints, activeWorkflow, applyWorkflowStatus, addCoordinatorMessage } = useWorkflowStore();
@@ -38,7 +40,6 @@ export function ArtifactViewer() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const [showOpenQPanel, setShowOpenQPanel] = useState(false);
-  const [manualFigmaUrl, setManualFigmaUrl] = useState('');
   const [pendingDelete, setPendingDelete] = useState<{ itemLabel: string; run: () => string } | null>(null);
   const [showRevisionSummary, setShowRevisionSummary] = useState(false);
 
@@ -109,6 +110,9 @@ export function ArtifactViewer() {
   // Wiki sync button for research, PRD, and architecture documents
   const isWikiDocument = ['analyst', 'research', 'prd', 'architecture'].includes(artifactType);
   const showWikiSyncButton = isWikiDocument && workItemsEnabled && workflowComplete;
+
+  const isFigmaDesign = pendingCheckpoint?.stage === 'figma_design';
+  const figmaDesign = isFigmaDesign ? parseFigmaDesignContent(content) : null;
 
   const emitMessage = (content: string) =>
     addCoordinatorMessage({ role: 'coordinator', content, timestamp: Date.now() });
@@ -629,100 +633,15 @@ export function ArtifactViewer() {
                     </button>
                   </div>
                 </div>
-              ) : hasApprovePermission && pendingCheckpoint.stage === 'figma_design' && !showSidePanel ? (
-                <div className="space-y-3">
-                  {(() => {
-                    let figmaUrl: string | null = null;
-                    if (content) {
-                      try {
-                        const cleaned = content.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-                        const parsed = JSON.parse(cleaned);
-                        figmaUrl = parsed.figma_file_url || null;
-                      } catch { /* non-JSON artifact */ }
-                    }
-                    return figmaUrl ? (
-                      <>
-                        <a
-                          href={figmaUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center justify-center gap-2 w-full py-2 px-3 bg-[#1E1E1E] hover:bg-[#333] text-white text-sm font-medium rounded-lg transition-colors"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 38 57" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M19 28.5A9.5 9.5 0 1 1 28.5 19 9.5 9.5 0 0 1 19 28.5Z" fill="#1ABCFE"/>
-                            <path d="M0 47.5A9.5 9.5 0 0 1 9.5 38H19V47.5A9.5 9.5 0 0 1 0 47.5Z" fill="#0ACF83"/>
-                            <path d="M19 0V19H28.5A9.5 9.5 0 0 0 19 0Z" fill="#FF7262"/>
-                            <path d="M0 9.5A9.5 9.5 0 0 0 9.5 19H19V0H9.5A9.5 9.5 0 0 0 0 9.5Z" fill="#F24E1E"/>
-                            <path d="M0 28.5A9.5 9.5 0 0 0 9.5 38H19V19H9.5A9.5 9.5 0 0 0 0 28.5Z" fill="#FF7262"/>
-                          </svg>
-                          Open in Figma
-                        </a>
-                        <p className="text-xs text-surface-500 dark:text-surface-400">
-                          Make your edits in Figma, then mark complete to sync and advance the workflow.
-                        </p>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => figmaComplete()}
-                            disabled={resolveLoading}
-                            className="flex-1 py-2 px-3 bg-rose-600 hover:bg-rose-700 disabled:bg-surface-300 text-white text-sm font-medium rounded-lg transition-colors"
-                          >
-                            {resolveLoading ? 'Syncing Figma...' : 'Mark Figma Complete'}
-                          </button>
-                          <button
-                            onClick={rerunStage}
-                            disabled={resolveLoading}
-                            className="py-2 px-3 border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-800 text-sm font-medium rounded-lg transition-colors"
-                          >
-                            Rerun
-                          </button>
-                          <button
-                            onClick={() => setShowRejectConfirm(true)}
-                            disabled={resolveLoading}
-                            className="py-2 px-3 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 text-red-700 dark:text-red-400 text-sm font-medium rounded-lg transition-colors"
-                          >
-                            Reject
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-xs text-surface-500 dark:text-surface-400">
-                          No Figma file was created automatically. Build or update the design from the screens and notes above, then paste the link below.
-                        </p>
-                        <input
-                          type="text"
-                          value={manualFigmaUrl}
-                          onChange={(e) => setManualFigmaUrl(e.target.value)}
-                          placeholder="https://www.figma.com/design/..."
-                          className="w-full text-sm rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 px-3 py-2 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                        />
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => figmaComplete(manualFigmaUrl.trim())}
-                            disabled={resolveLoading || !manualFigmaUrl.trim()}
-                            className="flex-1 py-2 px-3 bg-rose-600 hover:bg-rose-700 disabled:bg-surface-300 text-white text-sm font-medium rounded-lg transition-colors"
-                          >
-                            {resolveLoading ? 'Saving...' : 'Save Link & Continue'}
-                          </button>
-                          <button
-                            onClick={rerunStage}
-                            disabled={resolveLoading}
-                            className="py-2 px-3 border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-800 text-sm font-medium rounded-lg transition-colors"
-                          >
-                            Rerun
-                          </button>
-                          <button
-                            onClick={() => setShowRejectConfirm(true)}
-                            disabled={resolveLoading}
-                            className="py-2 px-3 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 text-red-700 dark:text-red-400 text-sm font-medium rounded-lg transition-colors"
-                          >
-                            Reject
-                          </button>
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
+              ) : hasApprovePermission && figmaDesign && !showSidePanel ? (
+                <FigmaDesignActions
+                  figmaFileUrl={figmaDesign.figmaFileUrl}
+                  screens={figmaDesign.screens}
+                  loading={resolveLoading}
+                  onMarkComplete={({ figmaUrl, screenLinks }) => figmaComplete(figmaUrl, undefined, screenLinks)}
+                  onRevise={() => setShowReviseForm(true)}
+                  onReject={() => setShowRejectConfirm(true)}
+                />
               ) : hasApprovePermission && !showSidePanel ? (
                 <div className="space-y-2">
                   {/* Answer open questions — shown for PRD artifacts with unresolved questions */}

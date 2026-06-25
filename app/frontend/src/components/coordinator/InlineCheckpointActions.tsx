@@ -1,18 +1,19 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { STAGE_LABELS } from '../../constants/stage-labels';
 import { parseCriticData } from '../../utils/coordinator-helpers';
 import { CriticQuestionForm } from '../artifact/CriticQuestionForm';
 import { ApproveConfirmModal } from '../artifact/ApproveConfirmModal';
+import { FigmaDesignActions } from '../artifact/FigmaDesignActions';
+import { parseFigmaDesignContent } from '../../utils/figma-design';
 import { api } from '../../services/api';
 import { useAuthStore, canApprove, parseRequiredRoles, ROLE_LABELS } from '../../stores/authStore';
-import { useWorkflowStore } from '../../stores/workflowStore';
 
 // Inline approve/reject for checkpoints that have no artifact (e.g. stuck stages)
 export function InlineCheckpointActions({
   checkpoint,
   onResolved,
 }: {
-  checkpoint: { id: number; stage: string; coordinator_action?: string | null; required_role?: string | null };
+  checkpoint: { id: number; stage: string; artifact_id?: number | null; coordinator_action?: string | null; required_role?: string | null };
   onResolved: (result: any) => void;
 }) {
   const requiredRoles = parseRequiredRoles(checkpoint.required_role);
@@ -22,11 +23,9 @@ export function InlineCheckpointActions({
   const [feedback, setFeedback] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [manualFigmaUrl, setManualFigmaUrl] = useState('');
 
   const { user, noAuth } = useAuthStore();
   const hasPermission = canApprove(user, noAuth, requiredRoles);
-  const { activeWorkflow } = useWorkflowStore();
 
   const criticData = parseCriticData(checkpoint);
   const hasQuestions = (criticData?.questions?.length ?? 0) > 0;
@@ -44,11 +43,11 @@ export function InlineCheckpointActions({
     }
   }
 
-  async function figmaComplete(figmaUrl?: string) {
+  async function figmaComplete(figmaUrl?: string, screenLinks?: Record<string, string>) {
     setLoading(true);
     setError(null);
     try {
-      const result = await api.figmaComplete(checkpoint.id, figmaUrl);
+      const result = await api.figmaComplete(checkpoint.id, figmaUrl, undefined, screenLinks);
       onResolved({ ...result, status: 'approved' });
     } catch (err: any) {
       setError(err.response?.data?.error ?? err.message ?? 'Failed');
@@ -57,21 +56,21 @@ export function InlineCheckpointActions({
     }
   }
 
-  async function rerunStage() {
-    if (!activeWorkflow?.id) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await api.retryWorkflowStage(activeWorkflow.id);
-      onResolved({ ...result, status: 'revised' });
-    } catch (err: any) {
-      setError(err.response?.data?.error ?? err.message ?? 'Failed');
-    } finally {
-      setLoading(false);
-    }
-  }
-
   const isFigmaDesign = checkpoint.stage === 'figma_design';
+
+  // The checkpoint only carries the figma_file_url metadata, not the per-screen
+  // list — fetch the full artifact so each screen gets its own link input below.
+  const [figmaContent, setFigmaContent] = useState<string | null>(null);
+  const [figmaContentLoaded, setFigmaContentLoaded] = useState(false);
+  useEffect(() => {
+    if (!isFigmaDesign || !checkpoint.artifact_id) { setFigmaContentLoaded(true); return; }
+    let stale = false;
+    api.getArtifactContent(checkpoint.artifact_id)
+      .then(({ content }) => { if (!stale) setFigmaContent(content); })
+      .finally(() => { if (!stale) setFigmaContentLoaded(true); });
+    return () => { stale = true; };
+  }, [isFigmaDesign, checkpoint.artifact_id]);
+  const figmaDesign = isFigmaDesign ? parseFigmaDesignContent(figmaContent) : null;
 
   if (!hasPermission) {
     const roleLabels = requiredRoles.map(r => ROLE_LABELS[r] ?? r);
@@ -132,93 +131,19 @@ export function InlineCheckpointActions({
           </div>
         )
       ) : isFigmaDesign ? (
-        <div className="space-y-2">
-          {(() => {
-            let figmaUrl: string | null = null;
-            try { figmaUrl = JSON.parse(checkpoint.coordinator_action ?? '{}').figma_file_url || null; } catch { /* ignore */ }
-            return figmaUrl ? (
-              <>
-                <a
-                  href={figmaUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-1.5 w-full text-xs px-3 py-1.5 rounded-md bg-[#1E1E1E] hover:bg-[#333] text-white font-medium transition-colors"
-                >
-                  <svg width="10" height="10" viewBox="0 0 38 57" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M19 28.5A9.5 9.5 0 1 1 28.5 19 9.5 9.5 0 0 1 19 28.5Z" fill="#1ABCFE"/>
-                    <path d="M0 47.5A9.5 9.5 0 0 1 9.5 38H19V47.5A9.5 9.5 0 0 1 0 47.5Z" fill="#0ACF83"/>
-                    <path d="M19 0V19H28.5A9.5 9.5 0 0 0 19 0Z" fill="#FF7262"/>
-                    <path d="M0 9.5A9.5 9.5 0 0 0 9.5 19H19V0H9.5A9.5 9.5 0 0 0 0 9.5Z" fill="#F24E1E"/>
-                    <path d="M0 28.5A9.5 9.5 0 0 0 9.5 38H19V19H9.5A9.5 9.5 0 0 0 0 28.5Z" fill="#FF7262"/>
-                  </svg>
-                  Open in Figma
-                </a>
-                <p className="text-xs text-surface-500 dark:text-surface-400">
-                  Make your edits in Figma, then mark complete to advance the workflow.
-                </p>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => figmaComplete()}
-                    disabled={loading}
-                    className="text-xs px-3 py-1.5 rounded-md bg-rose-600 hover:bg-rose-700 disabled:bg-surface-300 dark:disabled:bg-surface-700 text-white font-medium transition-colors"
-                  >
-                    {loading ? 'Syncing Figma...' : 'Mark Figma Complete'}
-                  </button>
-                  <button
-                    onClick={rerunStage}
-                    disabled={loading}
-                    className="text-xs px-2.5 py-1 rounded-md border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-800 transition-colors"
-                  >
-                    Rerun
-                  </button>
-                  <button
-                    onClick={() => setShowRejectConfirm(true)}
-                    disabled={loading}
-                    className="text-xs px-2.5 py-1 rounded-md border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                  >
-                    Reject
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <p className="text-xs text-surface-500 dark:text-surface-400">
-                  Use the screens, design tokens, and notes from "review output →" above to build or update the design in Figma, then paste the link below.
-                </p>
-                <input
-                  type="text"
-                  value={manualFigmaUrl}
-                  onChange={(e) => setManualFigmaUrl(e.target.value)}
-                  placeholder="https://www.figma.com/design/..."
-                  className="w-full text-xs rounded-md border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 px-2.5 py-1.5 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-rose-500"
-                />
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => figmaComplete(manualFigmaUrl.trim())}
-                    disabled={loading || !manualFigmaUrl.trim()}
-                    className="text-xs px-3 py-1.5 rounded-md bg-rose-600 hover:bg-rose-700 disabled:bg-surface-300 dark:disabled:bg-surface-700 text-white font-medium transition-colors"
-                  >
-                    {loading ? 'Saving...' : 'Save Link & Continue'}
-                  </button>
-                  <button
-                    onClick={rerunStage}
-                    disabled={loading}
-                    className="text-xs px-2.5 py-1 rounded-md border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-800 transition-colors"
-                  >
-                    Rerun
-                  </button>
-                  <button
-                    onClick={() => setShowRejectConfirm(true)}
-                    disabled={loading}
-                    className="text-xs px-2.5 py-1 rounded-md border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                  >
-                    Reject
-                  </button>
-                </div>
-              </>
-            );
-          })()}
-        </div>
+        !figmaContentLoaded ? (
+          <p className="text-xs text-surface-400 dark:text-surface-500">Loading...</p>
+        ) : (
+          <FigmaDesignActions
+            figmaFileUrl={figmaDesign!.figmaFileUrl}
+            screens={figmaDesign!.screens}
+            loading={loading}
+            compact
+            onMarkComplete={({ figmaUrl, screenLinks }) => figmaComplete(figmaUrl, screenLinks)}
+            onRevise={() => setShowRevise(true)}
+            onReject={() => setShowRejectConfirm(true)}
+          />
+        )
       ) : (
         <div className="flex items-center gap-2">
           <span className="text-xs text-surface-400 dark:text-surface-500 mr-1">

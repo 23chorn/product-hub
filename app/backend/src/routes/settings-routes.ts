@@ -41,7 +41,9 @@ router.get('/', (_req: Request, res: Response) => {
         autoApproveCritic: getGlobalPolicy('auto_approve_critic') === 'true',
       },
       integrations: {
-        slackWebhookUrl: getGlobalPolicy('slack_webhook_url') ?? process.env.SLACK_WEBHOOK_URL ?? null,
+        // Slack webhook is env-only (SLACK_WEBHOOK_URL) — not settable from the UI/API,
+        // so ops can rotate it without a DB write reaching out-of-date across environments.
+        slackWebhookUrl: process.env.SLACK_WEBHOOK_URL ?? null,
       },
       demo: {
         enabled: getGlobalPolicy('demo_mode_enabled') === 'true',
@@ -57,12 +59,11 @@ router.get('/', (_req: Request, res: Response) => {
 
 router.put('/', (req: AuthRequest, res: Response) => {
   try {
-    const { user, sprint, pipeline, qualityGates, integrations, demo } = req.body as {
+    const { user, sprint, pipeline, qualityGates, demo } = req.body as {
       user?: { name?: string; projectName?: string; skillLevel?: string; communicationLanguage?: string };
       sprint?: { velocity?: number; capacityFactor?: number; aiAssistedEnabled?: boolean };
       pipeline?: { enabledStages?: Record<string, boolean>; figmaBypassMode?: boolean };
       qualityGates?: { requireCriticReview?: boolean; autoApproveCritic?: boolean };
-      integrations?: { slackWebhookUrl?: string | null };
       demo?: { enabled?: boolean };
     };
 
@@ -98,10 +99,6 @@ router.put('/', (req: AuthRequest, res: Response) => {
       if (qualityGates.autoApproveCritic !== undefined) {
         setGlobalPolicy('auto_approve_critic', String(qualityGates.autoApproveCritic));
       }
-    }
-
-    if (integrations?.slackWebhookUrl !== undefined) {
-      setGlobalPolicy('slack_webhook_url', integrations.slackWebhookUrl ?? '');
     }
 
     if (demo?.enabled !== undefined) {
