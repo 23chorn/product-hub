@@ -407,7 +407,7 @@ async function advanceStageCore(workflowId: string): Promise<{ stage: string; se
     }
 
     const criticTitleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(workflow.item_id);
-    if (criticTitleRow) notifyCheckpointPending(criticTitleRow.title, nextStage);
+    if (criticTitleRow) notifyCheckpointPending(criticTitleRow.title, nextStage, workflowId);
 
     logger.info(`Critic completed for workflow ${workflowId} — verdict: ${review.verdict}`);
     return { stage: nextStage, sessionId: null };
@@ -571,7 +571,7 @@ export function completeStage(workflowId: string): void {
   stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
 
   const completeTitleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(workflow.item_id);
-  if (completeTitleRow) notifyCheckpointPending(completeTitleRow.title, workflow.current_stage);
+  if (completeTitleRow) notifyCheckpointPending(completeTitleRow.title, workflow.current_stage, workflowId);
 
   logger.info(`Stage "${workflow.current_stage}" submitted for review — workflow ${workflowId} paused at checkpoint`);
 }
@@ -612,7 +612,7 @@ export function pauseAtCheckpoint(
   const pauseWorkflow = stmts.getWorkflow.get(workflowId);
   if (pauseWorkflow) {
     const pauseTitleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(pauseWorkflow.item_id);
-    if (pauseTitleRow) notifyCheckpointPending(pauseTitleRow.title, stage);
+    if (pauseTitleRow) notifyCheckpointPending(pauseTitleRow.title, stage, workflowId);
   }
 
   return checkpoint;

@@ -563,3 +563,19 @@ export interface CompletedInitiativeDetail extends CompletedInitiativeSummary {
   testArtifactIds: number[];
 }
 
+// ============================================
+// Admin: linked Swagger/OpenAPI docs (current API context for the architect stage)
+// ============================================
+
+export interface SwaggerApiDoc {
+  id: number;
+  label: string;
+  docUrl: string;
+  active: boolean;
+  specTitle: string | null;
+  specVersion: string | null;
+  lastSyncedAt: number | null;
+  lastSyncError: string | null;
+  createdAt: number;
+}
+

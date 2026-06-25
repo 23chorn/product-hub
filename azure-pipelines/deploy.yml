@@ -1,0 +1,60 @@
+# Deploy Pipeline — Product Hub
+#
+# Builds and deploys main onto the Windows Server that runs the app, then
+# restarts it. Automates exactly the manual steps in
+# docs/setup/windows-server-deployment.md ("Redeploying after a code change"):
+# git pull, npm install, npm run build, nssm restart.
+#
+# Requires a self-hosted agent installed ON the deploy server, registered to
+# the pool named below. One-time setup: docs/setup/azure-pipelines-deployment.md
+#
+# IMPORTANT: this pulls in place inside the existing working copy at $(deployPath)
+# rather than checking out a fresh workspace — db/product-ops.db, data/, logs/,
+# context/*.md, and .env are all gitignored and live inside that same directory.
+# They must survive every deploy, so this pipeline never runs `git clean`.
+
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  name: ProductHub-Server
+
+variables:
+  # Update to match where the working copy lives on this server — the same
+  # path used as `AppDirectory` when the NSSM service was created.
+  deployPath: 'C:\apps\product-hub'
+  serviceName: 'ProductHub'
+  healthCheckUrl: 'http://localhost:5173'
+
+steps:
+  - checkout: none
+    displayName: 'Skip default checkout (deploying in place — see header comment)'
+
+  - powershell: |
+      Set-Location "$(deployPath)"
+      git fetch origin
+      git reset --hard origin/main
+    displayName: 'Pull latest main'
+
+  - powershell: |
+      Set-Location "$(deployPath)"
+      npm install
+    displayName: 'Install dependencies'
+
+  - powershell: |
+      Set-Location "$(deployPath)"
+      npm run build
+    displayName: 'Build shared, backend, and frontend'
+
+  - powershell: |
+      nssm restart $(serviceName)
+    displayName: 'Restart service'
+
+  - powershell: |
+      Start-Sleep -Seconds 5
+      $response = Invoke-WebRequest -Uri "$(healthCheckUrl)" -UseBasicParsing -TimeoutSec 20
+      if ($response.StatusCode -ne 200) { throw "Health check failed: HTTP $($response.StatusCode)" }
+      Write-Host "Health check passed"
+    displayName: 'Health check'

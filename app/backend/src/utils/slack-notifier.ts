@@ -112,7 +112,7 @@ export function notifyCheckpointPending(
       elements: [{
         type: 'button',
         text: { type: 'plain_text', text: 'Open Review' },
-        url: `${appUrl}`,
+        url: `${appUrl}?workflowId=${workflowId}`,
         style: 'primary',
       }],
     });

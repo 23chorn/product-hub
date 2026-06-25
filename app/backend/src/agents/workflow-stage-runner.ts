@@ -162,7 +162,7 @@ function finishStage(
     stmts.updateWorkflowStatus.run('paused_at_checkpoint', Date.now(), workflowId);
     logger.info(`${logLabel} — paused for human review`);
     const titleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(itemId);
-    if (titleRow) notifyCheckpointPending(titleRow.title, stage, undefined, revisionRequestedBy);
+    if (titleRow) notifyCheckpointPending(titleRow.title, stage, workflowId, revisionRequestedBy);
   }
 }
 

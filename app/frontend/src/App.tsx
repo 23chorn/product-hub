@@ -108,13 +108,24 @@ function App() {
 
     // Workflow mode is always on — force it and restore any in-progress workflow
     useWorkflowStore.getState().setWorkflowMode(true);
-    const savedId = localStorage.getItem('activeWorkflowId');
-    if (savedId) {
-      api.getWorkflowStatus(savedId)
+
+    // Slack notification links land here as ?workflowId=... — open that workflow's
+    // preview directly instead of whatever was last open locally.
+    const deepLinkWorkflowId = new URLSearchParams(window.location.search).get('workflowId');
+    if (deepLinkWorkflowId) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.hash);
+      setActivePage('home');
+    }
+
+    const targetWorkflowId = deepLinkWorkflowId || localStorage.getItem('activeWorkflowId');
+    if (targetWorkflowId) {
+      api.getWorkflowStatus(targetWorkflowId)
         .then((status) => {
           useWorkflowStore.getState().applyWorkflowStatus(status);
         })
-        .catch(() => localStorage.removeItem('activeWorkflowId'));
+        .catch(() => {
+          if (!deepLinkWorkflowId) localStorage.removeItem('activeWorkflowId');
+        });
     }
   }, []);
 
@@ -358,7 +369,7 @@ function App() {
         {/* Settings Modal Overlay */}
         {isSettingsOpen && (
           <div className="absolute inset-0 z-50 flex items-center justify-center px-4 py-6 bg-black/20 dark:bg-black/40" onClick={closeSettings}>
-            <div className="w-full max-w-lg h-full max-h-[680px] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="w-full max-w-2xl h-full max-h-[680px] flex flex-col" onClick={e => e.stopPropagation()}>
               <SettingsPanel />
             </div>
           </div>

@@ -7,6 +7,7 @@ import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../stores/authStore';
 import { UserManagementPanel } from './UserManagementPanel';
 import { KnowledgeRepoPanel } from './KnowledgeRepoPanel';
+import { SwaggerDocsPanel } from './SwaggerDocsPanel';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -35,7 +36,7 @@ const STAGE_ORDER = [
 ];
 const ALWAYS_ON = new Set(['curator']);
 
-type Tab = 'general' | 'pipeline' | 'quality' | 'access' | 'knowledgeRepos';
+type Tab = 'general' | 'pipeline' | 'quality' | 'access' | 'knowledgeRepos' | 'swaggerDocs';
 
 // ── Toggle ─────────────────────────────────────────────────────────────────────
 
@@ -150,6 +151,7 @@ export function SettingsPanel() {
     { key: 'quality',      label: 'Quality gates', adminOnly: true },
     { key: 'access',       label: 'Access', adminOnly: true },
     { key: 'knowledgeRepos', label: 'Knowledge Repos', adminOnly: true },
+    { key: 'swaggerDocs',   label: 'API Docs', adminOnly: true },
   ];
   const TABS = ALL_TABS.filter(t => !t.adminOnly || canAccessAdminTabs);
 
@@ -366,6 +368,16 @@ export function SettingsPanel() {
               description="Azure DevOps repos to pull .md files from for Knowledge Studio's Documentation Review section."
             />
             <KnowledgeRepoPanel />
+          </div>
+        )}
+
+        {tab === 'swaggerDocs' && (
+          <div>
+            <SectionHeader
+              title="API Docs"
+              description="Link active Swagger/OpenAPI doc URLs for your existing services. Active docs are injected as current API context into the Solution Architect stage, so new architecture aligns with — and doesn't duplicate — what's already live."
+            />
+            <SwaggerDocsPanel />
           </div>
         )}
 

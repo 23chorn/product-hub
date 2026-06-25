@@ -16,6 +16,7 @@ import { demoApi } from './api/demo';
 import { usersApi } from './api/users';
 import { discoveryApi } from './api/discovery';
 import { kbApi } from './api/kb';
+import { swaggerApi } from './api/swagger';
 import { completedInitiativesApi } from './api/completed-initiatives';
 
 export type { AgentFile, AgentFileContent } from './api/types';
@@ -33,5 +34,6 @@ export const api = {
   ...usersApi,
   ...discoveryApi,
   ...kbApi,
+  ...swaggerApi,
   ...completedInitiativesApi,
 };

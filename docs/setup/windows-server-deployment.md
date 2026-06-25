@@ -97,6 +97,9 @@ npm run build
 nssm restart ProductHub    # or just re-run `npm start` if not using a service
 ```
 
+To automate these four steps on every push to `main` instead of running them
+by hand, see [azure-pipelines-deployment.md](azure-pipelines-deployment.md).
+
 ## Data that lives on the server (back this up)
 
 - `db/product-ops.db` — SQLite database (workflows, users, artifacts metadata)

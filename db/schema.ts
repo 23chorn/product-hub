@@ -368,3 +368,21 @@ export const kbComments = sqliteTable('kb_comments', {
 }, (t) => [
   index('idx_kb_comments_file').on(t.file_id),
 ]);
+
+// ── Admin: linked Swagger/OpenAPI docs (current API context for the architect stage) ──
+
+export const swaggerApiDocs = sqliteTable('swagger_api_docs', {
+  id:                 integer('id').primaryKey({ autoIncrement: true }),
+  label:              text('label').notNull(),
+  doc_url:            text('doc_url').notNull(),
+  active:             integer('active').notNull().default(1),
+  spec_title:         text('spec_title'),     // info.title from the fetched spec, if parsable JSON
+  spec_version:       text('spec_version'),   // info.version from the fetched spec, if parsable JSON
+  content:            text('content'),        // raw fetched spec body, cached from the last sync
+  last_synced_at:     integer('last_synced_at'),
+  last_sync_error:    text('last_sync_error'),
+  created_by_user_id: integer('created_by_user_id').references(() => users.id),
+  created_at:         integer('created_at').notNull(),
+}, (t) => [
+  uniqueIndex('idx_swagger_api_docs_url').on(t.doc_url),
+]);
