@@ -5,7 +5,10 @@ import {
   getAllStories,
   getAllFeatures,
   tryParseBacklog,
+  getStoryPlatforms,
+  countTicketsByPlatform,
   type BacklogData,
+  type BacklogStory,
 } from './backlog-helpers';
 
 const story = (title: string) => ({ title });
@@ -73,5 +76,32 @@ describe('tryParseBacklog', () => {
   it('returns null for non-backlog JSON or garbage', () => {
     expect(tryParseBacklog('{"unrelated":true}')).toBeNull();
     expect(tryParseBacklog('not json at all')).toBeNull();
+  });
+});
+
+describe('getStoryPlatforms', () => {
+  it('prefers the new `platform` field, normalizing case and dropping unknown values', () => {
+    expect(getStoryPlatforms({ ...story('s'), platform: 'iOS' } as BacklogStory)).toEqual(['ios']);
+    expect(getStoryPlatforms({ ...story('s'), platform: ['backend', 'web', 'bogus'] } as BacklogStory)).toEqual(['backend', 'web']);
+  });
+
+  it('falls back to legacy technical_notes presence when there is no platform field', () => {
+    const s = { ...story('s'), technical_notes: { backend: 'do the thing', ios: 'n/a', android: null } } as BacklogStory;
+    expect(getStoryPlatforms(s)).toEqual(['backend']);
+  });
+
+  it('returns an empty array when neither field is present', () => {
+    expect(getStoryPlatforms(story('s') as BacklogStory)).toEqual([]);
+  });
+});
+
+describe('countTicketsByPlatform', () => {
+  it('counts a multi-platform story toward every platform it touches', () => {
+    const stories = [
+      { ...story('s1'), platform: ['backend', 'ios'] },
+      { ...story('s2'), platform: 'web' },
+      { ...story('s3') },
+    ] as BacklogStory[];
+    expect(countTicketsByPlatform(stories)).toEqual({ total: 3, backend: 1, web: 1, ios: 1, android: 0 });
   });
 });

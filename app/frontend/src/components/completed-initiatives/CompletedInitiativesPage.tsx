@@ -1,22 +1,15 @@
 import { useEffect, useState } from 'react';
 import type { CompletedInitiativeSummary } from '@pap/shared';
 import { api } from '../../services/api';
+import { relativeTime } from '../../utils/relative-time';
 import { WORK_ITEM_STATE_BUCKETS, WORK_ITEM_STATE_BUCKET_LABELS, WORK_ITEM_STATE_BUCKET_COLORS } from '../../utils/work-item-state-bucket';
 import { CompletedInitiativeDetail } from './CompletedInitiativeDetail';
-
-/** "3h ago" / "2d ago" — coarse, since the dashboard only needs a sense of staleness. */
-function relativeTime(ts: number): string {
-  const minutes = Math.round((Date.now() - ts) / 60000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}
 
 /**
  * Top-level page (not an overlay) listing every completed, ADO-pushed initiative with
  * rollup counts and ADO state buckets. Replaces the old Stats dashboard's slot in App.tsx.
+ * Opening an initiative replaces this grid in place with CompletedInitiativeDetail — a full
+ * page, not a side-panel previewer — and "Back" returns here.
  */
 export function CompletedInitiativesPage() {
   const [items, setItems] = useState<CompletedInitiativeSummary[]>([]);
@@ -26,6 +19,10 @@ export function CompletedInitiativesPage() {
   useEffect(() => {
     api.getCompletedInitiatives().then(setItems).finally(() => setLoading(false));
   }, []);
+
+  if (selectedItemId) {
+    return <CompletedInitiativeDetail itemId={selectedItemId} onBack={() => setSelectedItemId(null)} />;
+  }
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-surface-50 dark:bg-surface-950">
@@ -89,18 +86,24 @@ export function CompletedInitiativesPage() {
                   ))}
                 </div>
 
+                {item.percentComplete != null && (
+                  <div className="mt-2">
+                    <div className="h-1.5 rounded-full bg-surface-100 dark:bg-surface-700 overflow-hidden">
+                      <div className="h-full bg-brand-500" style={{ width: `${item.percentComplete}%` }} />
+                    </div>
+                  </div>
+                )}
+
                 <p className={`text-[10px] mt-2 ${item.lastRefreshedAt == null ? 'text-amber-600 dark:text-amber-400' : 'text-surface-400 dark:text-surface-500'}`}>
-                  {item.lastRefreshedAt == null ? 'Needs refresh' : `Refreshed ${relativeTime(item.lastRefreshedAt)}`}
+                  {item.lastRefreshedAt == null
+                    ? 'Needs refresh'
+                    : `${item.percentComplete != null ? `${item.percentComplete}% complete · ` : ''}Refreshed ${relativeTime(item.lastRefreshedAt)}`}
                 </p>
               </button>
             ))}
           </div>
         )}
       </div>
-
-      {selectedItemId && (
-        <CompletedInitiativeDetail itemId={selectedItemId} onClose={() => setSelectedItemId(null)} />
-      )}
     </div>
   );
 }

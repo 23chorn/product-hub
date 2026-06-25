@@ -509,6 +509,10 @@ export interface CompletedInitiativeSummary {
   stateBuckets: Record<WorkItemStateBucket, number>;
   testCaseCount: number;
   lastRefreshedAt: number | null;
+  /** Average ADO status progress (0-100) across the most granular synced work items
+   *  (stories, or features when an initiative has no stories). Null until at least one
+   *  work item has a synced state. */
+  percentComplete: number | null;
 }
 
 export interface CompletedInitiativeWorkItemRow {
@@ -519,6 +523,8 @@ export interface CompletedInitiativeWorkItemRow {
   title: string;
   state: string | null;
   stateBucket: WorkItemStateBucket | null;
+  /** ADO status progress (0-100) for this single work item's raw state. Null until synced. */
+  statePercent: number | null;
   stateSyncedAt: number | null;
   artifactId: number | null;
 }
@@ -527,10 +533,17 @@ export interface CompletedInitiativeTestPlanRow {
   planId: number;
   planUrl: string;
   testCaseCount: number | null;
+  /** The qa_tests artifact pushed to build this plan — lets the detail page render the
+   *  underlying test cases (type/priority breakdown), not just the ADO count. */
+  artifactId: number | null;
 }
 
 export interface CompletedInitiativeDetail extends CompletedInitiativeSummary {
   workItems: CompletedInitiativeWorkItemRow[];
   testPlans: CompletedInitiativeTestPlanRow[];
+  /** Latest research/analyst-brief and PRD artifact ids for this item, if either stage ran —
+   *  lets the detail page cycle through every produced document, not just tickets/tests. */
+  researchArtifactId: number | null;
+  prdArtifactId: number | null;
 }
 

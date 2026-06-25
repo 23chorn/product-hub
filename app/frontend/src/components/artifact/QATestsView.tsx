@@ -7,7 +7,7 @@ interface Scenario {
   then: string[];
 }
 
-interface TestCase {
+export interface TestCase {
   id: string;
   title: string;
   description?: string;
@@ -100,7 +100,7 @@ const PRIORITY_ORDER = ['critical', 'high', 'medium', 'low'];
 
 /** Resolve display metadata for a test type, with a generic fallback for types outside TYPE_ORDER
  *  (e.g. legacy fixtures) so every test case still gets a labeled, colored category. */
-function typeMeta(type: string): { label: string; color: string; dot: string } {
+export function typeMeta(type: string): { label: string; color: string; dot: string } {
   return TYPE_CONFIG[type] ?? {
     label: type.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase()),
     color: 'bg-surface-100 dark:bg-surface-800 text-surface-600 dark:text-surface-400',
@@ -121,7 +121,7 @@ function priorityMeta(priority: string): { label: string; color: string; dot: st
 /** Group test cases by their actual `type` value — known TYPE_ORDER types first (in that
  *  order), then any other types in first-seen order — so every category present in the data
  *  gets its own square and section instead of being lumped into a catch-all "Other" bucket. */
-function groupByType(testCases: TestCase[]): Array<[string, TestCase[]]> {
+export function groupByType(testCases: TestCase[]): Array<[string, TestCase[]]> {
   const present = Array.from(new Set(testCases.map(tc => tc.type)));
   const ordered = [...TYPE_ORDER.filter(t => present.includes(t)), ...present.filter(t => !TYPE_ORDER.includes(t))];
   return ordered.map(type => [type, testCases.filter(tc => tc.type === type)]);

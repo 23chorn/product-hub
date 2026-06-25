@@ -103,6 +103,53 @@ export function getAllFeatures(data: BacklogData): BacklogFeature[] {
   return data.features ?? [];
 }
 
+// ── Platform breakdown (Progress Tracker detail page) ──────────────────────────
+
+export type TicketPlatform = 'backend' | 'web' | 'ios' | 'android';
+
+const ALL_PLATFORMS: TicketPlatform[] = ['backend', 'web', 'ios', 'android'];
+
+export const PLATFORM_LABELS: Record<TicketPlatform, string> = {
+  backend: 'Backend',
+  web: 'Web',
+  ios: 'iOS',
+  android: 'Android',
+};
+
+function isPresentNote(v: string | null | undefined): boolean {
+  return !!v && v !== 'null' && v.trim() !== '' && v.trim().toLowerCase() !== 'n/a';
+}
+
+/** Every platform a story touches — prefers the new multi-agent `platform` field, falling
+ *  back to legacy `technical_notes` presence for older stories. `technical_notes` predates
+ *  the web stream, so it can only ever yield backend/ios/android. */
+export function getStoryPlatforms(story: BacklogStory): TicketPlatform[] {
+  if (story.platform) {
+    const values = (Array.isArray(story.platform) ? story.platform : [story.platform]).map(v => String(v).toLowerCase());
+    return ALL_PLATFORMS.filter(p => values.includes(p));
+  }
+  const notes = story.technical_notes;
+  if (!notes) return [];
+  const platforms: TicketPlatform[] = [];
+  if (isPresentNote(notes.backend)) platforms.push('backend');
+  if (isPresentNote(notes.ios)) platforms.push('ios');
+  if (isPresentNote(notes.android)) platforms.push('android');
+  return platforms;
+}
+
+export type TicketPlatformBreakdown = { total: number } & Record<TicketPlatform, number>;
+
+/** Count tickets (stories) by platform — a story touching multiple platforms counts toward
+ *  each one, mirroring how the ADO push stamps multiple team tags onto a single ticket
+ *  (see deriveTeamTags in azure-devops-format.ts). */
+export function countTicketsByPlatform(stories: BacklogStory[]): TicketPlatformBreakdown {
+  const breakdown: TicketPlatformBreakdown = { total: stories.length, backend: 0, web: 0, ios: 0, android: 0 };
+  for (const story of stories) {
+    for (const platform of getStoryPlatforms(story)) breakdown[platform]++;
+  }
+  return breakdown;
+}
+
 /** Try to parse artifact content as backlog JSON. */
 export function tryParseBacklog(content: string): BacklogData | null {
   const stripped = content

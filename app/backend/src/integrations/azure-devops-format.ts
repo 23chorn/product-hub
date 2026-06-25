@@ -304,3 +304,33 @@ export function getStateBucketMap(): Record<string, WorkItemStateBucket> {
 export function bucketWorkItemState(state: string): WorkItemStateBucket {
   return getStateBucketMap()[state] ?? 'in_progress';
 }
+
+const DEFAULT_STATE_PERCENTS: Record<string, number> = {
+  'New': 0, 'To Do': 0, 'Approved': 0,
+  'Active': 25, 'Committed': 25, 'In Progress': 50, 'Resolved': 75,
+  'Closed': 100, 'Done': 100,
+  'Removed': 100,
+};
+
+/** ADO `System.State` → percent-complete map. Overridable via `AZURE_DEVOPS_STATE_PERCENT_JSON`
+ *  so a team's actual workflow states (e.g. "In Development" = 33%) can be supplied without a
+ *  code change. */
+export function getStatePercentMap(): Record<string, number> {
+  const raw = process.env.AZURE_DEVOPS_STATE_PERCENT_JSON;
+  if (!raw) return DEFAULT_STATE_PERCENTS;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    logger.warn('Invalid AZURE_DEVOPS_STATE_PERCENT_JSON — falling back to the default state-percent map');
+    return DEFAULT_STATE_PERCENTS;
+  }
+}
+
+/** Percent complete for a raw ADO work item state. Unmapped states fall back to their bucket's
+ *  midpoint (0 / 50 / 100) rather than silently reading as 0% complete. */
+export function workItemStatePercent(state: string): number {
+  const map = getStatePercentMap();
+  if (state in map) return map[state];
+  const bucket = bucketWorkItemState(state);
+  return bucket === 'not_started' ? 0 : bucket === 'in_progress' ? 50 : 100;
+}

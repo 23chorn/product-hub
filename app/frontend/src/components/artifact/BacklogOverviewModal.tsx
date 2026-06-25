@@ -6,7 +6,7 @@ import { BacklogView } from './BacklogView';
 import { tryParseQATests, QATestsView } from './QATestsView';
 import { tryParseEpicFeatures, type EpicFeaturesData } from './EpicFeaturesView';
 
-type QATestSuite = NonNullable<ReturnType<typeof tryParseQATests>>;
+export type QATestSuite = NonNullable<ReturnType<typeof tryParseQATests>>;
 
 interface StoriesTestsProps {
   featureButtons: FeatureArtifactRef[];
@@ -36,7 +36,7 @@ export function mergeBacklogs(parsed: Array<{ num: number; data: BacklogData }>)
  *  No `coverage` field is computed here — QATestsView derives its category counts directly
  *  from test_cases, so a separately merged coverage summary would just be a second, driftable
  *  source of truth for the same numbers. */
-function mergeQaTests(parsed: Array<{ num: number; data: QATestSuite }>): QATestSuite | null {
+export function mergeQaTests(parsed: Array<{ num: number; data: QATestSuite }>): QATestSuite | null {
   if (parsed.length === 0) return null;
   const sorted = [...parsed].sort((a, b) => a.num - b.num);
   const test_cases = sorted.flatMap(p => p.data.test_cases ?? []);

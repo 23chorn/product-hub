@@ -15,7 +15,7 @@ import type {
   CompletedInitiativeDetail,
   CompletedInitiativeWorkItemRow,
 } from '@pap/shared';
-import { bucketWorkItemState } from '../integrations/azure-devops-format';
+import { bucketWorkItemState, workItemStatePercent } from '../integrations/azure-devops-format';
 import { refreshItemAdoState } from '../integrations/ado-state-sync';
 
 const logger = new Logger('COMPLETED-INITIATIVES');
@@ -45,6 +45,7 @@ interface RawTestPlanRow {
   plan_id: number;
   plan_url: string;
   test_case_count: number | null;
+  artifact_id: number | null;
 }
 
 const EMPTY_BUCKETS: Record<WorkItemStateBucket, number> = { not_started: 0, in_progress: 0, done: 0, removed: 0 };
@@ -159,7 +160,7 @@ function getTestPlanRowsByItem(itemIds: string[]): Map<string, RawTestPlanRow[]>
   const map = new Map<string, RawTestPlanRow[]>();
   if (itemIds.length === 0) return map;
   const rows = db.prepare(`
-    SELECT w.item_id as itemId, q.plan_id, q.plan_url, q.test_case_count
+    SELECT w.item_id as itemId, q.plan_id, q.plan_url, q.test_case_count, q.artifact_id
     FROM qa_test_plan_map q
     JOIN workflows w ON w.id = q.workflow_id
     WHERE w.item_id IN (${itemIds.map(() => '?').join(',')})
@@ -169,6 +170,24 @@ function getTestPlanRowsByItem(itemIds: string[]): Map<string, RawTestPlanRow[]>
     map.get(row.itemId)!.push(row);
   }
   return map;
+}
+
+/** The work items whose state should drive the % complete rollup: stories are the most
+ *  granular unit actually worked, so they win whenever any exist; an initiative with
+ *  features that were never decomposed into stories falls back to the features themselves
+ *  so it isn't left without a progress figure. */
+function progressRows(workItemRows: RawWorkItemRow[]): RawWorkItemRow[] {
+  const stories = workItemRows.filter(r => r.ado_type === 'story');
+  return stories.length > 0 ? stories : workItemRows.filter(r => r.ado_type === 'feature');
+}
+
+/** Average ADO status progress across the progress rows that have a synced state. Null when
+ *  none of them have synced yet, so the UI can distinguish "0% done" from "not yet known". */
+export function computePercentComplete(workItemRows: RawWorkItemRow[]): number | null {
+  const synced = progressRows(workItemRows).filter(r => r.state != null);
+  if (synced.length === 0) return null;
+  const total = synced.reduce((sum, r) => sum + workItemStatePercent(r.state!), 0);
+  return Math.round(total / synced.length);
 }
 
 function buildSummary(
@@ -218,6 +237,7 @@ function buildSummary(
     stateBuckets,
     testCaseCount: testPlanRows.reduce((sum, r) => sum + (r.test_case_count ?? 0), 0),
     lastRefreshedAt: anyUnsynced ? null : minSyncedAt,
+    percentComplete: computePercentComplete(workItemRows),
   };
 }
 
@@ -230,8 +250,29 @@ function toWorkItemRow(row: RawWorkItemRow): CompletedInitiativeWorkItemRow {
     title: row.title,
     state: row.state,
     stateBucket: row.state != null ? bucketWorkItemState(row.state) : null,
+    statePercent: row.state != null ? workItemStatePercent(row.state) : null,
     stateSyncedAt: row.state_synced_at,
     artifactId: row.artifact_id,
+  };
+}
+
+/** Latest research/analyst-brief and PRD artifact ids for an item, independent of any ADO
+ *  push — these are whole-initiative documents, not per-work-item like the backlog/QA
+ *  artifacts above. Same "latest artifact of this type for this item" query the ADO test-plan
+ *  push already relies on (see pushTestPlanToAdo in ado-stage-push.ts). */
+function getKeyArtifactIds(itemId: string): { researchArtifactId: number | null; prdArtifactId: number | null } {
+  const latestOfType = (types: string[]): number | null => {
+    const row = db.prepare(`
+      SELECT a.id FROM artifacts a
+      JOIN sessions s ON a.session_id = s.id
+      WHERE s.item_id = ? AND a.type IN (${types.map(() => '?').join(',')})
+      ORDER BY a.created_at DESC LIMIT 1
+    `).get(itemId, ...types) as { id: number } | undefined;
+    return row?.id ?? null;
+  };
+  return {
+    researchArtifactId: latestOfType(['analyst', 'research']),
+    prdArtifactId: latestOfType(['prd']),
   };
 }
 
@@ -242,7 +283,8 @@ function buildDetail(item: CandidateRow): CompletedInitiativeDetail {
   return {
     ...summary,
     workItems: workItemRows.map(toWorkItemRow),
-    testPlans: testPlanRows.map(r => ({ planId: r.plan_id, planUrl: r.plan_url, testCaseCount: r.test_case_count })),
+    testPlans: testPlanRows.map(r => ({ planId: r.plan_id, planUrl: r.plan_url, testCaseCount: r.test_case_count, artifactId: r.artifact_id })),
+    ...getKeyArtifactIds(item.id),
   };
 }
 

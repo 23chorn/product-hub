@@ -11,7 +11,23 @@ import {
   getCandidateItems,
   filterCompleted,
   getCompletedItemOrUndefined,
+  computePercentComplete,
 } from '../../app/backend/src/routes/completed-initiatives-routes';
+
+function workItemRow(opts: { adoType: 'epic' | 'feature' | 'story'; state: string | null }) {
+  return {
+    itemId: 'itm-x',
+    ado_id: Math.floor(Math.random() * 1_000_000),
+    ado_type: opts.adoType,
+    ado_url: null,
+    local_key: 'F1',
+    title: 'Row',
+    state: opts.state,
+    state_synced_at: opts.state != null ? Date.now() : null,
+    artifact_id: null,
+    created_at: Date.now(),
+  };
+}
 
 let seq = 0;
 
@@ -88,5 +104,43 @@ describe('completed-initiatives display title', () => {
     seedMapping(workflowId);
 
     expect(getCompletedItemOrUndefined(itemId)?.title).toBe('Limit Up & Down');
+  });
+});
+
+describe('computePercentComplete', () => {
+  it('averages over stories, ignoring the epic row entirely', () => {
+    const rows = [
+      workItemRow({ adoType: 'epic', state: 'Active' }),
+      workItemRow({ adoType: 'story', state: 'Done' }),
+      workItemRow({ adoType: 'story', state: 'New' }),
+    ];
+    // Done=100, New=0 → average 50, regardless of the epic's own state.
+    expect(computePercentComplete(rows)).toBe(50);
+  });
+
+  it('falls back to feature rows when an initiative has no stories', () => {
+    const rows = [
+      workItemRow({ adoType: 'epic', state: 'Active' }),
+      workItemRow({ adoType: 'feature', state: 'Active' }),
+      workItemRow({ adoType: 'feature', state: 'Done' }),
+    ];
+    // Active=25, Done=100 → average 62.5, rounded to 63.
+    expect(computePercentComplete(rows)).toBe(63);
+  });
+
+  it('returns null when nothing has synced yet', () => {
+    const rows = [
+      workItemRow({ adoType: 'story', state: null }),
+      workItemRow({ adoType: 'story', state: null }),
+    ];
+    expect(computePercentComplete(rows)).toBeNull();
+  });
+
+  it('ignores unsynced stories but averages the ones that have synced', () => {
+    const rows = [
+      workItemRow({ adoType: 'story', state: 'Done' }),
+      workItemRow({ adoType: 'story', state: null }),
+    ];
+    expect(computePercentComplete(rows)).toBe(100);
   });
 });
