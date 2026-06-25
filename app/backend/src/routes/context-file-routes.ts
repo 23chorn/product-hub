@@ -8,10 +8,11 @@ import db from '../data/database';
 import { hasAnyUsers } from '../data/users';
 import { isViewOnly } from '../middleware/auth';
 import type { AuthRequest } from '../middleware/auth';
+import { findRepoRoot } from '../utils/find-repo-root';
 
 const logger = new Logger('CONTEXT-FILES');
 
-const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
+const PROJECT_ROOT = findRepoRoot(__dirname);
 const CONTEXT_DIR = path.join(PROJECT_ROOT, 'context');
 
 interface CanonicalFile {

@@ -11,10 +11,11 @@ import * as path from 'path';
 import { streamAI, resolveAgentModel } from '../utils/ai-provider';
 import { repairTruncatedJson, parseJsonLoose } from '../utils/json-repair';
 import Logger from '../utils/logger';
+import { findRepoRoot } from '../utils/find-repo-root';
 
 const logger = new Logger('KB-REVIEWER-AGENT');
 
-const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
+const PROJECT_ROOT = findRepoRoot(__dirname);
 const PERSONA_PATH = path.join(PROJECT_ROOT, 'agents/personas/doc-reviewer.md');
 const TEMPLATE_PATH = path.join(PROJECT_ROOT, 'agents/templates/doc-review.template.md');
 const GUIDELINES_PATH = path.join(PROJECT_ROOT, 'context/doc-review-guidelines.md');

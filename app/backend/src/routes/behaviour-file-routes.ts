@@ -5,10 +5,11 @@ import Logger from '../utils/logger';
 import db from '../data/database';
 import { isViewOnly } from '../middleware/auth';
 import type { AuthRequest } from '../middleware/auth';
+import { findRepoRoot } from '../utils/find-repo-root';
 
 const logger = new Logger('BEHAVIOUR-FILES');
 
-const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
+const PROJECT_ROOT = findRepoRoot(__dirname);
 const BEHAVIOUR_DIR = path.join(PROJECT_ROOT, 'context', 'behaviour');
 const FEATURES_DIR = path.join(BEHAVIOUR_DIR, 'features');
 const FEATURE_MAP_PATH = path.join(BEHAVIOUR_DIR, 'feature-map.json');

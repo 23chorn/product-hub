@@ -3,12 +3,13 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import * as path from 'path';
 import * as fs from 'fs';
+import { findRepoRoot } from '../utils/find-repo-root';
 
 // ---------------------------------------------------------------------------
 // Paths
 // ---------------------------------------------------------------------------
 
-const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
+const PROJECT_ROOT = findRepoRoot(__dirname);
 const DB_PATH       = path.join(PROJECT_ROOT, 'db', 'product-ops.db');
 const MIGRATIONS    = path.join(PROJECT_ROOT, 'db', 'migrations');
 

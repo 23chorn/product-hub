@@ -8,10 +8,11 @@ import { STAGE_ARTIFACT_TYPE } from './stage-metadata';
 import { saveToWiki, loadFromWiki, wikiPathForArtifact } from '../integrations/document-store/azure-wiki-store';
 import { convertArtifactToMarkdown } from '../utils/artifact-to-markdown';
 import Logger from '../utils/logger';
+import { findRepoRoot } from '../utils/find-repo-root';
 
 const logger = new Logger('ARTIFACT-HELPERS');
 
-const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
+const PROJECT_ROOT = findRepoRoot(__dirname);
 
 type ArtifactRow = {
   id: number;

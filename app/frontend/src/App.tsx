@@ -22,7 +22,7 @@ import { api } from './services/api';
 
 // Top-level page nav tabs shown in the header strip below the title.
 const NAV_TABS: Array<{ key: PageKey; label: string; visible?: (ctx: { canLaunch: boolean }) => boolean }> = [
-  { key: 'home', label: 'Home' },
+  { key: 'home', label: 'Initiatives' },
   { key: 'completed', label: 'Progress Tracker' },
   { key: 'discovery', label: 'Discovery', visible: ({ canLaunch }) => canLaunch },
   { key: 'knowledge', label: 'Knowledge Studio' },

@@ -4,10 +4,11 @@ import * as path from 'path';
 import { hasAnyUsers } from '../data/users';
 import { isViewOnly } from '../middleware/auth';
 import type { AuthRequest } from '../middleware/auth';
+import { findRepoRoot } from '../utils/find-repo-root';
 
 export const skillRoutes = Router();
 
-const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
+const PROJECT_ROOT = findRepoRoot(__dirname);
 const PERSONAS_DIR = path.join(PROJECT_ROOT, 'agents', 'personas');
 const TEMPLATES_DIR = path.join(PROJECT_ROOT, 'agents', 'templates');
 

@@ -4,11 +4,11 @@ import Logger from '../utils/logger';
 import { getUserSettings } from '../config/settings-store';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { findRepoRoot } from '../utils/find-repo-root';
 
 const logger = new Logger('SPECIALIST-AGENT');
 
-// Project root is three levels up from app/backend/src/agents/
-const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
+const PROJECT_ROOT = findRepoRoot(__dirname);
 const AGENTS_ROOT = path.join(PROJECT_ROOT, 'agents');
 const CONTEXT_ROOT = path.join(PROJECT_ROOT, 'context');
 const TEMPLATES_DIR = path.join(AGENTS_ROOT, 'templates');

@@ -5,11 +5,12 @@ import * as path from 'path';
 import db from '../data/database';
 import { invalidateContextCache } from '../agents/specialist-agent';
 import Logger from '../utils/logger';
+import { findRepoRoot } from '../utils/find-repo-root';
 
 const logger = new Logger('CONTEXT-DIFF-ROUTES');
 export const contextDiffRouter = Router();
 
-const PROJECT_ROOT  = path.resolve(__dirname, '../../../../');
+const PROJECT_ROOT  = findRepoRoot(__dirname);
 const CONTEXT_ROOT  = path.join(PROJECT_ROOT, 'context');
 
 // ── DB row types ──────────────────────────────────────────────────────────────

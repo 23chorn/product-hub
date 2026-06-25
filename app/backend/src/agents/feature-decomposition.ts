@@ -11,6 +11,7 @@ import { loadLatestArtifactContent } from './artifact-helpers';
 import { featureLocalKey, storyLocalKey } from '@pap/shared';
 import * as fs from 'fs';
 import * as path from 'path';
+import { findRepoRoot } from '../utils/find-repo-root';
 
 /**
  * Flatten features from the epic_features artifact into a single ordered array.
@@ -356,7 +357,7 @@ export async function loadPartialBacklog(itemId: string): Promise<string | null>
 
     if (!artifact || !artifact.file_path) return null;
 
-    const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
+    const PROJECT_ROOT = findRepoRoot(__dirname);
     const resolvedPath = path.isAbsolute(artifact.file_path)
       ? artifact.file_path
       : path.join(PROJECT_ROOT, artifact.file_path);

@@ -3,11 +3,11 @@ import { StatusChange } from '@pap/shared';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import Logger from '../utils/logger';
+import { findRepoRoot } from '../utils/find-repo-root';
 
 const logger = new Logger('CONTEXT-REVIEW');
 
-// Project root: four levels up from app/backend/src/agents/
-const CONTEXT_ROOT = path.resolve(__dirname, '../../../../context');
+const CONTEXT_ROOT = path.join(findRepoRoot(__dirname), 'context');
 
 export interface ProposalItem {
   fileName: string;

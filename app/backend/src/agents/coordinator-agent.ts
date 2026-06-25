@@ -9,12 +9,13 @@ import { readProductArea } from './item-metadata';
 import Logger from '../utils/logger';
 import type { CriticIssue } from './critic-agent';
 import { buildPlanningSystemPrompt } from './coordinator-prompts';
+import { findRepoRoot } from '../utils/find-repo-root';
 
 const logger = new Logger('COORDINATOR');
 
 // ── Paths ─────────────────────────────────────────────────────────────────────
 
-const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
+const PROJECT_ROOT = findRepoRoot(__dirname);
 const PERSONA_PATH = path.join(PROJECT_ROOT, 'agents', 'personas', 'coordinator.md');
 
 // ── Database row types ────────────────────────────────────────────────────────

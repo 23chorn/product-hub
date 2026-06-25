@@ -22,10 +22,11 @@ import { loadLatestArtifactContent, saveLocalArtifact, resolveArtifactPath } fro
 import { readProductArea, itemSessionDir } from './item-metadata';
 import db from '../data/database';
 import Logger from '../utils/logger';
+import { findRepoRoot } from '../utils/find-repo-root';
 
 const logger = new Logger('PROTOTYPE-AGENT');
 
-const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
+const PROJECT_ROOT = findRepoRoot(__dirname);
 const AGENTS_ROOT = path.join(PROJECT_ROOT, 'agents');
 const PERSONAS_DIR = path.join(AGENTS_ROOT, 'personas');
 const TEMPLATES_DIR = path.join(AGENTS_ROOT, 'templates');

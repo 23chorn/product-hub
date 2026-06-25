@@ -1,3 +1,4 @@
+import { resolveDisplayTitle } from '@pap/shared';
 import { effectiveStatus, type EnrichedItem } from './types';
 import { StatusBadge } from './StatusBadge';
 import { useAuthStore, ROLE_LABELS, canLaunchWorkflow } from '../../stores/authStore';
@@ -61,7 +62,7 @@ export function InitiativeCard({
           </span>
         )}
         <h3 className="flex-1 min-w-0 text-sm font-semibold text-surface-900 dark:text-surface-100 leading-snug truncate">
-          {wf?.summary || item.initiative}
+          {resolveDisplayTitle(item.initiative, wf?.summary)}
         </h3>
 
         <div className="flex items-center gap-1.5 flex-shrink-0">

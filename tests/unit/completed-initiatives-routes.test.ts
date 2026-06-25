@@ -7,25 +7,29 @@ vi.mock('../../app/backend/src/data/database', async () => {
 });
 
 import db from '../../app/backend/src/data/database';
-import { getCandidateItems, filterCompleted } from '../../app/backend/src/routes/completed-initiatives-routes';
+import {
+  getCandidateItems,
+  filterCompleted,
+  getCompletedItemOrUndefined,
+} from '../../app/backend/src/routes/completed-initiatives-routes';
 
 let seq = 0;
 
-function seedItem(opts: { status?: string } = {}): string {
+function seedItem(opts: { status?: string; title?: string } = {}): string {
   const id = `itm-${++seq}`;
   const now = Date.now();
   db.prepare(
     `INSERT INTO items (id, type, title, status, source, created_at, updated_at) VALUES (?, 'initiative', ?, ?, 'local', ?, ?)`
-  ).run(id, `Item ${id}`, opts.status ?? 'active', now, now);
+  ).run(id, opts.title ?? `Item ${id}`, opts.status ?? 'active', now, now);
   return id;
 }
 
-function seedWorkflow(itemId: string, opts: { status?: string } = {}): string {
+function seedWorkflow(itemId: string, opts: { status?: string; summary?: string } = {}): string {
   const id = `wf-${++seq}`;
   const now = Date.now();
   db.prepare(
-    `INSERT INTO workflows (id, item_id, goal, status, current_stage, created_at, updated_at) VALUES (?, ?, 'goal', ?, NULL, ?, ?)`
-  ).run(id, itemId, opts.status ?? 'complete', now, now);
+    `INSERT INTO workflows (id, item_id, goal, status, summary, current_stage, created_at, updated_at) VALUES (?, ?, 'goal', ?, ?, NULL, ?, ?)`
+  ).run(id, itemId, opts.status ?? 'complete', opts.summary ?? null, now, now);
   return id;
 }
 
@@ -66,5 +70,23 @@ describe('completed-initiatives completion gate', () => {
 
     const completed = filterCompleted(getCandidateItems());
     expect(completed.map(c => c.id)).toContain(itemId);
+  });
+});
+
+describe('completed-initiatives display title', () => {
+  it('prefers the latest workflow summary over the raw item title, matching the Home page', () => {
+    const itemId = seedItem({ title: 'Limit Up & Down' });
+    const workflowId = seedWorkflow(itemId, { status: 'complete', summary: 'Display Limit Up Down on Trade Screen' });
+    seedMapping(workflowId);
+
+    expect(getCompletedItemOrUndefined(itemId)?.title).toBe('Display Limit Up Down on Trade Screen');
+  });
+
+  it('falls back to the raw item title when the workflow has no AI-generated summary', () => {
+    const itemId = seedItem({ title: 'Limit Up & Down' });
+    const workflowId = seedWorkflow(itemId, { status: 'complete' });
+    seedMapping(workflowId);
+
+    expect(getCompletedItemOrUndefined(itemId)?.title).toBe('Limit Up & Down');
   });
 });

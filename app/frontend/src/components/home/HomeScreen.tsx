@@ -303,7 +303,10 @@ export function HomeScreen() {
       if (productAreaFilter !== 'all' && item.productArea !== productAreaFilter) return false;
       if (themeFilter !== 'all' && item.strategicTheme !== themeFilter) return false;
       if (!q) return true;
-      return item.initiative.toLowerCase().includes(q) || (item.description?.toLowerCase().includes(q) ?? false);
+      const qId = q.replace(/^#/, '');
+      return item.initiative.toLowerCase().includes(q)
+        || (item.description?.toLowerCase().includes(q) ?? false)
+        || (qId.length > 0 && item.seqNum != null && String(item.seqNum).includes(qId));
     });
   }, [visibleItems, statusFilter, searchQuery, mineWorkflowIds, productAreaFilter, themeFilter]);
 

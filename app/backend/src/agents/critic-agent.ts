@@ -11,10 +11,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { streamAI, resolveModelId, getActiveProvider, type SystemPrompt, type TokenUsage } from '../utils/ai-provider';
 import Logger from '../utils/logger';
+import { findRepoRoot } from '../utils/find-repo-root';
 
 const logger = new Logger('CRITIC');
 
-const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
+const PROJECT_ROOT = findRepoRoot(__dirname);
 const PERSONAS_DIR = path.join(PROJECT_ROOT, 'agents', 'personas');
 const CORE_PERSONA_PATH = path.join(PERSONAS_DIR, 'critic-core.md');
 

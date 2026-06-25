@@ -5,8 +5,9 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { findRepoRoot } from '../utils/find-repo-root';
 
-const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
+const PROJECT_ROOT = findRepoRoot(__dirname);
 
 /**
  * Build the pre-workflow planning system prompt (the "Chief of Staff" planning

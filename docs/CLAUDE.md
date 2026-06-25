@@ -28,6 +28,15 @@ npm run test:bedrock     # Integration — hits real Bedrock API
 npm run test:ado         # Integration — hits real ADO API
 ```
 
+### Production
+```bash
+npm run build            # Builds shared, backend, and the frontend (dist/ served by the backend)
+npm start                # node app/backend/dist/app/backend/src/server.js
+```
+Single port: the backend serves both the API and the built frontend (`express.static` +
+SPA fallback in `server.ts`) — no separate frontend process, no CORS in production.
+See `docs/setup/windows-server-deployment.md` for a from-scratch internal-network deploy.
+
 ## Architecture
 
 ### Monorepo layout

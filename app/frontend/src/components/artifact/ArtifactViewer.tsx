@@ -102,10 +102,6 @@ export function ArtifactViewer() {
   const workflowComplete = activeWorkflow?.status === 'complete';
   const showPushButton = isBacklog && workItemsEnabled && backlogApproved && workflowComplete;
 
-  const isQATests = artifactType === 'qa_tests';
-  const qaApproved = isQATests && checkpoints.some(c => c.status === 'approved');
-  const showTestPlanButton = isQATests && workItemsEnabled && qaApproved && workflowComplete;
-
   // Wiki sync button for research, PRD, and architecture documents
   const isWikiDocument = ['analyst', 'research', 'prd', 'architecture'].includes(artifactType);
   const showWikiSyncButton = isWikiDocument && workItemsEnabled && workflowComplete;
@@ -330,7 +326,6 @@ export function ArtifactViewer() {
                 artifactType={artifactType}
                 activeWorkflow={activeWorkflow}
                 showPushButton={showPushButton}
-                showTestPlanButton={showTestPlanButton}
                 showWikiSyncButton={showWikiSyncButton}
                 onMessage={emitMessage}
                 onError={setError}

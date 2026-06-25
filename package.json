@@ -20,6 +20,7 @@
     "test:bedrock": "cd app/backend && npm run test:bedrock",
     "test:integrations": "npm run test:airtable && npm run test:gitbook && npm run test:ado && npm run test:bedrock",
     "build": "npm run build --workspaces",
+    "start": "node app/backend/dist/app/backend/src/server.js",
     "lint": "npm run lint --workspaces",
     "validate-env": "cd app/backend && npm run validate-env",
     "verify-schema": "tsx scripts/verify-schema.ts",

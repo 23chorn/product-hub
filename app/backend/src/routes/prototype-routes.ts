@@ -5,8 +5,9 @@ import * as path from 'path';
 import { revisePrototype, loadLatestPrototype, type PrototypeResult } from '../agents/prototype-agent';
 import { repairTruncatedJson } from '../utils/json-repair';
 import Logger from '../utils/logger';
+import { findRepoRoot } from '../utils/find-repo-root';
 
-const PROTOTYPE_DIR = path.resolve(__dirname, '../../../../agents/templates/prototype');
+const PROTOTYPE_DIR = path.join(findRepoRoot(__dirname), 'agents/templates/prototype');
 const logger = new Logger('PROTOTYPE-ROUTES');
 
 export const prototypeRoutes = Router();

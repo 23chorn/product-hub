@@ -1,8 +1,8 @@
 import dotenv from 'dotenv';
 import path from 'path';
+import { findRepoRoot } from './find-repo-root';
 
-// Load .env from root directory (four levels up: utils -> src -> backend -> app -> root)
-dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
+dotenv.config({ path: path.join(findRepoRoot(__dirname), '.env') });
 
 interface EnvValidation {
   key: string;

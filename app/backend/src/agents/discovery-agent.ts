@@ -15,10 +15,11 @@ import { streamAI, resolveAgentModel, getActiveProvider } from '../utils/ai-prov
 import { repairTruncatedJson } from '../utils/json-repair';
 import Logger from '../utils/logger';
 import type { DiscoveryOpportunityEvidence, DiscoverySourceType } from '@pap/shared';
+import { findRepoRoot } from '../utils/find-repo-root';
 
 const logger = new Logger('DISCOVERY-AGENT');
 
-const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
+const PROJECT_ROOT = findRepoRoot(__dirname);
 const PERSONA_PATH = path.join(PROJECT_ROOT, 'agents/personas/discovery-scout.md');
 const TEMPLATE_PATH = path.join(PROJECT_ROOT, 'agents/templates/discovery.template.md');
 

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ExpandableText } from '../common/ExpandableText';
 
 interface Scenario {
   given: string[];
@@ -87,20 +88,31 @@ const TYPE_CONFIG: Record<string, { label: string; color: string; dot: string }>
   performance: { label: 'Performance', color: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400', dot: 'bg-orange-400' },
 };
 
-const PRIORITY_CONFIG: Record<string, { label: string; color: string }> = {
-  critical: { label: 'Critical', color: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 font-semibold' },
-  high:     { label: 'High',     color: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400' },
-  medium:   { label: 'Medium',   color: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' },
-  low:      { label: 'Low',      color: 'bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400' },
+const PRIORITY_CONFIG: Record<string, { label: string; color: string; dot: string }> = {
+  critical: { label: 'Critical', color: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 font-semibold', dot: 'bg-red-400' },
+  high:     { label: 'High',     color: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400', dot: 'bg-amber-400' },
+  medium:   { label: 'Medium',   color: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400', dot: 'bg-blue-400' },
+  low:      { label: 'Low',      color: 'bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400', dot: 'bg-surface-400' },
 };
 
 const TYPE_ORDER = ['happy_path', 'negative', 'edge', 'boundary', 'security', 'performance'];
+const PRIORITY_ORDER = ['critical', 'high', 'medium', 'low'];
 
 /** Resolve display metadata for a test type, with a generic fallback for types outside TYPE_ORDER
  *  (e.g. legacy fixtures) so every test case still gets a labeled, colored category. */
 function typeMeta(type: string): { label: string; color: string; dot: string } {
   return TYPE_CONFIG[type] ?? {
     label: type.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase()),
+    color: 'bg-surface-100 dark:bg-surface-800 text-surface-600 dark:text-surface-400',
+    dot: 'bg-surface-400',
+  };
+}
+
+/** Resolve display metadata for a priority, with a generic fallback for values outside
+ *  PRIORITY_CONFIG, mirroring typeMeta. */
+function priorityMeta(priority: string): { label: string; color: string; dot: string } {
+  return PRIORITY_CONFIG[priority] ?? {
+    label: priority.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase()),
     color: 'bg-surface-100 dark:bg-surface-800 text-surface-600 dark:text-surface-400',
     dot: 'bg-surface-400',
   };
@@ -115,10 +127,18 @@ function groupByType(testCases: TestCase[]): Array<[string, TestCase[]]> {
   return ordered.map(type => [type, testCases.filter(tc => tc.type === type)]);
 }
 
+/** Group test cases by their actual `priority` value, mirroring groupByType — known
+ *  PRIORITY_ORDER priorities first (in that order), then any other values in first-seen order. */
+function groupByPriority(testCases: TestCase[]): Array<[string, TestCase[]]> {
+  const present = Array.from(new Set(testCases.map(tc => tc.priority)));
+  const ordered = [...PRIORITY_ORDER.filter(p => present.includes(p)), ...present.filter(p => !PRIORITY_ORDER.includes(p))];
+  return ordered.map(priority => [priority, testCases.filter(tc => tc.priority === priority)]);
+}
+
 function TestCaseCard({ tc }: { tc: TestCase }) {
   const [open, setOpen] = useState(false);
   const typeConf = typeMeta(tc.type);
-  const prioConf = PRIORITY_CONFIG[tc.priority] ?? { label: tc.priority, color: 'bg-surface-100 text-surface-500' };
+  const prioConf = priorityMeta(tc.priority);
 
   const hasScenario = tc.scenario && (tc.scenario.given?.length || tc.scenario.when?.length || tc.scenario.then?.length);
   const hasSteps = tc.steps && tc.steps.length > 0;
@@ -236,13 +256,22 @@ function TestCaseCard({ tc }: { tc: TestCase }) {
 }
 
 export function QATestsView({ data }: { data: QATestSuite }) {
-  const cov = data.coverage;
-  // Category counts are derived from the test cases themselves rather than the artifact's
-  // separate `coverage` field — that field is frequently absent (current multi-agent QA
-  // artifacts don't populate it) or stale (a merged/filtered test_cases list doesn't recompute
-  // it), so test_cases is the only count that's always correct.
-  const groupedByType = groupByType(data.test_cases);
+  // Counts (and the test case groups below) are derived from the test cases themselves rather
+  // than the artifact's separate `coverage` field — that field is frequently absent (current
+  // multi-agent QA artifacts don't populate it) or stale (a merged/filtered test_cases list
+  // doesn't recompute it), so test_cases is the only count that's always correct.
   const totalCount = data.test_cases.length;
+  const [groupMode, setGroupMode] = useState<'type' | 'priority'>('type');
+  const groupedCases = groupMode === 'type' ? groupByType(data.test_cases) : groupByPriority(data.test_cases);
+  const groupMeta = groupMode === 'type' ? typeMeta : priorityMeta;
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const toggleGroup = (key: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
 
   return (
     // font-sans: this view can render inside the font-mono pipeline terminal subtree
@@ -253,58 +282,81 @@ export function QATestsView({ data }: { data: QATestSuite }) {
         <h2 className="text-base font-bold text-surface-900 dark:text-surface-100">{data.suite ?? 'QA Test Suite'}</h2>
         {data.version && <p className="text-xs text-surface-400 dark:text-surface-500 mt-0.5">v{data.version}</p>}
         {data.metadata?.notes && (
-          <p className="text-xs text-surface-500 dark:text-surface-400 mt-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded px-2.5 py-2 leading-relaxed">
-            {data.metadata.notes}
-          </p>
+          <div className="mt-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded px-2.5 py-2">
+            <ExpandableText text={data.metadata.notes} className="text-xs text-surface-500 dark:text-surface-400 leading-relaxed" />
+          </div>
         )}
       </div>
 
-      {/* Category counts */}
+      {/* Test counts — total on its own row, then a toggleable type/priority breakdown. Counts
+          are derived from test_cases directly rather than the artifact's separate `coverage`
+          field, which is frequently absent or stale. Switching the toggle also re-groups the
+          test case list below. */}
       {totalCount > 0 && (
-        <div className="grid gap-2 grid-cols-2 sm:grid-cols-4">
-          <div className="bg-surface-50 dark:bg-surface-800 rounded-lg px-3 py-2.5 text-center">
-            <p className="text-xl font-bold text-surface-900 dark:text-surface-100">{totalCount}</p>
-            <p className="text-[10px] text-surface-400 dark:text-surface-500 uppercase tracking-wide mt-0.5">Total</p>
+        <div className="space-y-3">
+          <div className="bg-surface-50 dark:bg-surface-800 rounded-lg px-3 py-2 flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400">Total Test Cases</span>
+            <span className="text-lg font-bold text-surface-900 dark:text-surface-100">{totalCount}</span>
           </div>
-          {groupedByType.map(([type, cases]) => {
-            const meta = typeMeta(type);
-            return (
-              <div key={type} className={`${meta.color} rounded-lg px-3 py-2.5 text-center`}>
-                <p className="text-xl font-bold">{cases.length}</p>
-                <p className="text-[10px] uppercase tracking-wide mt-0.5 opacity-80">{meta.label}</p>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500">
+                By {groupMode === 'type' ? 'Type' : 'Priority'}
+              </p>
+              <div className="inline-flex rounded-md border border-surface-200 dark:border-surface-700 overflow-hidden">
+                {(['type', 'priority'] as const).map(mode => (
+                  <button
+                    key={mode}
+                    onClick={() => setGroupMode(mode)}
+                    className={`px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide transition-colors ${
+                      groupMode === mode
+                        ? 'bg-brand-600 text-white'
+                        : 'bg-surface-50 dark:bg-surface-800 text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700'
+                    } ${mode === 'priority' ? 'border-l border-surface-200 dark:border-surface-700' : ''}`}
+                  >
+                    {mode}
+                  </button>
+                ))}
               </div>
-            );
-          })}
+            </div>
+            <div className={`grid gap-1.5 ${groupMode === 'type' ? 'grid-cols-3 sm:grid-cols-6' : 'grid-cols-2 sm:grid-cols-4'}`}>
+              {groupedCases.map(([key, cases]) => {
+                const meta = groupMeta(key);
+                return (
+                  <div key={key} className={`${meta.color} rounded-md px-2 py-1.5 text-center`}>
+                    <p className="text-sm font-bold">{cases.length}</p>
+                    <p className="text-[9px] uppercase tracking-wide mt-0.5 opacity-80">{meta.label}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Priority breakdown */}
-      {cov?.by_priority && (
-        <div className="flex flex-wrap gap-2">
-          {Object.entries(cov.by_priority).map(([p, count]) => {
-            const conf = PRIORITY_CONFIG[p];
-            return (
-              <span key={p} className={`text-xs px-2 py-0.5 rounded ${conf?.color ?? 'bg-surface-100 text-surface-500'}`}>
-                {count} {conf?.label ?? p}
-              </span>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Test case groups */}
-      {groupedByType.map(([type, cases]) => {
-        const meta = typeMeta(type);
+      {/* Test case groups — grouped by the same toggle above, collapsed by default. */}
+      {groupedCases.map(([key, cases]) => {
+        const meta = groupMeta(key);
+        const isOpen = expandedGroups.has(key);
         return (
-          <div key={type}>
-            <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-2">
+          <div key={key}>
+            <button
+              onClick={() => toggleGroup(key)}
+              className="w-full flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-2"
+            >
+              <svg className={`w-3 h-3 flex-shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
               <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
               {meta.label}
               <span className="font-normal text-surface-400">({cases.length})</span>
-            </h3>
-            <div className="space-y-2">
-              {cases.map(tc => <TestCaseCard key={tc.id} tc={tc} />)}
-            </div>
+            </button>
+            {isOpen && (
+              <div className="space-y-2">
+                {cases.map(tc => <TestCaseCard key={tc.id} tc={tc} />)}
+              </div>
+            )}
           </div>
         );
       })}

@@ -2,11 +2,11 @@
   "name": "@pap/backend",
   "version": "1.0.0",
   "description": "Backend server for Product Automation Pipeline",
-  "main": "dist/server.js",
+  "main": "dist/app/backend/src/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js",
+    "start": "node dist/app/backend/src/server.js",
     "lint": "eslint src --ext .ts",
     "test:airtable": "tsx ../../tests/integration/test-airtable.ts",
     "test:ado": "tsx ../../tests/integration/test-ado.ts",

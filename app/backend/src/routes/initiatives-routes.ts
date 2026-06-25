@@ -4,7 +4,7 @@ import db from '../data/database';
 import Logger from '../utils/logger';
 import { parseRoles } from '../agents/workflow-db';
 import { isDemoWorkflow } from '../demo/demo-mode';
-import { itemSessionDir, nextItemSeqNum } from '../agents/item-metadata';
+import { coerceProductArea, itemSessionDir, nextItemSeqNum } from '../agents/item-metadata';
 import type { AirtableItem, LocalInitiative } from '@pap/shared';
 
 const logger = new Logger('INITIATIVES');
@@ -37,8 +37,11 @@ function toAirtableItem(row: InitiativeRow): AirtableItem {
   if (row.source === 'airtable' && row.metadata) {
     try {
       const meta = JSON.parse(row.metadata);
-      // seqNum is DB-internal — never let synced Airtable metadata shadow it.
-      return { ...base, ...meta, seqNum: row.seq_num };
+      // seqNum is DB-internal — never let synced Airtable metadata shadow it. productArea
+      // comes through Airtable as a string or a (often single-element) array depending on
+      // whether the field is single- or multi-select — coerce so every item exposes the
+      // same normalized string the Home page's product area filter dedupes on.
+      return { ...base, ...meta, seqNum: row.seq_num, productArea: coerceProductArea(meta.productArea) ?? undefined };
     } catch { /* ignore malformed metadata */ }
   }
   return base;

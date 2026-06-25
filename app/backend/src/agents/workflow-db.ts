@@ -10,8 +10,9 @@ import db, { getPolicies } from '../data/database';
 import Logger from '../utils/logger';
 import { STAGE_ARTIFACT_TYPE } from './stage-metadata';
 import type { AppMode, AgentType } from '@pap/shared';
+import { findRepoRoot } from '../utils/find-repo-root';
 
-export const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
+export const PROJECT_ROOT = findRepoRoot(__dirname);
 
 export const logger = new Logger('WORKFLOW-ROUTER');
 

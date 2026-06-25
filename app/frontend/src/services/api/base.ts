@@ -5,7 +5,9 @@
  */
 import axios from 'axios';
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+// ?? (not ||) so an explicitly empty VITE_API_URL (same-origin prod build) isn't
+// overridden by the localhost fallback — only a genuinely unset var falls back.
+export const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
 
 // Always send cookies (httpOnly auth cookie)
 axios.defaults.withCredentials = true;

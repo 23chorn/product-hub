@@ -5,6 +5,8 @@ import type { BacklogData, BacklogFeature, BacklogStory } from '../../utils/back
 import { backlogTier, getSprintMeta, getAllStories, getAllFeatures } from '../../utils/backlog-helpers';
 import { WORK_ITEM_STATE_BUCKET_LABELS, WORK_ITEM_STATE_BUCKET_COLORS } from '../../utils/work-item-state-bucket';
 import { toPhases, PHASE_COLORS, PrdRefTags, type EpicFeature, type EpicFeaturesData } from './EpicFeaturesView';
+import { ExpandableText } from '../common/ExpandableText';
+import { ExpandableList } from '../common/ExpandableList';
 
 const DEFAULT_PHASE_LABEL = 'MVP';
 const UNKNOWN_PHASE_COLOR = 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 border-surface-200 dark:border-surface-600';
@@ -17,6 +19,17 @@ interface EpicSection {
   entries: Array<{ feature: BacklogFeature; fi: number }>;
 }
 
+/** Title → canonical phase label, from the epic_feature_planner data — see buildEpicSections
+ *  for why this is the source of truth instead of the backlog feature's own `.phase` field. */
+function buildTitleToPhaseLabel(epicFeatures: EpicFeaturesData | null | undefined): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!epicFeatures) return map;
+  for (const phase of toPhases(epicFeatures)) {
+    for (const f of phase.features) map.set(f.title, phase.label);
+  }
+  return map;
+}
+
 /**
  * Group the merged backlog's features by phase into one section per phase — each phase was
  * planned as its own epic (epic_feature_planner's phase.epicTitle), so the Stories overview
@@ -27,11 +40,17 @@ interface EpicSection {
 function buildEpicSections(features: BacklogFeature[], epicFeatures: EpicFeaturesData | null | undefined, fallbackTitle: string): EpicSection[] {
   const phases = epicFeatures ? toPhases(epicFeatures) : [];
   const phaseMetaByLabel = new Map(phases.map(p => [p.label, p]));
+  const titleToPhase = buildTitleToPhaseLabel(epicFeatures);
 
   const grouped = new Map<string, Array<{ feature: BacklogFeature; fi: number }>>();
   const encounterOrder: string[] = [];
   features.forEach((feature, fi) => {
-    const label = feature.phase ?? DEFAULT_PHASE_LABEL;
+    // Prefer the epic plan's own phase assignment (joined by title, like buildEpicFeatureLookup
+    // below) over the feature's self-reported `.phase` — that field is LLM-echoed text from the
+    // per-feature refinement stage and can drift from the canonical label (typos, reformatting,
+    // or silently defaulting to "MVP"), which was splitting features the epic plan grouped
+    // together into separate sections purely because their phase strings no longer matched.
+    const label = titleToPhase.get(feature.title) ?? feature.phase ?? DEFAULT_PHASE_LABEL;
     if (!grouped.has(label)) { grouped.set(label, []); encounterOrder.push(label); }
     grouped.get(label)!.push({ feature, fi });
   });
@@ -101,6 +120,7 @@ function InitiativeHeader({ title }: { title?: string }) {
   );
 }
 
+
 /** Render hours with AI comparison: "3h (was 8h)" or just "8h" when not AI-assisted. */
 function HoursDisplay({ story, aiAssisted }: { story: BacklogStory; aiAssisted: boolean }) {
   if (!story.estimatedHours) return null;
@@ -143,9 +163,9 @@ function AggregateHours({ hours, traditionalHours, aiAssisted }: { hours: number
 
 export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLocalKey, epicFeatures }: { data: BacklogData; isFeaturePreview?: boolean; initiativeTitle?: string; stateByLocalKey?: Map<string, WorkItemStateBucket>; epicFeatures?: EpicFeaturesData | null }) {
   const [expandedStories, setExpandedStories] = useState<Set<string>>(new Set());
-  // Epics default open (there are normally only a few); features default collapsed so a
-  // multi-feature overview doesn't dump every story on screen at once — drill in per feature.
-  const [collapsedEpics, setCollapsedEpics] = useState<Set<string>>(new Set());
+  // Epics and features both default collapsed so a multi-feature overview doesn't dump every
+  // story on screen at once — drill in per epic, then per feature.
+  const [expandedEpics, setExpandedEpics] = useState<Set<string>>(new Set());
   const [expandedFeatures, setExpandedFeatures] = useState<Set<number>>(new Set());
 
   const toggleStory = (key: string) => {
@@ -165,7 +185,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
   };
 
   const toggleEpic = (key: string) => {
-    setCollapsedEpics(prev => {
+    setExpandedEpics(prev => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key); else next.add(key);
       return next;
@@ -480,7 +500,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
               <span className="text-[10px] font-semibold uppercase tracking-wide text-cyan-500 dark:text-cyan-400">Epic</span>
               <h2 className="text-base font-bold text-surface-900 dark:text-surface-100">{data.epic.title}</h2>
               {data.epic.description && (
-                <p className="text-sm text-surface-600 dark:text-surface-400">{data.epic.description}</p>
+                <ExpandableText text={data.epic.description} className="text-sm text-surface-600 dark:text-surface-400" />
               )}
               {data.epic.businessValue && (
                 <div className="px-3 py-2 rounded-lg bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800">
@@ -537,7 +557,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
             <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/40 p-4 space-y-2">
               <InitiativeHeader title={initiativeTitle ?? epic.title} />
               {epic.description && (
-                <p className="text-sm text-surface-600 dark:text-surface-300">{epic.description}</p>
+                <ExpandableText text={epic.description} className="text-sm text-surface-600 dark:text-surface-300" />
               )}
               {epic.businessValue && (
                 <p className="text-xs text-surface-500 dark:text-surface-400">
@@ -557,28 +577,22 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
               {outOfScope.length > 0 && (
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-1">Out of scope</p>
-                  <ul className="space-y-0.5">
-                    {outOfScope.map((item, i) => (
-                      <li key={i} className="text-xs text-surface-500 dark:text-surface-400 flex gap-1.5">
-                        <span className="flex-shrink-0">–</span><span>{item}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  <ExpandableList items={outOfScope} />
                 </div>
               )}
             </div>
 
             {/* One collapsible "Epic" card per phase */}
             {sections.map(section => {
-              const isExpanded = !collapsedEpics.has(section.key);
+              const isExpanded = expandedEpics.has(section.key);
               const sectionStories = section.entries.reduce((sum, { feature }) => sum + feature.stories.length, 0);
               return (
-                <div key={section.key} className="rounded-lg border border-cyan-200 dark:border-cyan-800 overflow-hidden">
+                <div key={section.key} className="rounded-lg border border-surface-200 dark:border-surface-700 hover:border-cyan-200 dark:hover:border-cyan-800 transition-colors overflow-hidden">
                   <button
                     onClick={() => toggleEpic(section.key)}
-                    className="w-full text-left flex items-start gap-2 bg-cyan-50 dark:bg-cyan-900/20 hover:bg-cyan-100/70 dark:hover:bg-cyan-900/30 transition-colors p-4"
+                    className="group w-full text-left flex items-start gap-2 bg-surface-50 dark:bg-surface-800/40 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 transition-colors p-4"
                   >
-                    <Chevron expanded={isExpanded} className="w-4 h-4 mt-1 text-cyan-500" />
+                    <Chevron expanded={isExpanded} className="w-4 h-4 mt-1 text-surface-400 group-hover:text-cyan-500 transition-colors" />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${section.colorClass}`}>{section.key}</span>
@@ -597,7 +611,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
                   </button>
 
                   {isExpanded && (
-                    <div className="divide-y divide-surface-100 dark:divide-surface-700 border-t border-cyan-200 dark:border-cyan-800">
+                    <div className="divide-y divide-surface-100 dark:divide-surface-700 border-t border-surface-200 dark:border-surface-700">
                       {section.entries.map(({ feature, fi }) =>
                         renderFeatureRow(feature, fi, epicFeatureLookup.get(`${section.key}::${feature.title}`))
                       )}

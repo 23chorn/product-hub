@@ -7,7 +7,7 @@
 import { Router, Request, Response } from 'express';
 import db from '../data/database';
 import Logger from '../utils/logger';
-import { effectiveStatus } from '@pap/shared';
+import { effectiveStatus, resolveDisplayTitle } from '@pap/shared';
 import type {
   WorkflowInfo,
   WorkItemStateBucket,
@@ -118,14 +118,23 @@ function getLatestWorkflowInfo(itemIds: string[]): Map<string, WorkflowInfo> {
   return result;
 }
 
-/** Filters candidates down to those whose latest workflow is effectively complete. */
-export function filterCompleted(candidates: CandidateRow[]): CandidateRow[] {
+/**
+ * Filters candidates down to those whose latest workflow is effectively complete.
+ * Accepts a precomputed workflowInfoByItem map when the caller already has one (e.g. to
+ * also resolve display titles), otherwise fetches it itself.
+ */
+export function filterCompleted(candidates: CandidateRow[], workflowInfoByItem?: Map<string, WorkflowInfo>): CandidateRow[] {
   if (candidates.length === 0) return [];
-  const workflowInfoByItem = getLatestWorkflowInfo(candidates.map(c => c.id));
+  const infoByItem = workflowInfoByItem ?? getLatestWorkflowInfo(candidates.map(c => c.id));
   return candidates.filter(c => {
-    const wf = workflowInfoByItem.get(c.id);
+    const wf = infoByItem.get(c.id);
     return wf != null && effectiveStatus(wf) === 'complete';
   });
+}
+
+/** Display title for a candidate — the latest workflow's AI-generated summary wins when present, else the raw item title. */
+function withDisplayTitle(candidate: CandidateRow, workflowInfoByItem: Map<string, WorkflowInfo>): CandidateRow {
+  return { ...candidate, title: resolveDisplayTitle(candidate.title, workflowInfoByItem.get(candidate.id)?.summary) };
 }
 
 /** All ado_work_item_map rows across every workflow of each item, grouped by item id. */
@@ -238,10 +247,12 @@ function buildDetail(item: CandidateRow): CompletedInitiativeDetail {
 }
 
 /** Same completion + ADO-mapping gate as the list, for a single item. Undefined if it doesn't qualify. */
-function getCompletedItemOrUndefined(itemId: string): CandidateRow | undefined {
+export function getCompletedItemOrUndefined(itemId: string): CandidateRow | undefined {
   const item = getCandidateItem(itemId);
   if (!item) return undefined;
-  return filterCompleted([item])[0];
+  const workflowInfoByItem = getLatestWorkflowInfo([item.id]);
+  const completed = filterCompleted([item], workflowInfoByItem)[0];
+  return completed && withDisplayTitle(completed, workflowInfoByItem);
 }
 
 /**
@@ -250,7 +261,10 @@ function getCompletedItemOrUndefined(itemId: string): CandidateRow | undefined {
  */
 router.get('/', (_req: Request, res: Response) => {
   try {
-    const completedItems = filterCompleted(getCandidateItems());
+    const candidates = getCandidateItems();
+    const workflowInfoByItem = getLatestWorkflowInfo(candidates.map(c => c.id));
+    const completedItems = filterCompleted(candidates, workflowInfoByItem)
+      .map(c => withDisplayTitle(c, workflowInfoByItem));
     if (completedItems.length === 0) return res.json([]);
 
     const itemIds = completedItems.map(c => c.id);

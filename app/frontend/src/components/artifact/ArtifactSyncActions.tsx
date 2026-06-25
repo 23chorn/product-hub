@@ -7,8 +7,6 @@ interface ArtifactSyncActionsProps {
   activeWorkflow: WorkflowRow | null;
   /** True when the backlog/epic_features artifact may be pushed to the board. */
   showPushButton: boolean;
-  /** True when the QA tests artifact may be pushed to test plans. */
-  showTestPlanButton: boolean;
   /** True when a document artifact (research/PRD/architecture) may be synced to the wiki. */
   showWikiSyncButton: boolean;
   onMessage: (content: string) => void;
@@ -24,23 +22,19 @@ const spinner = (
 
 /**
  * Header actions that push an artifact to external systems: backlog → ADO board,
- * QA tests → ADO test plans, documents → wiki. Owns its own push state and the
- * "already-synced" mapping lookups; reports outcomes up via onMessage/onError.
+ * documents → wiki. Owns its own push state and the "already-synced" mapping
+ * lookups; reports outcomes up via onMessage/onError.
  */
 export function ArtifactSyncActions({
   artifactType,
   activeWorkflow,
   showPushButton,
-  showTestPlanButton,
   showWikiSyncButton,
   onMessage,
   onError,
 }: ArtifactSyncActionsProps) {
   const [pushLoading, setPushLoading] = useState(false);
   const [pushResult, setPushResult] = useState<{ epicUrl: string; featureCount?: number; storyCount?: number; created?: number; updated?: number; synced?: boolean } | null>(null);
-  const [testPlanPushLoading, setTestPlanPushLoading] = useState(false);
-  const [testPlanResult, setTestPlanResult] = useState<{ planUrl: string; created: number; updated: number } | null>(null);
-  const [hasTestPlanMappings, setHasTestPlanMappings] = useState(false);
   const [hasAdoMappings, setHasAdoMappings] = useState(false);
   const [wikiSyncLoading, setWikiSyncLoading] = useState(false);
   const [wikiSyncResult, setWikiSyncResult] = useState<{ synced: number; results: Array<{ stage: string; pageName: string; url: string }> } | null>(null);
@@ -51,9 +45,6 @@ export function ArtifactSyncActions({
     let stale = false;
     api.getAdoMappings(activeWorkflow.id)
       .then(({ hasMappings }) => { if (!stale) setHasAdoMappings(hasMappings); })
-      .catch(() => {});
-    api.getQATestPlanMappings(activeWorkflow.id)
-      .then(({ hasMappings }) => { if (!stale) setHasTestPlanMappings(hasMappings); })
       .catch(() => {});
     return () => { stale = true; };
   }, [activeWorkflow?.id]);
@@ -72,25 +63,6 @@ export function ArtifactSyncActions({
       onError(err.response?.data?.error ?? err.message ?? 'Failed to push to board');
     } finally {
       setPushLoading(false);
-    }
-  }
-
-  async function pushToTestPlans() {
-    if (!activeWorkflow) return;
-    setTestPlanPushLoading(true);
-    try {
-      const result = await api.pushToTestPlans(activeWorkflow.id);
-      setTestPlanResult(result);
-      const wasSync = hasTestPlanMappings;
-      setHasTestPlanMappings(true);
-      const msg = wasSync
-        ? `Test plan synced: **${result.updated} updated**, **${result.created} created**. [View in ADO](${result.planUrl})`
-        : `Test plan created with **${result.testCaseCount} test cases**. [View in ADO](${result.planUrl})`;
-      onMessage(msg);
-    } catch (err: any) {
-      onError(err.response?.data?.error ?? err.message ?? 'Failed to push test plan');
-    } finally {
-      setTestPlanPushLoading(false);
     }
   }
 
@@ -152,37 +124,6 @@ export function ArtifactSyncActions({
             ? `Synced (${pushResult.updated ?? 0} updated, ${pushResult.created ?? 0} new)`
             : `View in Board (${pushResult.featureCount}F / ${pushResult.storyCount}S)`
           }
-        </a>
-      )}
-      {showTestPlanButton && !testPlanResult && (
-        <button
-          onClick={pushToTestPlans}
-          disabled={testPlanPushLoading}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-brand-600 hover:bg-brand-700 disabled:bg-surface-300 dark:disabled:bg-surface-700 text-white transition-colors"
-        >
-          {testPlanPushLoading ? (
-            <>{spinner}Pushing...</>
-          ) : (
-            <>
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-              {hasTestPlanMappings ? 'Sync Test Plan' : 'Push to Test Plans'}
-            </>
-          )}
-        </button>
-      )}
-      {testPlanResult && (
-        <a
-          href={testPlanResult.planUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-          View Test Plan ↗
         </a>
       )}
       {showWikiSyncButton && !wikiSyncResult && (

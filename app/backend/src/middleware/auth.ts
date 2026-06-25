@@ -7,6 +7,9 @@ import Logger from '../utils/logger';
 const logger = new Logger('AUTH');
 const JWT_SECRET = process.env.JWT_SECRET || 'pap-local-dev-secret-change-in-production';
 const COOKIE_NAME = 'pap_token';
+// Browsers drop `secure` cookies on plain HTTP, so this can't just follow NODE_ENV —
+// an internal-network prod deployment without TLS still needs the cookie to be sent.
+const COOKIE_SECURE = process.env.COOKIE_SECURE === 'true';
 
 export interface AuthRequest extends Request {
   user?: User;
@@ -20,7 +23,7 @@ export function signToken(userId: number): string {
 export function setAuthCookie(res: Response, token: string): void {
   res.cookie(COOKIE_NAME, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: COOKIE_SECURE,
     sameSite: 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   });

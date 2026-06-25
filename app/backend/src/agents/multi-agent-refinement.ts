@@ -21,6 +21,7 @@ import { readProductArea } from './item-metadata';
 import { featureLocalKey, type AgentType } from '@pap/shared';
 import * as fs from 'fs';
 import * as path from 'path';
+import { findRepoRoot } from '../utils/find-repo-root';
 import db from '../data/database';
 
 interface RefinementParticipant {
@@ -883,8 +884,9 @@ Merge all contributions into a single JSON artifact following the backlog templa
 function getDemoQaTestsForFeature(stage: string, featureNum: number): string {
   const featureKey = `F${featureNum}`;
   try {
-    // Resolve fixtures dir the same way getDemoFixture does — walk up to find the messaging dir.
-    const fixturesDir = path.join(__dirname, '..', 'demo', 'fixtures', 'messaging');
+    // Resolve fixtures dir the same way getDemoFixture does — from source, since these are
+    // plain .json files that tsc doesn't copy into dist.
+    const fixturesDir = path.join(findRepoRoot(__dirname), 'app/backend/src/demo/fixtures', 'messaging');
     const raw = fs.readFileSync(path.join(fixturesDir, 'qa-tests.json'), 'utf-8');
     const suite = JSON.parse(raw);
     const filtered = {

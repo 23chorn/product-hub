@@ -13,10 +13,11 @@ import * as path from 'path';
 import { streamAI, resolveModelId, type TokenUsage } from '../utils/ai-provider';
 import db from '../data/database';
 import Logger from '../utils/logger';
+import { findRepoRoot } from '../utils/find-repo-root';
 
 const logger = new Logger('CURATOR');
 
-const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
+const PROJECT_ROOT = findRepoRoot(__dirname);
 const PERSONA_PATH  = path.join(PROJECT_ROOT, 'agents', 'personas', 'curator.md');
 const CONTEXT_ROOT  = path.join(PROJECT_ROOT, 'context');
 

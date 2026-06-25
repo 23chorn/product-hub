@@ -24,6 +24,15 @@ export function effectiveStatus(wf: WorkflowInfo): string {
 }
 
 /**
+ * Display title for an initiative: the latest workflow's AI-generated summary wins when
+ * present, else the raw item title. Single source of truth so the Home page and the
+ * Progress Tracker page never show two different names for the same initiative.
+ */
+export function resolveDisplayTitle(rawTitle: string, workflowSummary?: string | null): string {
+  return workflowSummary || rawTitle;
+}
+
+/**
  * Local key for a feature's position in the backlog (1-based) — e.g. "F1".
  * Single source of truth for this numbering: used both as the ado_work_item_map
  * lookup key and as the title prefix stamped onto the ADO ticket itself, so the

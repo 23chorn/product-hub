@@ -3,9 +3,10 @@ import path from 'path';
 import type { AppConfig, RoadmapIntegration, WorkItemsIntegration, KnowledgeBaseIntegration } from '@pap/shared';
 import { getActiveProvider, getAvailableModels } from '../utils/ai-provider';
 import { getEnabledStages } from './settings-store';
+import { findRepoRoot } from '../utils/find-repo-root';
 
 // Load .env before reading any env vars — safe to call multiple times (idempotent)
-dotenv.config({ path: path.resolve(__dirname, '../../../../.env') });
+dotenv.config({ path: path.join(findRepoRoot(__dirname), '.env') });
 
 /**
  * Build and validate the AppConfig from environment variables.

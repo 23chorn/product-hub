@@ -38,8 +38,9 @@ export { deleteWorkflow } from './workflow-lifecycle';
 import Logger from '../utils/logger';
 import { getCoordinator, getCritic, getCurator } from './workflow-agents';
 import { workflowOps, rolesJson, createSafetyNetCheckpoint } from './workflow-db';
+import { findRepoRoot } from '../utils/find-repo-root';
 
-const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
+const PROJECT_ROOT = findRepoRoot(__dirname);
 
 const logger = new Logger('WORKFLOW-ROUTER');
 

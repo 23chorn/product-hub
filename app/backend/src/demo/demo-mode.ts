@@ -12,28 +12,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import db from '../data/database';
 import Logger from '../utils/logger';
+import { findRepoRoot } from '../utils/find-repo-root';
 
 const logger = new Logger('DEMO');
 
-// Use project root for reliable fixture path resolution
-// Walk up from __dirname until we find package.json with workspaces
-function findProjectRoot(): string {
-  let dir = __dirname;
-  for (let i = 0; i < 10; i++) {
-    try {
-      const pkgPath = path.join(dir, 'package.json');
-      if (fs.existsSync(pkgPath)) {
-        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-        if (pkg.workspaces) return dir;
-      }
-    } catch {}
-    dir = path.resolve(dir, '..');
-  }
-  const fallback = path.resolve(__dirname, '../../../../');
-  logger.warn(`Could not locate workspace root by walking up from ${__dirname} — using fallback ${fallback}`);
-  return fallback;
-}
-const PROJECT_ROOT = findProjectRoot();
+// Fixtures are read from source (not dist) since they're plain .json, not compiled.
+const PROJECT_ROOT = findRepoRoot(__dirname);
 
 function getFixturesDir(): string {
   const baseFixtures = path.join(PROJECT_ROOT, 'app/backend/src/demo/fixtures');

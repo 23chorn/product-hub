@@ -4,8 +4,9 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
+import { findRepoRoot } from '../utils/find-repo-root';
 
-const PROJECT_ROOT = path.resolve(__dirname, '../../../../');
+const PROJECT_ROOT = findRepoRoot(__dirname);
 
 // ── get_context_file ──────────────────────────────────────────────────────────
 

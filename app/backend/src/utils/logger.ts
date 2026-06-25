@@ -1,10 +1,11 @@
 import fs from 'fs';
 import path from 'path';
+import { findRepoRoot } from './find-repo-root';
 
 // ── File logging ───────────────────────────────────────────────────────────────
 // Logs land in app/backend/logs/app-YYYY-MM-DD.log, one file per day.
 // The directory is created lazily on first write so startup is not blocked.
-const LOG_DIR = path.resolve(__dirname, '../../logs');
+const LOG_DIR = path.join(findRepoRoot(__dirname), 'app/backend/logs');
 let logDirEnsured = false;
 
 function ensureLogDir(): void {

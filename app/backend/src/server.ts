@@ -3,9 +3,12 @@ import path from 'path';
 import http from 'http';
 import express from 'express';
 import cookieParser from 'cookie-parser';
+import { findRepoRoot } from './utils/find-repo-root';
+
+const REPO_ROOT = findRepoRoot(__dirname);
 
 // Load .env from root directory
-dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+dotenv.config({ path: path.join(REPO_ROOT, '.env') });
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -42,6 +45,9 @@ const PORT = process.env.PORT || 3001;
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
+// Built frontend assets (npm run build --workspace=app/frontend).
+const FRONTEND_DIST = path.join(REPO_ROOT, 'app/frontend/dist');
+
 // Security middleware
 app.use(helmet());
 app.use(cors({
@@ -72,6 +78,10 @@ app.use('/api/', limiter);
 // Request size limits — generous for pipeline media uploads (base64 videos can be large)
 app.use(express.json({ limit: '50mb' }));
 app.use(cookieParser());
+
+// Serve the built frontend (single-port production deployment). No-ops in dev, where
+// FRONTEND_DIST doesn't exist and the frontend is served separately by Vite.
+app.use(express.static(FRONTEND_DIST));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -130,6 +140,16 @@ app.get('/api', (req, res) => {
       contextFiles: 'GET /api/context-files',
       behaviourFiles: 'GET /api/behaviour-files',
     },
+  });
+});
+
+// SPA fallback — serves the frontend's index.html for any other GET so client-side
+// routes resolve on a hard refresh or direct navigation (e.g. /workflow/123). Falls
+// through to the 404 handler below in dev, where there's no build to serve.
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api') || req.path === '/health') return next();
+  res.sendFile(path.join(FRONTEND_DIST, 'index.html'), (err) => {
+    if (err) next();
   });
 });
 
