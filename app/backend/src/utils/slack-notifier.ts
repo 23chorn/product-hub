@@ -11,17 +11,23 @@ function getWebhookUrl(): string | null {
   try {
     const row = db.prepare(`SELECT rule_value FROM policies WHERE scope = 'global' AND rule_key = 'slack_webhook_url'`).get() as { rule_value: string } | undefined;
     if (row?.rule_value) return row.rule_value;
-  } catch { /* DB not yet initialised */ }
+  } catch (err: any) {
+    logger.warn(`Failed to read slack_webhook_url policy from DB: ${err.message}`);
+  }
   return process.env.SLACK_WEBHOOK_URL ?? null;
 }
 
 function post(payload: object): void {
   const webhookUrl = getWebhookUrl();
-  if (!webhookUrl) return;
+  if (!webhookUrl) {
+    logger.warn('No Slack webhook URL configured (policies.slack_webhook_url / SLACK_WEBHOOK_URL env var) — notification skipped');
+    return;
+  }
 
   try {
     const url = new URL(webhookUrl);
     const body = JSON.stringify(payload);
+    logger.info(`Posting Slack notification to ${url.hostname} (${body.length} bytes)`);
     const req = https.request(
       {
         hostname: url.hostname,
@@ -31,13 +37,22 @@ function post(payload: object): void {
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(body),
         },
+        timeout: 10_000,
       },
       (res) => {
         if (res.statusCode && res.statusCode >= 400) {
-          logger.warn(`Slack webhook returned HTTP ${res.statusCode}`);
+          let responseBody = '';
+          res.on('data', (chunk) => { responseBody += chunk; });
+          res.on('end', () => logger.warn(`Slack webhook returned HTTP ${res.statusCode}: ${responseBody.slice(0, 500)}`));
+        } else {
+          logger.info(`Slack webhook accepted notification (HTTP ${res.statusCode})`);
         }
       }
     );
+    req.on('timeout', () => {
+      logger.warn('Slack webhook request timed out after 10s');
+      req.destroy();
+    });
     req.on('error', (err) => logger.warn(`Slack webhook request error: ${err.message}`));
     req.write(body);
     req.end();

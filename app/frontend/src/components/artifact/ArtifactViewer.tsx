@@ -14,6 +14,7 @@ import { ArtifactSyncActions } from './ArtifactSyncActions';
 import { CriticReviewFlyout } from './CriticReviewFlyout';
 import { ApproveConfirmModal } from './ApproveConfirmModal';
 import { RejectConfirmModal } from './RejectConfirmModal';
+import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { useCheckpointActions } from '../../hooks/useCheckpointActions';
 import { renderStructuredArtifact } from './artifact-content-view';
 
@@ -38,6 +39,8 @@ export function ArtifactViewer() {
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const [showOpenQPanel, setShowOpenQPanel] = useState(false);
   const [manualFigmaUrl, setManualFigmaUrl] = useState('');
+  const [pendingDelete, setPendingDelete] = useState<{ itemLabel: string; run: () => string } | null>(null);
+  const [showRevisionSummary, setShowRevisionSummary] = useState(false);
 
   const { user, noAuth } = useAuthStore();
 
@@ -61,6 +64,7 @@ export function ArtifactViewer() {
   });
 
   useEffect(() => {
+    setShowRevisionSummary(false);
     if (!viewingArtifactId) { setContent(null); setError(null); setVersionInfo(null); return; }
 
     let stale = false;
@@ -140,6 +144,31 @@ export function ArtifactViewer() {
       setIsSaving(false);
     }
   }, [viewingArtifactId, isDirty, editContent, pendingCheckpoint, activeWorkflow]);
+
+  // Opens the delete confirmation for one item; computeNewContent is deferred until the
+  // user confirms, so nothing is mutated just by clicking the trash icon.
+  const requestDelete = useCallback((itemLabel: string, computeNewContent: () => string) => {
+    setPendingDelete({ itemLabel, run: computeNewContent });
+  }, []);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!pendingDelete || !viewingArtifactId) return;
+    setIsSaving(true);
+    setError(null);
+    try {
+      const newContent = pendingDelete.run();
+      // No checkpointId — saves without approving/advancing, same as a plain "Save".
+      await api.saveArtifactContent(viewingArtifactId, newContent);
+      setContent(newContent);
+      setPendingDelete(null);
+      setSaveToast('Deleted');
+      setTimeout(() => setSaveToast(null), 2000);
+    } catch (err: any) {
+      setError(err.response?.data?.error ?? err.message ?? 'Failed to delete');
+    } finally {
+      setIsSaving(false);
+    }
+  }, [pendingDelete, viewingArtifactId]);
 
   // Cmd/Ctrl+S to save
   useEffect(() => {
@@ -414,15 +443,26 @@ export function ArtifactViewer() {
                   <div className={`${isEditing ? 'flex-1 min-h-0 flex flex-col' : ''} ${isFullscreen ? 'mx-auto w-full max-w-4xl' : ''}`}>
                     {revisionSummary && !isEditing && (
                       <div className="mb-4 rounded-lg border border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-900/20 px-3.5 py-3">
-                        <div className="flex items-center gap-1.5 mb-1.5">
+                        <button
+                          onClick={() => setShowRevisionSummary(v => !v)}
+                          className="w-full flex items-center gap-1.5 mb-1.5"
+                        >
                           <svg className="w-3.5 h-3.5 text-brand-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
                           </svg>
                           <h3 className="text-[11px] font-semibold uppercase tracking-wide text-brand-700 dark:text-brand-300">
                             AI revision summary
                           </h3>
-                        </div>
-                        <MarkdownContent className="[&_p]:my-1 [&_ul]:my-1 [&_li]:my-0.5">{revisionSummary}</MarkdownContent>
+                          <svg
+                            className={`w-3.5 h-3.5 text-brand-400 flex-shrink-0 ml-auto transition-transform ${showRevisionSummary ? 'rotate-180' : ''}`}
+                            fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        {showRevisionSummary && (
+                          <MarkdownContent className="[&_p]:my-1 [&_ul]:my-1 [&_li]:my-0.5">{revisionSummary}</MarkdownContent>
+                        )}
                       </div>
                     )}
                     {loading ? (
@@ -443,6 +483,7 @@ export function ArtifactViewer() {
                       resolveLoading,
                       rerunStage,
                       onClose: () => setViewingArtifactId(null),
+                      requestDelete: (pendingCheckpoint && hasApprovePermission) ? requestDelete : undefined,
                     }) : error ? (
                       <p className="text-sm text-red-500">{error}</p>
                     ) : pendingCheckpoint ? (
@@ -740,6 +781,16 @@ export function ArtifactViewer() {
           loading={resolveLoading}
           onCancel={() => setShowRejectConfirm(false)}
           onConfirm={() => resolve('rejected')}
+        />
+      )}
+
+      {/* Delete-item confirmation modal */}
+      {pendingDelete && (
+        <DeleteConfirmModal
+          itemLabel={pendingDelete.itemLabel}
+          loading={isSaving}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={handleConfirmDelete}
         />
       )}
     </div>

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ExpandableText } from '../common/ExpandableText';
+import { DeleteItemButton } from '../common/DeleteItemButton';
 
 interface Scenario {
   given: string[];
@@ -78,6 +79,14 @@ export function tryParseQATests(content: string): QATestSuite | null {
   }
 }
 
+/** Remove one test case by its position in data.test_cases. The view groups/reorders
+ *  cases by type or priority for display via .filter() (preserves object identity), so
+ *  callers find `index` with data.test_cases.indexOf(tc) rather than matching by id —
+ *  id uniqueness across cases isn't guaranteed. */
+export function removeTestCase(data: QATestSuite, index: number): QATestSuite {
+  return { ...data, test_cases: data.test_cases.filter((_, i) => i !== index) };
+}
+
 // Keys match VALID_TEST_TYPES in app/backend/src/agents/tool-validators.ts — keep in sync.
 const TYPE_CONFIG: Record<string, { label: string; color: string; dot: string }> = {
   happy_path:  { label: 'Happy Path',  color: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',   dot: 'bg-green-400' },
@@ -135,7 +144,7 @@ function groupByPriority(testCases: TestCase[]): Array<[string, TestCase[]]> {
   return ordered.map(priority => [priority, testCases.filter(tc => tc.priority === priority)]);
 }
 
-function TestCaseCard({ tc }: { tc: TestCase }) {
+function TestCaseCard({ tc, onDelete }: { tc: TestCase; onDelete?: () => void }) {
   const [open, setOpen] = useState(false);
   const typeConf = typeMeta(tc.type);
   const prioConf = priorityMeta(tc.priority);
@@ -145,9 +154,10 @@ function TestCaseCard({ tc }: { tc: TestCase }) {
 
   return (
     <div className="border border-surface-200 dark:border-surface-700 rounded-lg overflow-hidden">
+      <div className="flex items-stretch hover:bg-surface-50 dark:hover:bg-surface-800/60 transition-colors">
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full text-left px-3 py-2.5 flex items-start gap-3 hover:bg-surface-50 dark:hover:bg-surface-800/60 transition-colors"
+        className="flex-1 min-w-0 text-left px-3 py-2.5 flex items-start gap-3"
       >
         <div className={`mt-0.5 flex-shrink-0 w-1.5 h-1.5 rounded-full ${typeConf.dot}`} />
         <div className="flex-1 min-w-0">
@@ -164,6 +174,12 @@ function TestCaseCard({ tc }: { tc: TestCase }) {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
+      {onDelete && (
+        <div className="flex items-center pr-2">
+          <DeleteItemButton onDelete={onDelete} label="Delete test case" />
+        </div>
+      )}
+      </div>
 
       {open && (
         <div className="border-t border-surface-100 dark:border-surface-700 px-3 py-3 space-y-3 bg-surface-50/50 dark:bg-surface-800/30 text-sm">
@@ -255,7 +271,7 @@ function TestCaseCard({ tc }: { tc: TestCase }) {
   );
 }
 
-export function QATestsView({ data }: { data: QATestSuite }) {
+export function QATestsView({ data, onDeleteTestCase }: { data: QATestSuite; onDeleteTestCase?: (index: number) => void }) {
   // Counts (and the test case groups below) are derived from the test cases themselves rather
   // than the artifact's separate `coverage` field — that field is frequently absent (current
   // multi-agent QA artifacts don't populate it) or stale (a merged/filtered test_cases list
@@ -354,7 +370,13 @@ export function QATestsView({ data }: { data: QATestSuite }) {
             </button>
             {isOpen && (
               <div className="space-y-2">
-                {cases.map(tc => <TestCaseCard key={tc.id} tc={tc} />)}
+                {cases.map(tc => (
+                  <TestCaseCard
+                    key={tc.id}
+                    tc={tc}
+                    onDelete={onDeleteTestCase ? () => onDeleteTestCase(data.test_cases.indexOf(tc)) : undefined}
+                  />
+                ))}
               </div>
             )}
           </div>

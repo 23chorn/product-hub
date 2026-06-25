@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react';
-import { tryParseBacklog, isBacklogArtifactType } from '../../utils/backlog-helpers';
+import { tryParseBacklog, isBacklogArtifactType, removeStoryFromBacklog, removeTestCaseFromStory } from '../../utils/backlog-helpers';
 import { deriveFeatureButtons, deriveEpicFeaturesArtifactId } from '../../utils/feature-artifacts';
 import { BacklogView } from './BacklogView';
 import { BacklogStoriesTests } from './BacklogOverviewModal';
-import { EpicFeaturesView, tryParseEpicFeatures } from './EpicFeaturesView';
-import { QATestsView, tryParseQATests } from './QATestsView';
+import { EpicFeaturesView, tryParseEpicFeatures, removePhase, removeFeatureFromPhase } from './EpicFeaturesView';
+import { QATestsView, tryParseQATests, removeTestCase } from './QATestsView';
 import { TechRefinementView, tryParseTechRefinement } from './TechRefinementView';
 import { PrototypePreview, type PrototypeData } from '../coordinator/PrototypePreview';
 import { convertArtifactToMarkdown, isDocumentArtifact } from '../../utils/artifact-to-markdown';
@@ -22,6 +22,10 @@ export interface ArtifactViewContext {
   rerunStage: () => void;
   /** Close the artifact drawer. */
   onClose: () => void;
+  /** Surgically delete one item from the artifact and save (no LLM call) — only provided
+   *  while actively reviewing a pending checkpoint with approve permission; undefined for
+   *  read-only/historical views, which keeps delete buttons from rendering there. */
+  requestDelete?: (itemLabel: string, computeNewContent: () => string) => void;
 }
 
 /**
@@ -33,7 +37,7 @@ export interface ArtifactViewContext {
  * finally a raw-markdown fallback.
  */
 export function renderStructuredArtifact(content: string, ctx: ArtifactViewContext): ReactNode {
-  const { artifactType, activeWorkflow, checkpoints, pendingCheckpoint, hasApprovePermission, resolveLoading, rerunStage, onClose } = ctx;
+  const { artifactType, activeWorkflow, checkpoints, pendingCheckpoint, hasApprovePermission, resolveLoading, rerunStage, onClose, requestDelete } = ctx;
 
   // The final cross-feature merge ('backlog' exactly, not the per-feature 'backlog_F<n>'
   // artifacts) — show the same Stories/Tests tabbed view as the pipeline's "Stories/Tests"
@@ -53,17 +57,53 @@ export function renderStructuredArtifact(content: string, ctx: ArtifactViewConte
   const backlogData = isBacklogArtifactType(artifactType) ? tryParseBacklog(content) : null;
   const techData = isBacklogArtifactType(artifactType) && !backlogData ? tryParseTechRefinement(content) : null;
 
-  if (epicFeaturesData) return <EpicFeaturesView data={epicFeaturesData} />;
-  if (backlogData) return (
-    <BacklogView
-      data={backlogData}
-      isFeaturePreview={/^backlog_F\d+$/.test(artifactType)}
-      initiativeTitle={activeWorkflow?.summary ?? activeWorkflow?.goal?.split('\n')[0]}
+  if (epicFeaturesData) return (
+    <EpicFeaturesView
+      data={epicFeaturesData}
+      onDeletePhase={requestDelete ? (phaseIndex) => {
+        const phase = epicFeaturesData.phases?.[phaseIndex];
+        if (!phase) return;
+        requestDelete(`epic "${phase.epicTitle ?? phase.label}"`, () => JSON.stringify(removePhase(epicFeaturesData, phaseIndex)));
+      } : undefined}
+      onDeleteFeature={requestDelete ? (phaseIndex, featureIndex) => {
+        const feature = epicFeaturesData.phases?.[phaseIndex]?.features[featureIndex];
+        if (!feature) return;
+        requestDelete(`feature "${feature.title}"`, () => JSON.stringify(removeFeatureFromPhase(epicFeaturesData, phaseIndex, featureIndex)));
+      } : undefined}
     />
   );
+  if (backlogData) {
+    const previewFeature = backlogData.features?.[0] ?? backlogData.feature;
+    return (
+      <BacklogView
+        data={backlogData}
+        isFeaturePreview={/^backlog_F\d+$/.test(artifactType)}
+        initiativeTitle={activeWorkflow?.summary ?? activeWorkflow?.goal?.split('\n')[0]}
+        onDeleteStory={requestDelete ? (storyIndex) => {
+          const story = previewFeature?.stories[storyIndex];
+          if (!story) return;
+          requestDelete(`story "${story.title}"`, () => JSON.stringify(removeStoryFromBacklog(backlogData, storyIndex)));
+        } : undefined}
+        onDeleteTestCase={requestDelete ? (storyIndex, testCaseIndex) => {
+          const tc = previewFeature?.stories[storyIndex]?.test_cases?.[testCaseIndex];
+          if (!tc) return;
+          requestDelete(`test case "${tc.id}"`, () => JSON.stringify(removeTestCaseFromStory(backlogData, storyIndex, testCaseIndex)));
+        } : undefined}
+      />
+    );
+  }
   if (techData) return <TechRefinementView data={techData} />;
   const qaData = artifactType === 'qa_tests' ? tryParseQATests(content) : null;
-  if (qaData) return <QATestsView data={qaData} />;
+  if (qaData) return (
+    <QATestsView
+      data={qaData}
+      onDeleteTestCase={requestDelete ? (index) => {
+        const tc = qaData.test_cases[index];
+        if (!tc) return;
+        requestDelete(`test case "${tc.id}"`, () => JSON.stringify(removeTestCase(qaData, index)));
+      } : undefined}
+    />
+  );
   // JSON artifact types that failed to parse — render as code block with warning
   if (artifactType === 'qa_tests' || isBacklogArtifactType(artifactType)) {
     return (

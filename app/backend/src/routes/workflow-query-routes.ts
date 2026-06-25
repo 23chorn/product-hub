@@ -5,7 +5,9 @@
  */
 import { Router, Request, Response } from 'express';
 import type { AuthRequest } from '../middleware/auth';
+import { canApproveCheckpoint } from '../middleware/auth';
 import { getWorkflowStatus, getWorkflowEvents } from '../agents/workflow-router';
+import { parseRoles } from '../agents/workflow-db';
 import { isDemoMode } from '../demo/demo-mode';
 import db from '../data/database';
 import Logger from '../utils/logger';
@@ -78,7 +80,7 @@ workflowQueryRoutes.get('/list/all', (req: AuthRequest, res: Response) => {
         : req.user.roles;
 
       const demoClause = demoExclusionSql();
-      let workflows;
+      let workflows: unknown[];
       if (req.user.is_admin || !roleList?.length) {
         workflows = db.prepare(`
           SELECT DISTINCT w.*, COUNT(approved.id) as checkpoint_count
@@ -91,18 +93,35 @@ workflowQueryRoutes.get('/list/all', (req: AuthRequest, res: Response) => {
           LIMIT 50
         `).all();
       } else {
-        const placeholders = roleList.map(() => '?').join(',');
-        workflows = db.prepare(`
-          SELECT DISTINCT w.*, COUNT(approved.id) as checkpoint_count
-          FROM workflows w
-          JOIN checkpoints c ON c.workflow_id = w.id AND c.status = 'pending'
-            AND (c.required_role IS NULL OR c.required_role IN (${placeholders}))
-          LEFT JOIN checkpoints approved ON approved.workflow_id = w.id AND approved.status = 'approved'
-          WHERE ${NOT_CANCELLED_SQL} ${demoClause}
-          GROUP BY w.id
-          ORDER BY w.created_at DESC
-          LIMIT 50
-        `).all(...roleList);
+        // required_role is stored JSON-encoded (e.g. '["product"]' via rolesJson()), so a
+        // plain SQL `IN` comparison against bare role names can never match — filter in JS
+        // with the same parseRoles/canApproveCheckpoint pair the single-checkpoint approval
+        // routes use, instead of re-deriving role-matching logic here.
+        const pendingRows = db.prepare<[], { workflow_id: string; required_role: string | null }>(`
+          SELECT DISTINCT c.workflow_id, c.required_role
+          FROM checkpoints c
+          JOIN workflows w ON w.id = c.workflow_id
+          WHERE c.status = 'pending' AND ${NOT_CANCELLED_SQL} ${demoClause}
+        `).all();
+        const approvableIds = [...new Set(
+          pendingRows
+            .filter(r => canApproveCheckpoint(req.user, parseRoles(r.required_role)))
+            .map(r => r.workflow_id)
+        )];
+        if (approvableIds.length === 0) {
+          workflows = [];
+        } else {
+          const idPlaceholders = approvableIds.map(() => '?').join(',');
+          workflows = db.prepare(`
+            SELECT DISTINCT w.*, COUNT(approved.id) as checkpoint_count
+            FROM workflows w
+            LEFT JOIN checkpoints approved ON approved.workflow_id = w.id AND approved.status = 'approved'
+            WHERE w.id IN (${idPlaceholders}) AND ${NOT_CANCELLED_SQL} ${demoClause}
+            GROUP BY w.id
+            ORDER BY w.created_at DESC
+            LIMIT 50
+          `).all(...approvableIds);
+        }
       }
       return res.json({ workflows });
     }
@@ -185,15 +204,18 @@ workflowQueryRoutes.get('/my-pending-count', (req: AuthRequest, res: Response) =
     } else {
       const roles = req.user.roles;
       if (!roles.length) return res.json({ count: 0 });
-      const placeholders = roles.map(() => '?').join(',');
-      const row = db.prepare<string[], { count: number }>(
-        `SELECT COUNT(DISTINCT c.workflow_id) as count
+      // Same JSON-encoded required_role issue as /list/all above — filter in JS.
+      const pendingRows = db.prepare<[], { workflow_id: string; required_role: string | null }>(
+        `SELECT DISTINCT c.workflow_id, c.required_role
          FROM checkpoints c
          JOIN workflows w ON w.id = c.workflow_id
-         WHERE c.status = 'pending' AND (c.required_role IS NULL OR c.required_role IN (${placeholders}))
-           AND ${NOT_CANCELLED_SQL} ${demoClause}`
-      ).get(...roles);
-      count = row?.count ?? 0;
+         WHERE c.status = 'pending' AND ${NOT_CANCELLED_SQL} ${demoClause}`
+      ).all();
+      count = new Set(
+        pendingRows
+          .filter(r => canApproveCheckpoint(req.user, parseRoles(r.required_role)))
+          .map(r => r.workflow_id)
+      ).size;
     }
     res.json({ count });
   } catch (err: any) {

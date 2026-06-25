@@ -7,6 +7,7 @@ import { WORK_ITEM_STATE_BUCKET_LABELS, WORK_ITEM_STATE_BUCKET_COLORS } from '..
 import { toPhases, PHASE_COLORS, PrdRefTags, type EpicFeature, type EpicFeaturesData } from './EpicFeaturesView';
 import { ExpandableText } from '../common/ExpandableText';
 import { ExpandableList } from '../common/ExpandableList';
+import { DeleteItemButton } from '../common/DeleteItemButton';
 
 const DEFAULT_PHASE_LABEL = 'MVP';
 const UNKNOWN_PHASE_COLOR = 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 border-surface-200 dark:border-surface-600';
@@ -161,7 +162,21 @@ function AggregateHours({ hours, traditionalHours, aiAssisted }: { hours: number
   return <> · {hours}h</>;
 }
 
-export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLocalKey, epicFeatures }: { data: BacklogData; isFeaturePreview?: boolean; initiativeTitle?: string; stateByLocalKey?: Map<string, WorkItemStateBucket>; epicFeatures?: EpicFeaturesData | null }) {
+interface BacklogViewProps {
+  data: BacklogData;
+  isFeaturePreview?: boolean;
+  initiativeTitle?: string;
+  stateByLocalKey?: Map<string, WorkItemStateBucket>;
+  epicFeatures?: EpicFeaturesData | null;
+  // Only ever passed for the live single-feature checkpoint review (isFeaturePreview
+  // artifacts) — never wire these into the merged multi-feature overview's renderFeatureRow
+  // path, since removeStoryFromBacklog/removeTestCaseFromStory only operate on the single
+  // previewed feature and would silently mutate the wrong feature otherwise.
+  onDeleteStory?: (storyIndex: number) => void;
+  onDeleteTestCase?: (storyIndex: number, testCaseIndex: number) => void;
+}
+
+export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLocalKey, epicFeatures, onDeleteStory, onDeleteTestCase }: BacklogViewProps) {
   const [expandedStories, setExpandedStories] = useState<Set<string>>(new Set());
   // Epics and features both default collapsed so a multi-feature overview doesn't dump every
   // story on screen at once — drill in per epic, then per feature.
@@ -210,9 +225,10 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
     const isExpanded = expandedStories.has(key);
     return (
       <div key={si} className="px-4 py-2.5">
+        <div className="flex items-start gap-2 group">
         <button
           onClick={() => toggleStory(key)}
-          className="w-full text-left flex items-start gap-2 group"
+          className="flex-1 min-w-0 text-left flex items-start gap-2"
         >
           <Chevron expanded={isExpanded} className="w-3.5 h-3.5 mt-0.5 text-surface-400" />
           <div className="flex-1 min-w-0">
@@ -236,6 +252,10 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
             )}
           </div>
         </button>
+        {onDeleteStory && (
+          <DeleteItemButton onDelete={() => onDeleteStory(si)} label="Delete story" className="mt-0.5" />
+        )}
+        </div>
 
         {isExpanded && (
           <div className="ml-5.5 mt-2 space-y-2 pl-4 border-l-2 border-surface-100 dark:border-surface-700">
@@ -317,8 +337,9 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
               <div className="border-t border-surface-200 dark:border-surface-700 pt-3 mt-3">
                 <p className="text-xs font-medium text-surface-500 dark:text-surface-400 mb-2">Test Cases ({story.test_cases.length}):</p>
                 <div className="space-y-2">
-                  {story.test_cases.map(tc => (
-                    <div key={tc.id} className="bg-surface-50 dark:bg-surface-800/50 rounded p-2">
+                  {story.test_cases.map((tc, tci) => (
+                    <div key={tc.id} className="bg-surface-50 dark:bg-surface-800/50 rounded p-2 flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-[10px] font-mono text-surface-500 dark:text-surface-400">{tc.id}</span>
                         <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
@@ -348,12 +369,16 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
                             <strong className="text-surface-700 dark:text-surface-300">When</strong> {w}
                           </div>
                         ))}
-                        {tc.scenario.then.map((t, ti) => (
-                          <div key={`t${ti}`} className="text-surface-600 dark:text-surface-400">
+                        {tc.scenario.then.map((t, thi) => (
+                          <div key={`t${thi}`} className="text-surface-600 dark:text-surface-400">
                             <strong className="text-surface-700 dark:text-surface-300">Then</strong> {t}
                           </div>
                         ))}
                       </div>
+                      </div>
+                      {onDeleteTestCase && (
+                        <DeleteItemButton onDelete={() => onDeleteTestCase(si, tci)} label="Delete test case" />
+                      )}
                     </div>
                   ))}
                 </div>
