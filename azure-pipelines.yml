@@ -1,0 +1,35 @@
+trigger:
+  branches:
+    include:
+      - main # Triggers the build whenever you push to main
+
+pool:
+  vmImage: 'ubuntu-latest' # The cloud machine that builds/packages your code
+
+steps:
+# Step 1: Install dependencies and build (Example shown for Node.js, adjust for your stack)
+- task: NodeTool@0
+  inputs:
+    versionSpec: '20.x'
+  displayName: 'Install Node.js'
+
+- script: |
+    npm install
+    npm run build --if-present
+  displayName: 'Install and Build'
+
+# Step 2: Archive the files into a zip (optional, but keeps things clean)
+- task: ArchiveFiles@2
+  inputs:
+    rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
+    includeRootFolder: false
+    archiveType: 'zip'
+    archiveFile: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'
+    replaceExistingArchive: true
+
+# Step 3: Publish the built files so the release pipeline can see them
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'drop'
+    publishLocation: 'Container'
