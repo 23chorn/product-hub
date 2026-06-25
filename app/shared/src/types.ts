@@ -365,6 +365,11 @@ export interface AppConfig {
   features: {
     workflowMode: 'standard';
     workflowModeEnabled: boolean;
+    navTabs: {
+      progressTracker: boolean;
+      discovery: boolean;
+      knowledgeStudio: boolean;
+    };
   };
   integrations: {
     roadmap: RoadmapIntegration;

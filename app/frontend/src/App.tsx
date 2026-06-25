@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import type { AppConfig } from '@pap/shared';
 import { HomeScreen, resetHomeScreenFilter } from './components/home/HomeScreen';
 import { ToastContainer } from './components/toast/ToastContainer';
 import { CoordinatorChat } from './components/coordinator';
@@ -20,12 +21,16 @@ import { usePageNavStore, type PageKey } from './stores/pageNavStore';
 import { useAuthStore, ROLE_LABELS, canLaunchWorkflow } from './stores/authStore';
 import { api } from './services/api';
 
+type NavTabVisibilityCtx = { canLaunch: boolean; navTabs: AppConfig['features']['navTabs'] | undefined };
+
 // Top-level page nav tabs shown in the header strip below the title.
-const NAV_TABS: Array<{ key: PageKey; label: string; visible?: (ctx: { canLaunch: boolean }) => boolean }> = [
+// Initiatives is always on; the rest are gated by features.navTabs from /api/config
+// (see app-config.ts — env-controlled, off in prod by default) on top of any role check.
+const NAV_TABS: Array<{ key: PageKey; label: string; visible?: (ctx: NavTabVisibilityCtx) => boolean }> = [
   { key: 'home', label: 'Initiatives' },
-  { key: 'completed', label: 'Progress Tracker' },
-  { key: 'discovery', label: 'Discovery', visible: ({ canLaunch }) => canLaunch },
-  { key: 'knowledge', label: 'Knowledge Studio' },
+  { key: 'completed', label: 'Progress Tracker', visible: ({ navTabs }) => navTabs?.progressTracker ?? true },
+  { key: 'discovery', label: 'Discovery', visible: ({ canLaunch, navTabs }) => canLaunch && (navTabs?.discovery ?? false) },
+  { key: 'knowledge', label: 'Knowledge Studio', visible: ({ navTabs }) => navTabs?.knowledgeStudio ?? true },
 ];
 
 // Description shown in the shared PageHeader's title slot for whichever tab is active
@@ -59,7 +64,7 @@ function App() {
   const { setAvailableModels, setAgentModels } = useModelStore();
   const { isOpen: isSettingsOpen, openSettings, closeSettings, setDemoMode } = useSettingsStore();
   const { activePage, setActivePage } = usePageNavStore();
-  const { setConfig } = useConfigStore();
+  const { config, setConfig } = useConfigStore();
   const { activeWorkflow, viewingArtifactId } = useWorkflowStore();
   const { user, realUser, noAuth, loading: authLoading, setUser, setNoAuth, setLoading: setAuthLoading, logout: authLogout, impersonating, impersonate, stopImpersonating } = useAuthStore();
   const [isConnected, setIsConnected] = useState<boolean | null>(null);
@@ -293,7 +298,7 @@ function App() {
 
         {/* Page nav */}
         <nav className="flex items-center gap-1 px-6">
-          {NAV_TABS.filter(tab => tab.visible ? tab.visible({ canLaunch: canLaunchWorkflow(user, noAuth) }) : true).map(tab => {
+          {NAV_TABS.filter(tab => tab.visible ? tab.visible({ canLaunch: canLaunchWorkflow(user, noAuth), navTabs: config?.features.navTabs }) : true).map(tab => {
             const active = activePage === tab.key;
             return (
               <button

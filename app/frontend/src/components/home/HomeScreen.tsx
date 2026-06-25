@@ -23,9 +23,15 @@ let _cachedLocalItems: EnrichedItem[] = [];
 // resetHomeScreenFilter() — when a new login session starts.
 let _cachedStatusFilter: StatusFilter = 'mine';
 
+// Whether the initial pending-count check has already decided the default filter
+// this session. Prevents re-forcing 'all' every time the count happens to be 0
+// after the user has made their own filter choice.
+let _defaultFilterResolved = false;
+
 /** Reset the cached status filter back to its default. Call on logout so the next login starts fresh. */
 export function resetHomeScreenFilter(): void {
   _cachedStatusFilter = 'mine';
+  _defaultFilterResolved = false;
 }
 
 export function HomeScreen() {
@@ -94,6 +100,10 @@ export function HomeScreen() {
       ]);
       setMyPendingCount(countData.count);
       setMineWorkflowIds(new Set(listData.workflows.map((w: any) => w.id)));
+      if (!_defaultFilterResolved) {
+        _defaultFilterResolved = true;
+        if (countData.count === 0 && _cachedStatusFilter === 'mine') setStatusFilter('all');
+      }
     } catch { /* */ }
   }, [user, noAuth]);
 

@@ -61,6 +61,17 @@ function buildConfigFromEnv(): AppConfig {
   // Set to 'false' to hide the Workflow Mode UI without removing the feature.
   const workflowModeEnabled = process.env.ENABLE_WORKFLOW_MODE !== 'false';
 
+  // ── Nav tab visibility ──────────────────────────────────────────────────────
+  // Initiatives is always on. The rest default on outside production and off in
+  // production, but an explicit ENABLE_*_TAB env var always wins either way.
+  const navTabs = {
+    progressTracker: resolveNavTabFlag('ENABLE_PROGRESS_TRACKER_TAB', nodeEnv),
+    // Hidden by default for now regardless of environment — flip on with
+    // ENABLE_DISCOVERY_TAB=true once it's ready to ship.
+    discovery: resolveNavTabFlag('ENABLE_DISCOVERY_TAB', nodeEnv, false),
+    knowledgeStudio: resolveNavTabFlag('ENABLE_KNOWLEDGE_STUDIO_TAB', nodeEnv),
+  };
+
   // ── Stage config from the settings store (policies table) ─────────────────
   const enabledStages = getEnabledStages();
 
@@ -72,6 +83,7 @@ function buildConfigFromEnv(): AppConfig {
     features: {
       workflowMode: 'standard',
       workflowModeEnabled,
+      navTabs,
     },
     integrations: { roadmap, workItems, knowledgeBase },
     stages: { enabledStages },
@@ -95,6 +107,14 @@ function resolveWorkItemsIntegration(): WorkItemsIntegration {
   // Infer from credential presence
   if (process.env.AZURE_DEVOPS_PAT) return 'ado';
   return 'none';
+}
+
+/** Explicit env var always wins; otherwise on outside production, off in it (or `devDefault` if given). */
+function resolveNavTabFlag(envVar: string, nodeEnv: string, devDefault = true): boolean {
+  const explicit = process.env[envVar]?.toLowerCase();
+  if (explicit === 'true') return true;
+  if (explicit === 'false') return false;
+  return nodeEnv !== 'production' && devDefault;
 }
 
 function resolveKnowledgeBaseIntegration(): KnowledgeBaseIntegration {
