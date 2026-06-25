@@ -177,7 +177,7 @@ function App() {
         <div className="flex items-center justify-between px-6 pt-4 pb-3">
           <div className="flex items-baseline gap-2">
             <h1 className="text-2xl font-bold text-surface-900 dark:text-surface-100">
-              Product Hub
+              xCube Flow
             </h1>
             <p className="text-sm text-surface-500 dark:text-surface-400">
               The Self-Documenting Product & Quality Workflow

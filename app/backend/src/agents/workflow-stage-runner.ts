@@ -460,7 +460,7 @@ export async function runAutonomousStage(
 
     // ── Push artifact link to Airtable (all stages that produce viewable artifacts) ──
     // Airtable should only ever show the permanent link (Azure Wiki / ADO epic) — never
-    // a Product Hub in-app URL. tryWikiPush() below pushes the real link once the artifact
+    // an xCube Flow in-app URL. tryWikiPush() below pushes the real link once the artifact
     // is approved and synced. This only fires as a fallback when no wiki sync will ever
     // happen for this deployment, so the field isn't left permanently empty.
     const pushArtifactLinkToAirtable = async () => {

@@ -438,8 +438,8 @@ export async function writeFigmaAnnotations(
   const token = process.env.FIGMA_API_KEY ?? process.env.FIGMA_ACCESS_TOKEN;
   if (!token || !fileKey || screens.length === 0) return { success: false, commentId: null };
 
-  const lines: string[] = ['🎨 Product Hub — Design Brief', ''];
-  lines.push(`${screens.length} screens planned. Make your edits in this file, then return to Product Hub and mark complete.`);
+  const lines: string[] = ['🎨 xCube Flow — Design Brief', ''];
+  lines.push(`${screens.length} screens planned. Make your edits in this file, then return to xCube Flow and mark complete.`);
   lines.push('');
 
   for (let i = 0; i < screens.length; i++) {

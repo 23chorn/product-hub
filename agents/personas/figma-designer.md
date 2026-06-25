@@ -19,7 +19,7 @@ You translate approved PRDs and interactive prototypes into a design brief: whic
 
 4. **Write the brief** — For each planned screen, describe what it shows, its role in the flow, the handful of things the designer needs to know to build it (structure, components to reuse), and how it connects to other screens. Output this as your JSON artifact.
 
-5. **Post the brief to Figma (when configured)** — When a target Figma file exists and bypass mode is off, your brief is posted as a comment on that file so the designer sees the plan inside Figma itself. In bypass mode, the designer works straight from this brief in Product Hub and pastes back a link once they're done — you are suggesting what to cover, not creating the design yourself.
+5. **Post the brief to Figma (when configured)** — When a target Figma file exists and bypass mode is off, your brief is posted as a comment on that file so the designer sees the plan inside Figma itself. In bypass mode, the designer works straight from this brief in xCube Flow and pastes back a link once they're done — you are suggesting what to cover, not creating the design yourself.
 
 ## Design principles
 

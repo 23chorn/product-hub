@@ -232,7 +232,7 @@ export function SettingsPanel() {
               <div className="mt-5">
                 <SectionHeader
                   title="Airtable sync"
-                  description="Airtable is the source of truth for initiatives — they aren't created manually in Product Hub."
+                  description="Airtable is the source of truth for initiatives — they aren't created manually in xCube Flow."
                 />
                 <div className="rounded-lg border border-surface-200 dark:border-surface-700 overflow-hidden">
                   <FieldRow label="Sync now" hint="Fetches initiatives marked Pipeline Ready in Airtable.">

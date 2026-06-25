@@ -55,7 +55,7 @@ export const STAGE_ARTIFACT_POSTPROCESSORS: Record<string, ArtifactPostprocessor
           const updated = JSON.stringify(parsed, null, 2);
           await updateArtifactContent(artifactId, updated);
           insertEvent(workflowId, 'stage_progress', stage,
-            `Design brief posted to Figma — open the file and make your edits, then mark complete in Product Hub.`);
+            `Design brief posted to Figma — open the file and make your edits, then mark complete in xCube Flow.`);
           return updated;
         }
         logger.warn(`[FIGMA-DESIGN] Annotation write failed for file ${fileKey} — status remains "planned"`);

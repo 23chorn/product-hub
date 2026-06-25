@@ -1,4 +1,4 @@
-# Product Hub
+# xCube Flow
 
 AI-powered product operations platform. Launch a roadmap initiative — synced from Airtable with a complete brief, or described ad hoc — and a coordinated team of AI agents researches it, writes the PRD, designs the architecture, produces a developer-ready backlog with QA test suite and technical refinements — then pushes it all to Azure DevOps with full story/test linkage. Human review at every stage.
 

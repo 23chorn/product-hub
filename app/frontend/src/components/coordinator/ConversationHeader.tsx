@@ -58,7 +58,7 @@ export function ConversationHeader(props: ConversationHeaderProps) {
             </p>
           ) : (
             <p className="text-sm font-bold text-surface-900 dark:text-surface-100">
-              {isGathering ? 'Chief of Staff' : 'Product Hub'}
+              {isGathering ? 'Chief of Staff' : 'xCube Flow'}
             </p>
           )}
         </div>

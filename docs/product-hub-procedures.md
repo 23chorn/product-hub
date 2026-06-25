@@ -14,7 +14,7 @@
 
 ## 1. Purpose & Scope
 
-This document defines how `Product` plans, specifies, reviews, and hands off product work, and who is accountable at each step. It covers every activity performed using Product Hub - from initiative intake through to engineering handoff and documentation governance - plus the activities your team performs outside the system that this document needs to name explicitly (decision-making that happens in meetings, escalation, prioritization debate, etc.).
+This document defines how `Product` plans, specifies, reviews, and hands off product work, and who is accountable at each step. It covers every activity performed using xCube Flow - from initiative intake through to engineering handoff and documentation governance - plus the activities your team performs outside the system that this document needs to name explicitly (decision-making that happens in meetings, escalation, prioritization debate, etc.).
 
 It is written so that:
 - A new joiner can read it and understand what happens, in what order, and who is responsible, without needing to ask a colleague.
@@ -29,7 +29,7 @@ It is written so that:
 
 ### System roles (AI specialist agents)
 
-Product Hub's pipeline is run by named AI agents, each producing one artifact type. A human is accountable for every artifact an agent produces — the agent drafts, a human approves.
+xCube Flow's pipeline is run by named AI agents, each producing one artifact type. A human is accountable for every artifact an agent produces — the agent drafts, a human approves.
 
 | Agent (persona) | Produces | Accountable human role |
 |---|---|---|
@@ -104,7 +104,7 @@ These are the actual roles the system enforces. They are assigned per user in **
 ### 4.1 Intake & Prioritization
 
 1. The initiative is entered/synced in Airtable with: Initiative name, Description, Status, Business Value, Priority Score, Estimate, Target Window, and (optionally) Product Area, Strategic Theme, Affected Stakeholders. **The Description field must already contain the full brief** — problem, target user, scope boundary, and hard constraints — because the system does not have a structured intake form that forces this; it relies on the brief being complete on entry.
-2. An Admin clicks **Sync Airtable** in Product Hub to pull new/changed items in.
+2. An Admin clicks **Sync Airtable** in xCube Flow to pull new/changed items in.
 3. The initiative appears on the Home screen as a card.
 
 ### 4.2 Core Pipeline (Research → Engineering Handoff)

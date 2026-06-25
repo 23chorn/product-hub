@@ -81,5 +81,5 @@
     "ChannelEmptyState — full-screen empty state illustration for channels with zero messages; needs a new illustration asset"
   ],
 
-  "notes": "6 frames written to Figma file aBcD1234xCubeMsgMock. Design gaps flagged for the designer to add during review. Awaiting designer review: open the Figma file, refine spacing and copy, then mark complete in Product Hub to advance the workflow."
+  "notes": "6 frames written to Figma file aBcD1234xCubeMsgMock. Design gaps flagged for the designer to add during review. Awaiting designer review: open the Figma file, refine spacing and copy, then mark complete in xCube Flow to advance the workflow."
 }

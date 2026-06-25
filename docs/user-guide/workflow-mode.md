@@ -1,12 +1,12 @@
-# Product Hub — User Guide
+# xCube Flow — User Guide
 
 **Audience:** Product Managers and QA using the app
 
 ---
 
-## What Is Product Hub?
+## What Is xCube Flow?
 
-Product Hub is your AI-powered product ops team. Launch an initiative — usually synced from your Airtable roadmap with a complete brief already attached — and a coordinated set of AI agents researches it, writes the PRD, designs the architecture, breaks the work into developer-ready stories feature-by-feature, drafts QA test cases, and reviews its own output for quality — all with you approving at every step.
+xCube Flow is your AI-powered product ops team. Launch an initiative — usually synced from your Airtable roadmap with a complete brief already attached — and a coordinated set of AI agents researches it, writes the PRD, designs the architecture, breaks the work into developer-ready stories feature-by-feature, drafts QA test cases, and reviews its own output for quality — all with you approving at every step.
 
 The output is designed to be picked up immediately by developers (human or AI) without needing to come back to you for clarification.
 

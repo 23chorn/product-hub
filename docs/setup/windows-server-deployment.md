@@ -1,6 +1,6 @@
 # Windows Server Deployment (internal network, single port, plain HTTP)
 
-How to run Product Hub on a Windows Server box and reach it from other machines on
+How to run xCube Flow on a Windows Server box and reach it from other machines on
 the company network via `http://<server-ip>:<port>` — no domain name, no TLS cert.
 
 ## Architecture
@@ -62,7 +62,7 @@ by anything here.
 5. **Open the port in Windows Firewall** (PowerShell, as Administrator):
 
    ```powershell
-   New-NetFirewallRule -DisplayName "Product Hub" -Direction Inbound -Protocol TCP -LocalPort 5173 -Action Allow
+   New-NetFirewallRule -DisplayName "xCube Flow" -Direction Inbound -Protocol TCP -LocalPort 5173 -Action Allow
    ```
 
 6. **Start the server:**
