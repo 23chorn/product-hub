@@ -39,6 +39,7 @@ import Logger from '../utils/logger';
 import { getCoordinator, getCritic, getCurator } from './workflow-agents';
 import { workflowOps, rolesJson, createSafetyNetCheckpoint } from './workflow-db';
 import { findRepoRoot } from '../utils/find-repo-root';
+import { getEnabledStages } from '../config/settings-store';
 
 const PROJECT_ROOT = findRepoRoot(__dirname);
 
@@ -180,6 +181,15 @@ export function createWorkflow(
     if (sequence.length < before) {
       logger.info('[POLICY] require_critic_review=false — removed critic from stage sequence');
     }
+  }
+
+  // Hard kill switch: a stage disabled in Settings can never enter a new workflow,
+  // even if the caller (UI or a direct API request) still requests it.
+  const enabledStages = getEnabledStages();
+  const disabled = sequence.filter(s => enabledStages[s] === false);
+  if (disabled.length > 0) {
+    sequence = sequence.filter(s => enabledStages[s] !== false);
+    logger.info(`[POLICY] Stage(s) disabled in settings — removed from sequence: ${disabled.join(', ')}`);
   }
 
   const id = uuidv4();

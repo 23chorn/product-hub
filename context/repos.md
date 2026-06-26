@@ -38,8 +38,96 @@ This document describes the purpose, boundaries, and cross-repo dependencies of 
 - **Instruments**: equities and **futures** (`futures` feature; backend distinguishes `STOCK`/`FUT`/`CFU` instrument types)
 - No bracket/OCO orders or explicit time-in-force selector (GTC/GTD/IOC/FOK) in the web UI today, even though the backend `OrderRequestModel` carries `TIFType`, `ExpirationDate`, and day-order flags — these may be hardcoded/defaulted client-side rather than exposed to the user.
 
-**Consumes APIs from**: `xCube-API` (via the gateway, see contract-gap note above)
+**Consumes APIs from**: `xCube-Portal` (dedicated web BFF — see below) via the same `/api/v1` path; the Ocelot gateway in `xCube-API` is the *mobile* BFF and is not directly called by the web frontend
 **Does NOT include**: Mobile code, backend business logic, background jobs
+
+---
+
+### `xCube-Portal`
+**Purpose**: Dedicated **Backend-for-Frontend for the web portal** — the single entry point for `xCube-Web`. Aggregates calls from internal microservices and external APIs, owns all web-facing authentication, and exposes the AI assistant (Dory) via OpenAI.
+**Tech**: C# / **.NET 8.0** (newer than `xCube-API`'s .NET 7), ASP.NET Core Web API, Entity Framework Core + SQL Server, **Serilog** → Elasticsearch / SQL Server / file / email, **Elastic APM**, AutoMapper, Swashbuckle (URL-based versioning, `/api/v1/`), JWT auth (HttpOnly + Secure + SameSite=None cookies), OpenAI via Betalgo SDK (Dory AI), FuzzySharp (fuzzy search), libphonenumber-csharp, Docker (ports 8080 / 8443)
+**Environments**: Development, UAT, Production
+
+**Solution structure**:
+```
+xCube-Portal/
+├── Common/
+│   ├── xCube.Portal.BFF/              — Primary API gateway (17 controllers, all web-facing endpoints)
+│   └── xCube.Services.Common/        — Shared library: models, Chain of Responsibility handlers, helpers, 24 config files
+└── Services/
+    └── MarketData/
+        ├── xCube.MarketDataService.API/            — Market data endpoints
+        ├── xCube.MarketDataService.Core/           — Business logic
+        ├── xCube.MarketDataService.Infrastructure/ — EF Core data access
+        └── xCube.MarketDataService.SharedKernel/  — Shared DTOs
+```
+
+> **⚠️ Naming collision**: `xCube-Portal` contains its own `xCube.MarketDataService.*` microservice that is distinct from the `MarketDataService` inside `xCube-API`. When a story references "MarketDataService," clarify which repo owns the instance being changed — they are not the same project.
+
+**BFF controllers (17 total)**:
+
+| Controller | Responsibility |
+|---|---|
+| `AuthManagementController` | Sign-in, OTP send/verify, refresh token, sign-out |
+| `AccountsController` | Account operations |
+| `OrdersController` | Order management |
+| `WatchlistsController` | Watchlist management |
+| `ExchangesController` | Market exchange data |
+| `ChartsController` | Chart / time-series data |
+| `NewsController` | News and market data |
+| `NotificationsController` | Push / email / SMS notifications |
+| `OnboardingController` | KYC onboarding flow |
+| `CMSController` | CMS content endpoints |
+| `DoryController` | AI assistant (OpenAI integration) |
+| `PortfolioController` | Portfolio management |
+| `FAQsController` | FAQ content |
+| `BannersController` | Banner content |
+| `AgreementsController` | User agreements |
+| `SupportController` | Customer support |
+| `xCubeAccessController` | Internal xCube access control |
+
+**Authentication flow** (OTP-based, cookie-backed):
+1. `POST /signin` — validate credentials
+2. `POST /otp/send` — issue OTP via email + SMS (rate-limited: 3 req / 60 s per IP)
+3. `POST /otp/verify` — validate OTP → sets access token + refresh token as HttpOnly cookies
+4. `POST /refresh-token` — extend session
+5. `POST /signout` — invalidate session, clear cookies
+
+Token cookies are `HttpOnly`, `Secure`, `SameSite=None`; domain auto-set to `.xcube.ae` on UAT/Prod.
+
+**Architecture patterns**:
+- **BFF pattern**: `xCube.Portal.BFF` is the sole web entry point — no direct frontend-to-microservice calls.
+- **Layered architecture**: `Controller → Service → Repository → EF Core DbContext` within each service.
+- **Chain of Responsibility** (`xCube.Services.Common/ChainOfResponsibility/Handler/`): 26+ handler classes for complex business workflows (`SignInHandler`, `EmailAndSMSSendOTPHandler`, `OrderHandler`, `DepositUsingBankTransferHandler`, `WithdrawUsingCustomerIBANHandler`, complaint/compliance handlers, etc.). This is the primary pattern for multi-step business logic — do not inline that logic into controllers.
+- **Repository pattern**: All data access behind interfaces (`IRepository`, `ICustomHighlightRepository`, etc.).
+
+**Configuration** (`xCube.Services.Common/ConfigFiles/`, 24 JSON files loaded at startup):
+`CommonSettings.json` (cache, upload paths, OpenAI key), `ConnectionStrings.json`, `LogsConfiguration.json`, `XCubePortalAPIConfiguration.json` (internal service URLs), `XCubeInternalAPIConfiguration.json` (27 KB — large internal API config), `MarketDataConfiguration.json`, `OnboardingConfiguration.json`, `PortfolioConfiguration.json`, `NotificationConfiguration.json`, `PaymentGatewaySettings.json`, `DFNApiConfiguration.json` (DirectFN), `UqudoApiConfiguration.json`, `DynamicCRMConfiguration.json`, `ZendeskConfiguration.json`, `ErrorMessages.json`, plus environment-specific files for UAT/Prod. All config volumes are mounted read-only in Docker.
+
+**Security**:
+- `SwaggerIpRestrictionMiddleware` — `/swagger` is whitelisted-IP-only
+- Sign-in whitelist in `appsettings.json` — enforced on Dev/UAT to restrict who can authenticate
+- Security headers: `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, HSTS, CSP
+- Log masking: `JsonStringMaskingOperator` / `JsonMessageMaskingOperator` strip sensitive field values before they reach any sink
+
+**External integrations**:
+
+| System | Purpose |
+|---|---|
+| DirectFN | Market data |
+| iVestor | Investment platform |
+| WorldPay / N-Genius | Payment processing |
+| IBAN Checker | Bank account validation |
+| Uqudo (Qudo) | KYC / identity verification |
+| UAE Pass | National ID authentication |
+| Microsoft Dynamics CRM | Customer relationship management |
+| Zendesk | Customer support |
+| OpenAI (Betalgo) | Dory AI assistant |
+| Elasticsearch | Centralised logging sink |
+| Elastic APM | Distributed tracing |
+
+**Consumes APIs from**: Internal microservices in `xCube-API`; external APIs listed above
+**Does NOT include**: Mobile BFF logic (that lives in `xCube-API/APIGateway/xCube.Mobile.BFF`), background jobs, iOS/Android code
 
 ---
 
@@ -148,6 +236,16 @@ Every service under `Services/` follows the same 4-project **Clean Architecture*
 
 ## Decision Guidelines
 
+### Does a feature touch `xCube-Portal` or `xCube-API`?
+
+**New web-facing endpoint / auth / Dory change**: `xCube-Portal` (`xCube.Portal.BFF`). The web frontend only talks to `xCube-Portal` — the Ocelot gateway in `xCube-API` is for mobile.
+
+**New multi-step business workflow**: Add or extend a Chain of Responsibility handler in `xCube.Services.Common/ChainOfResponsibility/Handler/` rather than fattening a controller or service method.
+
+**New web BFF aggregation** (combining 2+ internal service calls into one web response): `xCube.Portal.BFF` (new controller action or extend an existing one). The BFF should do the fan-out; do not have `xCube-Web` call multiple APIs directly.
+
+**Market data change on web**: Decide whether the change belongs in `xCube-Portal`'s own `xCube.MarketDataService` (web-portal-specific model or aggregation) or in `xCube-API`'s `MarketDataService` (shared data source). These are separate services — be explicit in the story about which one.
+
 ### Which part of `xCube-API` does a feature touch?
 
 **New REST behaviour for an existing domain** → add a controller/endpoint to the relevant service's `.API` project (e.g. a new order query → `PortfolioService`), plus DTOs in that service's `.SharedKernel`. Do not create a new microservice for this.
@@ -203,7 +301,8 @@ Every service under `Services/` follows the same 4-project **Clean Architecture*
 
 | Repo | Team | Language | CI | Notes |
 |------|------|----------|----|-------|
-| `xCube-Web` | Web Frontend | TypeScript / React 19 | Not present in repo | No backend code; calls `xCube-API` over `/api/v1` |
+| `xCube-Web` | Web Frontend | TypeScript / React 19 | Not present in repo | No backend code; calls `xCube-Portal` (web BFF) over `/api/v1` |
+| `xCube-Portal` | — | C# / .NET 8.0 | — | Web BFF: 17 controllers, Chain of Responsibility pattern, 24 JSON config files, Docker 8080/8443; contains own MarketDataService (distinct from xCube-API's) |
 | `xCube-iOS-Main` | iOS Engineering | Swift / UIKit (MVVM+Router) | Azure DevOps → TestFlight | Not SwiftUI; Realm not Core Data |
 | `xCube-Android-Main` | Android Engineering | Kotlin / Jetpack Compose | Azure DevOps → Google Play | Trade & Portfolio modules marked "in progress" |
 | `xCube-API` | Backend | C# / .NET 7.0 | Azure DevOps (self-hosted pool, build only) | Single monorepo: 14 microservices + Ocelot gateway + Mobile BFF + 15 jobs |

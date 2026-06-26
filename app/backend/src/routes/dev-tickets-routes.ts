@@ -124,6 +124,240 @@ export function buildStoryPlatformMap(backlog: BacklogData | null): Map<string, 
   return map;
 }
 
+/** Build a map from story_id → localKey for resolving depends_on references in the manifest. */
+export function buildStoryIdToLocalKeyMap(backlog: BacklogData | null): Map<string, string> {
+  const map = new Map<string, string>();
+  (backlog?.features ?? []).forEach((feature, fi) => {
+    const fKey = featureLocalKey(fi);
+    (feature.stories ?? []).forEach((story, si) => {
+      if (story.story_id) map.set(story.story_id, storyLocalKey(fKey, si));
+    });
+  });
+  return map;
+}
+
+/** Topological sort (Kahn's algorithm) on ticket local keys ordered by depends_on.
+ *  Unknown or cyclic deps are handled gracefully — unresolvable nodes append at the end. */
+export function topoSortTickets(nodes: Array<{ localKey: string; dependsOn: string[] }>): string[] {
+  const allKeys = new Set(nodes.map(n => n.localKey));
+  const prereqs = new Map(nodes.map(n => [n.localKey, n.dependsOn.filter(d => allKeys.has(d))]));
+  const inDegree = new Map(nodes.map(n => [n.localKey, prereqs.get(n.localKey)!.length]));
+  const waiters = new Map<string, string[]>(nodes.map(n => [n.localKey, []]));
+  for (const node of nodes) {
+    for (const dep of prereqs.get(node.localKey)!) {
+      waiters.get(dep)!.push(node.localKey);
+    }
+  }
+  const queue = nodes.filter(n => inDegree.get(n.localKey) === 0).map(n => n.localKey);
+  const result: string[] = [];
+  const visited = new Set<string>();
+  while (queue.length > 0) {
+    const key = queue.shift()!;
+    result.push(key);
+    visited.add(key);
+    for (const waiter of waiters.get(key) ?? []) {
+      const deg = (inDegree.get(waiter) ?? 1) - 1;
+      inDegree.set(waiter, deg);
+      if (deg === 0) queue.push(waiter);
+    }
+  }
+  for (const n of nodes) if (!visited.has(n.localKey)) result.push(n.localKey);
+  return result;
+}
+
+/**
+ * GET /api/dev/initiatives/:seqNum/manifest
+ * Initiative-level overview for a dev agent: epic context, feature phasing, a compact flat
+ * ticket list with dependency metadata, and a topologically-sorted implementation order.
+ * Call this once to load the "big picture" before making batch payload pulls.
+ */
+router.get('/:seqNum/manifest', async (req: Request, res: Response) => {
+  const seqNum = Number(req.params.seqNum);
+  if (!Number.isInteger(seqNum) || seqNum <= 0) {
+    res.status(400).json({ error: 'seqNum must be a positive integer — the "#<N>" id shown on the initiative card' });
+    return;
+  }
+
+  try {
+    const initiative = findInitiativeBySeqNum(seqNum);
+    if (!initiative) {
+      res.status(404).json({ error: `Initiative #${seqNum} not found` });
+      return;
+    }
+
+    const workItemRows = getWorkItemRowsByItem([initiative.id]).get(initiative.id) ?? [];
+    if (workItemRows.length === 0) {
+      res.status(404).json({ error: `Initiative #${seqNum} has no tickets pushed to Azure DevOps yet` });
+      return;
+    }
+
+    const { ticketArtifactId } = getDocumentArtifactIds(initiative.id);
+    const backlogContent = ticketArtifactId != null ? await loadArtifactContentById(ticketArtifactId) : null;
+    const backlog = backlogContent != null ? tryParseBacklog(backlogContent) : null;
+
+    const epicRow = workItemRows.find(r => r.ado_type === 'epic');
+    const epicContent = backlog?.epic;
+    const epic = epicRow ? {
+      localKey: epicRow.local_key,
+      adoId: epicRow.ado_id,
+      adoUrl: epicRow.ado_url,
+      title: epicRow.title,
+      description: epicContent?.description ?? null,
+      businessValue: epicContent?.businessValue ?? null,
+      state: epicRow.state,
+      stateBucket: epicRow.state != null ? bucketWorkItemState(epicRow.state) : null,
+    } : null;
+
+    const featureRows = workItemRows.filter(r => r.ado_type === 'feature');
+    const storyRows = workItemRows.filter(r => r.ado_type === 'story');
+    const storyIdToLocalKey = buildStoryIdToLocalKeyMap(backlog);
+
+    const features = featureRows.map(featureRow => {
+      const featureIndex = parseFeatureLocalKey(featureRow.local_key);
+      const featureContent = featureIndex != null ? backlog?.features?.[featureIndex] : undefined;
+      const storiesForFeature = storyRows.filter(r => parseStoryLocalKey(r.local_key)?.featureIndex === featureIndex);
+      const totalPoints = storiesForFeature.reduce((sum, r) => {
+        const parsed = parseStoryLocalKey(r.local_key);
+        const storyContent = parsed != null ? featureContent?.stories?.[parsed.storyIndex] : undefined;
+        return sum + (storyContent?.estimated_points ?? storyContent?.effort ?? 0);
+      }, 0);
+      return {
+        localKey: featureRow.local_key,
+        adoId: featureRow.ado_id,
+        adoUrl: featureRow.ado_url,
+        title: featureRow.title,
+        description: featureContent?.description ?? null,
+        phase: featureContent?.phase ?? null,
+        storyCount: storiesForFeature.length,
+        totalPoints,
+        state: featureRow.state,
+        stateBucket: featureRow.state != null ? bucketWorkItemState(featureRow.state) : null,
+      };
+    });
+
+    const tickets = storyRows.map(storyRow => {
+      const parsed = parseStoryLocalKey(storyRow.local_key);
+      const featureIndex = parsed?.featureIndex;
+      const featureRow = featureIndex != null ? featureRows.find(r => parseFeatureLocalKey(r.local_key) === featureIndex) : undefined;
+      const featureContent = featureIndex != null ? backlog?.features?.[featureIndex] : undefined;
+      const storyContent = parsed != null ? featureContent?.stories?.[parsed.storyIndex] : undefined;
+      const dependsOn = (storyContent?.depends_on ?? []).map(ref => storyIdToLocalKey.get(ref) ?? ref);
+      return {
+        localKey: storyRow.local_key,
+        adoId: storyRow.ado_id,
+        adoUrl: storyRow.ado_url,
+        title: storyRow.title,
+        featureLocalKey: featureRow?.local_key ?? null,
+        featureTitle: featureContent?.title ?? null,
+        phase: featureContent?.phase ?? null,
+        estimatedPoints: storyContent?.estimated_points ?? storyContent?.effort ?? null,
+        platform: storyContent ? getStoryPlatforms(storyContent) : [],
+        dependsOn,
+        state: storyRow.state,
+        stateBucket: storyRow.state != null ? bucketWorkItemState(storyRow.state) : null,
+      };
+    });
+
+    res.json({
+      initiative: { seqNum: initiative.seq_num, id: initiative.id, title: initiative.title },
+      epic,
+      features,
+      tickets,
+      implementationOrder: topoSortTickets(tickets.map(t => ({ localKey: t.localKey, dependsOn: t.dependsOn }))),
+    });
+  } catch (error: any) {
+    logger.error(`Failed to build manifest for initiative #${seqNum}`, error);
+    res.status(500).json({ error: error.message || 'Failed to build manifest' });
+  }
+});
+
+/**
+ * GET /api/dev/initiatives/:seqNum/tickets/payload?ids=F0.S0,F0.S1,F0.S2
+ * Full ticket detail for a batch of local keys — intended for implementation pulls after the
+ * dev agent has loaded the manifest and chosen which tickets to work on next.
+ * ids: comma-separated local keys (e.g. F0.S0,F1.S2). May be repeated as multiple params.
+ */
+router.get('/:seqNum/tickets/payload', async (req: Request, res: Response) => {
+  const seqNum = Number(req.params.seqNum);
+  if (!Number.isInteger(seqNum) || seqNum <= 0) {
+    res.status(400).json({ error: 'seqNum must be a positive integer — the "#<N>" id shown on the initiative card' });
+    return;
+  }
+
+  const rawIds = req.query.ids;
+  if (!rawIds) {
+    res.status(400).json({ error: 'ids query param is required — comma-separated local keys, e.g. ids=F0.S0,F0.S1' });
+    return;
+  }
+  const requestedKeys = new Set(
+    (Array.isArray(rawIds) ? rawIds : [rawIds])
+      .flatMap(v => String(v).split(','))
+      .map(v => v.trim())
+      .filter(Boolean)
+  );
+
+  try {
+    const initiative = findInitiativeBySeqNum(seqNum);
+    if (!initiative) {
+      res.status(404).json({ error: `Initiative #${seqNum} not found` });
+      return;
+    }
+
+    const workItemRows = getWorkItemRowsByItem([initiative.id]).get(initiative.id) ?? [];
+    const { ticketArtifactId } = getDocumentArtifactIds(initiative.id);
+    const backlogContent = ticketArtifactId != null ? await loadArtifactContentById(ticketArtifactId) : null;
+    const backlog = backlogContent != null ? tryParseBacklog(backlogContent) : null;
+
+    const featureRows = workItemRows.filter(r => r.ado_type === 'feature');
+    const storyRows = workItemRows.filter(r => r.ado_type === 'story' && requestedKeys.has(r.local_key));
+    const storyIdToLocalKey = buildStoryIdToLocalKeyMap(backlog);
+
+    const tickets = storyRows.map(storyRow => {
+      const parsed = parseStoryLocalKey(storyRow.local_key);
+      const featureIndex = parsed?.featureIndex;
+      const featureRow = featureIndex != null ? featureRows.find(r => parseFeatureLocalKey(r.local_key) === featureIndex) : undefined;
+      const featureContent = featureIndex != null ? backlog?.features?.[featureIndex] : undefined;
+      const storyContent = parsed != null ? featureContent?.stories?.[parsed.storyIndex] : undefined;
+      const dependsOn = (storyContent?.depends_on ?? []).map(ref => storyIdToLocalKey.get(ref) ?? ref);
+      return {
+        localKey: storyRow.local_key,
+        adoId: storyRow.ado_id,
+        adoUrl: storyRow.ado_url,
+        state: storyRow.state,
+        stateBucket: storyRow.state != null ? bucketWorkItemState(storyRow.state) : null,
+        featureLocalKey: featureRow?.local_key ?? null,
+        featureTitle: featureContent?.title ?? null,
+        phase: featureContent?.phase ?? null,
+        title: storyRow.title,
+        storyId: storyContent?.story_id ?? null,
+        persona: storyContent?.as_a ?? storyContent?.persona ?? null,
+        goal: storyContent?.i_want ?? storyContent?.goal ?? null,
+        benefit: storyContent?.so_that ?? storyContent?.benefit ?? null,
+        acceptanceCriteria: storyContent?.acceptance_criteria ?? storyContent?.acceptanceCriteria ?? [],
+        technicalAcceptanceCriteria: storyContent?.technical_acceptance_criteria ?? [],
+        agentContext: storyContent?.agentContext ?? null,
+        estimatedPoints: storyContent?.estimated_points ?? storyContent?.effort ?? null,
+        estimatedHours: storyContent?.aiEstimatedHours ?? storyContent?.estimatedHours ?? null,
+        platform: storyContent ? getStoryPlatforms(storyContent) : [],
+        dependsOn,
+        technicalNotes: storyContent?.technical_notes ?? null,
+      };
+    });
+
+    const foundKeys = new Set(tickets.map(t => t.localKey));
+    const notFound = [...requestedKeys].filter(k => !foundKeys.has(k));
+
+    res.json({
+      initiative: { seqNum: initiative.seq_num, id: initiative.id, title: initiative.title },
+      tickets,
+      ...(notFound.length > 0 ? { notFound } : {}),
+    });
+  } catch (error: any) {
+    logger.error(`Failed to load ticket payload for initiative #${seqNum}`, error);
+    res.status(500).json({ error: error.message || 'Failed to load ticket payload' });
+  }
+});
+
 /**
  * GET /api/dev/initiatives/:seqNum/tickets
  * Mandatory: seqNum (the "#<N>" id on the initiative card). Optional: mode=dev|qa (default

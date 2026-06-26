@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { api } from '../../services/api';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useConfigStore } from '../../stores/configStore';
 import { useThemeStore } from '../../stores/themeStore';
 import { THEMES, getTheme, type ThemeId } from '../../theme/themes';
 import { useToast } from '../../hooks/useToast';
@@ -84,6 +85,7 @@ function FieldRow({ label, hint, children }: { label: string; hint?: string; chi
 
 export function SettingsPanel() {
   const { closeSettings, setDemoMode } = useSettingsStore();
+  const { setConfig } = useConfigStore();
   const { theme, setTheme } = useThemeStore();
   const { user, noAuth, loading: authLoading } = useAuthStore();
   const toast = useToast();
@@ -119,6 +121,10 @@ export function SettingsPanel() {
       setSettings(draft);
       setDirty(false);
       setDemoMode(draft.demo.enabled);
+      // Pipeline stage toggles live in the global config store (read by the Home
+      // screen's launch modal) — refresh it so a disabled stage stops being
+      // offered immediately, without requiring a full page reload.
+      api.getConfig().then(setConfig).catch(() => {});
       toast.success('Settings saved');
       closeSettings();
     } catch (err: any) {

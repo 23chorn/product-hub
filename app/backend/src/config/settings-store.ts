@@ -81,8 +81,16 @@ export function getSprintSettings(): SprintSettings {
 
 // ── Enabled specialist stages ──────────────────────────────────────────────────
 
-/** All known specialist stages — each defaults to enabled when no policy is set. */
-export const ALL_STAGES = ['analyst', 'pm_prd', 'solution_architect', 'epic_feature_planner', 'prototype'];
+/**
+ * All known specialist stages — each defaults to enabled when no policy is set.
+ * Must stay in sync with the toggleable stages in the Settings UI (frontend
+ * STAGE_ORDER in SettingsPanel.tsx) — a stage missing here silently ignores its
+ * toggle, since setEnabledStages()/getEnabledStages() only read/write this list.
+ */
+export const ALL_STAGES = [
+  'analyst', 'pm_prd', 'prototype', 'figma_design',
+  'solution_architect', 'epic_feature_planner', 'story_decomposition',
+];
 
 const STAGE_KEY_PREFIX = 'stage_enabled:';
 

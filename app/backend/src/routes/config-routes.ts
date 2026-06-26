@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { appConfig } from '../config/app-config';
 import { getAgentModelLabels } from '../utils/ai-provider';
+import { getEnabledStages } from '../config/settings-store';
 
 const router = Router();
 
@@ -19,9 +20,11 @@ router.get('/models', (_req: Request, res: Response) => {
 /**
  * GET /api/config
  * Full app configuration (no secrets). Frontend reads this on mount.
+ * stages.enabledStages is read fresh from the DB so that pipeline toggle changes
+ * in Settings are reflected immediately without a server restart.
  */
 router.get('/', (_req: Request, res: Response) => {
-  res.json(appConfig);
+  res.json({ ...appConfig, stages: { enabledStages: getEnabledStages() } });
 });
 
 export default router;
