@@ -4,17 +4,16 @@ import { api } from '../../services/api';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useConfigStore } from '../../stores/configStore';
 import { useWorkflowStore } from '../../stores/workflowStore';
-import { useAuthStore } from '../../stores/authStore';
+import { useAuthStore, canLaunchWorkflow } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useToast } from '../../hooks/useToast';
 import { TOGGLEABLE_STAGES } from '../../constants/stage-labels';
-import { extractReadyPayload } from '../../utils/coordinator-helpers';
 import { InitiativeCard } from './InitiativeCard';
 import { HomeHeader } from './HomeHeader';
 import { PageHeaderActions } from '../common/PageHeaderActions';
 import { NewInitiativeForm } from './NewInitiativeForm';
 import { LaunchPipelineModal } from './LaunchPipelineModal';
-import { effectiveStatus, STATUS_FILTERS, type EnrichedItem, type LaunchPhase, type StatusFilter } from './types';
+import { effectiveStatus, STATUS_FILTERS, type EnrichedItem, type LaunchPhase, type StatusFilter, type WorkflowPreset } from './types';
 
 let _cachedLocalItems: EnrichedItem[] = [];
 
@@ -51,6 +50,8 @@ export function HomeScreen() {
   const [showForm, setShowForm] = useState(false);
   const [formTitle, setFormTitle] = useState('');
   const [formDesc, setFormDesc] = useState('');
+  const [formProductArea, setFormProductArea] = useState('');
+  const [formTheme, setFormTheme] = useState('');
   const [savingForm, setSavingForm] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -61,11 +62,8 @@ export function HomeScreen() {
 
   const [launchItem, setLaunchItem] = useState<EnrichedItem | null>(null);
   const [launchPhase, setLaunchPhase] = useState<LaunchPhase | null>(null);
-  const [enabledStages, setEnabledStages] = useState<Record<string, boolean>>({});
-  const [stageRationale, setStageRationale] = useState<string | null>(null);
-  const [enrichedContext, setEnrichedContext] = useState<string | null>(null);
+  const [launchPreset, setLaunchPreset] = useState<WorkflowPreset>('full');
   const [launchError, setLaunchError] = useState<string | null>(null);
-  const planningSessionIdRef = useRef<string | null>(null);
 
   const { setSelectedItem, clearSession } = useSessionStore();
   const { applyWorkflowStatus, resetWorkflow, addCoordinatorMessage, setPlanningSessionId } = useWorkflowStore();
@@ -151,13 +149,18 @@ export function HomeScreen() {
     return () => clearInterval(id);
   }, [localItems, loadLocalItems]);
 
-  const cancelForm = () => { setFormTitle(''); setFormDesc(''); setShowForm(false); };
+  const cancelForm = () => { setFormTitle(''); setFormDesc(''); setFormProductArea(''); setFormTheme(''); setShowForm(false); };
 
   const handleCreateInitiative = async () => {
     if (!formTitle.trim() || savingForm) return;
     try {
       setSavingForm(true);
-      await api.createInitiative(formTitle.trim(), formDesc.trim() || undefined);
+      await api.createInitiative(
+        formTitle.trim(),
+        formDesc.trim() || undefined,
+        formProductArea.trim() || undefined,
+        formTheme.trim() || undefined,
+      );
       await loadLocalItems();
       cancelForm();
     } catch (err: any) {
@@ -208,48 +211,23 @@ export function HomeScreen() {
     }
   };
 
-  const handleInitiateLaunch = async (item: EnrichedItem) => {
+  const handleInitiateLaunch = (item: EnrichedItem) => {
     setLaunchItem(item);
-    setLaunchPhase('analyzing');
+    setLaunchPreset('full');
+    setLaunchPhase('confirming');
     setLaunchError(null);
-    planningSessionIdRef.current = null;
-
-    const goal = item.description
-      ? `${item.initiative}\n\n${item.description}`
-      : item.initiative;
-
-    try {
-      await api.openCoordinatorPlanning(
-        goal,
-        (sessionId) => {
-          planningSessionIdRef.current = sessionId;
-          localStorage.setItem('coordinatorPlanningSessionId', sessionId);
-        },
-        () => {},
-        (fullContent) => {
-          const payload = extractReadyPayload(fullContent);
-          const recommended = payload.recommendedStages ? new Set(payload.recommendedStages) : null;
-          setEnabledStages(Object.fromEntries(
-            availableStages.map(s => [s.key, recommended ? recommended.has(s.key) : true])
-          ));
-          setStageRationale(payload.stageRationale);
-          setEnrichedContext(payload.enrichedContext);
-          setLaunchPhase('confirming');
-        },
-        (err) => { setLaunchError(err); setLaunchPhase(null); },
-      );
-    } catch (err: any) {
-      setLaunchError(err.message ?? 'Analysis failed');
-      setLaunchPhase(null);
-    }
   };
+
+  const SMALL_STAGE_KEYS = ['pm_prd', 'epic_feature_planner', 'story_decomposition'];
 
   const handleConfirmLaunch = async () => {
     if (!launchItem) return;
     setLaunchPhase('launching');
     setLaunchError(null);
     try {
-      const selectedStages = availableStages.filter(s => enabledStages[s.key]).map(s => s.key);
+      const selectedStages = launchPreset === 'small'
+        ? SMALL_STAGE_KEYS
+        : availableStages.map(s => s.key);
       const goal = launchItem.description
         ? `${launchItem.initiative}\n\n${launchItem.description}`
         : launchItem.initiative;
@@ -259,14 +237,13 @@ export function HomeScreen() {
       resetWorkflow();
 
       const result = await api.startWorkflow(
-        launchItem.id, goal, enrichedContext ?? undefined,
+        launchItem.id, goal, undefined,
         selectedStages, undefined,
-        planningSessionIdRef.current ?? undefined,
+        undefined,
         launchItem.productArea,
       );
       const status = await api.getWorkflowStatus(result.workflowId);
       applyWorkflowStatus(status);
-      localStorage.removeItem('coordinatorPlanningSessionId');
       setPlanningSessionId(null);
       addCoordinatorMessage({
         role: 'coordinator',
@@ -280,13 +257,12 @@ export function HomeScreen() {
   };
 
   const handleCancelLaunch = () => {
-    if (planningSessionIdRef.current) localStorage.removeItem('coordinatorPlanningSessionId');
     setLaunchItem(null);
     setLaunchPhase(null);
     setLaunchError(null);
   };
 
-  const enabledCount = Object.values(enabledStages).filter(Boolean).length;
+  const canCreate = canLaunchWorkflow(user, noAuth);
 
   const visibleItems = useMemo(
     () => isDemoMode ? localItems : localItems.filter(item => !item.workflow?.isDemo),
@@ -371,6 +347,7 @@ export function HomeScreen() {
           themes={themes}
           themeFilter={themeFilter}
           onThemeFilterChange={setThemeFilter}
+          onCreateInitiative={canCreate ? openForm : undefined}
         />
       </PageHeaderActions>
 
@@ -383,8 +360,12 @@ export function HomeScreen() {
             <NewInitiativeForm
               title={formTitle}
               description={formDesc}
+              productArea={formProductArea}
+              strategicTheme={formTheme}
               onTitleChange={setFormTitle}
               onDescriptionChange={setFormDesc}
+              onProductAreaChange={setFormProductArea}
+              onStrategicThemeChange={setFormTheme}
               saving={savingForm}
               onCreate={handleCreateInitiative}
               onCancel={cancelForm}
@@ -418,15 +399,17 @@ export function HomeScreen() {
               <p className="text-xs text-surface-400 dark:text-surface-500 mb-4 max-w-xs mx-auto">
                 Add a detailed description and the pipeline will run autonomously — from research through to backlog.
               </p>
-              <button
-                onClick={openForm}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Create first initiative
-              </button>
+              {canCreate && (
+                <button
+                  onClick={openForm}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Create first initiative
+                </button>
+              )}
             </div>
           )}
 
@@ -449,7 +432,7 @@ export function HomeScreen() {
                       isConfirmingDelete={confirmDeleteId === item.id}
                       isArchiving={archivingId === item.id}
                       isConfirmingArchive={confirmArchiveId === item.id}
-                      isAnalysing={launchItem?.id === item.id && (launchPhase === 'analyzing' || launchPhase === 'launching')}
+                      isAnalysing={launchItem?.id === item.id && launchPhase === 'launching'}
                       onLaunch={() => handleInitiateLaunch(item)}
                       onResume={() => handleResumeWorkflow(item)}
                       onRequestDelete={() => setConfirmDeleteId(item.id)}
@@ -473,12 +456,10 @@ export function HomeScreen() {
         <LaunchPipelineModal
           item={launchItem}
           phase={launchPhase}
-          stageRationale={stageRationale}
-          availableStages={availableStages}
-          enabledStages={enabledStages}
-          enabledCount={enabledCount}
+          selectedPreset={launchPreset}
+          fullStages={availableStages}
+          onSelectPreset={setLaunchPreset}
           error={launchError}
-          onToggleStage={(key) => setEnabledStages(prev => ({ ...prev, [key]: !prev[key] }))}
           onConfirm={handleConfirmLaunch}
           onCancel={handleCancelLaunch}
         />

@@ -6,8 +6,9 @@ export { effectiveStatus } from '@pap/shared';
 
 export type EnrichedItem = AirtableItem & { source?: string; workflow?: WorkflowInfo };
 
-export type LaunchPhase = 'analyzing' | 'confirming' | 'launching';
+export type LaunchPhase = 'confirming' | 'launching';
 export type StatusFilter = 'all' | 'active' | 'review' | 'done' | 'stopped' | 'new' | 'mine';
+export type WorkflowPreset = 'full' | 'small';
 
 /** A togglable pipeline stage as shown in the launch confirmation modal. */
 export interface StageOption {

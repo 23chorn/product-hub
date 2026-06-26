@@ -8,8 +8,8 @@ export const initiativesApi = {
     return response.data;
   },
 
-  async createInitiative(title: string, description?: string): Promise<LocalInitiative> {
-    const response = await axios.post(`${API_BASE_URL}/api/initiatives`, { title, description });
+  async createInitiative(title: string, description?: string, productArea?: string, strategicTheme?: string): Promise<LocalInitiative> {
+    const response = await axios.post(`${API_BASE_URL}/api/initiatives`, { title, description, productArea, strategicTheme });
     return response.data;
   },
 

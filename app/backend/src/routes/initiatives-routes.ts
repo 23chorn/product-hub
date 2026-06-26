@@ -34,16 +34,20 @@ function toAirtableItem(row: InitiativeRow): AirtableItem {
     createdAt: new Date(row.created_at).toISOString(),
     seqNum: row.seq_num,
   };
-  if (row.source === 'airtable' && row.metadata) {
-    try {
-      const meta = JSON.parse(row.metadata);
+  if (!row.metadata) return base;
+  try {
+    const meta = JSON.parse(row.metadata);
+    if (row.source === 'airtable') {
       // seqNum is DB-internal — never let synced Airtable metadata shadow it. productArea
       // comes through Airtable as a string or a (often single-element) array depending on
       // whether the field is single- or multi-select — coerce so every item exposes the
       // same normalized string the Home page's product area filter dedupes on.
       return { ...base, ...meta, seqNum: row.seq_num, productArea: coerceProductArea(meta.productArea) ?? undefined };
-    } catch { /* ignore malformed metadata */ }
-  }
+    }
+    // Local items: only pull through known display fields stored at creation time.
+    if (meta.productArea) base.productArea = meta.productArea;
+    if (meta.strategicTheme) base.strategicTheme = meta.strategicTheme;
+  } catch { /* ignore malformed metadata */ }
   return base;
 }
 
@@ -67,8 +71,8 @@ const stmts = {
      WHERE id = ? AND source = 'local'`
   ),
   insert: db.prepare(
-    `INSERT INTO items (id, type, title, description, status, source, airtable_id, seq_num, created_at, updated_at)
-     VALUES (?, 'initiative', ?, ?, 'active', 'local', NULL, ?, ?, ?)`
+    `INSERT INTO items (id, type, title, description, status, source, airtable_id, metadata, seq_num, created_at, updated_at)
+     VALUES (?, 'initiative', ?, ?, 'active', 'local', NULL, ?, ?, ?, ?)`
   ),
   update: db.prepare(
     `UPDATE items SET title = ?, description = ?, updated_at = ?
@@ -191,17 +195,21 @@ router.get('/:id', (req: Request, res: Response) => {
 /**
  * POST /api/initiatives
  * Create a new local initiative.
- * Body: { title: string, description?: string }
+ * Body: { title: string, description?: string, productArea?: string, strategicTheme?: string }
  */
 router.post('/', (req: Request, res: Response) => {
-  const { title, description } = req.body;
+  const { title, description, productArea, strategicTheme } = req.body;
   if (!title || typeof title !== 'string' || !title.trim()) {
     return res.status(400).json({ error: 'title is required' });
   }
   try {
     const id = uuidv4();
     const now = Date.now();
-    stmts.insert.run(id, title.trim(), description?.trim() || null, nextItemSeqNum(), now, now);
+    const meta: Record<string, string> = {};
+    if (productArea?.trim()) meta.productArea = productArea.trim();
+    if (strategicTheme?.trim()) meta.strategicTheme = strategicTheme.trim();
+    const metadataJson = Object.keys(meta).length > 0 ? JSON.stringify(meta) : null;
+    stmts.insert.run(id, title.trim(), description?.trim() || null, metadataJson, nextItemSeqNum(), now, now);
     const row = stmts.get.get(id) as InitiativeRow;
     logger.info(`Created local initiative: ${id} ("${title.trim()}")`);
     res.status(201).json(toLocalInitiative(row));

@@ -16,6 +16,7 @@ interface HomeHeaderProps {
   themes: string[];
   themeFilter: string;
   onThemeFilterChange: (v: string) => void;
+  onCreateInitiative?: () => void;
 }
 
 /** Home screen search box, status filter chips, and product area/theme filters —
@@ -35,9 +36,22 @@ export function HomeHeader({
   themes,
   themeFilter,
   onThemeFilterChange,
+  onCreateInitiative,
 }: HomeHeaderProps) {
   return (
     <div className="flex items-center gap-3 flex-nowrap">
+
+      {onCreateInitiative && (
+        <button
+          onClick={onCreateInitiative}
+          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors flex-shrink-0"
+        >
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          New
+        </button>
+      )}
 
       <div className="relative flex-1 min-w-[160px] max-w-xs flex-shrink-0">
         <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-surface-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -123,6 +137,7 @@ export function HomeHeader({
           {themes.map(theme => <option key={theme} value={theme}>{theme}</option>)}
         </select>
       )}
+
     </div>
   );
 }

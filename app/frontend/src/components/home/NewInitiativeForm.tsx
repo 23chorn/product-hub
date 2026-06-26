@@ -23,8 +23,12 @@ Constraints:
 interface NewInitiativeFormProps {
   title: string;
   description: string;
+  productArea: string;
+  strategicTheme: string;
   onTitleChange: (v: string) => void;
   onDescriptionChange: (v: string) => void;
+  onProductAreaChange: (v: string) => void;
+  onStrategicThemeChange: (v: string) => void;
   saving: boolean;
   onCreate: () => void;
   onCancel: () => void;
@@ -35,8 +39,12 @@ interface NewInitiativeFormProps {
 export function NewInitiativeForm({
   title,
   description,
+  productArea,
+  strategicTheme,
   onTitleChange,
   onDescriptionChange,
+  onProductAreaChange,
+  onStrategicThemeChange,
   saving,
   onCreate,
   onCancel,
@@ -61,6 +69,22 @@ export function NewInitiativeForm({
         placeholder="Initiative name"
         className="w-full px-3 py-2 text-sm border border-brand-300 dark:border-brand-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 placeholder-surface-400"
       />
+      <div className="grid grid-cols-2 gap-2">
+        <input
+          type="text"
+          value={productArea}
+          onChange={e => onProductAreaChange(e.target.value)}
+          placeholder="Product area (optional)"
+          className="w-full px-3 py-2 text-sm border border-brand-300 dark:border-brand-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 placeholder-surface-400"
+        />
+        <input
+          type="text"
+          value={strategicTheme}
+          onChange={e => onStrategicThemeChange(e.target.value)}
+          placeholder="Strategic theme (optional)"
+          className="w-full px-3 py-2 text-sm border border-brand-300 dark:border-brand-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 placeholder-surface-400"
+        />
+      </div>
       <textarea
         value={description}
         onChange={e => onDescriptionChange(e.target.value)}

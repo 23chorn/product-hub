@@ -39,10 +39,10 @@ export function resolveArtifactPath(storedPath: string): string {
   // If the file exists at the stored path, use it as-is (fast path)
   if (fs.existsSync(storedPath)) return storedPath;
 
-  // Extract relative portion from 'data/' onwards
-  const dataIdx = storedPath.indexOf('/data/sessions/');
+  // Extract relative portion from 'data/' onwards (handle both Unix and Windows separators)
+  const dataIdx = Math.max(storedPath.indexOf('/data/sessions/'), storedPath.indexOf('\\data\\sessions\\'));
   if (dataIdx >= 0) {
-    const relativePath = storedPath.slice(dataIdx + 1); // 'data/sessions/...'
+    const relativePath = storedPath.slice(dataIdx + 1); // 'data/sessions/...' or 'data\sessions\...'
     const resolved = path.join(PROJECT_ROOT, relativePath);
     if (fs.existsSync(resolved)) return resolved;
   }
