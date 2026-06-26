@@ -88,7 +88,10 @@ export const TOGGLEABLE_STAGES: Array<{ key: string; label: string; short: strin
 ];
 
 // Workflow presets — single source of truth for stage sequences
-export const WORKFLOW_PRESETS = {
+export const WORKFLOW_PRESETS: {
+  small: Array<{ key: string; label: string; short: string }>;
+  full: Array<{ key: string; label: string; short: string }>;
+} = {
   small: [
     { key: 'pm_prd',               label: 'PRD',             short: 'Rex · PM' },
     { key: 'solution_architect',   label: 'Architecture',    short: 'Atlas · Architect' },
@@ -96,7 +99,7 @@ export const WORKFLOW_PRESETS = {
     { key: 'story_decomposition',  label: 'Refinement',      short: 'Multi-Agent · Refinement' },
   ],
   full: TOGGLEABLE_STAGES, // Full pipeline uses all toggleable stages
-} as const;
+};
 
 // Extract just the keys for API calls
 export const SMALL_WORKFLOW_KEYS = WORKFLOW_PRESETS.small.map(s => s.key);
