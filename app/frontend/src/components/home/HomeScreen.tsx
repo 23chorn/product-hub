@@ -7,7 +7,7 @@ import { useWorkflowStore } from '../../stores/workflowStore';
 import { useAuthStore, canLaunchWorkflow } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useToast } from '../../hooks/useToast';
-import { TOGGLEABLE_STAGES } from '../../constants/stage-labels';
+import { TOGGLEABLE_STAGES, SMALL_WORKFLOW_KEYS } from '../../constants/stage-labels';
 import { InitiativeCard } from './InitiativeCard';
 import { HomeHeader } from './HomeHeader';
 import { PageHeaderActions } from '../common/PageHeaderActions';
@@ -218,15 +218,13 @@ export function HomeScreen() {
     setLaunchError(null);
   };
 
-  const SMALL_STAGE_KEYS = ['pm_prd', 'epic_feature_planner', 'story_decomposition'];
-
   const handleConfirmLaunch = async () => {
     if (!launchItem) return;
     setLaunchPhase('launching');
     setLaunchError(null);
     try {
       const selectedStages = launchPreset === 'small'
-        ? SMALL_STAGE_KEYS
+        ? SMALL_WORKFLOW_KEYS
         : availableStages.map(s => s.key);
       const goal = launchItem.description
         ? `${launchItem.initiative}\n\n${launchItem.description}`

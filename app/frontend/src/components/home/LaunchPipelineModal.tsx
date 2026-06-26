@@ -1,4 +1,5 @@
 import type { EnrichedItem, LaunchPhase, StageOption, WorkflowPreset } from './types';
+import { WORKFLOW_PRESETS } from '../../constants/stage-labels';
 
 interface LaunchPipelineModalProps {
   item: EnrichedItem;
@@ -10,13 +11,6 @@ interface LaunchPipelineModalProps {
   onConfirm: () => void;
   onCancel: () => void;
 }
-
-const SMALL_STAGES: StageOption[] = [
-  { key: 'pm_prd',               label: 'PRD',             short: 'Rex · PM' },
-  { key: 'solution_architect',   label: 'Architecture',    short: 'Atlas · Architect' },
-  { key: 'epic_feature_planner', label: 'Epic & Features', short: 'Apex · Features' },
-  { key: 'story_decomposition',  label: 'Refinement',      short: 'Multi-Agent · Refinement' },
-];
 
 function StagePills({ stages }: { stages: StageOption[] }) {
   return (
@@ -105,7 +99,7 @@ export function LaunchPipelineModal({
               <p className="text-[10px] text-surface-500 dark:text-surface-400 leading-snug mb-1">
                 PRD → architecture → features → tickets. Skips research.
               </p>
-              <StagePills stages={SMALL_STAGES} />
+              <StagePills stages={WORKFLOW_PRESETS.small} />
             </button>
           </div>
 

@@ -87,6 +87,21 @@ export const TOGGLEABLE_STAGES: Array<{ key: string; label: string; short: strin
   { key: 'curator',              label: stagePersonaLabel('curator')!,             short: 'Ivy · Curator' },
 ];
 
+// Workflow presets — single source of truth for stage sequences
+export const WORKFLOW_PRESETS = {
+  small: [
+    { key: 'pm_prd',               label: 'PRD',             short: 'Rex · PM' },
+    { key: 'solution_architect',   label: 'Architecture',    short: 'Atlas · Architect' },
+    { key: 'epic_feature_planner', label: 'Epic & Features', short: 'Apex · Features' },
+    { key: 'story_decomposition',  label: 'Refinement',      short: 'Multi-Agent · Refinement' },
+  ],
+  full: TOGGLEABLE_STAGES, // Full pipeline uses all toggleable stages
+} as const;
+
+// Extract just the keys for API calls
+export const SMALL_WORKFLOW_KEYS = WORKFLOW_PRESETS.small.map(s => s.key);
+export const FULL_WORKFLOW_KEYS = WORKFLOW_PRESETS.full.map(s => s.key);
+
 const STAGE_SHORT_LABELS_BASE: Record<string, string> = {
   analyst: 'Research',
   pm_prd: 'PRD',
