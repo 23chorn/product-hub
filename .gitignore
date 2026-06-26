@@ -61,3 +61,4 @@ db/product-ops.db-wal
 # Data exports directory (gitignored), but NOT app/backend/src/data/
 /data/
 
+/context/
