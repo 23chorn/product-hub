@@ -301,7 +301,12 @@ export function SettingsPanel() {
                     <Toggle
                       checked={isAlwaysOn ? true : enabled}
                       disabled={isAlwaysOn}
-                      onChange={v => patch('pipeline', { enabledStages: { ...draft.pipeline.enabledStages, [stage]: v } })}
+                      onChange={v => setDraft(prev => {
+                        if (!prev) return prev;
+                        const updated = { ...prev, pipeline: { ...prev.pipeline, enabledStages: { ...prev.pipeline.enabledStages, [stage]: v } } };
+                        setDirty(JSON.stringify(updated) !== JSON.stringify(settings));
+                        return updated;
+                      })}
                     />
                   </div>
                 );
