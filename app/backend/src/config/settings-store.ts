@@ -15,7 +15,7 @@ import db from '../data/database';
 
 export function getGlobalPolicy(key: string): string | null {
   const row = db
-    .prepare(`SELECT rule_value FROM policies WHERE scope = 'global' AND rule_key = ?`)
+    .prepare(`SELECT rule_value FROM policies WHERE scope = 'global' AND scope_value IS NULL AND rule_key = ?`)
     .get(key) as { rule_value: string } | undefined;
   return row?.rule_value ?? null;
 }
