@@ -221,11 +221,10 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   );
   const statusByStage = new Map(stageSequence.map((s, i) => [s, statuses[i]]));
 
-  // The bare `story_decomposition` placeholder is a stand-in that injectFeatureDecompositionStages
-  // replaces with the real per-feature stages once epic_feature_planner is approved. Don't render it
-  // as a roadmap row beforehand — the refinement stage(s) should only appear once the feature
-  // breakdown exists, not from the start of the run.
-  const roadmapStages = stageSequence.filter(s => s !== 'story_decomposition');
+  // Keep story_decomposition in the roadmap as a pending placeholder. Once epic_feature_planner
+  // is approved, injectFeatureDecompositionStages replaces it with story_decomposition_F1…Fn,
+  // so the single row naturally expands into per-feature rows in the next status poll.
+  const roadmapStages = stageSequence;
 
   // Group coordinator messages by stage (null stage → 'general')
   const eventsByStage = new Map<string, CoordinatorMessage[]>();
@@ -302,6 +301,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
               const completedAt = latestApproved?.resolved_at ?? latestApproved?.created_at ?? null;
               const featureMatch = stageName.match(/^story_decomposition_F(\d+)$/);
               const phaseLabel = featureMatch ? featurePhaseLabels[parseInt(featureMatch[1], 10) - 1] : undefined;
+              const isPlaceholderRefinement = stageName === 'story_decomposition';
               return (
                 <StageRow
                   key={stageName}
@@ -316,6 +316,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                   onViewArtifact={setViewingArtifactId}
                   isLast={idx === roadmapStages.length - 1}
                   phaseLabel={phaseLabel}
+                  customLabel={isPlaceholderRefinement ? 'Refinement' : undefined}
                   onSelect={() => scrollToStageSection(stageName)}
                   compact
                 />
