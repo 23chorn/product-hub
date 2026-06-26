@@ -146,7 +146,8 @@ export async function syncArtifactToWiki(artifactId: number): Promise<string> {
 }
 
 /**
- * Re-publish an already-synced wiki mirror with "Approved" status.
+ * Re-publish an already-synced wiki mirror with "Approved" status and update
+ * the artifact status in the database.
  * Re-reads source content from the primary store (disk) and regenerates
  * the markdown, replacing the Draft banner.
  */
@@ -164,6 +165,14 @@ export async function approveWikiArtifact(artifactId: number, approvedBy?: strin
   }
 
   await saveToWiki(artifact.wiki_path, toWikiContent(artifact.type, content, 'approved', approvedBy));
+
+  // Update artifact status to approved in the database
+  db.prepare(`
+    UPDATE artifacts
+    SET status = 'approved'
+    WHERE id = ?
+  `).run(artifactId);
+
   logger.info(`Artifact ${artifactId} wiki status updated to Approved${approvedBy ? ` by ${approvedBy}` : ''}`);
 }
 

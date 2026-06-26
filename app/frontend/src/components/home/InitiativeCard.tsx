@@ -107,8 +107,7 @@ export function InitiativeCard({
 
         <div className="flex items-center gap-1.5 flex-shrink-0">
           {/* Action button */}
-          {!isConfirmingDelete && (
-            isActive ? (
+          {isActive ? (
               <button onClick={onResume}
                 className="text-xs px-3 py-1.5 rounded-lg border border-cyan-300 dark:border-cyan-700 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 font-medium transition-colors">
                 Continue →
@@ -143,8 +142,7 @@ export function InitiativeCard({
                   </>
                 ) : 'Launch →'}
               </button>
-            )
-          )}
+            )}
 
           {/* Delete controls (local items only) */}
           {item.source !== 'airtable' && !isDemo && (

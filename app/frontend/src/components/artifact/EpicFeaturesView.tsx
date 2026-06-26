@@ -106,15 +106,17 @@ function removeFeaturesAndFixDependencies(data: EpicFeaturesData, removedGlobalI
   });
 
   let globalIndex = 0;
-  const phases = data.phases.map(p => {
-    const features: EpicFeature[] = [];
-    for (const f of p.features) {
-      const isRemoved = removedGlobalIndices.has(globalIndex);
-      globalIndex++;
-      if (!isRemoved) features.push(adjustFeature(f));
-    }
-    return { ...p, features };
-  });
+  const phases = data.phases
+    .map(p => {
+      const features: EpicFeature[] = [];
+      for (const f of p.features) {
+        const isRemoved = removedGlobalIndices.has(globalIndex);
+        globalIndex++;
+        if (!isRemoved) features.push(adjustFeature(f));
+      }
+      return { ...p, features };
+    })
+    .filter(p => p.features.length > 0); // Remove empty phases
   return { ...data, phases };
 }
 

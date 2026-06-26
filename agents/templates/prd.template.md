@@ -36,7 +36,7 @@ Schema:
     "What this version deliberately does not include"
   ],
   "open_questions": [
-    { "id": 1, "type": "Question|Risk", "description": "Question or risk", "impact": "High|Med|Low", "owner": "Who answers/owns", "status": "Open" }
+    { "id": 1, "type": "Question|Risk", "description": "Question or risk", "impact": "High|Med|Low", "owner": "Who answers/owns", "status": "Open|Resolved", "answer": "Optional: human-provided answer when status is Resolved" }
   ]
 }
 ```

@@ -53,11 +53,19 @@ export function OpenQuestionsPanel({ questions, onSubmit, onCancel, loading }: O
       });
 
       lines.push('');
+      lines.push('## Revision Instructions for Open Questions\n');
       lines.push(
-        'Instructions: Update the open_questions section. ' +
-        'For each question marked "Mark as Resolved", set status to "Resolved" and incorporate ' +
-        'the answer into the relevant functional requirements, constraints, or notes. ' +
-        'Leave questions marked "Leave open" with status "Open" unchanged.'
+        '1. Update the open_questions array in your JSON output:\n' +
+        '   - For each question marked "Mark as Resolved": set status to "Resolved" and add an "answer" field with the provided answer text\n' +
+        '   - For questions marked "Leave open": keep status as "Open" and do not modify\n' +
+        '\n' +
+        '2. Incorporate resolved answers into the document:\n' +
+        '   - If the answer adds a new requirement, add it to functional_requirements or non_functional_requirements\n' +
+        '   - If the answer clarifies scope, update out_of_scope or the problem_statement\n' +
+        '   - If the answer specifies a constraint, add it to non_functional_requirements or update relevant sections\n' +
+        '   - Reference the resolved question ID (e.g., "per Q1 resolution") in the updated sections\n' +
+        '\n' +
+        '3. Do NOT remove resolved questions from open_questions — mark them as "Resolved" with the answer, so there is a record of what was decided.'
       );
     }
 

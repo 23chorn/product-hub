@@ -1,7 +1,7 @@
 import { ConfirmModal, type ConfirmTone } from './ConfirmModal';
 
 interface ArchiveConfirmModalProps {
-  mode: 'archive' | 'unarchive';
+  mode: 'archive' | 'unarchive' | 'delete';
   itemTitle: string;
   loading: boolean;
   onCancel: () => void;
@@ -29,16 +29,24 @@ const COPY: Record<ArchiveConfirmModalProps['mode'], {
     confirmLabel: 'Yes, Unarchive',
     loadingLabel: 'Unarchiving...',
   },
+  delete: {
+    tone: 'danger',
+    subtitle: 'Permanent deletion',
+    body: 'This will permanently delete the initiative and all associated workflows, artifacts, and data. This action cannot be undone.',
+    confirmLabel: 'Yes, Delete',
+    loadingLabel: 'Deleting...',
+  },
 };
 
-/** Confirmation dialog for the admin-only manual archive/unarchive action on a completed
+/** Confirmation dialog for the admin-only manual archive/unarchive/delete action on an
  *  initiative — shared by the Progress Tracker detail page and the Initiatives card menu. */
 export function ArchiveConfirmModal({ mode, itemTitle, loading, onCancel, onConfirm }: ArchiveConfirmModalProps) {
   const copy = COPY[mode];
+  const title = mode === 'archive' ? 'Archive' : mode === 'unarchive' ? 'Unarchive' : 'Delete';
   return (
     <ConfirmModal
       tone={copy.tone}
-      title={`${mode === 'archive' ? 'Archive' : 'Unarchive'} "${itemTitle}"?`}
+      title={`${title} "${itemTitle}"?`}
       subtitle={copy.subtitle}
       body={copy.body}
       confirmLabel={copy.confirmLabel}

@@ -36,6 +36,28 @@ export interface ArtifactPostprocessParams {
 type ArtifactPostprocessor = (p: ArtifactPostprocessParams) => Promise<string>;
 
 export const STAGE_ARTIFACT_POSTPROCESSORS: Record<string, ArtifactPostprocessor> = {
+  // ── pm_prd: renumber NFRs sequentially to remove gaps after deletion ──
+  async pm_prd({ artifactId, artifactContent }) {
+    try {
+      const parsed = JSON.parse(stripJsonFence(artifactContent));
+      if (Array.isArray(parsed.non_functional_requirements) && parsed.non_functional_requirements.length > 0) {
+        // Renumber NFRs sequentially (NFR1, NFR2, NFR3, ...)
+        parsed.non_functional_requirements = parsed.non_functional_requirements.map((nfr: any, index: number) => ({
+          ...nfr,
+          id: `NFR${index + 1}`,
+        }));
+
+        const updated = JSON.stringify(parsed, null, 2);
+        await updateArtifactContent(artifactId, updated);
+        logger.info(`Renumbered ${parsed.non_functional_requirements.length} NFRs sequentially`);
+        return updated;
+      }
+    } catch (err: any) {
+      logger.warn(`Failed to renumber NFRs in PRD: ${err.message}`);
+    }
+    return artifactContent;
+  },
+
   // ── figma_design: write design brief to Figma as a comment ──
   async figma_design({ workflowId, itemId, stage, artifactId, artifactContent, figmaBypass }) {
     if (figmaBypass) return artifactContent;

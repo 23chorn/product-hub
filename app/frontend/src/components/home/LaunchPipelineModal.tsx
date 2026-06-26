@@ -13,6 +13,7 @@ interface LaunchPipelineModalProps {
 
 const SMALL_STAGES: StageOption[] = [
   { key: 'pm_prd',               label: 'PRD',             short: 'Rex · PM' },
+  { key: 'solution_architect',   label: 'Architecture',    short: 'Atlas · Architect' },
   { key: 'epic_feature_planner', label: 'Epic & Features', short: 'Apex · Features' },
   { key: 'story_decomposition',  label: 'Refinement',      short: 'Multi-Agent · Refinement' },
 ];
@@ -102,7 +103,7 @@ export function LaunchPipelineModal({
                 <span className="text-xs font-semibold text-surface-800 dark:text-surface-100">Small Workflow</span>
               </div>
               <p className="text-[10px] text-surface-500 dark:text-surface-400 leading-snug mb-1">
-                PRD → features → tickets. Skips research and architecture.
+                PRD → architecture → features → tickets. Skips research.
               </p>
               <StagePills stages={SMALL_STAGES} />
             </button>

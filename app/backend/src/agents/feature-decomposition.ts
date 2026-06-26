@@ -571,8 +571,14 @@ export async function pushEpicAndFeaturesToADO(
   const epicFeatures = JSON.parse(jsonContent);
 
   const allFeatures = flattenFeatures(epicFeatures);
-  if (!epicFeatures.epic || allFeatures.length === 0) {
-    throw new Error('Invalid epic_features structure — missing epic header or no features found');
+  if (!epicFeatures.epic) {
+    throw new Error('Invalid epic_features structure — missing epic header');
+  }
+
+  // If all features were deleted during review, skip the ADO push entirely
+  if (allFeatures.length === 0) {
+    logger.info(`[EPIC PUSH] No features found in epic_features artifact (all deleted during review) — skipping ADO push`);
+    return { epicId: 0, featureIds: [] };
   }
 
   const { getAzureDevOpsClient } = await import('../integrations/azure-devops');
