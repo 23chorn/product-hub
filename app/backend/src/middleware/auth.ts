@@ -127,4 +127,11 @@ export function canLaunchWorkflow(user: User | undefined): boolean {
   return user.roles.includes('product');
 }
 
+/** Check if the current user has the Product role. */
+export function isProductUser(user: User | undefined): boolean {
+  if (!hasAnyUsers()) return true;
+  if (!user) return false;
+  return user.is_admin || user.roles.includes('product');
+}
+
 export { JWT_SECRET, COOKIE_NAME };

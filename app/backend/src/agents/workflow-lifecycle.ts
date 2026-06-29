@@ -146,7 +146,7 @@ export function deleteWorkflow(workflowId: string): void {
 
 // ── Stale workflow recovery ─────────────────────────────────────────────────
 
-const STALE_THRESHOLD_MS = 60 * 60 * 1000; // 60 minutes with no update = stale
+const STALE_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes with no update = stale
 
 interface StaleWorkflowRow {
   id: string;

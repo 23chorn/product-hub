@@ -152,6 +152,27 @@ Users can edit specialist outputs during review (pencil icon → textarea). **Cm
 ### Change Request system
 Post-completion targeted changes without full reruns. Flow: create CR → assess impact (Coordinator SSE, determines `affected_stages`) → user confirms stages → execute (conversation threading via `reiterateFromStage()`). Key file: `agents/change-request.ts`.
 
+### Dev/QA Ticket Export (`/api/dev/initiatives/:seqNum/*`)
+**Purpose**: Read-only endpoint for developer tooling, CI jobs, or headless Claude Code instances to fetch everything Product Hub generated for an initiative — bypasses ADO entirely for content handoff (ADO remains the system of record for state/comments/history).
+
+**Four-tier hierarchy**: Initiative → Epic → Features → Stories
+- **Initiative**: High-level context aggregated from research brief, PRD, and architecture artifacts (problem statement, target users, success metrics, strategic alignment, constraints, out-of-scope, references)
+- **Epic**: Phase grouping with business value (from backlog artifact)
+- **Feature**: Deliverable capability within a phase (description, acceptance criteria, story breakdown, FR/NFR traceability via `prdRef`)
+- **Story**: Implementation-level ticket (persona/goal/benefit, acceptance criteria, technical ACs, platform tags, dependencies, estimates, **resolved FRs/NFRs** — developers see specific functional requirements and non-functional thresholds without hunting through PRD)
+
+**Endpoints**:
+1. **`GET /api/dev/initiatives/:seqNum/manifest`** — Initiative-level overview: initiative context, epic summary, feature phasing, flat ticket list with dependency metadata, topologically-sorted implementation order. Call this once before batch payload pulls.
+2. **`GET /api/dev/initiatives/:seqNum/tickets/payload?ids=F0.S0,F0.S1`** — Full ticket detail for a batch of local keys (F<n>.S<m> format). Use after loading the manifest to fetch implementation batches.
+3. **`GET /api/dev/initiatives/:seqNum/tickets?mode=dev|qa&stream=backend,ios`** — Legacy full-tree export (dev mode: epic/features/stories; qa mode: test cases). Optional `stream` filter (backend/web/ios/android) narrows by platform.
+
+**Key types** (`app/shared/src/types.ts`):
+- `InitiativeContext` — aggregated research/PRD/architecture summary
+- `BacklogData` — epic/features/stories from the merged backlog artifact
+- Platform tags via `getStoryPlatforms()` in `backlog-helpers.ts`
+
+**Implementation**: `app/backend/src/routes/dev-tickets-routes.ts` → helpers `buildInitiativeContext()`, `buildFeatures()`, `topoSortTickets()`. Reads `ado_work_item_map` for ADO ids/urls/state, artifact content for rich detail (descriptions, ACs, estimates). No ADO API calls — ticket state is last-synced cache from completed-initiatives refresh or original push.
+
 ### ADO sync
 - **Epic Feature Planner** → `pushEpicAndFeaturesToADO()`: creates epic + feature shells, saves mappings (`epic`, `F1`–`F3`). Also attaches hyperlinks to each created epic pointing back at the Research/PRD/Solution Architecture wiki pages (via `loadLatestArtifactWikiUrl()`) and the Figma file URL (parsed from the `figma_design` artifact), when those exist — best-effort, logged on failure.
 - **Story Decomposition** → `pushFeatureToADO()`: adds stories to existing features with user story format, Given/When/Then ACs, technical ACs (with `<hr>` separator), platform tags, story points as `Microsoft.VSTS.Scheduling.Effort`

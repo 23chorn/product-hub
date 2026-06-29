@@ -98,12 +98,16 @@ app.use(cookieParser());
 // FRONTEND_DIST doesn't exist and the frontend is served separately by Vite.
 app.use(express.static(FRONTEND_DIST));
 
-// Health check endpoint
+// Health check endpoint with active workflow count
 app.get('/health', (req, res) => {
+  const db = require('./data/database').default;
+  const activeWorkflows = db.prepare(`SELECT COUNT(*) as count FROM workflows WHERE status = 'active'`).get() as { count: number };
+
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
+    activeWorkflows: activeWorkflows.count,
   });
 });
 
@@ -197,6 +201,47 @@ httpServer.listen(PORT, () => {
   logger.info(`🌍 Environment: ${appConfig.server.nodeEnv}`);
   logger.info(`🤖 AI provider: ${appConfig.ai.provider} | models: ${models}`);
   logger.info(`\n✅ APIs ready!`);
+});
+
+// Graceful shutdown handlers
+async function gracefulShutdown(signal: string) {
+  logger.info(`${signal} received, initiating graceful shutdown...`);
+
+  try {
+    // Mark all active workflows as stale immediately
+    const { recoverStaleWorkflows } = await import('./agents/workflow-lifecycle');
+    const recovered = recoverStaleWorkflows();
+    if (recovered > 0) {
+      logger.info(`Marked ${recovered} active workflow(s) for recovery`);
+    }
+  } catch (err: any) {
+    logger.error(`Error during workflow recovery: ${err.message}`);
+  }
+
+  // Close server
+  httpServer.close(() => {
+    logger.info('Server closed');
+    process.exit(0);
+  });
+
+  // Force exit after 10s if server doesn't close
+  setTimeout(() => {
+    logger.error('Forced shutdown after timeout');
+    process.exit(1);
+  }, 10000);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Handle uncaught errors
+process.on('uncaughtException', (err) => {
+  logger.error('Uncaught exception:', err);
+  gracefulShutdown('uncaughtException');
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled rejection', { reason, promise: String(promise) });
 });
 
 export default app;

@@ -17,6 +17,7 @@ export type { WorkflowInfo } from './initiative-status';
 export {
   backlogTier, getSprintMeta, getAllStories, getAllFeatures, tryParseBacklog, isBacklogArtifactType,
   TICKET_PLATFORMS, PLATFORM_LABELS, getStoryPlatforms, countTicketsByPlatform,
+  tryParseResearchBrief, tryParsePRD, tryParseArchitecture,
 } from './backlog-helpers';
 export type {
   BacklogStory, BacklogFeature, BacklogSprintMeta, BacklogData, TicketPlatform, TicketPlatformBreakdown,

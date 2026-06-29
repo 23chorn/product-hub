@@ -15,8 +15,10 @@ import Logger from '../utils/logger';
 import {
   tryParseBacklog, tryParseQATests, mergeQaTests, getStoryPlatforms,
   featureLocalKey, storyLocalKey, parseFeatureLocalKey, parseStoryLocalKey,
+  tryParseResearchBrief, tryParsePRD, tryParseArchitecture,
   TICKET_PLATFORMS,
-  type TicketPlatform, type BacklogData, type TestCase,
+  type TicketPlatform, type BacklogData, type TestCase, type InitiativeContext,
+  type FunctionalRequirement, type NonFunctionalRequirement,
 } from '@pap/shared';
 import { bucketWorkItemState } from '../integrations/azure-devops-format';
 import { getWorkItemRowsByItem, getTestPlanRowsByItem, getDocumentArtifactIds, type AdoWorkItemRow } from '../data/work-item-queries';
@@ -165,16 +167,114 @@ export function topoSortTickets(nodes: Array<{ localKey: string; dependsOn: stri
   return result;
 }
 
+/** Aggregate initiative-level context from research/PRD/architecture artifacts. */
+async function buildInitiativeContext(itemId: string): Promise<InitiativeContext | null> {
+  const { researchArtifactId, prdArtifactId, architectureArtifactId } = getDocumentArtifactIds(itemId);
+
+  const research = researchArtifactId != null
+    ? tryParseResearchBrief(await loadArtifactContentById(researchArtifactId) ?? '')
+    : null;
+  const prd = prdArtifactId != null
+    ? tryParsePRD(await loadArtifactContentById(prdArtifactId) ?? '')
+    : null;
+  const architecture = architectureArtifactId != null
+    ? tryParseArchitecture(await loadArtifactContentById(architectureArtifactId) ?? '')
+    : null;
+
+  if (!research && !prd && !architecture) return null;
+
+  const context: InitiativeContext = {
+    overview: prd?.overview ?? research?.problem_statement ?? '',
+    problemStatement: research?.problem_statement ?? prd?.problem_definition ?? undefined,
+    targetUsers: prd?.target_users ?? research?.user_segments?.map((s: any) => s.name || s.segment) ?? undefined,
+    successMetrics: prd?.success_metrics ? {
+      primary: prd.success_metrics.primary?.metric ?? '',
+      secondary: prd.success_metrics.secondary?.map((m: any) => m.metric || m) ?? [],
+    } : undefined,
+    strategicAlignment: research?.strategic_fit ?? prd?.strategic_alignment ?? undefined,
+    constraints: prd?.constraints ?? architecture?.constraints ?? undefined,
+    outOfScope: prd?.out_of_scope ?? architecture?.out_of_scope ?? undefined,
+    references: research?.references?.map((r: any) => ({
+      title: r.title ?? r.name ?? 'Reference',
+      url: r.url ?? r.link ?? '',
+    })) ?? undefined,
+  };
+
+  return context;
+}
+
+/** Build FR/NFR lookup maps from PRD artifact. */
+function buildRequirementMaps(prd: Record<string, any> | null): {
+  frs: Map<string, FunctionalRequirement>;
+  nfrs: Map<string, NonFunctionalRequirement>;
+} {
+  const frs = new Map<string, FunctionalRequirement>();
+  const nfrs = new Map<string, NonFunctionalRequirement>();
+
+  if (!prd) return { frs, nfrs };
+
+  (prd.functional_requirements ?? []).forEach((fr: any) => {
+    if (fr.id && fr.requirement) {
+      frs.set(fr.id, { id: fr.id, requirement: fr.requirement });
+    }
+  });
+
+  (prd.non_functional_requirements ?? []).forEach((nfr: any) => {
+    if (nfr.id && nfr.requirement) {
+      nfrs.set(nfr.id, {
+        id: nfr.id,
+        category: nfr.category ?? 'Other',
+        requirement: nfr.requirement,
+        priority: nfr.priority ?? 'Should',
+      });
+    }
+  });
+
+  return { frs, nfrs };
+}
+
+/** Resolve FR/NFR IDs from feature prdRef to full requirement objects. */
+function resolveRequirements(
+  featureContent: any,
+  frs: Map<string, FunctionalRequirement>,
+  nfrs: Map<string, NonFunctionalRequirement>
+): {
+  functionalRequirements: FunctionalRequirement[];
+  nonFunctionalRequirements: NonFunctionalRequirement[];
+} {
+  const frIds = featureContent?.prdRef?.functionalRequirements ?? [];
+  const nfrIds = featureContent?.prdRef?.nonFunctionalRequirements ?? [];
+
+  return {
+    functionalRequirements: frIds.map((id: string) => frs.get(id)).filter(Boolean),
+    nonFunctionalRequirements: nfrIds.map((id: string) => nfrs.get(id)).filter(Boolean),
+  };
+}
+
 /**
- * GET /api/dev/initiatives/:seqNum/manifest
- * Initiative-level overview for a dev agent: epic context, feature phasing, a compact flat
- * ticket list with dependency metadata, and a topologically-sorted implementation order.
+ * GET /api/dev/initiatives/:seqNum/manifest?stream=backend
+ * Initiative-level overview for a dev agent: initiative context (research/PRD/architecture
+ * summary), epic context, feature phasing, a compact flat ticket list with dependency metadata,
+ * and a topologically-sorted implementation order.
+ *
+ * Optional `stream` param (backend/web/ios/android) filters tickets by platform and returns
+ * a stream-specific implementation order that respects cross-stream dependencies (if backend
+ * story F0.S2 depends on iOS story F1.S0, F0.S2 is marked as blocked and excluded from the order).
+ *
  * Call this once to load the "big picture" before making batch payload pulls.
  */
 router.get('/:seqNum/manifest', async (req: Request, res: Response) => {
   const seqNum = Number(req.params.seqNum);
   if (!Number.isInteger(seqNum) || seqNum <= 0) {
     res.status(400).json({ error: 'seqNum must be a positive integer — the "#<N>" id shown on the initiative card' });
+    return;
+  }
+
+  let streamFilter: Set<TicketPlatform> | null;
+  try {
+    streamFilter = parseStreamFilter(req.query.stream);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
     return;
   }
 
@@ -191,6 +291,7 @@ router.get('/:seqNum/manifest', async (req: Request, res: Response) => {
       return;
     }
 
+    const initiativeContext = await buildInitiativeContext(initiative.id);
     const { ticketArtifactId } = getDocumentArtifactIds(initiative.id);
     const backlogContent = ticketArtifactId != null ? await loadArtifactContentById(ticketArtifactId) : null;
     const backlog = backlogContent != null ? tryParseBacklog(backlogContent) : null;
@@ -235,12 +336,13 @@ router.get('/:seqNum/manifest', async (req: Request, res: Response) => {
       };
     });
 
-    const tickets = storyRows.map(storyRow => {
+    const allTickets = storyRows.map(storyRow => {
       const parsed = parseStoryLocalKey(storyRow.local_key);
       const featureIndex = parsed?.featureIndex;
       const featureRow = featureIndex != null ? featureRows.find(r => parseFeatureLocalKey(r.local_key) === featureIndex) : undefined;
       const featureContent = featureIndex != null ? backlog?.features?.[featureIndex] : undefined;
       const storyContent = parsed != null ? featureContent?.stories?.[parsed.storyIndex] : undefined;
+      const platforms = storyContent ? getStoryPlatforms(storyContent) : [];
       const dependsOn = (storyContent?.depends_on ?? []).map(ref => storyIdToLocalKey.get(ref) ?? ref);
       return {
         localKey: storyRow.local_key,
@@ -251,19 +353,49 @@ router.get('/:seqNum/manifest', async (req: Request, res: Response) => {
         featureTitle: featureContent?.title ?? null,
         phase: featureContent?.phase ?? null,
         estimatedPoints: storyContent?.estimated_points ?? storyContent?.effort ?? null,
-        platform: storyContent ? getStoryPlatforms(storyContent) : [],
+        platform: platforms,
         dependsOn,
         state: storyRow.state,
         stateBucket: storyRow.state != null ? bucketWorkItemState(storyRow.state) : null,
       };
     });
 
+    // Filter tickets by stream if specified
+    const tickets = streamFilter
+      ? allTickets.filter(t => matchesStream(t.platform, streamFilter))
+      : allTickets;
+
+    // Build stream-specific implementation order
+    const streamTicketKeys = new Set(tickets.map(t => t.localKey));
+    const blocked: string[] = [];
+    const orderableTickets = tickets
+      .map(t => {
+        // Cross-stream dependencies: if this ticket depends on a ticket outside the stream filter,
+        // mark it as blocked and exclude it from the implementation order
+        const crossStreamDeps = t.dependsOn.filter(dep => !streamTicketKeys.has(dep));
+        if (crossStreamDeps.length > 0) {
+          blocked.push(t.localKey);
+          return null;
+        }
+        return { localKey: t.localKey, dependsOn: t.dependsOn.filter(dep => streamTicketKeys.has(dep)) };
+      })
+      .filter((t): t is { localKey: string; dependsOn: string[] } => t !== null);
+
+    const implementationOrder = topoSortTickets(orderableTickets);
+
     res.json({
-      initiative: { seqNum: initiative.seq_num, id: initiative.id, title: initiative.title },
+      initiative: {
+        seqNum: initiative.seq_num,
+        id: initiative.id,
+        title: initiative.title,
+        context: initiativeContext,
+      },
       epic,
       features,
       tickets,
-      implementationOrder: topoSortTickets(tickets.map(t => ({ localKey: t.localKey, dependsOn: t.dependsOn }))),
+      implementationOrder,
+      ...(streamFilter ? { stream: Array.from(streamFilter) } : {}),
+      ...(blocked.length > 0 ? { blockedTickets: blocked } : {}),
     });
   } catch (error: any) {
     logger.error(`Failed to build manifest for initiative #${seqNum}`, error);
@@ -304,9 +436,13 @@ router.get('/:seqNum/tickets/payload', async (req: Request, res: Response) => {
     }
 
     const workItemRows = getWorkItemRowsByItem([initiative.id]).get(initiative.id) ?? [];
-    const { ticketArtifactId } = getDocumentArtifactIds(initiative.id);
+    const { ticketArtifactId, prdArtifactId } = getDocumentArtifactIds(initiative.id);
     const backlogContent = ticketArtifactId != null ? await loadArtifactContentById(ticketArtifactId) : null;
     const backlog = backlogContent != null ? tryParseBacklog(backlogContent) : null;
+
+    const prdContent = prdArtifactId != null ? await loadArtifactContentById(prdArtifactId) : null;
+    const prd = prdContent != null ? tryParsePRD(prdContent) : null;
+    const { frs, nfrs } = buildRequirementMaps(prd);
 
     const featureRows = workItemRows.filter(r => r.ado_type === 'feature');
     const storyRows = workItemRows.filter(r => r.ado_type === 'story' && requestedKeys.has(r.local_key));
@@ -319,6 +455,7 @@ router.get('/:seqNum/tickets/payload', async (req: Request, res: Response) => {
       const featureContent = featureIndex != null ? backlog?.features?.[featureIndex] : undefined;
       const storyContent = parsed != null ? featureContent?.stories?.[parsed.storyIndex] : undefined;
       const dependsOn = (storyContent?.depends_on ?? []).map(ref => storyIdToLocalKey.get(ref) ?? ref);
+      const { functionalRequirements, nonFunctionalRequirements } = resolveRequirements(featureContent, frs, nfrs);
       return {
         localKey: storyRow.local_key,
         adoId: storyRow.ado_id,
@@ -327,6 +464,7 @@ router.get('/:seqNum/tickets/payload', async (req: Request, res: Response) => {
         stateBucket: storyRow.state != null ? bucketWorkItemState(storyRow.state) : null,
         featureLocalKey: featureRow?.local_key ?? null,
         featureTitle: featureContent?.title ?? null,
+        featureDescription: featureContent?.description ?? null,
         phase: featureContent?.phase ?? null,
         title: storyRow.title,
         storyId: storyContent?.story_id ?? null,
@@ -341,6 +479,8 @@ router.get('/:seqNum/tickets/payload', async (req: Request, res: Response) => {
         platform: storyContent ? getStoryPlatforms(storyContent) : [],
         dependsOn,
         technicalNotes: storyContent?.technical_notes ?? null,
+        functionalRequirements,
+        nonFunctionalRequirements,
       };
     });
 

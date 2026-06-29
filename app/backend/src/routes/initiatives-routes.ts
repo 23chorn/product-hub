@@ -5,10 +5,19 @@ import Logger from '../utils/logger';
 import { parseRoles } from '../agents/workflow-db';
 import { isDemoWorkflow } from '../demo/demo-mode';
 import { coerceProductArea, itemSessionDir, nextItemSeqNum } from '../agents/item-metadata';
+import { isProductUser, requireRole } from '../middleware/auth';
+import type { AuthRequest } from '../middleware/auth';
 import type { AirtableItem, LocalInitiative } from '@pap/shared';
+import { AirtableClient } from '../integrations/airtable';
 
 const logger = new Logger('INITIATIVES');
 const router = Router();
+
+let airtableClient: AirtableClient | null = null;
+function getAirtableClient(): AirtableClient {
+  if (!airtableClient) airtableClient = new AirtableClient();
+  return airtableClient;
+}
 
 interface InitiativeRow {
   id: string;
@@ -221,7 +230,7 @@ router.post('/', (req: Request, res: Response) => {
 
 /**
  * PATCH /api/initiatives/:id
- * Update title and/or description.
+ * Update title and/or description (local initiatives only).
  * Body: { title?: string, description?: string }
  */
 router.patch('/:id', (req: Request, res: Response) => {
@@ -243,6 +252,63 @@ router.patch('/:id', (req: Request, res: Response) => {
   } catch (error: any) {
     logger.error('Failed to update initiative', error);
     res.status(500).json({ error: error.message || 'Failed to update initiative' });
+  }
+});
+
+/**
+ * PATCH /api/initiatives/:id/description
+ * Update item description and sync to Airtable if source is 'airtable'.
+ * Restricted to Product or Admin users.
+ * Body: { description: string }
+ */
+router.patch('/:id/description', async (req: AuthRequest, res: Response) => {
+  if (!isProductUser(req.user)) {
+    return res.status(403).json({ error: 'Only Product or Admin users can edit initiative descriptions', code: 'INSUFFICIENT_ROLE' });
+  }
+
+  const { description } = req.body;
+  if (description === undefined) {
+    return res.status(400).json({ error: 'description field is required' });
+  }
+
+  try {
+    // Fetch the item (works for both local and airtable sources)
+    const row = db.prepare(`
+      SELECT id, title, description, source, airtable_id FROM items WHERE id = ?
+    `).get(req.params.id) as { id: string; title: string; description: string | null; source: string; airtable_id: string | null } | undefined;
+
+    if (!row) {
+      return res.status(404).json({ error: 'Initiative not found' });
+    }
+
+    const trimmedDescription = description.trim() || null;
+    const now = Date.now();
+
+    // Update local DB
+    db.prepare(`UPDATE items SET description = ?, updated_at = ? WHERE id = ?`)
+      .run(trimmedDescription, now, req.params.id);
+
+    logger.info(`Updated description for item ${req.params.id} (source: ${row.source})`);
+
+    // Sync to Airtable if source is airtable
+    if (row.source === 'airtable' && row.airtable_id) {
+      try {
+        const { appConfig } = require('../config/app-config');
+        if (appConfig.integrations.roadmap === 'airtable') {
+          const airtable = getAirtableClient();
+          await airtable.updateItem(row.airtable_id, { description: trimmedDescription ?? '' });
+          logger.info(`Synced description to Airtable for ${row.airtable_id}`);
+        }
+      } catch (syncError: any) {
+        logger.error(`Failed to sync description to Airtable for ${row.airtable_id}`, syncError);
+        // Don't fail the request — local update succeeded, Airtable sync is best-effort
+      }
+    }
+
+    res.json({ success: true, description: trimmedDescription });
+  } catch (error: any) {
+    logger.error('Failed to update description', error);
+    res.status(500).json({ error: error.message || 'Failed to update description' });
   }
 });
 

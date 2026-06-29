@@ -188,3 +188,71 @@ export function tryParseBacklog(content: string): BacklogData | null {
 export function isBacklogArtifactType(artifactType: string): boolean {
   return artifactType === 'backlog' || /^backlog_F\d+$/.test(artifactType);
 }
+
+// ── Initiative-level context aggregation ────────────────────────────────────
+
+/** Parse research brief JSON (analyst stage output) to extract initiative context. */
+export function tryParseResearchBrief(content: string): Record<string, any> | null {
+  const stripped = content
+    .replace(/^```(?:json)?\s*\n?/m, '')
+    .replace(/\n?```\s*$/m, '')
+    .trim();
+
+  try {
+    const parsed = JSON.parse(stripped);
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch {}
+
+  const jsonStart = stripped.indexOf('{');
+  if (jsonStart > 0) {
+    try {
+      return JSON.parse(stripped.slice(jsonStart));
+    } catch {}
+  }
+
+  return null;
+}
+
+/** Parse PRD JSON to extract key initiative-level fields. */
+export function tryParsePRD(content: string): Record<string, any> | null {
+  const stripped = content
+    .replace(/^```(?:json)?\s*\n?/m, '')
+    .replace(/\n?```\s*$/m, '')
+    .trim();
+
+  try {
+    const parsed = JSON.parse(stripped);
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch {}
+
+  const jsonStart = stripped.indexOf('{');
+  if (jsonStart > 0) {
+    try {
+      return JSON.parse(stripped.slice(jsonStart));
+    } catch {}
+  }
+
+  return null;
+}
+
+/** Parse architecture JSON to extract tech stack and key decisions. */
+export function tryParseArchitecture(content: string): Record<string, any> | null {
+  const stripped = content
+    .replace(/^```(?:json)?\s*\n?/m, '')
+    .replace(/\n?```\s*$/m, '')
+    .trim();
+
+  try {
+    const parsed = JSON.parse(stripped);
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch {}
+
+  const jsonStart = stripped.indexOf('{');
+  if (jsonStart > 0) {
+    try {
+      return JSON.parse(stripped.slice(jsonStart));
+    } catch {}
+  }
+
+  return null;
+}

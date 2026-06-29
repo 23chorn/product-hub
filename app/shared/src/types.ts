@@ -74,6 +74,35 @@ export interface PRDContent {
 // Backlog Types
 // ============================================
 
+export interface InitiativeContext {
+  overview: string;
+  problemStatement?: string;
+  targetUsers?: string[];
+  successMetrics?: {
+    primary: string;
+    secondary: string[];
+  };
+  strategicAlignment?: string;
+  constraints?: string[];
+  outOfScope?: string[];
+  references?: Array<{
+    title: string;
+    url: string;
+  }>;
+}
+
+export interface FunctionalRequirement {
+  id: string;
+  requirement: string;
+}
+
+export interface NonFunctionalRequirement {
+  id: string;
+  category: string;
+  requirement: string;
+  priority: string;
+}
+
 export interface BacklogStructure {
   epic: {
     title: string;

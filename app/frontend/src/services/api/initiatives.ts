@@ -16,4 +16,9 @@ export const initiativesApi = {
   async deleteInitiative(id: string): Promise<void> {
     await axios.delete(`${API_BASE_URL}/api/initiatives/${id}`);
   },
+
+  async updateItemDescription(id: string, description: string): Promise<{ success: boolean; description: string | null }> {
+    const response = await axios.patch(`${API_BASE_URL}/api/initiatives/${id}/description`, { description });
+    return response.data;
+  },
 };
