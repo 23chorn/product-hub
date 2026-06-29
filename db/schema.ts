@@ -386,3 +386,23 @@ export const swaggerApiDocs = sqliteTable('swagger_api_docs', {
 }, (t) => [
   uniqueIndex('idx_swagger_api_docs_url').on(t.doc_url),
 ]);
+
+// ── Deployment tracking ───────────────────────────────────────────────────────
+
+export const deployments = sqliteTable('deployments', {
+  id:           integer('id').primaryKey({ autoIncrement: true }),
+  version:      text('version').notNull(),
+  commit_hash:  text('commit_hash'),
+  commit_short: text('commit_short'),
+  branch:       text('branch'),
+  tag:          text('tag'),
+  is_dirty:     integer('is_dirty').default(0),
+  build_time:   text('build_time'),
+  deployed_at:  integer('deployed_at').notNull(),
+  deployed_by:  text('deployed_by'),
+  node_version: text('node_version'),
+  environment:  text('environment').default('production'),
+}, (t) => [
+  index('idx_deployments_deployed_at').on(t.deployed_at),
+  index('idx_deployments_version').on(t.version),
+]);
