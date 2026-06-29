@@ -57,12 +57,32 @@ export function parseStreamFilter(raw: unknown): Set<TicketPlatform> | null {
   return new Set(values as TicketPlatform[]);
 }
 
+/** Parse the `phase` query param (comma-separated and/or repeated) into a Set,
+ *  or null when absent — null means "no filter, every phase included". Phase names
+ *  are case-insensitive but preserved as entered. */
+export function parsePhaseFilter(raw: unknown): Set<string> | null {
+  if (raw == null) return null;
+  const values = (Array.isArray(raw) ? raw : [raw])
+    .flatMap(v => String(v).split(','))
+    .map(v => v.trim())
+    .filter(Boolean);
+  if (values.length === 0) return null;
+  // Normalize to lowercase for matching, but keep original case for display
+  return new Set(values.map(v => v.toLowerCase()));
+}
+
 /** A story/test-case "matches" an active stream filter if it's tagged with one of the
  *  requested platforms, OR if it carries no resolvable platform info at all — the filter
  *  narrows out confirmed non-matches, it doesn't require positive proof of a match, so
  *  untagged legacy content (predating platform tagging) is never silently dropped. */
 export function matchesStream(platforms: TicketPlatform[], streamFilter: Set<TicketPlatform> | null): boolean {
   return !streamFilter || platforms.length === 0 || platforms.some(p => streamFilter.has(p));
+}
+
+/** A feature "matches" an active phase filter if its phase (case-insensitive) is in the set,
+ *  OR if it has no phase assigned — untagged features are included rather than dropped. */
+export function matchesPhase(featurePhase: string | null | undefined, phaseFilter: Set<string> | null): boolean {
+  return !phaseFilter || !featurePhase || phaseFilter.has(featurePhase.toLowerCase());
 }
 
 /** Overlay an ADO tracking row's id/url/state on top of whatever rich content the backlog
@@ -85,7 +105,7 @@ function mergeAdoAndContent<T extends object>(row: AdoWorkItemRow, content: T | 
  *  back to its array position — same encoding pushFeatureToADO/pushEpicAndFeaturesToADO use
  *  to write it) carries the content. A feature that had stories but lost every one of them
  *  to the stream filter is dropped rather than returned as an empty shell. */
-export function buildFeatures(workItemRows: AdoWorkItemRow[], backlog: BacklogData | null, streamFilter: Set<TicketPlatform> | null) {
+export function buildFeatures(workItemRows: AdoWorkItemRow[], backlog: BacklogData | null, streamFilter: Set<TicketPlatform> | null, phaseFilter: Set<string> | null = null) {
   const featureRows = workItemRows.filter(r => r.ado_type === 'feature');
   const storyRows = workItemRows.filter(r => r.ado_type === 'story');
 
@@ -93,6 +113,10 @@ export function buildFeatures(workItemRows: AdoWorkItemRow[], backlog: BacklogDa
   for (const featureRow of featureRows) {
     const featureIndex = parseFeatureLocalKey(featureRow.local_key);
     const featureContent = featureIndex != null ? backlog?.features?.[featureIndex] : undefined;
+
+    // Skip feature if it doesn't match phase filter
+    if (!matchesPhase(featureContent?.phase, phaseFilter)) continue;
+
     const storiesForFeature = storyRows.filter(r => parseStoryLocalKey(r.local_key)?.featureIndex === featureIndex);
 
     const stories = storiesForFeature
@@ -252,7 +276,7 @@ function resolveRequirements(
 }
 
 /**
- * GET /api/dev/initiatives/:seqNum/manifest?stream=backend
+ * GET /api/dev/initiatives/:seqNum/manifest?stream=backend&phase=mvp
  * Initiative-level overview for a dev agent: initiative context (research/PRD/architecture
  * summary), epic context, feature phasing, a compact flat ticket list with dependency metadata,
  * and a topologically-sorted implementation order.
@@ -260,6 +284,9 @@ function resolveRequirements(
  * Optional `stream` param (backend/web/ios/android) filters tickets by platform and returns
  * a stream-specific implementation order that respects cross-stream dependencies (if backend
  * story F0.S2 depends on iOS story F1.S0, F0.S2 is marked as blocked and excluded from the order).
+ *
+ * Optional `phase` param (comma-separated, e.g. mvp,backend) filters features and their stories
+ * to only those matching the specified phases (case-insensitive).
  *
  * Call this once to load the "big picture" before making batch payload pulls.
  */
@@ -273,6 +300,14 @@ router.get('/:seqNum/manifest', async (req: Request, res: Response) => {
   let streamFilter: Set<TicketPlatform> | null;
   try {
     streamFilter = parseStreamFilter(req.query.stream);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+    return;
+  }
+
+  let phaseFilter: Set<string> | null;
+  try {
+    phaseFilter = parsePhaseFilter(req.query.phase);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
     return;
@@ -313,7 +348,7 @@ router.get('/:seqNum/manifest', async (req: Request, res: Response) => {
     const storyRows = workItemRows.filter(r => r.ado_type === 'story');
     const storyIdToLocalKey = buildStoryIdToLocalKeyMap(backlog);
 
-    const features = featureRows.map(featureRow => {
+    const allFeatures = featureRows.map(featureRow => {
       const featureIndex = parseFeatureLocalKey(featureRow.local_key);
       const featureContent = featureIndex != null ? backlog?.features?.[featureIndex] : undefined;
       const storiesForFeature = storyRows.filter(r => parseStoryLocalKey(r.local_key)?.featureIndex === featureIndex);
@@ -336,29 +371,40 @@ router.get('/:seqNum/manifest', async (req: Request, res: Response) => {
       };
     });
 
-    const allTickets = storyRows.map(storyRow => {
-      const parsed = parseStoryLocalKey(storyRow.local_key);
-      const featureIndex = parsed?.featureIndex;
-      const featureRow = featureIndex != null ? featureRows.find(r => parseFeatureLocalKey(r.local_key) === featureIndex) : undefined;
-      const featureContent = featureIndex != null ? backlog?.features?.[featureIndex] : undefined;
-      const storyContent = parsed != null ? featureContent?.stories?.[parsed.storyIndex] : undefined;
-      const platforms = storyContent ? getStoryPlatforms(storyContent) : [];
-      const dependsOn = (storyContent?.depends_on ?? []).map(ref => storyIdToLocalKey.get(ref) ?? ref);
-      return {
-        localKey: storyRow.local_key,
-        adoId: storyRow.ado_id,
-        adoUrl: storyRow.ado_url,
-        title: storyRow.title,
-        featureLocalKey: featureRow?.local_key ?? null,
-        featureTitle: featureContent?.title ?? null,
-        phase: featureContent?.phase ?? null,
-        estimatedPoints: storyContent?.estimated_points ?? storyContent?.effort ?? null,
-        platform: platforms,
-        dependsOn,
-        state: storyRow.state,
-        stateBucket: storyRow.state != null ? bucketWorkItemState(storyRow.state) : null,
-      };
-    });
+    // Filter features by phase if specified
+    const features = phaseFilter
+      ? allFeatures.filter(f => matchesPhase(f.phase, phaseFilter))
+      : allFeatures;
+
+    // Build set of feature local keys that passed the phase filter
+    const allowedFeatureKeys = new Set(features.map(f => f.localKey));
+
+    const allTickets = storyRows
+      .map(storyRow => {
+        const parsed = parseStoryLocalKey(storyRow.local_key);
+        const featureIndex = parsed?.featureIndex;
+        const featureRow = featureIndex != null ? featureRows.find(r => parseFeatureLocalKey(r.local_key) === featureIndex) : undefined;
+        const featureContent = featureIndex != null ? backlog?.features?.[featureIndex] : undefined;
+        const storyContent = parsed != null ? featureContent?.stories?.[parsed.storyIndex] : undefined;
+        const platforms = storyContent ? getStoryPlatforms(storyContent) : [];
+        const dependsOn = (storyContent?.depends_on ?? []).map(ref => storyIdToLocalKey.get(ref) ?? ref);
+        return {
+          localKey: storyRow.local_key,
+          adoId: storyRow.ado_id,
+          adoUrl: storyRow.ado_url,
+          title: storyRow.title,
+          featureLocalKey: featureRow?.local_key ?? null,
+          featureTitle: featureContent?.title ?? null,
+          phase: featureContent?.phase ?? null,
+          estimatedPoints: storyContent?.estimated_points ?? storyContent?.effort ?? null,
+          platform: platforms,
+          dependsOn,
+          state: storyRow.state,
+          stateBucket: storyRow.state != null ? bucketWorkItemState(storyRow.state) : null,
+        };
+      })
+      // Filter by phase (via parent feature)
+      .filter(t => !phaseFilter || !t.featureLocalKey || allowedFeatureKeys.has(t.featureLocalKey));
 
     // Filter tickets by stream if specified
     const tickets = streamFilter
@@ -395,6 +441,7 @@ router.get('/:seqNum/manifest', async (req: Request, res: Response) => {
       tickets,
       implementationOrder,
       ...(streamFilter ? { stream: Array.from(streamFilter) } : {}),
+      ...(phaseFilter ? { phase: Array.from(phaseFilter) } : {}),
       ...(blocked.length > 0 ? { blockedTickets: blocked } : {}),
     });
   } catch (error: any) {
@@ -503,7 +550,8 @@ router.get('/:seqNum/tickets/payload', async (req: Request, res: Response) => {
  * Mandatory: seqNum (the "#<N>" id on the initiative card). Optional: mode=dev|qa (default
  * dev — full epic/feature/story content; qa returns test cases only), stream=<platform list>
  * (comma-separated and/or repeated, one or more of backend/web/ios/android — filters which
- * tickets/test-cases come back; omit for every stream).
+ * tickets/test-cases come back; omit for every stream), phase=<phase list> (comma-separated,
+ * filters features and their stories by phase).
  */
 router.get('/:seqNum/tickets', async (req: Request, res: Response) => {
   const seqNum = Number(req.params.seqNum);
@@ -522,6 +570,14 @@ router.get('/:seqNum/tickets', async (req: Request, res: Response) => {
   let streamFilter: Set<TicketPlatform> | null;
   try {
     streamFilter = parseStreamFilter(req.query.stream);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+    return;
+  }
+
+  let phaseFilter: Set<string> | null;
+  try {
+    phaseFilter = parsePhaseFilter(req.query.phase);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
     return;
@@ -580,8 +636,9 @@ router.get('/:seqNum/tickets', async (req: Request, res: Response) => {
       initiative: initiativeHeader,
       mode,
       stream,
+      ...(phaseFilter ? { phase: Array.from(phaseFilter) } : {}),
       epics,
-      features: buildFeatures(workItemRows, backlog, streamFilter),
+      features: buildFeatures(workItemRows, backlog, streamFilter, phaseFilter),
     });
   } catch (error: any) {
     logger.error(`Failed to export tickets for initiative #${seqNum}`, error);

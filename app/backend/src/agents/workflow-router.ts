@@ -320,7 +320,7 @@ async function advanceStageCore(workflowId: string): Promise<{ stage: string; se
     logger.info(`Workflow ${workflowId} complete — all ${sequence.length} stages done`);
     pushItemStatusToAirtable(workflow.item_id, 'Ready').catch(() => {});
     const titleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(workflow.item_id);
-    if (titleRow) notifyWorkflowComplete(titleRow.title);
+    if (titleRow) notifyWorkflowComplete(titleRow.title, workflowId);
     throw new Error(`WORKFLOW_COMPLETE:${workflowId}`);
   }
 
@@ -479,7 +479,7 @@ No changes needed to tech-stack.md or process.md — those remain accurate as wr
     logger.info(`Curator completed for workflow ${workflowId} — ${diffCount} diff(s) proposed, workflow complete`);
     pushItemStatusToAirtable(workflow.item_id, 'Ready').catch(() => {});
     const curatorTitleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(workflow.item_id);
-    if (curatorTitleRow) notifyWorkflowComplete(curatorTitleRow.title);
+    if (curatorTitleRow) notifyWorkflowComplete(curatorTitleRow.title, workflowId);
     throw new Error(`WORKFLOW_COMPLETE:${workflowId}`);
   }
 

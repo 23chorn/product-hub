@@ -79,10 +79,10 @@ export function HomeHeader({
       </div>
 
       <div className="flex items-center gap-1 flex-nowrap flex-shrink-0">
-        {STATUS_FILTERS.filter(f => f.key !== 'mine' || showMineFilter).map(f => {
+        {/* Quick access chips for primary filters */}
+        {STATUS_FILTERS.filter(f => ['all', 'mine', 'active'].includes(f.key) && (f.key !== 'mine' || showMineFilter)).map(f => {
           const count = statusCounts[f.key];
           const isActive = statusFilter === f.key;
-          const isReview = f.key === 'review';
           const isMine = f.key === 'mine';
           return (
             <button
@@ -92,9 +92,7 @@ export function HomeHeader({
                 isActive
                   ? isMine
                     ? 'bg-sky-100 dark:bg-sky-900/40 border-sky-300 dark:border-sky-600 text-sky-800 dark:text-sky-200 font-medium'
-                    : isReview
-                      ? 'bg-amber-100 dark:bg-amber-900/40 border-amber-300 dark:border-amber-600 text-amber-800 dark:text-amber-200 font-medium'
-                      : 'bg-brand-50 dark:bg-brand-900/40 border-brand-300 dark:border-brand-600 text-brand-800 dark:text-brand-200 font-medium'
+                    : 'bg-brand-50 dark:bg-brand-900/40 border-brand-300 dark:border-brand-600 text-brand-800 dark:text-brand-200 font-medium'
                   : isMine && myPendingCount > 0
                     ? 'bg-sky-50 dark:bg-sky-900/20 border-sky-200 dark:border-sky-700 text-sky-600 dark:text-sky-400 hover:border-sky-300'
                     : 'bg-white dark:bg-surface-800 border-surface-200 dark:border-surface-600 text-surface-500 dark:text-surface-400 hover:border-surface-300 dark:hover:border-surface-500'
@@ -114,6 +112,26 @@ export function HomeHeader({
             </button>
           );
         })}
+
+        {/* Dropdown for secondary filters */}
+        <select
+          value={statusFilter}
+          onChange={e => onStatusFilterChange(e.target.value as StatusFilter)}
+          className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 ${
+            ['review', 'done', 'stopped', 'new'].includes(statusFilter)
+              ? statusFilter === 'review'
+                ? 'bg-amber-100 dark:bg-amber-900/40 border-amber-300 dark:border-amber-600 text-amber-800 dark:text-amber-200 font-medium'
+                : 'bg-brand-50 dark:bg-brand-900/40 border-brand-300 dark:border-brand-600 text-brand-800 dark:text-brand-200 font-medium'
+              : 'bg-white dark:bg-surface-800 border-surface-200 dark:border-surface-600 text-surface-500 dark:text-surface-400'
+          }`}
+        >
+          <option value="all" disabled hidden>More filters</option>
+          {STATUS_FILTERS.filter(f => ['review', 'done', 'stopped', 'new'].includes(f.key)).map(f => (
+            <option key={f.key} value={f.key}>
+              {f.label} {statusCounts[f.key] > 0 ? `(${statusCounts[f.key]})` : ''}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Product area + theme filters */}
@@ -121,9 +139,9 @@ export function HomeHeader({
         <select
           value={productAreaFilter}
           onChange={e => onProductAreaFilterChange(e.target.value)}
-          className="text-xs px-2.5 py-1.5 rounded-lg border border-surface-200 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-600 dark:text-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          className="text-xs px-2.5 py-1.5 rounded-lg border border-surface-200 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-600 dark:text-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-500 max-w-[140px]"
         >
-          <option value="all">All product areas</option>
+          <option value="all">Product areas</option>
           {productAreas.map(area => <option key={area} value={area}>{area}</option>)}
         </select>
       )}
@@ -131,9 +149,9 @@ export function HomeHeader({
         <select
           value={themeFilter}
           onChange={e => onThemeFilterChange(e.target.value)}
-          className="text-xs px-2.5 py-1.5 rounded-lg border border-surface-200 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-600 dark:text-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          className="text-xs px-2.5 py-1.5 rounded-lg border border-surface-200 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-600 dark:text-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-500 max-w-[120px]"
         >
-          <option value="all">All themes</option>
+          <option value="all">Themes</option>
           {themes.map(theme => <option key={theme} value={theme}>{theme}</option>)}
         </select>
       )}

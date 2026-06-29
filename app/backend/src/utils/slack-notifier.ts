@@ -4,6 +4,7 @@ import db from '../data/database';
 import { getUsersByRole, getAdminUsers, hasAnyUsers } from '../data/users';
 import { checkpointArtifactLabel } from '../agents/stage-metadata';
 import { normalizeStageForRoles } from '../agents/workflow-db';
+import { isDemoWorkflow } from '../demo/demo-mode';
 
 const logger = new Logger('SLACK');
 
@@ -88,6 +89,12 @@ export function notifyCheckpointPending(
   workflowId?: string,
   revisionRequestedBy?: string,
 ): void {
+  // Skip Slack notifications for demo workflows
+  if (workflowId && isDemoWorkflow(workflowId)) {
+    logger.info('Skipping Slack notification for demo workflow');
+    return;
+  }
+
   const label = checkpointArtifactLabel(stage);
   const mentions = buildMentions(stage);
   const appUrl = getAppUrl();
@@ -130,7 +137,13 @@ export function notifyCheckpointPending(
   post({ text, blocks });
 }
 
-export function notifyWorkflowComplete(initiativeTitle: string): void {
+export function notifyWorkflowComplete(initiativeTitle: string, workflowId?: string): void {
+  // Skip Slack notifications for demo workflows
+  if (workflowId && isDemoWorkflow(workflowId)) {
+    logger.info('Skipping Slack notification for demo workflow');
+    return;
+  }
+
   post({
     text: `Workflow complete — ${initiativeTitle}`,
     blocks: [

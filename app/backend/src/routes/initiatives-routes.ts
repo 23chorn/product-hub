@@ -235,6 +235,8 @@ router.post('/', (req: Request, res: Response) => {
  * Body: { description: string }
  */
 router.patch('/:id/description', async (req: AuthRequest, res: Response) => {
+  logger.info(`PATCH /api/initiatives/${req.params.id}/description — user: ${req.user?.username ?? 'unknown'}`);
+
   if (!isProductUser(req.user)) {
     return res.status(403).json({ error: 'Only Product or Admin users can edit initiative descriptions', code: 'INSUFFICIENT_ROLE' });
   }
