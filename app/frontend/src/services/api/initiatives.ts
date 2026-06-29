@@ -3,8 +3,10 @@ import type { AirtableItem, LocalInitiative } from '@pap/shared';
 import { API_BASE_URL } from './base';
 
 export const initiativesApi = {
-  async getInitiatives(): Promise<(AirtableItem & { workflow?: { id: string; status: string; currentStage: string | null; summary: string | null; pendingStage?: string | null; pendingApprovals?: Array<{ stage: string; roles: string[] }>; isDemo?: boolean; updatedAt?: number } })[]> {
-    const response = await axios.get(`${API_BASE_URL}/api/initiatives`);
+  async getInitiatives(includeArchived = false): Promise<(AirtableItem & { workflow?: { id: string; status: string; currentStage: string | null; summary: string | null; pendingStage?: string | null; pendingApprovals?: Array<{ stage: string; roles: string[] }>; isDemo?: boolean; updatedAt?: number } })[]> {
+    const response = await axios.get(`${API_BASE_URL}/api/initiatives`, {
+      params: includeArchived ? { includeArchived: 'true' } : undefined
+    });
     return response.data;
   },
 
@@ -19,6 +21,16 @@ export const initiativesApi = {
 
   async updateItemDescription(id: string, description: string): Promise<{ success: boolean; description: string | null }> {
     const response = await axios.patch(`${API_BASE_URL}/api/initiatives/${id}/description`, { description });
+    return response.data;
+  },
+
+  async archiveInitiative(id: string): Promise<{ ok: boolean }> {
+    const response = await axios.post(`${API_BASE_URL}/api/initiatives/${id}/archive`);
+    return response.data;
+  },
+
+  async unarchiveInitiative(id: string): Promise<{ ok: boolean }> {
+    const response = await axios.post(`${API_BASE_URL}/api/initiatives/${id}/unarchive`);
     return response.data;
   },
 };

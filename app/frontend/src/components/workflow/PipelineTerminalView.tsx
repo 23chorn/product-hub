@@ -1,5 +1,6 @@
 import { useRef, useEffect, useMemo, useState } from 'react';
 import { useWorkflowStore } from '../../stores/workflowStore';
+import { useSessionStore } from '../../stores/sessionStore';
 import { useModelStore } from '../../stores/modelStore';
 import { useAuthStore } from '../../stores/authStore';
 import { api } from '../../services/api';
@@ -49,6 +50,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
     setLastEventId,
     setViewingArtifactId,
   } = useWorkflowStore();
+  const { selectedItem } = useSessionStore();
   const { agentModels } = useModelStore();
   const { realUser, noAuth } = useAuthStore();
   const isAdmin = noAuth || realUser?.is_admin;
@@ -67,6 +69,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   const [crExpanded, setCrExpanded] = useState(false);
   const [showAudit, setShowAudit] = useState(false);
   const [showBacklogOverview, setShowBacklogOverview] = useState(false);
+  const [showDescription, setShowDescription] = useState(false);
   const [artifacts, setArtifacts] = useState<Array<{ id: number; type: string; stage: string | null; created_at: number }>>([]);
   // 0-based feature index → phase label (e.g. "MVP", "Phase 1") that feature belongs to.
   const [featurePhaseLabels, setFeaturePhaseLabels] = useState<string[]>([]);
@@ -360,6 +363,17 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
           <span className="text-sm font-semibold text-surface-900 dark:text-surface-100 truncate leading-tight">
             {activeWorkflow.summary ?? activeWorkflow.goal.split('\n')[0].slice(0, 70)}
           </span>
+          {selectedItem?.description && (
+            <button
+              onClick={() => setShowDescription(true)}
+              title="View initial description"
+              className="flex-shrink-0 p-1 rounded text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </button>
+          )}
           {productArea && (
             <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400">
               {productArea}
@@ -709,6 +723,35 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
           onCancel={() => setShowRestartConfirm(false)}
           onConfirm={handleRestart}
         />
+      )}
+
+      {showDescription && selectedItem?.description && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 dark:bg-black/50" onClick={() => setShowDescription(false)}>
+          <div className="w-full max-w-2xl mx-4 bg-white dark:bg-surface-900 rounded-xl shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-surface-200 dark:border-surface-700 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100">Initial Description</h3>
+              <button
+                onClick={() => setShowDescription(false)}
+                className="p-1 rounded text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="px-5 py-4 max-h-96 overflow-y-auto">
+              <p className="text-sm text-surface-700 dark:text-surface-300 whitespace-pre-wrap">{selectedItem.description}</p>
+            </div>
+            <div className="px-5 py-3 border-t border-surface-200 dark:border-surface-700 flex justify-end">
+              <button
+                onClick={() => setShowDescription(false)}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-700 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-700 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

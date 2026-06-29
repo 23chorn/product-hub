@@ -45,6 +45,7 @@ export function HomeScreen() {
   const [mineWorkflowIds, setMineWorkflowIds] = useState<Set<string>>(new Set());
   const [itemsLoaded, setItemsLoaded] = useState(false);
   const { user, noAuth } = useAuthStore();
+  const isAdmin = noAuth || !!user?.is_admin;
   const { isDemoMode } = useSettingsStore();
 
   const [showForm, setShowForm] = useState(false);
@@ -78,9 +79,9 @@ export function HomeScreen() {
 
   const setLocalItems = (d: EnrichedItem[]) => { _cachedLocalItems = d; setLocalItemsRaw(d); };
 
-  const loadLocalItems = useCallback(async () => {
+  const loadLocalItems = useCallback(async (includeArchived = false) => {
     try {
-      const data = await api.getInitiatives();
+      const data = await api.getInitiatives(includeArchived);
       setLocalItems(data);
     } catch { /* silent */ } finally {
       setLoading(false);
@@ -88,7 +89,7 @@ export function HomeScreen() {
     }
   }, []);
 
-  useEffect(() => { loadLocalItems(); }, []);
+  useEffect(() => { loadLocalItems(statusFilter === 'archived'); }, [statusFilter, loadLocalItems]);
 
   // Fetch my pending approvals count (only when authenticated)
   const loadMyPending = useCallback(async () => {
@@ -109,31 +110,37 @@ export function HomeScreen() {
 
   useEffect(() => { loadMyPending(); }, [loadMyPending]);
 
+  // Auto-trigger demo webhook once when demo mode is enabled and items are loaded (but no demo item exists yet).
+  // Only trigger when viewing the active list (not archived), and only once per session using a ref.
   useEffect(() => {
+    if (!isDemoMode || !itemsLoaded || statusFilter === 'archived') return;
+
     const hasDemoItem = localItems.some(item => item.workflow?.isDemo);
-    if (!isDemoMode || !itemsLoaded || hasDemoItem || demoTriggerInFlightRef.current) return;
+    if (hasDemoItem || demoTriggerInFlightRef.current) return;
 
     demoTriggerInFlightRef.current = true;
     api.triggerDemoWebhook(0)
       .then(result => {
         window.dispatchEvent(new CustomEvent('demo-run-started', { detail: { title: result.initiative } }));
         window.dispatchEvent(new CustomEvent('refresh-initiatives'));
-        return loadLocalItems();
       })
       .catch(err => {
         toast.error(err.response?.data?.error || err.message || 'Failed to start demo run');
-      })
-      .finally(() => {
+        // On error, reset the ref so user can retry
         demoTriggerInFlightRef.current = false;
       });
-  }, [isDemoMode, itemsLoaded, localItems, loadLocalItems, toast]);
+    // Don't reset demoTriggerInFlightRef on success — keep it true so we don't re-trigger
+  }, [isDemoMode, itemsLoaded, localItems, statusFilter, toast]);
 
   // Listen for refresh signal from App.tsx (e.g. after Full Demo triggers)
   useEffect(() => {
-    const handler = () => loadLocalItems();
+    const handler = () => {
+      loadLocalItems(statusFilter === 'archived');
+      loadMyPending();
+    };
     window.addEventListener('refresh-initiatives', handler);
     return () => window.removeEventListener('refresh-initiatives', handler);
-  }, [loadLocalItems]);
+  }, [loadLocalItems, loadMyPending, statusFilter]);
 
   // Poll for status updates while any workflow or pipeline is active
   useEffect(() => {
@@ -145,9 +152,12 @@ export function HomeScreen() {
       return false;
     });
     if (!hasActive) return;
-    const id = setInterval(loadLocalItems, 4000);
+    const id = setInterval(() => {
+      loadLocalItems(statusFilter === 'archived');
+      loadMyPending();
+    }, 4000);
     return () => clearInterval(id);
-  }, [localItems, loadLocalItems]);
+  }, [localItems, loadLocalItems, loadMyPending, statusFilter]);
 
   const cancelForm = () => { setFormTitle(''); setFormDesc(''); setFormProductArea(''); setFormTheme(''); setShowForm(false); };
 
@@ -161,7 +171,10 @@ export function HomeScreen() {
         formProductArea.trim() || undefined,
         formTheme.trim() || undefined,
       );
-      await loadLocalItems();
+      await Promise.all([
+        loadLocalItems(),
+        loadMyPending(),
+      ]);
       cancelForm();
     } catch (err: any) {
       toast.error(err.response?.data?.error || err.message || 'Failed to create initiative');
@@ -188,13 +201,23 @@ export function HomeScreen() {
   const handleArchiveInitiative = async (item: AirtableItem) => {
     if (archivingId) return;
     setConfirmArchiveId(null);
+    const isArchived = item.status === 'archived';
     try {
       setArchivingId(item.id);
-      await api.archiveCompletedInitiative(item.id);
-      setLocalItems(localItems.filter(i => i.id !== item.id));
-      toast.success('Initiative archived');
+      if (isArchived) {
+        await api.unarchiveInitiative(item.id);
+        toast.success('Initiative unarchived');
+      } else {
+        await api.archiveInitiative(item.id);
+        toast.success('Initiative archived');
+      }
+      // Reload the current view (archived or active) and refresh pending counts
+      await Promise.all([
+        loadLocalItems(statusFilter === 'archived'),
+        loadMyPending(),
+      ]);
     } catch (err: any) {
-      toast.error(err.response?.data?.error || err.message || 'Failed to archive');
+      toast.error(err.response?.data?.error || err.message || `Failed to ${isArchived ? 'unarchive' : 'archive'}`);
     } finally {
       setArchivingId(null);
     }
@@ -268,14 +291,18 @@ export function HomeScreen() {
   );
 
   const statusCounts = useMemo<Record<StatusFilter, number>>(() => {
-    const c: Record<StatusFilter, number> = { all: visibleItems.length, active: 0, review: 0, done: 0, stopped: 0, new: 0, mine: myPendingCount };
+    const c: Record<StatusFilter, number> = { all: visibleItems.length, active: 0, review: 0, done: 0, stopped: 0, new: 0, mine: myPendingCount, archived: 0 };
     visibleItems.forEach(item => {
-      const s = item.workflow ? effectiveStatus(item.workflow) : undefined;
-      if (s === 'active') c.active++;
-      else if (s === 'paused_at_checkpoint') c.review++;
-      else if (s === 'cancelled') c.stopped++;
-      else if (s === 'complete') c.done++;
-      else c.new++;
+      if (item.status === 'archived') {
+        c.archived++;
+      } else {
+        const s = item.workflow ? effectiveStatus(item.workflow) : undefined;
+        if (s === 'active') c.active++;
+        else if (s === 'paused_at_checkpoint') c.review++;
+        else if (s === 'cancelled') c.stopped++;
+        else if (s === 'complete') c.done++;
+        else c.new++;
+      }
     });
     return c;
   }, [visibleItems, myPendingCount]);
@@ -292,7 +319,14 @@ export function HomeScreen() {
   const filteredLocalItems = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     return visibleItems.filter(item => {
+      const isArchived = item.status === 'archived';
       const s = item.workflow ? effectiveStatus(item.workflow) : undefined;
+
+      // Archived filter: only show archived items
+      if (statusFilter === 'archived' && !isArchived) return false;
+      // All other filters: exclude archived items
+      if (statusFilter !== 'archived' && isArchived) return false;
+
       // Stopped initiatives never count as needing review/approval, even if a
       // checkpoint was left pending at the moment the workflow was cancelled.
       if (statusFilter === 'mine' && (!item.workflow || s === 'cancelled' || !mineWorkflowIds.has(item.workflow.id))) return false;
@@ -339,6 +373,7 @@ export function HomeScreen() {
           statusCounts={statusCounts}
           myPendingCount={myPendingCount}
           showMineFilter={!noAuth && !!user}
+          isAdmin={isAdmin}
           productAreas={productAreas}
           productAreaFilter={productAreaFilter}
           onProductAreaFilterChange={setProductAreaFilter}
@@ -415,13 +450,13 @@ export function HomeScreen() {
           {(filteredLocalItems.length > 0 || (loading && localItems.length === 0)) && (
             <section>
               {loading && localItems.length === 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3">
                   {[...Array(4)].map((_, i) => (
-                    <div key={i} className="h-20 rounded-xl bg-surface-200 dark:bg-surface-800 animate-pulse" />
+                    <div key={i} className="h-32 rounded-xl bg-surface-200 dark:bg-surface-800 animate-pulse" />
                   ))}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3">
                   {filteredLocalItems.map(item => (
                     <InitiativeCard
                       key={item.id}

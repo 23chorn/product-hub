@@ -10,7 +10,7 @@ export interface AirtableItem {
 
   // Your existing status and prioritization
   status: 'In Progress' | 'Blocked' | 'Ready' | 'Discovery' | 'Deferred' | 'Shipped'
-    | 'Researching' | 'Scoping' | 'Designing' | 'Architecting' | 'Refining';
+    | 'Researching' | 'Scoping' | 'Designing' | 'Architecting' | 'Refining' | 'archived';
   businessValue: number; // 1-10 score
   priorityScore: number; // Calculated formula
   estimate: 'XS' | 'S' | 'M' | 'L' | 'XL';

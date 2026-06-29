@@ -313,10 +313,10 @@ router.post('/:itemId/refresh', async (req: Request, res: Response) => {
 
 /**
  * POST /api/completed-initiatives/:itemId/archive
- * Admin-only manual archive — hides a completed initiative that's already been run
- * locally from the default Progress Tracker list, without touching its workflow/ADO state.
- * Does NOT require ADO work-item mapping (unlike the detail/list endpoints) — a pipeline
- * that ran to completion without ADO integration enabled is still archiveable.
+ * Admin-only manual archive — hides an initiative from the default Home list, without
+ * touching its workflow/ADO state. Accepts both completed initiatives (with a workflow
+ * that ran to completion) and not-started initiatives (no workflow yet) — the latter
+ * allows cleaning up initiatives that were created but never launched.
  */
 router.post('/:itemId/archive', requireAdmin, (req: Request, res: Response) => {
   try {
@@ -330,16 +330,17 @@ router.post('/:itemId/archive', requireAdmin, (req: Request, res: Response) => {
     const wfRow = db.prepare<[string], { status: string }>(`
       SELECT w.status FROM workflows w WHERE w.item_id = ? ORDER BY w.created_at DESC LIMIT 1
     `).get(itemId);
-    if (!wfRow || wfRow.status !== 'complete') {
-      return res.status(400).json({ error: 'Only completed initiatives can be archived' });
+    // Allow archiving if: no workflow yet (not started), or the workflow is complete
+    if (wfRow && wfRow.status !== 'complete') {
+      return res.status(400).json({ error: 'Only completed or not-started initiatives can be archived' });
     }
 
     setItemStatus.run('archived', Date.now(), itemRow.id);
-    logger.info(`Archived completed initiative ${itemRow.id} ("${itemRow.title}")`);
+    logger.info(`Archived ${wfRow ? 'completed' : 'not-started'} initiative ${itemRow.id} ("${itemRow.title}")`);
     res.json({ ok: true });
   } catch (error: any) {
-    logger.error('Failed to archive completed initiative', error);
-    res.status(500).json({ error: error.message || 'Failed to archive completed initiative' });
+    logger.error('Failed to archive initiative', error);
+    res.status(500).json({ error: error.message || 'Failed to archive initiative' });
   }
 });
 

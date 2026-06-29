@@ -5,7 +5,7 @@ import Logger from '../utils/logger';
 import { parseRoles } from '../agents/workflow-db';
 import { isDemoWorkflow } from '../demo/demo-mode';
 import { coerceProductArea, itemSessionDir, nextItemSeqNum } from '../agents/item-metadata';
-import { isProductUser, requireRole } from '../middleware/auth';
+import { isProductUser, requireRole, requireAdmin } from '../middleware/auth';
 import type { AuthRequest } from '../middleware/auth';
 import type { AirtableItem, LocalInitiative } from '@pap/shared';
 import { AirtableClient } from '../integrations/airtable';
@@ -26,6 +26,7 @@ interface InitiativeRow {
   source: string;
   metadata: string | null;
   seq_num: number | null;
+  status: string;
   created_at: number;
   updated_at: number;
 }
@@ -35,7 +36,7 @@ function toAirtableItem(row: InitiativeRow): AirtableItem {
     id: row.id,
     initiative: row.title,
     description: row.description ?? '',
-    status: 'Ready',
+    status: row.status as any ?? 'Ready',
     businessValue: 5,
     priorityScore: 5,
     estimate: 'M',
@@ -47,11 +48,11 @@ function toAirtableItem(row: InitiativeRow): AirtableItem {
   try {
     const meta = JSON.parse(row.metadata);
     if (row.source === 'airtable') {
-      // seqNum is DB-internal — never let synced Airtable metadata shadow it. productArea
-      // comes through Airtable as a string or a (often single-element) array depending on
-      // whether the field is single- or multi-select — coerce so every item exposes the
+      // seqNum and status are DB-internal — never let synced Airtable metadata shadow them.
+      // productArea comes through Airtable as a string or a (often single-element) array depending
+      // on whether the field is single- or multi-select — coerce so every item exposes the
       // same normalized string the Home page's product area filter dedupes on.
-      return { ...base, ...meta, seqNum: row.seq_num, productArea: coerceProductArea(meta.productArea) ?? undefined };
+      return { ...base, ...meta, seqNum: row.seq_num, status: row.status as any, productArea: coerceProductArea(meta.productArea) ?? undefined };
     }
     // Local items: only pull through known display fields stored at creation time.
     if (meta.productArea) base.productArea = meta.productArea;
@@ -72,8 +73,12 @@ function toLocalInitiative(row: InitiativeRow): LocalInitiative {
 
 const stmts = {
   list: db.prepare(
-    `SELECT id, title, description, source, metadata, seq_num, created_at, updated_at FROM items
+    `SELECT id, title, description, source, metadata, seq_num, status, created_at, updated_at FROM items
      WHERE source IN ('local', 'airtable') AND status != 'archived' ORDER BY created_at DESC`
+  ),
+  listArchived: db.prepare(
+    `SELECT id, title, description, source, metadata, seq_num, status, created_at, updated_at FROM items
+     WHERE source IN ('local', 'airtable') AND status = 'archived' ORDER BY created_at DESC`
   ),
   get: db.prepare(
     `SELECT id, title, description, source, metadata, seq_num, created_at, updated_at FROM items
@@ -98,10 +103,12 @@ const stmts = {
 /**
  * GET /api/initiatives
  * List all local initiatives enriched with latest workflow status.
+ * ?includeArchived=true returns only archived initiatives instead of active ones.
  */
-router.get('/', (_req: Request, res: Response) => {
+router.get('/', (req: Request, res: Response) => {
   try {
-    const rows = stmts.list.all() as InitiativeRow[];
+    const includeArchived = req.query.includeArchived === 'true';
+    const rows = (includeArchived ? stmts.listArchived : stmts.list).all() as InitiativeRow[];
 
     // Batch-fetch latest workflow per item
     const workflowMap = new Map<string, { id: string; status: string; current_stage: string | null; summary: string | null; policy_overrides: string; updated_at: number }>();
@@ -449,6 +456,71 @@ router.delete('/:id', async (req: Request, res: Response) => {
   } catch (error: any) {
     logger.error('Failed to delete initiative', error);
     res.status(500).json({ error: error.message || 'Failed to delete initiative' });
+  }
+});
+
+/**
+ * POST /api/initiatives/:id/archive
+ * Admin-only — archive an initiative to hide it from the default list.
+ * Works for any initiative (local or airtable, with or without workflow).
+ */
+router.post('/:id/archive', requireAdmin, (req: Request, res: Response) => {
+  try {
+    const itemId = req.params.id;
+    const itemRow = db.prepare<[string], { id: string; title: string; status: string }>(`
+      SELECT id, title, status FROM items
+      WHERE id = ? AND source IN ('local', 'airtable')
+    `).get(itemId);
+
+    if (!itemRow) {
+      return res.status(404).json({ error: 'Initiative not found' });
+    }
+
+    if (itemRow.status === 'archived') {
+      return res.status(400).json({ error: 'Initiative is already archived' });
+    }
+
+    db.prepare(`UPDATE items SET status = ?, updated_at = ? WHERE id = ?`)
+      .run('archived', Date.now(), itemId);
+
+    logger.info(`Archived initiative ${itemId} ("${itemRow.title}")`);
+    res.json({ ok: true });
+  } catch (error: any) {
+    logger.error('Failed to archive initiative', error);
+    res.status(500).json({ error: error.message || 'Failed to archive initiative' });
+  }
+});
+
+/**
+ * POST /api/initiatives/:id/unarchive
+ * Admin-only — restore an archived initiative to active status.
+ */
+router.post('/:id/unarchive', requireAdmin, (req: Request, res: Response) => {
+  try {
+    const itemId = req.params.id;
+    const itemRow = db.prepare<[string], { id: string; title: string; status: string; shipped_at: number | null }>(`
+      SELECT id, title, status, shipped_at FROM items
+      WHERE id = ? AND source IN ('local', 'airtable')
+    `).get(itemId);
+
+    if (!itemRow) {
+      return res.status(404).json({ error: 'Initiative not found' });
+    }
+
+    if (itemRow.status !== 'archived') {
+      return res.status(400).json({ error: 'Initiative is not archived' });
+    }
+
+    // Restore to 'shipped' if it was ever shipped, otherwise 'active'
+    const newStatus = itemRow.shipped_at != null ? 'shipped' : 'active';
+    db.prepare(`UPDATE items SET status = ?, updated_at = ? WHERE id = ?`)
+      .run(newStatus, Date.now(), itemId);
+
+    logger.info(`Unarchived initiative ${itemId} ("${itemRow.title}") to status: ${newStatus}`);
+    res.json({ ok: true });
+  } catch (error: any) {
+    logger.error('Failed to unarchive initiative', error);
+    res.status(500).json({ error: error.message || 'Failed to unarchive initiative' });
   }
 });
 

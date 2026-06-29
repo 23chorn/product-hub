@@ -19,6 +19,8 @@
     "test:ado": "cd app/backend && npm run test:ado",
     "test:bedrock": "cd app/backend && npm run test:bedrock",
     "test:integrations": "npm run test:airtable && npm run test:gitbook && npm run test:ado && npm run test:bedrock",
+    "version:generate": "node scripts/generate-version.js",
+    "prebuild": "npm run version:generate",
     "build": "npm run build --workspace=app/shared && npm run build --workspace=app/backend && npm run build --workspace=app/frontend",
     "start": "node app/backend/dist/app/backend/src/server.js",
     "lint": "npm run lint --workspaces",

@@ -62,3 +62,5 @@ db/product-ops.db-wal
 /data/
 
 /context/
+# Build-time generated version info
+version.json

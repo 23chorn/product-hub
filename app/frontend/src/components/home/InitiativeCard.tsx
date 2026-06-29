@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { resolveDisplayTitle } from '@pap/shared';
 import { effectiveStatus, type EnrichedItem } from './types';
 import { StatusBadge } from './StatusBadge';
@@ -50,10 +50,13 @@ export function InitiativeCard({
   const needsReview = eff === 'paused_at_checkpoint';
   const pendingApprovals = needsReview ? wf?.pendingApprovals ?? [] : [];
 
-  const canArchive = isAdmin && isComplete;
+  // Can archive completed initiatives or not-started ones (no workflow yet)
+  const isArchived = item.status === 'archived';
+  const canArchive = isAdmin && !isArchived && (isComplete || !wf);
+  const canUnarchive = isAdmin && isArchived;
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const handleContextMenu = (e: React.MouseEvent) => {
-    if (!canArchive) return; // not eligible — let the native browser menu show
+    if (!canArchive && !canUnarchive) return; // not eligible — let the native browser menu show
     e.preventDefault();
     setMenuPos({ x: e.clientX, y: e.clientY });
   };
@@ -66,24 +69,38 @@ export function InitiativeCard({
     ),
   )];
 
+  const [isExpanded, setIsExpanded] = useState(false);
+  const descriptionRef = useRef<HTMLParagraphElement>(null);
+  const [isTruncated, setIsTruncated] = useState(false);
+
+  // Check if description is truncated
+  useEffect(() => {
+    if (descriptionRef.current) {
+      setIsTruncated(descriptionRef.current.scrollHeight > descriptionRef.current.clientHeight);
+    }
+  }, [item.description]);
+
   return (
     <div
-      title={item.description || undefined}
       onContextMenu={handleContextMenu}
-      className="relative group rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/80 hover:border-surface-300 dark:hover:border-surface-600 hover:shadow-sm transition-all p-4 space-y-1.5"
+      className={`relative group rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/80 hover:border-surface-300 dark:hover:border-surface-600 hover:shadow-sm transition-all p-5 flex flex-col ${isExpanded ? 'h-auto' : 'h-64'}`}
     >
       {menuPos && (
         <CardContextMenu
           x={menuPos.x}
           y={menuPos.y}
           onClose={() => setMenuPos(null)}
-          items={[{ label: 'Archive Initiative', danger: true, onClick: onRequestArchive }]}
+          items={
+            canUnarchive
+              ? [{ label: 'Unarchive Initiative', danger: false, onClick: onRequestArchive }]
+              : [{ label: 'Archive Initiative', danger: true, onClick: onRequestArchive }]
+          }
         />
       )}
 
       {isConfirmingArchive && (
         <ArchiveConfirmModal
-          mode="archive"
+          mode={canUnarchive ? "unarchive" : "archive"}
           itemTitle={item.initiative}
           loading={isArchiving}
           onCancel={onCancelArchive}
@@ -91,8 +108,8 @@ export function InitiativeCard({
         />
       )}
 
-      {/* Row 1: number + title + action button (title truncates so this always fits one line) */}
-      <div className="flex items-center gap-2">
+      {/* Row 1: number + title + action button */}
+      <div className="flex items-start gap-2 flex-shrink-0">
         {item.seqNum != null && (
           <span
             title={`Initiative #${item.seqNum}`}
@@ -101,7 +118,7 @@ export function InitiativeCard({
             #{item.seqNum}
           </span>
         )}
-        <h3 className="flex-1 min-w-0 text-sm font-semibold text-surface-900 dark:text-surface-100 leading-snug truncate">
+        <h3 className="flex-1 min-w-0 text-base font-semibold text-surface-900 dark:text-surface-100 leading-snug line-clamp-2">
           {resolveDisplayTitle(item.initiative, wf?.summary)}
         </h3>
 
@@ -170,7 +187,7 @@ export function InitiativeCard({
       </div>
 
       {/* Row 2: status badges */}
-      <div className="flex items-center gap-1.5 flex-wrap">
+      <div className="flex items-center gap-1.5 flex-wrap flex-shrink-0 mb-3">
         {wf?.isDemo && (
           <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-700">
             Demo
@@ -188,18 +205,35 @@ export function InitiativeCard({
         ))}
       </div>
 
-      {/* Row 3: description / running-stage line */}
-      {wf?.currentStage && wf.status === 'active' ? (
-        <p className="text-[10px] text-surface-400 dark:text-surface-500">
-          {`Running ${wf.currentStage.replace(/_/g, ' ')}`}
-        </p>
-      ) : item.description ? (
-        <p className="text-xs text-surface-500 dark:text-surface-400 line-clamp-2">{item.description}</p>
-      ) : null}
+      {/* Row 3: description / running-stage line - flexible area */}
+      <div className="flex-1 min-h-0 mb-3">
+        {wf?.currentStage && wf.status === 'active' ? (
+          <p className="text-xs text-surface-400 dark:text-surface-500">
+            {`Running ${wf.currentStage.replace(/_/g, ' ')}`}
+          </p>
+        ) : item.description ? (
+          <div>
+            <p
+              ref={descriptionRef}
+              className={`text-sm text-surface-500 dark:text-surface-400 ${isExpanded ? '' : 'line-clamp-3'}`}
+            >
+              {item.description}
+            </p>
+            {isTruncated && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}
+                className="text-xs text-brand-600 dark:text-brand-400 hover:underline mt-1"
+              >
+                {isExpanded ? 'Show less' : 'Show more'}
+              </button>
+            )}
+          </div>
+        ) : null}
+      </div>
 
       {/* Row 4: product area + theme */}
       {(item.productArea || item.strategicTheme) && (
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-1 flex-shrink-0 mb-2">
           {item.productArea && (
             <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400">
               {item.productArea}
@@ -215,7 +249,7 @@ export function InitiativeCard({
 
       {/* Row 5: last updated, bottom */}
       {wf?.updatedAt && (
-        <p className="text-[10px] text-surface-400 dark:text-surface-500">
+        <p className="text-[10px] text-surface-400 dark:text-surface-500 flex-shrink-0">
           Updated {formatUpdatedAt(wf.updatedAt)}
         </p>
       )}

@@ -14,6 +14,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import Logger from './utils/logger';
 import { appConfig } from './config/app-config';
+import { recordDeployment } from './utils/deployment-tracker';
 import prdRoutes from './routes/prd-routes';
 import configRoutes from './routes/config-routes';
 import contextRoutes from './routes/context-routes';
@@ -38,6 +39,7 @@ import authRoutes from './routes/auth-routes';
 import userRoutes from './routes/user-routes';
 import completedInitiativesRoutes from './routes/completed-initiatives-routes';
 import devTicketsRoutes from './routes/dev-tickets-routes';
+import deploymentRoutes from './routes/deployment-routes';
 import { authMiddleware } from './middleware/auth';
 
 const logger = new Logger('SERVER');
@@ -103,12 +105,37 @@ app.get('/health', (req, res) => {
   const db = require('./data/database').default;
   const activeWorkflows = db.prepare(`SELECT COUNT(*) as count FROM workflows WHERE status = 'active'`).get() as { count: number };
 
+  let version: any = { version: 'unknown' };
+  try {
+    version = require('./version.json');
+  } catch {
+    // version.json not found
+  }
+
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     activeWorkflows: activeWorkflows.count,
+    version: version.version,
+    commit: version.git?.commitShort || 'unknown',
+    branch: version.git?.branch || 'unknown',
+    buildTime: version.buildTime || 'unknown',
   });
+});
+
+// Version endpoint
+app.get('/version', (req, res) => {
+  try {
+    const version = require('./version.json');
+    res.json(version);
+  } catch (err) {
+    res.json({
+      version: 'unknown',
+      buildTime: 'unknown',
+      error: 'version.json not found',
+    });
+  }
 });
 
 // Auth routes — always public (no authMiddleware here)
@@ -148,6 +175,7 @@ app.use('/api', demoWebhookRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/completed-initiatives', completedInitiativesRoutes);
 app.use('/api/dev/initiatives', devTicketsRoutes);
+app.use('/api/deployments', deploymentRoutes);
 
 app.get('/api', (req, res) => {
   res.json({
@@ -196,7 +224,22 @@ const httpServer = http.createServer(app);
 
 httpServer.listen(PORT, () => {
   const models = appConfig.ai.models.map(m => m.id).join(', ');
+
+  // Load and log version info
+  let versionInfo = 'unknown';
+  try {
+    const version = require('./version.json');
+    versionInfo = `v${version.version} (${version.git?.commitShort || 'unknown'} on ${version.git?.branch || 'unknown'})`;
+    if (version.git?.isDirty) versionInfo += ' [dirty]';
+  } catch {
+    // version.json not found - dev mode or build issue
+  }
+
+  // Record deployment in database
+  recordDeployment();
+
   logger.info(`🚀 Server running on http://localhost:${PORT}`);
+  logger.info(`📦 Version: ${versionInfo}`);
   logger.info(`📡 CORS enabled for: ${FRONTEND_URL}`);
   logger.info(`🌍 Environment: ${appConfig.server.nodeEnv}`);
   logger.info(`🤖 AI provider: ${appConfig.ai.provider} | models: ${models}`);

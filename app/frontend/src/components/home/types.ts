@@ -7,7 +7,7 @@ export { effectiveStatus } from '@pap/shared';
 export type EnrichedItem = AirtableItem & { source?: string; workflow?: WorkflowInfo };
 
 export type LaunchPhase = 'confirming' | 'launching';
-export type StatusFilter = 'all' | 'active' | 'review' | 'done' | 'stopped' | 'new' | 'mine';
+export type StatusFilter = 'all' | 'active' | 'review' | 'done' | 'stopped' | 'new' | 'mine' | 'archived';
 export type WorkflowPreset = 'full' | 'small';
 
 /** A togglable pipeline stage as shown in the launch confirmation modal. */
@@ -17,7 +17,7 @@ export interface StageOption {
   short: string;
 }
 
-export const STATUS_FILTERS: Array<{ key: StatusFilter; label: string }> = [
+export const STATUS_FILTERS: Array<{ key: StatusFilter; label: string; adminOnly?: boolean }> = [
   { key: 'all',    label: 'All' },
   { key: 'mine',   label: 'Needs my approval' },
   { key: 'active', label: 'Running' },
@@ -25,4 +25,5 @@ export const STATUS_FILTERS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'done',   label: 'Done' },
   { key: 'stopped', label: 'Stopped' },
   { key: 'new',    label: 'Not started' },
+  { key: 'archived', label: 'Archived', adminOnly: true },
 ];

@@ -10,6 +10,7 @@ interface HomeHeaderProps {
   statusCounts: Record<StatusFilter, number>;
   myPendingCount: number;
   showMineFilter: boolean;
+  isAdmin: boolean;
   productAreas: string[];
   productAreaFilter: string;
   onProductAreaFilterChange: (v: string) => void;
@@ -30,6 +31,7 @@ export function HomeHeader({
   statusCounts,
   myPendingCount,
   showMineFilter,
+  isAdmin,
   productAreas,
   productAreaFilter,
   onProductAreaFilterChange,
@@ -88,7 +90,7 @@ export function HomeHeader({
             <button
               key={f.key}
               onClick={() => onStatusFilterChange(f.key)}
-              className={`px-2.5 py-1 text-xs rounded-lg border transition-colors ${
+              className={`px-2.5 py-1.5 text-xs rounded-lg border transition-colors ${
                 isActive
                   ? isMine
                     ? 'bg-sky-100 dark:bg-sky-900/40 border-sky-300 dark:border-sky-600 text-sky-800 dark:text-sky-200 font-medium'
@@ -118,7 +120,7 @@ export function HomeHeader({
           value={statusFilter}
           onChange={e => onStatusFilterChange(e.target.value as StatusFilter)}
           className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 ${
-            ['review', 'done', 'stopped', 'new'].includes(statusFilter)
+            ['review', 'done', 'stopped', 'new', 'archived'].includes(statusFilter)
               ? statusFilter === 'review'
                 ? 'bg-amber-100 dark:bg-amber-900/40 border-amber-300 dark:border-amber-600 text-amber-800 dark:text-amber-200 font-medium'
                 : 'bg-brand-50 dark:bg-brand-900/40 border-brand-300 dark:border-brand-600 text-brand-800 dark:text-brand-200 font-medium'
@@ -127,6 +129,11 @@ export function HomeHeader({
         >
           <option value="all" disabled hidden>More filters</option>
           {STATUS_FILTERS.filter(f => ['review', 'done', 'stopped', 'new'].includes(f.key)).map(f => (
+            <option key={f.key} value={f.key}>
+              {f.label} {statusCounts[f.key] > 0 ? `(${statusCounts[f.key]})` : ''}
+            </option>
+          ))}
+          {isAdmin && STATUS_FILTERS.filter(f => f.adminOnly).map(f => (
             <option key={f.key} value={f.key}>
               {f.label} {statusCounts[f.key] > 0 ? `(${statusCounts[f.key]})` : ''}
             </option>
