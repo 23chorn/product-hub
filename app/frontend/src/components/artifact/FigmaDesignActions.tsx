@@ -46,11 +46,12 @@ export function FigmaDesignActions({
   const [links, setLinks] = useState<Record<string, string>>(
     () => Object.fromEntries(screens.map(s => [s.name, s.frame_url ?? '']))
   );
+  const [currentScreenIndex, setCurrentScreenIndex] = useState(0);
 
   const setLink = (key: string, value: string) => setLinks(prev => ({ ...prev, [key]: value }));
 
-  const hasAnyLink = Object.values(links).some(v => v.trim());
-  const canSubmit = !loading && (!!figmaFileUrl || hasAnyLink);
+  // Allow submitting even with no links (user can leave all fields blank)
+  const canSubmit = !loading;
 
   function submit() {
     if (screens.length > 0) {
@@ -98,33 +99,79 @@ export function FigmaDesignActions({
 
       <p className={noteClass}>
         {figmaFileUrl
-          ? 'Paste each screen’s frame link below, then mark complete to advance the workflow.'
-          : 'No Figma file was created automatically. Build the design from the screens and notes above, then paste each screen’s frame link below.'}
+          ? "Paste frame links for each screen, or leave blank if not created. Use the navigation to move between screens."
+          : "No Figma file was created automatically. Build the design from the screens and notes above, then paste frame links below (or leave blank)."}
       </p>
 
       {screens.length > 0 ? (
-        <div className={compact ? 'space-y-1.5' : 'space-y-2'}>
-          {screens.map(s => (
-            <div key={s.name}>
-              <label className={labelClass}>{s.name}</label>
+        <div className="space-y-2">
+          {/* Screen navigation */}
+          <div className="flex items-center justify-between gap-2">
+            <button
+              onClick={() => setCurrentScreenIndex(Math.max(0, currentScreenIndex - 1))}
+              disabled={currentScreenIndex === 0}
+              className="px-2 py-1 text-xs rounded-md border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              ← Prev
+            </button>
+            <span className="text-xs text-surface-500 dark:text-surface-400 font-medium">
+              Screen {currentScreenIndex + 1} of {screens.length}
+            </span>
+            <button
+              onClick={() => setCurrentScreenIndex(Math.min(screens.length - 1, currentScreenIndex + 1))}
+              disabled={currentScreenIndex === screens.length - 1}
+              className="px-2 py-1 text-xs rounded-md border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              Next →
+            </button>
+          </div>
+
+          {/* Current screen input */}
+          {screens[currentScreenIndex] && (
+            <div>
+              <label className={labelClass}>{screens[currentScreenIndex].name}</label>
               <input
                 type="text"
-                value={links[s.name] ?? ''}
-                onChange={e => setLink(s.name, e.target.value)}
-                placeholder="https://www.figma.com/design/..."
+                value={links[screens[currentScreenIndex].name] ?? ''}
+                onChange={e => setLink(screens[currentScreenIndex].name, e.target.value)}
+                placeholder="https://www.figma.com/design/... (optional - leave blank if not created)"
                 className={inputClass}
               />
             </div>
-          ))}
+          )}
+
+          {/* Progress indicator */}
+          <div className="flex gap-1">
+            {screens.map((s, idx) => {
+              const hasValue = !!links[s.name]?.trim();
+              return (
+                <button
+                  key={s.name}
+                  onClick={() => setCurrentScreenIndex(idx)}
+                  title={`${s.name}${hasValue ? ' (has link)' : ' (empty)'}`}
+                  className={`flex-1 h-1 rounded-full transition-colors ${
+                    idx === currentScreenIndex
+                      ? 'bg-rose-500'
+                      : hasValue
+                      ? 'bg-green-400 dark:bg-green-600'
+                      : 'bg-surface-300 dark:bg-surface-600'
+                  }`}
+                />
+              );
+            })}
+          </div>
         </div>
       ) : (
-        <input
-          type="text"
-          value={links[FALLBACK_KEY] ?? ''}
-          onChange={e => setLink(FALLBACK_KEY, e.target.value)}
-          placeholder="https://www.figma.com/design/..."
-          className={inputClass}
-        />
+        <div>
+          <label className={labelClass}>Figma Frame Link (optional)</label>
+          <input
+            type="text"
+            value={links[FALLBACK_KEY] ?? ''}
+            onChange={e => setLink(FALLBACK_KEY, e.target.value)}
+            placeholder="https://www.figma.com/design/... (leave blank if not created)"
+            className={inputClass}
+          />
+        </div>
       )}
 
       <div className={compact ? 'flex items-center gap-2' : 'flex gap-2'}>

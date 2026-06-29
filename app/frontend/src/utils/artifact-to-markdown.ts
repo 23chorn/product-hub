@@ -27,6 +27,48 @@ export interface OpenQuestion {
 }
 
 /**
+ * Sanitize literal newlines in JSON string values by replacing them with spaces.
+ * Handles cases where the model outputs unescaped line breaks in string fields.
+ */
+function sanitizeJsonNewlines(raw: string): string {
+  let result = '';
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+
+    if (escaped) {
+      result += ch;
+      escaped = false;
+      continue;
+    }
+
+    if (ch === '\\') {
+      result += ch;
+      escaped = true;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = !inString;
+      result += ch;
+      continue;
+    }
+
+    // Replace literal newlines inside strings with spaces
+    if (inString && (ch === '\n' || ch === '\r')) {
+      result += ' ';
+      continue;
+    }
+
+    result += ch;
+  }
+
+  return result;
+}
+
+/**
  * Extract open (unresolved) questions from a PRD artifact.
  * Handles both JSON-structured PRDs and markdown-table PRDs.
  */
@@ -34,7 +76,8 @@ export function parseOpenQuestions(content: string): OpenQuestion[] {
   // JSON path
   if (content.trimStart().startsWith('{')) {
     try {
-      const parsed = JSON.parse(content);
+      const sanitized = sanitizeJsonNewlines(content);
+      const parsed = JSON.parse(sanitized);
       if (Array.isArray(parsed.open_questions)) {
         return parsed.open_questions
           .filter((q: any) => (q.status ?? 'open').toLowerCase() === 'open')

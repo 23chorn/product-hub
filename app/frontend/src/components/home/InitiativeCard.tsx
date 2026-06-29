@@ -206,7 +206,7 @@ export function InitiativeCard({
       </div>
 
       {/* Row 3: description / running-stage line - flexible area */}
-      <div className="flex-1 min-h-0 mb-3">
+      <div className={`min-h-0 mb-3 ${wf?.currentStage && wf.status === 'active' ? '' : 'flex-1'}`}>
         {wf?.currentStage && wf.status === 'active' ? (
           <p className="text-xs text-surface-400 dark:text-surface-500">
             {`Running ${wf.currentStage.replace(/_/g, ' ')}`}

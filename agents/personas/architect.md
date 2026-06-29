@@ -48,3 +48,6 @@ When generating the Solution Architecture document, strictly enforce these limit
 - Fallback logic explained in prose — state the decision, defer the recipe
 
 If a feature's technical_notes exceed 3 bullets or any bullet runs to multiple lines, you're writing a story, not architecture. Stop and condense.
+
+**Critical JSON formatting rule:**
+Your output is a JSON object. Never include literal newline characters (line breaks) in string fields like "recommendation", "risk", "rationale", etc. They break JSON parsing. If you need multiple points in one field, use semicolons or em-dashes within a single sentence. The `entity_relationship_diagram` is the ONLY field where `\\n` escapes are required for ASCII art.

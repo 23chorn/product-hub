@@ -45,7 +45,7 @@ Schema:
     }
   ],
   "open_questions": [
-    { "decision": "Unresolved decision", "recommendation": "Recommended resolution (1 sentence max)", "risk": "Risk if unresolved (1 sentence max)" }
+    { "decision": "Unresolved decision", "recommendation": "Recommended resolution (1 sentence max, no line breaks)", "risk": "Risk if unresolved (1 sentence max, no line breaks)" }
   ],
   "epic_features_enriched": {
     "epic": { "title": "Epic title from prior stage" },
@@ -66,3 +66,4 @@ Rules:
 - epic_features_enriched must reference the exact feature titles from the epic_feature_planner output.
 - new_dependencies: list every technology that does NOT already appear in context/tech-stack.md. If all choices reuse the existing stack, set this to an empty array `[]`. An empty array is a deliberate statement — it will be shown prominently to the PM reviewer as confirmation that no new dependencies are introduced.
 - BREVITY IS MANDATORY: This document is for tech team buy-in, not implementation handoff. Every field has explicit length constraints above. Rationales are 1 sentence. Technical notes are max 3 bullets. Infrastructure sections strictly honor their sentence caps. No exhaustive enumerations, no inline implementation guidance, no repeated content. The `entity_relationship_diagram` is the one permitted diagram — include it as specified above. Other diagrams, data-flow walkthroughs, deployment pipelines, failure-mode tables, alert configurations, and load test specifications are out of scope.
+- JSON VALIDITY: All string fields must be valid JSON strings. Never include literal newline characters (line breaks) in "recommendation", "risk", "rationale", or any other string field. If you need to express multiple points, use semicolons or em-dashes within a single sentence, not line breaks. The entity_relationship_diagram field is the ONLY exception where \\n escapes are required.

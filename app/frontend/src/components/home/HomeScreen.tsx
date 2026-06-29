@@ -291,8 +291,15 @@ export function HomeScreen() {
   );
 
   const statusCounts = useMemo<Record<StatusFilter, number>>(() => {
-    const c: Record<StatusFilter, number> = { all: visibleItems.length, active: 0, review: 0, done: 0, stopped: 0, new: 0, mine: myPendingCount, archived: 0 };
-    visibleItems.forEach(item => {
+    // Filter items by product area and theme first, so counts reflect current filters
+    const filtered = visibleItems.filter(item => {
+      if (productAreaFilter !== 'all' && item.productArea !== productAreaFilter) return false;
+      if (themeFilter !== 'all' && item.strategicTheme !== themeFilter) return false;
+      return true;
+    });
+
+    const c: Record<StatusFilter, number> = { all: filtered.length, active: 0, review: 0, done: 0, stopped: 0, new: 0, mine: 0, archived: 0 };
+    filtered.forEach(item => {
       if (item.status === 'archived') {
         c.archived++;
       } else {
@@ -302,10 +309,14 @@ export function HomeScreen() {
         else if (s === 'cancelled') c.stopped++;
         else if (s === 'complete') c.done++;
         else c.new++;
+        // Count items in mine filter separately
+        if (item.workflow && s !== 'cancelled' && mineWorkflowIds.has(item.workflow.id)) {
+          c.mine++;
+        }
       }
     });
     return c;
-  }, [visibleItems, myPendingCount]);
+  }, [visibleItems, productAreaFilter, themeFilter, mineWorkflowIds]);
 
   const productAreas = useMemo(
     () => Array.from(new Set(visibleItems.map(i => i.productArea).filter((v): v is string => !!v))).sort(),

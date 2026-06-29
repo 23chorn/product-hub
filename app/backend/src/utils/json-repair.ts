@@ -11,12 +11,62 @@ export function stripJsonFence(raw: string): string {
 }
 
 /**
+ * Sanitize literal newlines in JSON string values by replacing them with spaces.
+ * Handles cases where the model outputs unescaped line breaks in string fields,
+ * which breaks JSON.parse. Preserves \\n escape sequences (which are valid JSON).
+ */
+function sanitizeJsonNewlines(raw: string): string {
+  let result = '';
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+
+    if (escaped) {
+      // Preserve escape sequences like \n, \", etc.
+      result += ch;
+      escaped = false;
+      continue;
+    }
+
+    if (ch === '\\') {
+      result += ch;
+      escaped = true;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = !inString;
+      result += ch;
+      continue;
+    }
+
+    // Replace literal newlines inside strings with spaces
+    if (inString && (ch === '\n' || ch === '\r')) {
+      result += ' ';
+      continue;
+    }
+
+    result += ch;
+  }
+
+  return result;
+}
+
+/**
  * Strip a JSON code fence and parse it. Returns null on parse failure instead of
  * throwing — use where a missing/malformed artifact should be treated as "no data"
- * rather than an error.
+ * rather than an error. Sanitizes literal newlines in string values before parsing.
  */
 export function parseJsonLoose(raw: string): any | null {
-  try { return JSON.parse(stripJsonFence(raw)); } catch { return null; }
+  try {
+    const cleaned = stripJsonFence(raw);
+    const sanitized = sanitizeJsonNewlines(cleaned);
+    return JSON.parse(sanitized);
+  } catch {
+    return null;
+  }
 }
 
 /**
