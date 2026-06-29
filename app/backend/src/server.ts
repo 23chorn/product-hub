@@ -228,9 +228,31 @@ httpServer.listen(PORT, () => {
   // Load and log version info
   let versionInfo = 'unknown';
   try {
-    const version = require('./version.json');
-    versionInfo = `v${version.version} (${version.git?.commitShort || 'unknown'} on ${version.git?.branch || 'unknown'})`;
-    if (version.git?.isDirty) versionInfo += ' [dirty]';
+    const fs = require('fs');
+    const path = require('path');
+    const { findRepoRoot } = require('./utils/find-repo-root');
+
+    // Try multiple locations for version.json
+    const locations = [
+      path.join(__dirname, 'version.json'),  // dev: app/backend/src/version.json
+      path.join(__dirname, '../version.json'),  // built
+      path.join(findRepoRoot(__dirname), 'app/backend/src/version.json'),  // from repo root
+    ];
+
+    let version: any = null;
+    for (const location of locations) {
+      try {
+        if (fs.existsSync(location)) {
+          version = JSON.parse(fs.readFileSync(location, 'utf8'));
+          break;
+        }
+      } catch { /* try next location */ }
+    }
+
+    if (version) {
+      versionInfo = `v${version.version} (${version.git?.commitShort || 'unknown'} on ${version.git?.branch || 'unknown'})`;
+      if (version.git?.isDirty) versionInfo += ' [dirty]';
+    }
   } catch {
     // version.json not found - dev mode or build issue
   }

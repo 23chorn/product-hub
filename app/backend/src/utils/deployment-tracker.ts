@@ -5,6 +5,9 @@
 import db from '../data/database';
 import Logger from './logger';
 import os from 'os';
+import path from 'path';
+import fs from 'fs';
+import { findRepoRoot } from './find-repo-root';
 
 const logger = new Logger('DEPLOYMENT');
 
@@ -29,9 +32,28 @@ export function recordDeployment(): void {
   try {
     let versionData: any = null;
     try {
-      versionData = require('../version.json');
-    } catch {
-      logger.warn('version.json not found - recording deployment without version info');
+      // Try multiple locations for version.json
+      const locations = [
+        path.join(__dirname, '../version.json'),  // dev: app/backend/src/version.json
+        path.join(__dirname, '../../version.json'),  // built dev
+        path.join(findRepoRoot(__dirname), 'app/backend/src/version.json'),  // from repo root
+      ];
+
+      for (const location of locations) {
+        try {
+          if (fs.existsSync(location)) {
+            versionData = JSON.parse(fs.readFileSync(location, 'utf8'));
+            logger.info(`Loaded version info from ${location}`);
+            break;
+          }
+        } catch { /* try next location */ }
+      }
+
+      if (!versionData) {
+        logger.warn('version.json not found in any expected location - recording deployment without version info');
+      }
+    } catch (err: any) {
+      logger.warn('Error loading version.json:', err.message);
     }
 
     const record: DeploymentRecord = {
