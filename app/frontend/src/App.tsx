@@ -111,7 +111,10 @@ function App() {
 
     // Slack notification links land here as ?workflowId=... — open that workflow's
     // preview directly instead of whatever was last open locally.
-    const deepLinkWorkflowId = new URLSearchParams(window.location.search).get('workflowId');
+    const urlParams = new URLSearchParams(window.location.search);
+    const deepLinkWorkflowId = urlParams.get('workflowId');
+    const deepLinkArtifactId = urlParams.get('artifactId');
+
     if (deepLinkWorkflowId) {
       window.history.replaceState(null, '', window.location.pathname + window.location.hash);
       setActivePage('home');
@@ -122,6 +125,10 @@ function App() {
       api.getWorkflowStatus(targetWorkflowId)
         .then((status) => {
           useWorkflowStore.getState().applyWorkflowStatus(status);
+          // If artifactId is provided, open that artifact
+          if (deepLinkArtifactId) {
+            useWorkflowStore.getState().setViewingArtifactId(Number(deepLinkArtifactId));
+          }
         })
         .catch(() => {
           if (!deepLinkWorkflowId) localStorage.removeItem('activeWorkflowId');

@@ -110,29 +110,19 @@ export function notifyCheckpointPending(
     ? `${mentions} — ${headline} on "${initiativeTitle}"`
     : `${headline} — ${initiativeTitle}`;
 
+  const reviewUrl = workflowId ? `${appUrl}?workflowId=${workflowId}` : null;
+
   const blocks: object[] = [
     {
       type: 'section',
       text: {
         type: 'mrkdwn',
         text: mentions
-          ? `${emoji} ${headline}\n*Initiative:* ${initiativeTitle}\n${mentions}`
-          : `${emoji} ${headline}\n*Initiative:* ${initiativeTitle}`,
+          ? `${emoji} ${headline}\n*Initiative:* ${initiativeTitle}\n${mentions}${reviewUrl ? `\n\n<${reviewUrl}|Open Review →>` : ''}`
+          : `${emoji} ${headline}\n*Initiative:* ${initiativeTitle}${reviewUrl ? `\n\n<${reviewUrl}|Open Review →>` : ''}`,
       },
     },
   ];
-
-  if (workflowId) {
-    blocks.push({
-      type: 'actions',
-      elements: [{
-        type: 'button',
-        text: { type: 'plain_text', text: 'Open Review' },
-        url: `${appUrl}?workflowId=${workflowId}`,
-        style: 'primary',
-      }],
-    });
-  }
 
   post({ text, blocks });
 }
