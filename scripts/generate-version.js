@@ -44,17 +44,28 @@ function generateVersion() {
     nodeVersion: process.version,
   };
 
-  // Write to backend
-  const backendPath = path.join(__dirname, '../app/backend/src/version.json');
-  fs.mkdirSync(path.dirname(backendPath), { recursive: true });
-  fs.writeFileSync(backendPath, JSON.stringify(version, null, 2));
-  console.log('✓ Generated version.json for backend');
+  // Write to backend src (for dev mode)
+  const backendSrcPath = path.join(__dirname, '../app/backend/src/version.json');
+  fs.mkdirSync(path.dirname(backendSrcPath), { recursive: true });
+  fs.writeFileSync(backendSrcPath, JSON.stringify(version, null, 2));
+  console.log('✓ Generated version.json for backend/src');
+
+  // Write to backend dist (for production builds)
+  const backendDistPath = path.join(__dirname, '../app/backend/dist/app/backend/src/version.json');
+  try {
+    fs.mkdirSync(path.dirname(backendDistPath), { recursive: true });
+    fs.writeFileSync(backendDistPath, JSON.stringify(version, null, 2));
+    console.log('✓ Generated version.json for backend/dist');
+  } catch (err) {
+    // Dist folder might not exist yet during prebuild
+    console.log('⚠ Could not write to backend/dist (run this after build for production)');
+  }
 
   // Write to frontend public folder (so it's accessible at /version.json)
   const frontendPath = path.join(__dirname, '../app/frontend/public/version.json');
   fs.mkdirSync(path.dirname(frontendPath), { recursive: true });
   fs.writeFileSync(frontendPath, JSON.stringify(version, null, 2));
-  console.log('✓ Generated version.json for frontend');
+  console.log('✓ Generated version.json for frontend/public');
 
   return version;
 }

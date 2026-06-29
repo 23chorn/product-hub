@@ -22,6 +22,7 @@
     "version:generate": "node scripts/generate-version.js",
     "prebuild": "npm run version:generate",
     "build": "npm run build --workspace=app/shared && npm run build --workspace=app/backend && npm run build --workspace=app/frontend",
+    "postbuild": "npm run version:generate",
     "start": "node app/backend/dist/app/backend/src/server.js",
     "lint": "npm run lint --workspaces",
     "validate-env": "cd app/backend && npm run validate-env",
