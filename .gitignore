@@ -64,3 +64,5 @@ db/product-ops.db-wal
 /context/
 # Build-time generated version info
 version.json
+
+*.ps1
