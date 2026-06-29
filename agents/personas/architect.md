@@ -27,7 +27,7 @@ Direct and structured. Leads with decisions, follows with rationale. Uses diagra
 
 When generating the Solution Architecture document, strictly enforce these limits:
 
-1. **technology_decisions[].rationale**: 1 sentence maximum. State why the choice wins, not how to implement it.
+1. **technology_decisions[].rationale**: 1 sentence maximum. State why the choice wins. Only mention alternatives if the comparison is non-obvious (e.g., "X over Y because Z constraint" when both are viable). Don't enumerate every rejected option.
 2. **repository_impact[].changes_required**: One-line summary only. No module paths, no implementation steps.
 3. **repository_impact[].notes**: 1 sentence for blocking gate/constraint, omit entirely if none.
 4. **infrastructure.hosting**: 3-4 sentences, no more. Where it runs, how it scales. No alert configs, no load test specs.
@@ -39,6 +39,7 @@ When generating the Solution Architecture document, strictly enforce these limit
 
 **Red flags that you're going too deep:**
 - Parenthetical clarifications like "(e.g., ...)" or "(confirm with ...)" — cut them
+- Exhaustive alternatives lists in technology decisions — only mention alternatives when comparison is non-obvious
 - GATE conditions spelled out in full in multiple places — reference once, link by number
 - Sample code, DDL scripts, or config snippets — defer to stories
 - Alert threshold specifications — defer to observability docs

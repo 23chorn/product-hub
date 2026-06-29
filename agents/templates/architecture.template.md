@@ -7,11 +7,11 @@ Schema:
   "title": "[Initiative Name] — Solution Architecture",
   "overview": "2–3 sentences: what is being built, platforms in scope, core architectural approach, target scale.",
   "technology_decisions": {
-    "backend": [{ "decision": "Decision area", "choice": "Chosen technology", "alternatives": "Alternatives considered", "rationale": "Why this wins (1 sentence max)" }],
-    "web": [{ "decision": "", "choice": "", "alternatives": "", "rationale": "" }],
-    "ios": [{ "decision": "", "choice": "", "alternatives": "", "rationale": "" }],
-    "android": [{ "decision": "", "choice": "", "alternatives": "", "rationale": "" }],
-    "infrastructure": [{ "decision": "", "choice": "", "alternatives": "", "rationale": "" }]
+    "backend": [{ "decision": "Decision area", "choice": "Chosen technology", "rationale": "Why this wins over alternatives (1 sentence max, mention key alternative only if comparison is non-obvious)" }],
+    "web": [{ "decision": "", "choice": "", "rationale": "" }],
+    "ios": [{ "decision": "", "choice": "", "rationale": "" }],
+    "android": [{ "decision": "", "choice": "", "rationale": "" }],
+    "infrastructure": [{ "decision": "", "choice": "", "rationale": "" }]
   },
   "data_model": {
     "entities": [
