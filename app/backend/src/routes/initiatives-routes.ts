@@ -229,33 +229,6 @@ router.post('/', (req: Request, res: Response) => {
 });
 
 /**
- * PATCH /api/initiatives/:id
- * Update title and/or description (local initiatives only).
- * Body: { title?: string, description?: string }
- */
-router.patch('/:id', (req: Request, res: Response) => {
-  const row = stmts.get.get(req.params.id) as InitiativeRow | undefined;
-  if (!row) return res.status(404).json({ error: 'Initiative not found' });
-
-  const title = req.body.title !== undefined ? req.body.title.trim() : row.title;
-  const description = req.body.description !== undefined
-    ? (req.body.description.trim() || null)
-    : row.description;
-
-  if (!title) return res.status(400).json({ error: 'title cannot be empty' });
-
-  try {
-    const now = Date.now();
-    stmts.update.run(title, description, now, req.params.id);
-    const updated = stmts.get.get(req.params.id) as InitiativeRow;
-    res.json(toLocalInitiative(updated));
-  } catch (error: any) {
-    logger.error('Failed to update initiative', error);
-    res.status(500).json({ error: error.message || 'Failed to update initiative' });
-  }
-});
-
-/**
  * PATCH /api/initiatives/:id/description
  * Update item description and sync to Airtable if source is 'airtable'.
  * Restricted to Product or Admin users.
@@ -309,6 +282,33 @@ router.patch('/:id/description', async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     logger.error('Failed to update description', error);
     res.status(500).json({ error: error.message || 'Failed to update description' });
+  }
+});
+
+/**
+ * PATCH /api/initiatives/:id
+ * Update title and/or description (local initiatives only).
+ * Body: { title?: string, description?: string }
+ */
+router.patch('/:id', (req: Request, res: Response) => {
+  const row = stmts.get.get(req.params.id) as InitiativeRow | undefined;
+  if (!row) return res.status(404).json({ error: 'Initiative not found' });
+
+  const title = req.body.title !== undefined ? req.body.title.trim() : row.title;
+  const description = req.body.description !== undefined
+    ? (req.body.description.trim() || null)
+    : row.description;
+
+  if (!title) return res.status(400).json({ error: 'title cannot be empty' });
+
+  try {
+    const now = Date.now();
+    stmts.update.run(title, description, now, req.params.id);
+    const updated = stmts.get.get(req.params.id) as InitiativeRow;
+    res.json(toLocalInitiative(updated));
+  } catch (error: any) {
+    logger.error('Failed to update initiative', error);
+    res.status(500).json({ error: error.message || 'Failed to update initiative' });
   }
 });
 
