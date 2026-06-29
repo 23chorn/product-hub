@@ -6,12 +6,43 @@ import { useAuthStore, ROLE_LABELS, canLaunchWorkflow } from '../../stores/authS
 import { CardContextMenu } from '../common/CardContextMenu';
 import { ArchiveConfirmModal } from '../common/ArchiveConfirmModal';
 
+// Standard pipeline stages in order
+const PIPELINE_STAGES = [
+  'analyst', 'pm_prd', 'prototype', 'figma_design',
+  'solution_architect', 'epic_feature_planner', 'story_decomposition',
+];
+
 /** Format a workflow's last state-change timestamp, e.g. "18 Jun, 14:32". */
 function formatUpdatedAt(ms: number): string {
   const d = new Date(ms);
   const date = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
   const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
   return `${date}, ${time}`;
+}
+
+/** Calculate workflow progress for display (stages completed before current). */
+function calculateDisplayProgress(currentStage: string | null, status: string): number {
+  if (status === 'complete') return 100;
+  if (!currentStage) return 0;
+
+  const stageIndex = PIPELINE_STAGES.indexOf(currentStage);
+  if (stageIndex === -1) return 0;
+
+  // Start at 0%: being AT stage N means N-1 stages are completed (current is in-progress)
+  // Stage 1 (index 0) = 0% (0/7), Stage 2 (index 1) = 14% (1/7), Stage 3 (index 2) = 29% (2/7)
+  return Math.round((stageIndex / PIPELINE_STAGES.length) * 100);
+}
+
+/** Calculate bar width to align with checkpoint positions (visual alignment). */
+function calculateBarWidth(currentStage: string | null, status: string): number {
+  if (status === 'complete') return 100;
+  if (!currentStage) return 0;
+
+  const stageIndex = PIPELINE_STAGES.indexOf(currentStage);
+  if (stageIndex === -1) return 0;
+
+  // Bar extends to checkpoint position (evenly distributed from 0% to 100%)
+  return Math.round((stageIndex / (PIPELINE_STAGES.length - 1)) * 100);
 }
 
 /** Card for one initiative in the HomeScreen grid: title, status, tags, and launch/resume/delete actions.
@@ -186,7 +217,7 @@ export function InitiativeCard({
         </div>
       </div>
 
-      {/* Row 2: status badges */}
+      {/* Row 2: status badges + product area + theme */}
       <div className="flex items-center gap-1.5 flex-wrap flex-shrink-0 mb-3">
         {wf?.isDemo && (
           <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-700">
@@ -203,6 +234,16 @@ export function InitiativeCard({
             Needs {label}
           </span>
         ))}
+        {item.productArea && (
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400">
+            {item.productArea}
+          </span>
+        )}
+        {item.strategicTheme && (
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400">
+            {item.strategicTheme}
+          </span>
+        )}
       </div>
 
       {/* Row 3: description / running-stage line - flexible area */}
@@ -231,19 +272,66 @@ export function InitiativeCard({
         ) : null}
       </div>
 
-      {/* Row 4: product area + theme */}
-      {(item.productArea || item.strategicTheme) && (
-        <div className="flex flex-wrap gap-1 flex-shrink-0 mb-2">
-          {item.productArea && (
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400">
-              {item.productArea}
+      {/* Progress bar with stage checkpoints (only show for active workflows) */}
+      {wf && isActive && (
+        <div className="flex-shrink-0 mb-2">
+          <div className="flex items-center justify-end mb-1">
+            <span className="text-[10px] font-medium text-surface-500 dark:text-surface-400">
+              {calculateDisplayProgress(wf.currentStage, wf.status)}%
             </span>
-          )}
-          {item.strategicTheme && (
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400">
-              {item.strategicTheme}
-            </span>
-          )}
+          </div>
+
+          {/* Progress bar with checkpoint markers */}
+          <div className="relative pb-6">
+            {/* Background bar */}
+            <div className="h-1.5 bg-surface-200 dark:bg-surface-700 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-brand-500 transition-all duration-300 ease-out"
+                style={{ width: `${calculateBarWidth(wf.currentStage, wf.status)}%` }}
+              />
+            </div>
+
+            {/* Stage checkpoint markers */}
+            <div className="absolute top-0 left-0 right-0 h-1.5 flex items-center justify-between">
+              {PIPELINE_STAGES.map((stage, idx) => {
+                const currentStageIdx = wf.currentStage ? PIPELINE_STAGES.indexOf(wf.currentStage) : -1;
+                const isCompleted = idx < currentStageIdx;
+                const isCurrent = idx === currentStageIdx;
+
+                // Shorten stage names for display
+                const shortName = stage === 'pm_prd' ? 'prd'
+                  : stage === 'solution_architect' ? 'architect'
+                  : stage === 'epic_feature_planner' ? 'epics'
+                  : stage === 'story_decomposition' ? 'stories'
+                  : stage === 'figma_design' ? 'figma'
+                  : stage;
+
+                return (
+                  <div key={stage} className="relative flex flex-col items-center">
+                    {/* Checkpoint dot */}
+                    <div className={`w-2 h-2 rounded-full border-2 transition-all ${
+                      isCompleted
+                        ? 'bg-brand-500 border-brand-500'
+                        : isCurrent
+                        ? 'bg-white dark:bg-surface-900 border-brand-500 ring-2 ring-brand-500 ring-offset-1'
+                        : 'bg-surface-100 dark:bg-surface-800 border-surface-300 dark:border-surface-600'
+                    }`} />
+
+                    {/* Always-visible stage label */}
+                    <div className={`absolute top-3 text-[10px] font-medium whitespace-nowrap transition-colors ${
+                      isCompleted
+                        ? 'text-brand-600 dark:text-brand-400'
+                        : isCurrent
+                        ? 'text-brand-600 dark:text-brand-400'
+                        : 'text-surface-400 dark:text-surface-600'
+                    }`}>
+                      {shortName}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
 

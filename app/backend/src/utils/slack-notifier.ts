@@ -80,7 +80,9 @@ function buildMentions(stage: string): string {
 }
 
 function getAppUrl(): string {
-  return process.env.APP_URL || 'http://localhost:5173';
+  const raw = process.env.APP_URL || 'http://localhost:5173';
+  // Trim whitespace and strip inline comments (some .env parsers don't handle them)
+  return raw.split(/\s+#/)[0].trim();
 }
 
 export function notifyCheckpointPending(
