@@ -71,7 +71,6 @@ function hasTBD(obj: any): boolean {
 
 const FAKE_URL_RE = /\b(example|placeholder|fake|sample|test\.com|foo\.com|bar\.com|yourdomain)\.com\b/i;
 const GWT_RE = /^\s*(given|when|then)\b/i;
-const FIBONACCI = new Set([1, 2, 3, 5, 8]);
 const STORY_ID_RE = /^F\d+\.S\d+$/;
 const VALID_PLATFORMS = new Set(['backend', 'web', 'ios', 'android']);
 
@@ -214,17 +213,6 @@ export function validatePrdJson(input: Record<string, unknown>): string {
     if (!Array.isArray(sm.secondary)) {
       issues.push('success_metrics: "secondary" must be an array');
     }
-    // counter metrics — required guardrail
-    const counter = sm.counter;
-    if (!Array.isArray(counter) || counter.length === 0) {
-      issues.push('success_metrics: "counter" must be a non-empty array — at least one guardrail metric is required to protect against regressions');
-    } else {
-      counter.forEach((c: any, i: number) => {
-        req(c, 'metric', `success_metrics.counter[${i}]`, issues);
-        req(c, 'acceptable_floor', `success_metrics.counter[${i}]`, issues);
-        req(c, 'measurement', `success_metrics.counter[${i}]`, issues);
-      });
-    }
   }
 
   // non_functional_requirements
@@ -249,19 +237,6 @@ export function validatePrdJson(input: Record<string, unknown>): string {
       }
     }
   });
-
-  // NFR category coverage — Performance and Security are mandatory
-  if (Array.isArray(p.non_functional_requirements)) {
-    const presentCategories = new Set(
-      p.non_functional_requirements
-        .map((n: any) => (typeof n.category === 'string' ? n.category.toLowerCase() : ''))
-    );
-    const required = ['performance', 'security'];
-    const missing = required.filter(cat => !presentCategories.has(cat));
-    if (missing.length > 0) {
-      issues.push(`non_functional_requirements: missing required categories: ${missing.join(', ')} — every PRD must cover Performance and Security NFRs`);
-    }
-  }
 
   // functional_requirements — aim for 10–20
   const frs = reqArray(p, 'functional_requirements', 'root', issues, 5);
@@ -320,16 +295,6 @@ export function validateArchitectureJson(input: Record<string, unknown>): string
         const lp = `technology_decisions.${pl}[${i}]`;
         req(d, 'decision', lp, issues);
         req(d, 'choice', lp, issues);
-        req(d, 'rationale', lp, issues);
-        // alternatives must be substantive — not empty, "None", "N/A", or fewer than 15 chars
-        if (!d.alternatives || typeof d.alternatives !== 'string' || d.alternatives.trim() === '') {
-          issues.push(`${lp}: "alternatives" is required — document at least one alternative considered`);
-        } else {
-          const altTrimmed = d.alternatives.trim().toLowerCase();
-          if (['none', 'n/a', 'na', '-', 'none considered'].includes(altTrimmed) || d.alternatives.trim().length < 15) {
-            issues.push(`${lp}: "alternatives" is too thin ("${d.alternatives.trim()}") — name specific alternatives evaluated (e.g. "Evaluated SignalR — ruled out because web stack already uses native WebSocket")`);
-          }
-        }
       });
     });
   }
@@ -343,8 +308,6 @@ export function validateArchitectureJson(input: Record<string, unknown>): string
       req(dep, 'name', lp, issues);
       req(dep, 'type', lp, issues);
       req(dep, 'not_solvable_with_existing_stack_because', lp, issues);
-      req(dep, 'existing_alternatives_evaluated', lp, issues);
-      req(dep, 'cost_or_risk', lp, issues);
       // justification must be substantive
       const justification = dep.not_solvable_with_existing_stack_because;
       if (typeof justification === 'string' && justification.trim().length < 20) {
@@ -502,10 +465,6 @@ export function validateBacklogJson(input: Record<string, unknown>): string {
       issues.push(`${p}: invalid platform "${platformStr}" — must be one of: backend, web, ios, android`);
     }
 
-    const points = story.estimated_points ?? story.effort ?? story.storyPoints;
-    if (typeof points !== 'number' || !FIBONACCI.has(points)) {
-      issues.push(`${p}: estimated_points must be a Fibonacci number (1, 2, 3, 5, or 8)`);
-    }
   }
 
   function validateFeature(feature: any, p: string): void {
@@ -562,15 +521,6 @@ export function validateBacklogJson(input: Record<string, unknown>): string {
     }
   }
 
-  // Sprint velocity ceiling — flag if total points exceed a 2-week sprint max
-  const totalPoints = allStories.reduce((sum: number, s: any) => {
-    const p = s.estimated_points ?? s.effort ?? s.storyPoints;
-    return sum + (typeof p === 'number' ? p : 0);
-  }, 0);
-  if (allStories.length > 0 && totalPoints > 80) {
-    issues.push(`Total story points (${totalPoints}) exceed the 80-point sprint ceiling — this feature batch cannot be completed in a single sprint. Split stories or defer lower-priority items.`);
-  }
-
   return result(issues);
 }
 
@@ -592,11 +542,6 @@ function validateFeature(f: any, lp: string, issues: string[]): void {
   // Description richness — must be substantive, not a one-liner
   if (typeof f.description === 'string' && f.description.length < FEATURE_DESCRIPTION_MIN_CHARS) {
     issues.push(`${lp}.description: too brief (${f.description.length} chars) — feature descriptions must be at least ${FEATURE_DESCRIPTION_MIN_CHARS} characters covering what the user gains, why it matters, and how it fits the phase`);
-  }
-
-  // Rationale — required to force deliberate phase placement
-  if (!f.rationale || typeof f.rationale !== 'string' || f.rationale.trim().length === 0) {
-    issues.push(`${lp}: "rationale" is required — explain why this feature belongs in this phase rather than earlier or later`);
   }
 
   // Acceptance criteria — feature level, 3–5
@@ -632,16 +577,6 @@ function validateFeature(f: any, lp: string, issues: string[]): void {
       });
     }
 
-    // nonFunctionalRequirements — required field, may be empty array but must be present
-    if (!('nonFunctionalRequirements' in f.prdRef)) {
-      issues.push(`${lp}: prdRef.nonFunctionalRequirements is required — use an empty array [] only if no NFRs apply to this feature`);
-    } else if (Array.isArray(f.prdRef.nonFunctionalRequirements)) {
-      f.prdRef.nonFunctionalRequirements.forEach((nfr: any, j: number) => {
-        if (typeof nfr !== 'string' || !NFR_ID_RE.test(nfr)) {
-          issues.push(`${lp}.prdRef.nonFunctionalRequirements[${j}]: "${nfr}" must match NFRN format (e.g. NFR1, NFR3)`);
-        }
-      });
-    }
   }
 
   // stories must be explicitly empty
@@ -666,7 +601,7 @@ export function validateEpicFeaturesJson(input: Record<string, unknown>): string
   if (!p.epic || typeof p.epic !== 'object') {
     issues.push('root: "epic" object is required');
   } else {
-    ['title', 'description', 'businessValue', 'prdLink'].forEach(f =>
+    ['title', 'description', 'prdLink'].forEach(f =>
       req(p.epic, f, 'epic', issues)
     );
     if (typeof p.epic.title === 'string' && p.epic.title.split(/\s+/).length > 6) {
@@ -679,7 +614,7 @@ export function validateEpicFeaturesJson(input: Record<string, unknown>): string
     issues.push('root: "phases" array is required — features must be nested under phases (MVP, Phase 2, Phase 3, Phase 4)');
   } else {
     if (p.phases.length > MAX_PHASES) {
-      issues.push(`phases: ${p.phases.length} phases exceeds the maximum of ${MAX_PHASES} — consolidate or defer to outOfScope`);
+      issues.push(`phases: ${p.phases.length} phases exceeds the maximum of ${MAX_PHASES} — consolidate phases or split features`);
     }
 
     const hasMvp = p.phases.some((ph: any) => ph.label === 'MVP');
@@ -694,7 +629,6 @@ export function validateEpicFeaturesJson(input: Record<string, unknown>): string
       const pp = `phases[${i}]`;
       req(phase, 'label', pp, issues);
       req(phase, 'epicTitle', pp, issues);
-      req(phase, 'deliverable', pp, issues);
 
       if (phase.label && !VALID_PHASES.has(phase.label)) {
         issues.push(`${pp}: "label" must be exactly "MVP", "Phase 2", "Phase 3", or "Phase 4" (got "${phase.label}")`);
@@ -705,7 +639,7 @@ export function validateEpicFeaturesJson(input: Record<string, unknown>): string
         issues.push(`${pp}: "features" must be a non-empty array — each phase must have at least 1 feature`);
       } else {
         if (phase.features.length > MAX_FEATURES_PER_PHASE) {
-          issues.push(`${pp}: ${phase.features.length} features exceeds the ${MAX_FEATURES_PER_PHASE}-per-phase limit — split into an additional phase or defer to outOfScope`);
+          issues.push(`${pp}: ${phase.features.length} features exceeds the ${MAX_FEATURES_PER_PHASE}-per-phase limit — split into an additional phase`);
         }
         totalFeatures += phase.features.length;
         phase.features.forEach((f: any, j: number) => {
@@ -722,14 +656,6 @@ export function validateEpicFeaturesJson(input: Record<string, unknown>): string
       issues.push(`phases: all ${totalFeatures} features are in MVP — apply phase discipline. Split post-MVP work into Phase 2.`);
     }
   }
-
-  // outOfScope
-  const oos = reqArray(p, 'outOfScope', 'root', issues, 1);
-  oos?.forEach((item: any, i: number) => {
-    if (typeof item !== 'string' || !item.trim()) {
-      issues.push(`outOfScope[${i}]: must be a non-empty string`);
-    }
-  });
 
   return result(issues);
 }
