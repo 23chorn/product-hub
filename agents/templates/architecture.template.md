@@ -38,7 +38,7 @@ Schema:
     }
   ],
   "open_questions": [
-    { "decision": "Unresolved decision", "recommendation": "Recommended resolution (1 sentence max, no line breaks)", "risk": "Risk if unresolved (1 sentence max, no line breaks)" }
+    { "decision": "Unresolved architectural decision — only when external input is required", "recommendation": "Architect's recommended resolution (1 sentence max, no line breaks)", "risk": "Risk if left unresolved (1 sentence max, no line breaks)", "owner": "Product|Business|Legal|Engineering-leads — whoever can unblock this" }
   ]
 }
 ```
@@ -49,4 +49,5 @@ Rules:
 - new_dependencies: list every technology that does NOT already appear in context/tech-stack.md. If all choices reuse the existing stack, set this to an empty array `[]`. An empty array is a deliberate statement — it will be shown prominently to the PM reviewer as confirmation that no new dependencies are introduced.
 - Infrastructure, hosting topology, deployment pipelines, cost estimates, and failure-mode tables are out of scope — do not include them.
 - BREVITY IS MANDATORY: This document is for tech team buy-in, not implementation handoff. Every field has explicit length constraints above. No exhaustive enumerations, no inline implementation guidance, no repeated content. The `entity_relationship_diagram` is the one permitted diagram — include it as specified above. Other diagrams, data-flow walkthroughs, alert configurations, and load test specifications are out of scope.
+- open_questions: Only raise a question when the architect genuinely cannot resolve it without external input — scale figures from Product, compliance obligations from Legal, retention periods from Business. If you can decide it, decide it here. Do NOT use open_questions as a deferred to-do list. Implementation details (retry logic, specific library versions, error handling strategies, edge-case handling) belong in the story decomposition phase — never here.
 - JSON VALIDITY: All string fields must be valid JSON strings. Never include literal newline characters (line breaks) in "recommendation", "risk", or any other string field. If you need to express multiple points, use semicolons or em-dashes within a single sentence, not line breaks. The entity_relationship_diagram field is the ONLY exception where \\n escapes are required.

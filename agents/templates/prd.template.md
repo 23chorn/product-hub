@@ -33,7 +33,7 @@ Schema:
     "What this version deliberately does not include"
   ],
   "open_questions": [
-    { "id": 1, "type": "Question|Risk", "description": "Question or risk", "impact": "High|Med|Low", "owner": "Who answers/owns", "status": "Open|Resolved", "answer": "Optional: human-provided answer when status is Resolved" }
+    { "id": 1, "type": "Question|Risk", "description": "Business scope, user behaviour, or priority trade-off only — not implementation or technical detail", "impact": "High|Med|Low", "owner": "Product|Business|Legal|Compliance|Design — never Engineering or Architecture", "status": "Open|Resolved", "answer": "Optional: human-provided answer when status is Resolved" }
   ]
 }
 ```
@@ -41,4 +41,4 @@ Schema:
 Rules:
 - non_functional_requirements: 3 max — only the highest-priority thresholds that engineering absolutely must design to. Common candidates: a latency SLA, a data retention requirement, a scalability target.
 - Aim for 10–20 functional requirements.
-- List up to 10 open questions/risks ranked by impact.
+- open_questions: Up to 10, ranked by impact. **Business decisions only** — scope boundaries, expected user behaviour in ambiguous edge cases, priority trade-offs between conflicting requirements, unresolved compliance or policy constraints. Do NOT include implementation questions (which service owns X, which algorithm to use, how to handle a technical edge case) — those belong to the Solution Architect and Engineering stages. The `owner` must be a business stakeholder (Product, Business, Legal, Compliance, Design). If the owner would be Engineering or Architecture, the question is not a PRD question.

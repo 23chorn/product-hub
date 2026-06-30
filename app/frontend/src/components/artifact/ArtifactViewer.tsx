@@ -467,7 +467,7 @@ export function ArtifactViewer() {
               <div className="flex-1 min-h-0 relative">
                 {/* Content — always takes full width, centered with max-w in fullscreen */}
                 <div className={`h-full ${isEditing ? 'flex flex-col px-4 py-4' : isFigmaDesign && figmaDesign && !loading && !error ? 'overflow-hidden flex flex-col' : 'overflow-y-auto px-4 py-4'}`}>
-                  <div className={`${isEditing ? 'flex-1 min-h-0 flex flex-col' : ''}`}>
+                  <div className={`${isEditing || (isFigmaDesign && figmaDesign && !loading && !error) ? 'flex-1 min-h-0 flex flex-col' : ''}`}>
                     {revisionSummary && !isEditing && (
                       <div className="mb-4 rounded-lg border border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-900/20 px-3.5 py-3">
                         <button

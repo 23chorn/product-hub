@@ -29,6 +29,11 @@ This stage is currently scoped down for reliability (no system diagram, data-flo
 - Data model choices must be appropriate. A normalisation decision that would cause cartesian joins on high-volume queries, or a denormalisation that creates update anomalies, is **MAJOR** — call it out with the specific table/query concern.
 - Scalability approach must match stated load assumptions. An architecture claiming to handle significant concurrent load with a single-instance synchronous service and no caching is **MAJOR** — the design does not support the stated goal.
 
-## PM Questions
+## Open Questions
 
-Should cover product constraints the architect cannot resolve alone — expected peak load, data retention requirements, compliance obligations. Not technology choices.
+Should only exist when external input is genuinely required before the architecture can be finalised — peak load figures from Product, compliance obligations from Legal, retention periods from Business.
+
+- Any open question the architect could resolve using their own judgment is **MINOR** — it should be decided in the document, not deferred.
+- Implementation details left as open questions (retry counts, specific error codes, library version choices, edge-case handling strategies) are **MAJOR** — those belong in story decomposition, not here.
+- A question whose `owner` is Engineering or a specific engineer is **MAJOR** — if only engineers can answer it, the architect should answer it themselves.
+- Open questions must include a `recommendation` — a question with no recommended resolution shows the architect did not attempt to answer it. Missing or empty recommendation is **MINOR**.

@@ -248,8 +248,8 @@ function architectureToMarkdown(d: Record<string, any>, variant: MarkdownVariant
 
   if (Array.isArray(d.open_questions) && d.open_questions.length) {
     lines.push(`## Open Questions & Risks\n`);
-    lines.push(tableHeader('Decision', 'Recommendation', 'Risk'));
-    for (const q of d.open_questions) lines.push(row(q.decision ?? '', q.recommendation ?? '', q.risk ?? ''));
+    lines.push(tableHeader('Decision', 'Recommendation', 'Risk', 'Owner'));
+    for (const q of d.open_questions) lines.push(row(q.decision ?? '', q.recommendation ?? '', q.risk ?? '', q.owner ?? ''));
     lines.push('');
   }
 

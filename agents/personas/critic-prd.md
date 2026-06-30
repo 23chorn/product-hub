@@ -28,4 +28,8 @@ Structural validation (required sections, metric baselines/targets, counter-metr
 
 ## PM Questions
 
-Should cover genuine business ambiguity — scope boundaries, expected user behaviour in edge cases, priority between conflicting requirements. Not implementation detail.
+Should cover genuine business ambiguity — scope boundaries, expected user behaviour in edge cases, priority between conflicting requirements.
+
+- Any question whose `owner` is Engineering, Architecture, or a specific technical role is **MAJOR** — it is not a PRD question. Technical decisions belong to the Solution Architect and Engineering stages.
+- Any question that asks *how* something will be implemented (which service, which algorithm, which fallback strategy, how to handle a technical edge case) is **MAJOR** — the PRD defines *what* and *why*, not *how*.
+- Questions should be answerable by a product manager, business owner, legal, or design lead — if only an engineer can answer it, it is in the wrong artifact.

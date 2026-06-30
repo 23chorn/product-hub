@@ -156,17 +156,20 @@
     {
       "decision": "Cassandra cluster sizing for 3-year message volume at 10K MAU sending 10 messages/day",
       "recommendation": "Model at 10B messages/year; r6g.xlarge \u00d7 3 handles ~50K writes/sec \u2014 sufficient. Review at 50K MAU milestone.",
-      "risk": "Under-provisioned cluster causes write failures at market open peak"
+      "risk": "Under-provisioned cluster causes write failures at market open peak",
+      "owner": "Product"
     },
     {
       "decision": "LLM classifier model selection for moderation",
       "recommendation": "Claude Haiku for cost-efficiency (~$0.0003/message); evaluate Mistral as fallback; do not use GPT-4 at MVP volumes due to cost",
-      "risk": "Model prompt injection via crafted message content \u2014 test adversarially before launch"
+      "risk": "Model prompt injection via crafted message content \u2014 test adversarially before launch",
+      "owner": "Engineering-leads"
     },
     {
       "decision": "Message hold vs. deliver-then-remove for flagged content",
       "recommendation": "Hold before delivery for MVP (safer); accept latency cost for flagged messages; revisit if false-positive rate >5% creates UX complaints",
-      "risk": "Hold approach means legitimate messages may be delayed 10\u201330 minutes during human review queue backup"
+      "risk": "Hold approach means legitimate messages may be delayed 10\u201330 minutes during human review queue backup",
+      "owner": "Product"
     }
   ]
 }
