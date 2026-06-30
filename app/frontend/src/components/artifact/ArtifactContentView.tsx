@@ -5,6 +5,7 @@ import { deriveFeatureButtons, deriveEpicFeaturesArtifactId } from '../../utils/
 import { BacklogView } from './BacklogView';
 import { BacklogStoriesTests } from './BacklogOverviewModal';
 import { EpicFeaturesView, tryParseEpicFeatures, removePhase, removeFeatureFromPhase } from './EpicFeaturesView';
+import { ArtifactTabShell } from './ArtifactPrimitives';
 import { tryParseQATests } from '@pap/shared';
 import { QATestsView, removeTestCase } from './QATestsView';
 import { TechRefinementView, tryParseTechRefinement } from './TechRefinementView';
@@ -41,6 +42,9 @@ export interface ArtifactViewContext {
 export function renderStructuredArtifact(content: string, ctx: ArtifactViewContext): ReactNode {
   const { artifactType, activeWorkflow, checkpoints, pendingCheckpoint, hasApprovePermission, resolveLoading, rerunStage, onClose, requestDelete } = ctx;
 
+  const initiativeTitle = activeWorkflow?.summary ?? activeWorkflow?.goal?.split('\n')[0];
+  const epicFeaturesArtifactId = deriveEpicFeaturesArtifactId(checkpoints);
+
   // The final cross-feature merge ('backlog' exactly, not the per-feature 'backlog_F<n>'
   // artifacts) — show the same Stories/Tests tabbed view as the pipeline's "Stories/Tests"
   // button, rather than a bare read of this one snapshot with no tests alongside it and no
@@ -49,10 +53,44 @@ export function renderStructuredArtifact(content: string, ctx: ArtifactViewConte
     return (
       <BacklogStoriesTests
         featureButtons={deriveFeatureButtons(checkpoints)}
-        initiativeTitle={activeWorkflow?.summary ?? activeWorkflow?.goal?.split('\n')[0]}
-        epicFeaturesArtifactId={deriveEpicFeaturesArtifactId(checkpoints)}
+        initiativeTitle={initiativeTitle}
+        epicFeaturesArtifactId={epicFeaturesArtifactId}
       />
     );
+  }
+
+  // Per-feature refinement backlog (backlog_F<n>) — Stories-only tab view using
+  // already-loaded artifact content; QA tests are a separate checkpoint reviewed
+  // independently, so the Tests tab is intentionally absent here.
+  if (/^backlog_F\d+$/.test(artifactType) && content) {
+    const featureBacklogData = tryParseBacklog(content);
+    if (featureBacklogData) {
+      const previewFeature = featureBacklogData.features?.[0] ?? featureBacklogData.feature;
+      const storyCount = previewFeature?.stories?.length ?? 0;
+      return (
+        <ArtifactTabShell
+          tabs={[{ id: 'stories', label: 'Stories', count: storyCount > 0 ? storyCount : undefined }]}
+          activeTab="stories"
+          onTabChange={() => {}}
+        >
+          <BacklogView
+            data={featureBacklogData}
+            isFeaturePreview
+            initiativeTitle={initiativeTitle}
+            onDeleteStory={requestDelete ? (storyIndex) => {
+              const story = previewFeature?.stories[storyIndex];
+              if (!story) return;
+              requestDelete(`story "${story.title}"`, () => JSON.stringify(removeStoryFromBacklog(featureBacklogData, storyIndex)));
+            } : undefined}
+            onDeleteTestCase={requestDelete ? (storyIndex, testCaseIndex) => {
+              const tc = previewFeature?.stories[storyIndex]?.test_cases?.[testCaseIndex];
+              if (!tc) return;
+              requestDelete(`test case "${tc.id}"`, () => JSON.stringify(removeTestCaseFromStory(featureBacklogData, storyIndex, testCaseIndex)));
+            } : undefined}
+          />
+        </ArtifactTabShell>
+      );
+    }
   }
 
   const epicFeaturesData = artifactType === 'epic_features' ? tryParseEpicFeatures(content) : null;
@@ -60,27 +98,29 @@ export function renderStructuredArtifact(content: string, ctx: ArtifactViewConte
   const techData = isBacklogArtifactType(artifactType) && !backlogData ? tryParseTechRefinement(content) : null;
 
   if (epicFeaturesData) return (
-    <EpicFeaturesView
-      data={epicFeaturesData}
-      onDeletePhase={requestDelete ? (phaseIndex) => {
-        const phase = epicFeaturesData.phases?.[phaseIndex];
-        if (!phase) return;
-        requestDelete(`epic "${phase.epicTitle ?? phase.label}"`, () => JSON.stringify(removePhase(epicFeaturesData, phaseIndex)));
-      } : undefined}
-      onDeleteFeature={requestDelete ? (phaseIndex, featureIndex) => {
-        const feature = epicFeaturesData.phases?.[phaseIndex]?.features[featureIndex];
-        if (!feature) return;
-        requestDelete(`feature "${feature.title}"`, () => JSON.stringify(removeFeatureFromPhase(epicFeaturesData, phaseIndex, featureIndex)));
-      } : undefined}
-    />
+    <ArtifactTabShell tabs={[{ id: 'plan', label: 'Epic Plan' }]} activeTab="plan" onTabChange={() => {}}>
+      <EpicFeaturesView
+        data={epicFeaturesData}
+        initiativeTitle={initiativeTitle}
+        onDeletePhase={requestDelete ? (phaseIndex) => {
+          const phase = epicFeaturesData.phases?.[phaseIndex];
+          if (!phase) return;
+          requestDelete(`epic "${phase.epicTitle ?? phase.label}"`, () => JSON.stringify(removePhase(epicFeaturesData, phaseIndex)));
+        } : undefined}
+        onDeleteFeature={requestDelete ? (phaseIndex, featureIndex) => {
+          const feature = epicFeaturesData.phases?.[phaseIndex]?.features[featureIndex];
+          if (!feature) return;
+          requestDelete(`feature "${feature.title}"`, () => JSON.stringify(removeFeatureFromPhase(epicFeaturesData, phaseIndex, featureIndex)));
+        } : undefined}
+      />
+    </ArtifactTabShell>
   );
   if (backlogData) {
     const previewFeature = backlogData.features?.[0] ?? backlogData.feature;
     return (
       <BacklogView
         data={backlogData}
-        isFeaturePreview={/^backlog_F\d+$/.test(artifactType)}
-        initiativeTitle={activeWorkflow?.summary ?? activeWorkflow?.goal?.split('\n')[0]}
+        initiativeTitle={initiativeTitle}
         onDeleteStory={requestDelete ? (storyIndex) => {
           const story = previewFeature?.stories[storyIndex];
           if (!story) return;

@@ -90,23 +90,6 @@ export const STAGE_ARTIFACT_POSTPROCESSORS: Record<string, ArtifactPostprocessor
     return artifactContent;
   },
 
-  // ── solution_architect: extract epic_features_enriched from JSON ──
-  async solution_architect({ itemId, sessionId, artifactContent }) {
-    try {
-      const parsed = JSON.parse(artifactContent);
-      if (parsed.epic_features_enriched) {
-        const enrichedJson = JSON.stringify(parsed.epic_features_enriched, null, 2);
-        await saveLocalArtifact(sessionId, 'epic_features_enriched', enrichedJson, itemId);
-        logger.info(`Extracted and saved tech-enriched epic/features JSON from architect JSON output`);
-      } else {
-        logger.warn(`No epic_features_enriched field in architect JSON — story decomposition will use non-enriched features`);
-      }
-    } catch (err: any) {
-      logger.warn(`Failed to parse architect JSON for epic_features_enriched extraction: ${err.message}`);
-    }
-    return artifactContent;
-  },
-
   // ── epic_feature_planner: ensure empty stories arrays, and resolve each feature's
   // dependsOn (title references) into stable dependsOnIndices using the same flatten
   // order F-keys are assigned from downstream. ──

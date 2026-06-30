@@ -407,12 +407,8 @@ export async function buildFeatureCheckpointMetadata(
   if (featureIndex === null) return null;
 
   try {
-    // Load epic/features artifact (try enriched first, then fallback)
     const { loadLatestArtifactContent } = await import('./artifact-helpers');
-    let epicFeaturesContent = await loadLatestArtifactContent(itemId, 'epic_features_enriched');
-    if (!epicFeaturesContent) {
-      epicFeaturesContent = await loadLatestArtifactContent(itemId, 'epic_features');
-    }
+    const epicFeaturesContent = await loadLatestArtifactContent(itemId, 'epic_features');
 
     if (!epicFeaturesContent) {
       logger.warn(`No epic_features artifact found for ${stage} metadata`);
@@ -520,7 +516,7 @@ export function buildFeatureDescription(featureData: any): string {
  */
 export async function pushEpicAndFeaturesToADO(
   workflowId: string
-): Promise<{ epicId: number; featureIds: number[] }> {
+): Promise<{ epicId: number; epicIds: number[]; featureIds: number[] }> {
   const workflow = stmts.getWorkflow.get(workflowId);
   if (!workflow) throw new Error(`Workflow not found: ${workflowId}`);
 
@@ -537,15 +533,11 @@ export async function pushEpicAndFeaturesToADO(
       `SELECT ado_id FROM ado_work_item_map WHERE workflow_id = ? AND ado_type = 'feature' ORDER BY created_at ASC`
     ).all(workflowId);
     logger.info(`[EPIC PUSH] Workflow ${workflowId} already mapped (${existingEpics.length} epic(s), ${existingFeatures.length} feature(s)) — reusing, skipping re-push`);
-    return { epicId: existingEpics[0].ado_id, featureIds: existingFeatures.map(f => f.ado_id) };
+    return { epicId: existingEpics[0].ado_id, epicIds: existingEpics.map(e => e.ado_id), featureIds: existingFeatures.map(f => f.ado_id) };
   }
 
   logger.info(`[EPIC PUSH] Looking for epic_features artifact for item_id=${workflow.item_id}`);
 
-  // Load epic_features artifact. NOTE: 'epic_features_enriched' (written by the architect
-  // stage) is a differently-shaped artifact for engineering context during story decomposition
-  // — phases[].features[] with technical fields (target_repos, data_contracts) and no top-level
-  // 'epic' header or 'title' field. It is not a superset of 'epic_features' and must not be used here.
   const { loadLatestArtifactContent } = await import('./artifact-helpers');
   const epicFeaturesContent = await loadLatestArtifactContent(workflow.item_id, 'epic_features');
 
@@ -578,7 +570,7 @@ export async function pushEpicAndFeaturesToADO(
   // If all features were deleted during review, skip the ADO push entirely
   if (allFeatures.length === 0) {
     logger.info(`[EPIC PUSH] No features found in epic_features artifact (all deleted during review) — skipping ADO push`);
-    return { epicId: 0, featureIds: [] };
+    return { epicId: 0, epicIds: [], featureIds: [] };
   }
 
   const { getAzureDevOpsClient } = await import('../integrations/azure-devops');
@@ -624,6 +616,7 @@ export async function pushEpicAndFeaturesToADO(
   // New phases[] format: create one ADO epic per phase, features nested under it.
   // Legacy format: create a single ADO epic for the whole initiative.
   const featureIds: number[] = [];
+  const epicIds: number[] = [];
   let firstEpicId: number | null = null;
 
   if (Array.isArray(epicFeatures.phases) && epicFeatures.phases.length > 0) {
@@ -648,6 +641,7 @@ export async function pushEpicAndFeaturesToADO(
       });
       const phaseEpicId = phaseEpic.id!;
       if (firstEpicId === null) firstEpicId = phaseEpicId;
+      epicIds.push(phaseEpicId);
       await attachReferenceLinks(phaseEpicId);
 
       const phaseKey = `epic_${phase.label.toLowerCase().replace(/\s+/g, '_')}`;
@@ -692,6 +686,7 @@ export async function pushEpicAndFeaturesToADO(
       tags: initiativeTag,
     });
     firstEpicId = epic.id!;
+    epicIds.push(firstEpicId);
     await attachReferenceLinks(firstEpicId);
     const epicUrl = client.getEpicUrl(firstEpicId);
     db.prepare(`
@@ -728,7 +723,7 @@ export async function pushEpicAndFeaturesToADO(
   // redundant duplicate (and, since it used the wrong event_type 'ado_push' instead
   // of 'ado_pushed', the frontend's eventToMessage() never rendered the link anyway).
 
-  return { epicId, featureIds };
+  return { epicId, epicIds, featureIds };
 }
 
 /**

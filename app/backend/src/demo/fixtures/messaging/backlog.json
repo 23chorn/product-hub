@@ -13,7 +13,7 @@
         {
           "story_id": "F1.S1",
           "title": "Browse and join a public channel",
-          "as_a": "Alex — Active Self-Directed Trader",
+          "as_a": "Alex \u2014 Active Self-Directed Trader",
           "i_want": "find and join a channel dedicated to a stock I'm watching",
           "so_that": "I can follow live discussions about that ticker without leaving xCube",
           "acceptance_criteria": [
@@ -28,17 +28,30 @@
             "iOS: Join action updates local cache and shows channel immediately without refresh",
             "Android: Channel list uses RecyclerView with DiffUtil for efficient updates"
           ],
-          "platform": ["backend", "web", "ios", "android"],
-          "estimated_points": 3,
+          "platform": [
+            "backend",
+            "web",
+            "ios",
+            "android"
+          ],
           "depends_on": [],
           "technical_notes": "Requires real-time subscription to channel_updates for live member count",
           "test_cases": [
             {
               "id": "TC-F1.S1-001",
               "scenario": {
-                "given": ["User is not a member of any channels", "Public channels exist in the system"],
-                "when": ["User opens the Chat tab"],
-                "then": ["Channel list displays all public channels", "Each channel shows name, topic, and member count", "Channels are sorted by recent activity"]
+                "given": [
+                  "User is not a member of any channels",
+                  "Public channels exist in the system"
+                ],
+                "when": [
+                  "User opens the Chat tab"
+                ],
+                "then": [
+                  "Channel list displays all public channels",
+                  "Each channel shows name, topic, and member count",
+                  "Channels are sorted by recent activity"
+                ]
               },
               "type": "happy_path",
               "priority": "critical",
@@ -48,9 +61,17 @@
             {
               "id": "TC-F1.S1-002",
               "scenario": {
-                "given": ["User sees a channel they are not a member of"],
-                "when": ["User taps 'Join' button"],
-                "then": ["User is added as a member", "Channel thread displays immediately", "Join button changes to 'Leave'"]
+                "given": [
+                  "User sees a channel they are not a member of"
+                ],
+                "when": [
+                  "User taps 'Join' button"
+                ],
+                "then": [
+                  "User is added as a member",
+                  "Channel thread displays immediately",
+                  "Join button changes to 'Leave'"
+                ]
               },
               "type": "happy_path",
               "priority": "critical",
@@ -60,9 +81,18 @@
             {
               "id": "TC-F1.S1-003",
               "scenario": {
-                "given": ["User is already a member of multiple channels", "Some channels have unread messages"],
-                "when": ["User opens the Chat tab"],
-                "then": ["Joined channels appear at the top", "Unread badge shows for channels with new messages", "Badge count reflects unread message count"]
+                "given": [
+                  "User is already a member of multiple channels",
+                  "Some channels have unread messages"
+                ],
+                "when": [
+                  "User opens the Chat tab"
+                ],
+                "then": [
+                  "Joined channels appear at the top",
+                  "Unread badge shows for channels with new messages",
+                  "Badge count reflects unread message count"
+                ]
               },
               "type": "happy_path",
               "priority": "high",
@@ -72,9 +102,18 @@
             {
               "id": "TC-F1.S1-004",
               "scenario": {
-                "given": ["User taps Join on a channel", "Network request fails"],
-                "when": ["API returns 500 error"],
-                "then": ["Inline error message displays", "Join button remains enabled", "User can retry"]
+                "given": [
+                  "User taps Join on a channel",
+                  "Network request fails"
+                ],
+                "when": [
+                  "API returns 500 error"
+                ],
+                "then": [
+                  "Inline error message displays",
+                  "Join button remains enabled",
+                  "User can retry"
+                ]
               },
               "type": "bad_path",
               "priority": "high",
@@ -85,7 +124,7 @@
         {
           "story_id": "F1.S2",
           "title": "Create a new public channel",
-          "as_a": "Alex — Active Self-Directed Trader",
+          "as_a": "Alex \u2014 Active Self-Directed Trader",
           "i_want": "create a topic channel for a ticker or theme that doesn't exist yet",
           "so_that": "I can seed a community around a stock or strategy I follow",
           "acceptance_criteria": [
@@ -100,17 +139,30 @@
             "Web: CreateChannelSheet shows real-time validation errors as user types",
             "Mobile: Channel creation optimistically updates UI before API confirms"
           ],
-          "platform": ["backend", "web", "ios", "android"],
-          "estimated_points": 2,
+          "platform": [
+            "backend",
+            "web",
+            "ios",
+            "android"
+          ],
           "depends_on": [],
           "technical_notes": "Name validation must match on both client and server to prevent UX lag",
           "test_cases": [
             {
               "id": "TC-F1.S2-001",
               "scenario": {
-                "given": ["User taps 'New Channel' button"],
-                "when": ["User enters valid name 'tesla-bulls' and topic 'TSLA discussion'", "User taps 'Create'"],
-                "then": ["Channel is created successfully", "User is auto-joined as founder", "Channel appears at top of list"]
+                "given": [
+                  "User taps 'New Channel' button"
+                ],
+                "when": [
+                  "User enters valid name 'tesla-bulls' and topic 'TSLA discussion'",
+                  "User taps 'Create'"
+                ],
+                "then": [
+                  "Channel is created successfully",
+                  "User is auto-joined as founder",
+                  "Channel appears at top of list"
+                ]
               },
               "type": "happy_path",
               "priority": "critical",
@@ -120,9 +172,17 @@
             {
               "id": "TC-F1.S2-002",
               "scenario": {
-                "given": ["Channel 'tesla-bulls' already exists"],
-                "when": ["User tries to create another channel named 'tesla-bulls'"],
-                "then": ["API returns 409 Conflict", "Inline error displays: 'A channel with this name already exists'", "No duplicate channel is created"]
+                "given": [
+                  "Channel 'tesla-bulls' already exists"
+                ],
+                "when": [
+                  "User tries to create another channel named 'tesla-bulls'"
+                ],
+                "then": [
+                  "API returns 409 Conflict",
+                  "Inline error displays: 'A channel with this name already exists'",
+                  "No duplicate channel is created"
+                ]
               },
               "type": "bad_path",
               "priority": "critical",
@@ -131,9 +191,16 @@
             {
               "id": "TC-F1.S2-003",
               "scenario": {
-                "given": ["User enters channel name with special characters: 'tesla$$$'"],
-                "when": ["User tries to create the channel"],
-                "then": ["Validation error shows: 'Name must be lowercase letters, numbers, and hyphens only'", "Create button is disabled"]
+                "given": [
+                  "User enters channel name with special characters: 'tesla$$$'"
+                ],
+                "when": [
+                  "User tries to create the channel"
+                ],
+                "then": [
+                  "Validation error shows: 'Name must be lowercase letters, numbers, and hyphens only'",
+                  "Create button is disabled"
+                ]
               },
               "type": "bad_path",
               "priority": "high",
@@ -142,9 +209,16 @@
             {
               "id": "TC-F1.S2-004",
               "scenario": {
-                "given": ["User enters channel name 'pump-and-dump' (blocked keyword)"],
-                "when": ["User taps 'Create'"],
-                "then": ["API rejects with 400 Bad Request", "Error message: 'This name contains restricted keywords'"]
+                "given": [
+                  "User enters channel name 'pump-and-dump' (blocked keyword)"
+                ],
+                "when": [
+                  "User taps 'Create'"
+                ],
+                "then": [
+                  "API rejects with 400 Bad Request",
+                  "Error message: 'This name contains restricted keywords'"
+                ]
               },
               "type": "edge_case",
               "priority": "medium",
@@ -155,7 +229,7 @@
         {
           "story_id": "F1.S3",
           "title": "Leave a channel",
-          "as_a": "Alex — Active Self-Directed Trader",
+          "as_a": "Alex \u2014 Active Self-Directed Trader",
           "i_want": "leave a channel that is no longer relevant to me",
           "so_that": "my channel list stays focused on active interests",
           "acceptance_criteria": [
@@ -170,17 +244,32 @@
             "Web: Leave action shows confirmation modal to prevent accidental exits",
             "Mobile: Optimistically remove channel from UI and rollback if API fails"
           ],
-          "platform": ["backend", "web", "ios", "android"],
-          "estimated_points": 2,
-          "depends_on": ["F1.S1"],
+          "platform": [
+            "backend",
+            "web",
+            "ios",
+            "android"
+          ],
+          "depends_on": [
+            "F1.S1"
+          ],
           "technical_notes": "Soft delete prevents data loss if channel was historically active",
           "test_cases": [
             {
               "id": "TC-F1.S3-001",
               "scenario": {
-                "given": ["User is a member of channel 'crypto-news'", "Channel has 50 members"],
-                "when": ["User taps 'Leave Channel' and confirms"],
-                "then": ["User is removed from membership", "Channel disappears from user's joined list", "Member count decrements to 49"]
+                "given": [
+                  "User is a member of channel 'crypto-news'",
+                  "Channel has 50 members"
+                ],
+                "when": [
+                  "User taps 'Leave Channel' and confirms"
+                ],
+                "then": [
+                  "User is removed from membership",
+                  "Channel disappears from user's joined list",
+                  "Member count decrements to 49"
+                ]
               },
               "type": "happy_path",
               "priority": "critical",
@@ -189,9 +278,17 @@
             {
               "id": "TC-F1.S3-002",
               "scenario": {
-                "given": ["User is the only member of channel 'niche-strategy'"],
-                "when": ["User leaves the channel"],
-                "then": ["Channel status changes to 'inactive'", "Channel no longer appears in public channel list", "Channel data is preserved in database"]
+                "given": [
+                  "User is the only member of channel 'niche-strategy'"
+                ],
+                "when": [
+                  "User leaves the channel"
+                ],
+                "then": [
+                  "Channel status changes to 'inactive'",
+                  "Channel no longer appears in public channel list",
+                  "Channel data is preserved in database"
+                ]
               },
               "type": "edge_case",
               "priority": "high",
@@ -200,9 +297,17 @@
             {
               "id": "TC-F1.S3-003",
               "scenario": {
-                "given": ["User leaves channel 'day-trading'"],
-                "when": ["User later browses public channels"],
-                "then": ["'day-trading' appears in public list", "Join button is available", "User can rejoin successfully"]
+                "given": [
+                  "User leaves channel 'day-trading'"
+                ],
+                "when": [
+                  "User later browses public channels"
+                ],
+                "then": [
+                  "'day-trading' appears in public list",
+                  "Join button is available",
+                  "User can rejoin successfully"
+                ]
               },
               "type": "happy_path",
               "priority": "medium",
@@ -221,7 +326,7 @@
         {
           "story_id": "F2.S1",
           "title": "Send a text message in a channel",
-          "as_a": "Alex — Active Self-Directed Trader",
+          "as_a": "Alex \u2014 Active Self-Directed Trader",
           "i_want": "post a message to a channel I'm a member of",
           "so_that": "I can share my thoughts and respond to others in real-time",
           "acceptance_criteria": [
@@ -236,17 +341,32 @@
             "iOS: Offline messages queued locally and synced when network available",
             "Android: FCM push notification sent to offline members with message preview"
           ],
-          "platform": ["backend", "web", "ios", "android"],
-          "estimated_points": 5,
-          "depends_on": ["F1.S1"],
-          "technical_notes": "Ticker regex: \\$[A-Z]{1,5}\\b — must match backend and all clients",
+          "platform": [
+            "backend",
+            "web",
+            "ios",
+            "android"
+          ],
+          "depends_on": [
+            "F1.S1"
+          ],
+          "technical_notes": "Ticker regex: \\$[A-Z]{1,5}\\b \u2014 must match backend and all clients",
           "test_cases": [
             {
               "id": "TC-F2.S1-001",
               "scenario": {
-                "given": ["User is viewing channel 'options-trading'", "User has network connectivity"],
-                "when": ["User types 'Bullish on $AAPL' and taps Send"],
-                "then": ["Message appears immediately in thread", "Other members receive message in real-time", "$AAPL is highlighted as clickable ticker"]
+                "given": [
+                  "User is viewing channel 'options-trading'",
+                  "User has network connectivity"
+                ],
+                "when": [
+                  "User types 'Bullish on $AAPL' and taps Send"
+                ],
+                "then": [
+                  "Message appears immediately in thread",
+                  "Other members receive message in real-time",
+                  "$AAPL is highlighted as clickable ticker"
+                ]
               },
               "type": "happy_path",
               "priority": "critical",
@@ -256,9 +376,19 @@
             {
               "id": "TC-F2.S1-002",
               "scenario": {
-                "given": ["User types a message", "User goes offline before sending"],
-                "when": ["User taps Send while offline", "User reconnects 30 seconds later"],
-                "then": ["Message shows 'Sending...' state while offline", "Message auto-sends upon reconnection", "Delivery checkmark appears when confirmed"]
+                "given": [
+                  "User types a message",
+                  "User goes offline before sending"
+                ],
+                "when": [
+                  "User taps Send while offline",
+                  "User reconnects 30 seconds later"
+                ],
+                "then": [
+                  "Message shows 'Sending...' state while offline",
+                  "Message auto-sends upon reconnection",
+                  "Delivery checkmark appears when confirmed"
+                ]
               },
               "type": "edge_case",
               "priority": "high",
@@ -267,9 +397,17 @@
             {
               "id": "TC-F2.S1-003",
               "scenario": {
-                "given": ["User types message with multiple tickers: '$TSLA $NVDA $AAPL'"],
-                "when": ["Message is sent and displayed"],
-                "then": ["All three tickers are highlighted", "Each ticker is individually clickable", "Clicking ticker opens stock detail"]
+                "given": [
+                  "User types message with multiple tickers: '$TSLA $NVDA $AAPL'"
+                ],
+                "when": [
+                  "Message is sent and displayed"
+                ],
+                "then": [
+                  "All three tickers are highlighted",
+                  "Each ticker is individually clickable",
+                  "Clicking ticker opens stock detail"
+                ]
               },
               "type": "happy_path",
               "priority": "medium",
@@ -281,7 +419,7 @@
         {
           "story_id": "F2.S2",
           "title": "See messages from other channel members appear instantly",
-          "as_a": "Jamie — Casual Community Investor",
+          "as_a": "Jamie \u2014 Casual Community Investor",
           "i_want": "see new messages from other members appear in the thread without refreshing",
           "so_that": "I can follow a fast-moving conversation about a stock as it happens",
           "acceptance_criteria": [
@@ -296,17 +434,32 @@
             "iOS: Auto-scroll only triggers when the user's scroll position is within 50px of the bottom",
             "Android: RecyclerView uses stable item IDs to avoid re-render flicker on append"
           ],
-          "platform": ["backend", "web", "ios", "android"],
-          "estimated_points": 5,
-          "depends_on": ["F2.S1"],
-          "technical_notes": "Reuses the same Redis Pub/Sub fan-out as F2.S1's send path — this story covers the receive/render side only",
+          "platform": [
+            "backend",
+            "web",
+            "ios",
+            "android"
+          ],
+          "depends_on": [
+            "F2.S1"
+          ],
+          "technical_notes": "Reuses the same Redis Pub/Sub fan-out as F2.S1's send path \u2014 this story covers the receive/render side only",
           "test_cases": [
             {
               "id": "TC-F2.S2-001",
               "scenario": {
-                "given": ["User A and User B are both members of the same channel", "Both have the channel thread open"],
-                "when": ["User A sends message 'Market looking bullish today'"],
-                "then": ["User B sees the message appear in their thread within 500ms", "Message shows User A as the sender", "Timestamp matches send time"]
+                "given": [
+                  "User A and User B are both members of the same channel",
+                  "Both have the channel thread open"
+                ],
+                "when": [
+                  "User A sends message 'Market looking bullish today'"
+                ],
+                "then": [
+                  "User B sees the message appear in their thread within 500ms",
+                  "Message shows User A as the sender",
+                  "Timestamp matches send time"
+                ]
               },
               "type": "happy_path",
               "priority": "critical",
@@ -316,9 +469,17 @@
             {
               "id": "TC-F2.S2-002",
               "scenario": {
-                "given": ["Load test environment with 5,000 simulated concurrent WebSocket connections"],
-                "when": ["1,000 messages are sent across 50 channels using a load test tool"],
-                "then": ["p50 latency is less than 100ms", "p95 latency is less than 500ms", "No message loss occurs"]
+                "given": [
+                  "Load test environment with 5,000 simulated concurrent WebSocket connections"
+                ],
+                "when": [
+                  "1,000 messages are sent across 50 channels using a load test tool"
+                ],
+                "then": [
+                  "p50 latency is less than 100ms",
+                  "p95 latency is less than 500ms",
+                  "No message loss occurs"
+                ]
               },
               "type": "edge_case",
               "priority": "critical",
@@ -328,9 +489,16 @@
             {
               "id": "TC-F2.S2-003",
               "scenario": {
-                "given": ["User has scrolled up to read older messages"],
-                "when": ["A new message arrives from another member"],
-                "then": ["Thread does NOT auto-scroll away from the user's current position", "An unread divider or 'jump to latest' affordance appears instead"]
+                "given": [
+                  "User has scrolled up to read older messages"
+                ],
+                "when": [
+                  "A new message arrives from another member"
+                ],
+                "then": [
+                  "Thread does NOT auto-scroll away from the user's current position",
+                  "An unread divider or 'jump to latest' affordance appears instead"
+                ]
               },
               "type": "edge_case",
               "priority": "medium",
@@ -349,7 +517,7 @@
         {
           "story_id": "F3.S1",
           "title": "Share a live ticker card in a message",
-          "as_a": "Alex — Active Self-Directed Trader",
+          "as_a": "Alex \u2014 Active Self-Directed Trader",
           "i_want": "attach a live ticker card to my message",
           "so_that": "other channel members can see the current price and quickly trade on the idea I'm sharing",
           "acceptance_criteria": [
@@ -366,17 +534,34 @@
             "iOS: Tapping card triggers deep link to InstrumentDetailScreen with pre-filled buy order",
             "Android: TickerCard uses ViewHolder pattern to efficiently render large message lists with cards"
           ],
-          "platform": ["backend", "web", "ios", "android"],
-          "estimated_points": 5,
-          "depends_on": ["F2.S1"],
+          "platform": [
+            "backend",
+            "web",
+            "ios",
+            "android"
+          ],
+          "depends_on": [
+            "F2.S1"
+          ],
           "technical_notes": "Real-time price updates use same WebSocket stream as trade execution to minimize latency",
           "test_cases": [
             {
               "id": "TC-F3.S1-001",
               "scenario": {
-                "given": ["User is viewing AAPL instrument detail screen", "User is a member of 'tech-stocks' channel"],
-                "when": ["User taps 'Share to Chat'", "Selects 'tech-stocks' channel", "Message is posted"],
-                "then": ["Ticker card appears in channel message", "Card shows AAPL, current price, % change, timestamp", "Other members see the card in real-time"]
+                "given": [
+                  "User is viewing AAPL instrument detail screen",
+                  "User is a member of 'tech-stocks' channel"
+                ],
+                "when": [
+                  "User taps 'Share to Chat'",
+                  "Selects 'tech-stocks' channel",
+                  "Message is posted"
+                ],
+                "then": [
+                  "Ticker card appears in channel message",
+                  "Card shows AAPL, current price, % change, timestamp",
+                  "Other members see the card in real-time"
+                ]
               },
               "type": "happy_path",
               "priority": "critical",
@@ -386,9 +571,19 @@
             {
               "id": "TC-F3.S1-002",
               "scenario": {
-                "given": ["Ticker card for TSLA is displayed in a message", "Market is open", "TSLA price changes from $250 to $252"],
-                "when": ["Price update is broadcast via WebSocket"],
-                "then": ["Card updates to show $252", "% change recalculates automatically", "No full message re-render occurs"]
+                "given": [
+                  "Ticker card for TSLA is displayed in a message",
+                  "Market is open",
+                  "TSLA price changes from $250 to $252"
+                ],
+                "when": [
+                  "Price update is broadcast via WebSocket"
+                ],
+                "then": [
+                  "Card updates to show $252",
+                  "% change recalculates automatically",
+                  "No full message re-render occurs"
+                ]
               },
               "type": "happy_path",
               "priority": "critical",
@@ -397,9 +592,17 @@
             {
               "id": "TC-F3.S1-003",
               "scenario": {
-                "given": ["User sees a ticker card for NVDA in a message"],
-                "when": ["User taps the ticker card"],
-                "then": ["App navigates to NVDA instrument detail screen", "Buy order form is pre-filled with NVDA", "User can adjust quantity and submit order"]
+                "given": [
+                  "User sees a ticker card for NVDA in a message"
+                ],
+                "when": [
+                  "User taps the ticker card"
+                ],
+                "then": [
+                  "App navigates to NVDA instrument detail screen",
+                  "Buy order form is pre-filled with NVDA",
+                  "User can adjust quantity and submit order"
+                ]
               },
               "type": "happy_path",
               "priority": "high",
@@ -409,9 +612,18 @@
             {
               "id": "TC-F3.S1-004",
               "scenario": {
-                "given": ["Ticker card for AAPL is displayed", "Market hours have ended"],
-                "when": ["User views the card after 4:00 PM ET"],
-                "then": ["Card shows last traded price", "'Market Closed' badge displays", "Price does not update until market reopens"]
+                "given": [
+                  "Ticker card for AAPL is displayed",
+                  "Market hours have ended"
+                ],
+                "when": [
+                  "User views the card after 4:00 PM ET"
+                ],
+                "then": [
+                  "Card shows last traded price",
+                  "'Market Closed' badge displays",
+                  "Price does not update until market reopens"
+                ]
               },
               "type": "edge_case",
               "priority": "high",
@@ -430,7 +642,7 @@
         {
           "story_id": "F4.S1",
           "title": "Receive push notifications for channel messages",
-          "as_a": "Jamie — Casual Community Investor",
+          "as_a": "Jamie \u2014 Casual Community Investor",
           "i_want": "get a push notification when someone posts in a channel I follow",
           "so_that": "I can stay in the conversation without keeping the app open",
           "acceptance_criteria": [
@@ -446,17 +658,31 @@
             "iOS: APNs payload includes channel_id and message_id for deep link routing on tap",
             "Android: FCM notification uses high-priority channel to ensure delivery in Doze mode"
           ],
-          "platform": ["backend", "ios", "android"],
-          "estimated_points": 3,
-          "depends_on": ["F2.S1"],
+          "platform": [
+            "backend",
+            "ios",
+            "android"
+          ],
+          "depends_on": [
+            "F2.S1"
+          ],
           "technical_notes": "Notification service must respect APNs rate limits (max 30 pushes/second per device); batch fan-out for large channels",
           "test_cases": [
             {
               "id": "TC-F4.S1-001",
               "scenario": {
-                "given": ["User Jamie has joined 'options-trading' channel", "Push notifications are enabled"],
-                "when": ["Alex posts a message to the channel"],
-                "then": ["Jamie receives push notification within 5 seconds", "Notification shows: 'Alex in #options-trading: Bullish on $AAPL'", "Notification badge increments on app icon"]
+                "given": [
+                  "User Jamie has joined 'options-trading' channel",
+                  "Push notifications are enabled"
+                ],
+                "when": [
+                  "Alex posts a message to the channel"
+                ],
+                "then": [
+                  "Jamie receives push notification within 5 seconds",
+                  "Notification shows: 'Alex in #options-trading: Bullish on $AAPL'",
+                  "Notification badge increments on app icon"
+                ]
               },
               "type": "happy_path",
               "priority": "critical",
@@ -466,9 +692,17 @@
             {
               "id": "TC-F4.S1-002",
               "scenario": {
-                "given": ["Jamie receives a push notification for 'crypto-news' channel"],
-                "when": ["Jamie taps the notification"],
-                "then": ["App opens directly to 'crypto-news' channel thread", "New message is visible and highlighted", "Unread badge clears for that channel"]
+                "given": [
+                  "Jamie receives a push notification for 'crypto-news' channel"
+                ],
+                "when": [
+                  "Jamie taps the notification"
+                ],
+                "then": [
+                  "App opens directly to 'crypto-news' channel thread",
+                  "New message is visible and highlighted",
+                  "Unread badge clears for that channel"
+                ]
               },
               "type": "happy_path",
               "priority": "critical",
@@ -478,9 +712,17 @@
             {
               "id": "TC-F4.S1-003",
               "scenario": {
-                "given": ["Jamie has muted the 'penny-stocks' channel"],
-                "when": ["A message is posted to 'penny-stocks'"],
-                "then": ["No push notification is sent to Jamie", "Message is still visible in channel when Jamie opens the app", "Muted badge displays on channel in list"]
+                "given": [
+                  "Jamie has muted the 'penny-stocks' channel"
+                ],
+                "when": [
+                  "A message is posted to 'penny-stocks'"
+                ],
+                "then": [
+                  "No push notification is sent to Jamie",
+                  "Message is still visible in channel when Jamie opens the app",
+                  "Muted badge displays on channel in list"
+                ]
               },
               "type": "happy_path",
               "priority": "high",
@@ -490,9 +732,18 @@
             {
               "id": "TC-F4.S1-004",
               "scenario": {
-                "given": ["Channel has 50,000 members", "A message is posted"],
-                "when": ["Notification service fans out to all eligible members"],
-                "then": ["Fan-out completes within 30 seconds", "APNs rate limits are not breached", "No duplicate notifications are sent"]
+                "given": [
+                  "Channel has 50,000 members",
+                  "A message is posted"
+                ],
+                "when": [
+                  "Notification service fans out to all eligible members"
+                ],
+                "then": [
+                  "Fan-out completes within 30 seconds",
+                  "APNs rate limits are not breached",
+                  "No duplicate notifications are sent"
+                ]
               },
               "type": "edge_case",
               "priority": "medium",
@@ -524,17 +775,27 @@
             "Backend: Held messages are written to Cassandra with moderation_status='pending' and excluded from Redis fan-out",
             "Backend: Stage 2 async LLM classifier (Claude Haiku) re-evaluates held and passed messages within ~200ms and updates moderation_status"
           ],
-          "platform": ["backend"],
-          "estimated_points": 5,
-          "depends_on": ["F2.S1"],
+          "platform": [
+            "backend"
+          ],
+          "depends_on": [
+            "F2.S1"
+          ],
           "technical_notes": "Two-stage pipeline per the architecture doc: synchronous rule-based gate, then async LLM classification targeting >92% precision on the pump-and-dump corpus (NFR-05)",
           "test_cases": [
             {
               "id": "TC-F5.S1-001",
               "scenario": {
-                "given": ["User posts a message with no blocked content"],
-                "when": ["Message passes the rule-based check"],
-                "then": ["Message is delivered to channel members within 500ms", "moderation_status is set to 'approved'"]
+                "given": [
+                  "User posts a message with no blocked content"
+                ],
+                "when": [
+                  "Message passes the rule-based check"
+                ],
+                "then": [
+                  "Message is delivered to channel members within 500ms",
+                  "moderation_status is set to 'approved'"
+                ]
               },
               "type": "happy_path",
               "priority": "high",
@@ -544,9 +805,17 @@
             {
               "id": "TC-F5.S1-002",
               "scenario": {
-                "given": ["User posts a message containing a known blocked keyword"],
-                "when": ["Message is submitted"],
-                "then": ["Message is held with moderation_status='pending'", "Message is not delivered to channel members", "Message is added to the moderator review queue"]
+                "given": [
+                  "User posts a message containing a known blocked keyword"
+                ],
+                "when": [
+                  "Message is submitted"
+                ],
+                "then": [
+                  "Message is held with moderation_status='pending'",
+                  "Message is not delivered to channel members",
+                  "Message is added to the moderator review queue"
+                ]
               },
               "type": "bad_path",
               "priority": "critical",
@@ -556,9 +825,17 @@
             {
               "id": "TC-F5.S1-003",
               "scenario": {
-                "given": ["Ticker $XYZ has been mentioned 9 times across a channel in the last 5 minutes"],
-                "when": ["A 10th message mentioning $XYZ is submitted"],
-                "then": ["Velocity threshold trips", "Message is held for review", "Subsequent $XYZ messages from the same window are also held until reviewed"]
+                "given": [
+                  "Ticker $XYZ has been mentioned 9 times across a channel in the last 5 minutes"
+                ],
+                "when": [
+                  "A 10th message mentioning $XYZ is submitted"
+                ],
+                "then": [
+                  "Velocity threshold trips",
+                  "Message is held for review",
+                  "Subsequent $XYZ messages from the same window are also held until reviewed"
+                ]
               },
               "type": "edge_case",
               "priority": "high",
@@ -583,17 +860,28 @@
             "Backend: POST /api/moderation/:messageId/resolve accepts {decision: approved|rejected} and updates moderation_status, triggering fan-out on approval",
             "Web: Moderation queue UI lists flag reason and supports one-tap approve/reject"
           ],
-          "platform": ["backend", "web"],
-          "estimated_points": 5,
-          "depends_on": ["F5.S1"],
-          "technical_notes": "Internal moderator tool — web only; no mobile moderator UI planned for Phase 1",
+          "platform": [
+            "backend",
+            "web"
+          ],
+          "depends_on": [
+            "F5.S1"
+          ],
+          "technical_notes": "Internal moderator tool \u2014 web only; no mobile moderator UI planned for Phase 1",
           "test_cases": [
             {
               "id": "TC-F5.S2-001",
               "scenario": {
-                "given": ["A message is held with flag reason 'blocked keyword'"],
-                "when": ["Moderator opens the review queue"],
-                "then": ["Message content, sender, channel, and flag reason are all visible", "Approve and Reject actions are available"]
+                "given": [
+                  "A message is held with flag reason 'blocked keyword'"
+                ],
+                "when": [
+                  "Moderator opens the review queue"
+                ],
+                "then": [
+                  "Message content, sender, channel, and flag reason are all visible",
+                  "Approve and Reject actions are available"
+                ]
               },
               "type": "happy_path",
               "priority": "high",
@@ -602,9 +890,16 @@
             {
               "id": "TC-F5.S2-002",
               "scenario": {
-                "given": ["A held message is a false positive"],
-                "when": ["Moderator taps Approve"],
-                "then": ["Message is delivered to channel members", "Message displays with its original send timestamp, not the approval time"]
+                "given": [
+                  "A held message is a false positive"
+                ],
+                "when": [
+                  "Moderator taps Approve"
+                ],
+                "then": [
+                  "Message is delivered to channel members",
+                  "Message displays with its original send timestamp, not the approval time"
+                ]
               },
               "type": "happy_path",
               "priority": "high",
@@ -614,9 +909,17 @@
             {
               "id": "TC-F5.S2-003",
               "scenario": {
-                "given": ["A user has 2 confirmed violations in the last 30 days"],
-                "when": ["Moderator confirms (rejects) a 3rd held message from that user"],
-                "then": ["Violation count increments to 3", "User automatically receives a 7-day suspension", "Suspension is logged to the audit trail"]
+                "given": [
+                  "A user has 2 confirmed violations in the last 30 days"
+                ],
+                "when": [
+                  "Moderator confirms (rejects) a 3rd held message from that user"
+                ],
+                "then": [
+                  "Violation count increments to 3",
+                  "User automatically receives a 7-day suspension",
+                  "Suspension is logged to the audit trail"
+                ]
               },
               "type": "edge_case",
               "priority": "high",

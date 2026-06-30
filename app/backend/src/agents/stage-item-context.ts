@@ -17,10 +17,15 @@ import * as fs from 'fs';
 import * as path from 'path';
 import db from '../data/database';
 import { loadLatestArtifactContent } from './artifact-helpers';
+import { syncSwaggerDoc, type SwaggerDocRow } from '../integrations/swagger-sync';
+import Logger from '../utils/logger';
+
+const logger = new Logger('STAGE-ITEM-CONTEXT');
 import {
   loadWorkflowArtifacts, loadLocalDesignSystem, loadFigmaDesignSystem,
   getFigmaFileKey, setFigmaFileKey, createFigmaFile, resolveItemPlatform, platformHintFor,
 } from './prototype-agent';
+import { loadFigmaFrameData } from './figma-design-agent';
 import { PROJECT_ROOT, insertEvent } from './workflow-db';
 
 export interface ItemContextParams {
@@ -124,6 +129,83 @@ export const ITEM_CONTEXT_BUILDERS: Record<string, (params: ItemContextParams) =
       }
       if (mockupFile) parts.push(`## Target Figma File\n\nCreate mockup frames in Figma file key: \`${mockupFile}\`\nFile URL: https://www.figma.com/file/${mockupFile}/`);
     }
+    return parts.length > 0 ? addPlatformScope(parts.join('\n\n---\n\n')) : undefined;
+  },
+
+  async api_spec({ itemId, addPlatformScope }) {
+    const parts: string[] = [];
+
+    // Re-sync active swagger docs at stage execution time so Kira always sees the
+    // current state of the existing API. Errors are non-fatal — fall back to last cache.
+    const activeDocs = db.prepare<[], SwaggerDocRow & { label: string; content: string | null }>(
+      'SELECT id, doc_url, label, content FROM swagger_api_docs WHERE active = 1'
+    ).all();
+    if (activeDocs.length > 0) {
+      await Promise.all(activeDocs.map(async (doc) => {
+        try {
+          await syncSwaggerDoc({ id: doc.id, doc_url: doc.doc_url });
+        } catch (err: any) {
+          logger.warn(`api_spec: failed to re-sync swagger doc #${doc.id} — using cached content. Error: ${err.message}`);
+        }
+      }));
+      // Read fresh content after sync
+      const freshDocs = db.prepare<[], { label: string; content: string }>(
+        'SELECT label, content FROM swagger_api_docs WHERE active = 1 AND content IS NOT NULL'
+      ).all();
+      if (freshDocs.length > 0) {
+        const MAX_CHARS_PER_DOC = 8_000;
+        const docsBlock = freshDocs.map((d) => {
+          const truncated = d.content.length > MAX_CHARS_PER_DOC;
+          const body = truncated ? d.content.slice(0, MAX_CHARS_PER_DOC) + '\n... [truncated — extract auth scheme, error format, and pagination convention from the excerpt above]' : d.content;
+          return `### ${d.label}\n\n${body}`;
+        }).join('\n\n');
+        parts.push(`**Existing API (derive auth scheme, error response format, server base path, and pagination convention from this — do not duplicate existing endpoints):**\n\n${docsBlock}`);
+      }
+    }
+
+    const [architectureContent, prdContent, epicContent, figmaBriefContent] = await Promise.all([
+      loadLatestArtifactContent(itemId, 'architecture'),
+      loadLatestArtifactContent(itemId, 'prd'),
+      loadLatestArtifactContent(itemId, 'epic_features'),
+      loadLatestArtifactContent(itemId, 'figma_design'),
+    ]);
+
+    if (architectureContent) parts.push(`**Architecture Brief (derive all component schemas from the data model entities here — use exact entity names as schema names):**\n\n${architectureContent}`);
+    if (prdContent) parts.push(`**PRD (source of functional requirements — every endpoint must satisfy a named FR from this document; cite the FR-ID in the endpoint description):**\n\n${prdContent}`);
+    if (epicContent) parts.push(`**Epic & Features (scope of this initiative — only endpoints needed for these features belong in the contract):**\n\n${epicContent}`);
+
+    // Load Figma screen data: parse Luma's frame_url per screen and fetch each frame
+    // via MCP for actual component/field detail. Falls back to Luma's brief if frame
+    // URLs aren't populated yet (designer hasn't built screens).
+    if (figmaBriefContent) {
+      let fetchedFrames = false;
+      try {
+        const figmaArtifact = JSON.parse(figmaBriefContent) as { screens_created?: Array<{ name: string; frame_url?: string }> };
+        const frameEntries = (figmaArtifact.screens_created ?? [])
+          .filter(s => s.frame_url && s.frame_url.length > 0)
+          .map(s => ({ name: s.name, url: s.frame_url! }));
+
+        if (frameEntries.length > 0) {
+          const frameResults = await Promise.all(
+            frameEntries.map(async ({ name, url }) => {
+              const data = await loadFigmaFrameData(url);
+              return data ? `### ${name}\n\n${data}` : null;
+            })
+          );
+          const validFrames = frameResults.filter((r): r is string => r !== null);
+          if (validFrames.length > 0) {
+            parts.push(`**Figma Screens (live frame data — response schemas must include exactly the fields shown in these screens, no more):**\n\n${validFrames.join('\n\n')}`);
+            fetchedFrames = true;
+          }
+        }
+      } catch { /* JSON parse failed — fall through to brief */ }
+
+      if (!fetchedFrames) {
+        // Designer hasn't built the frames yet — use Luma's text brief as a fallback
+        parts.push(`**Figma Design Brief (frame URLs not yet populated — use screen descriptions to infer response shapes):**\n\n${figmaBriefContent}`);
+      }
+    }
+
     return parts.length > 0 ? addPlatformScope(parts.join('\n\n---\n\n')) : undefined;
   },
 };

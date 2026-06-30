@@ -21,7 +21,6 @@
 
 - Missing `@smoke` tags on the minimal happy path test set is **MINOR**.
 - Missing `@negative` tags on bad_path tests is **MINOR**.
-- `automation_notes` missing where the scenario has a non-obvious implementation concern is **MINOR**.
 
 ## PM Questions
 

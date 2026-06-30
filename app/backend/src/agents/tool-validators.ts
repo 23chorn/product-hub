@@ -396,35 +396,11 @@ export function validateArchitectureJson(input: Record<string, unknown>): string
     req(r, 'changes_required', lp, issues);
   });
 
-  // infrastructure — scoped down to hosting + cost for now; deployment pipeline and
-  // failure-mode tables are deferred until this stage is reliable at the smaller scope.
+  // infrastructure
   if (!p.infrastructure || typeof p.infrastructure !== 'object') {
     issues.push('root: "infrastructure" object is required');
   } else {
-    const infra = p.infrastructure;
-    req(infra, 'hosting', 'infrastructure', issues);
-    req(infra, 'cost_estimate', 'infrastructure', issues);
-  }
-
-  // security_considerations
-  reqArray(p, 'security_considerations', 'root', issues, 1);
-
-  // epic_features_enriched — kept lightweight (title, target_repos, technical_notes only)
-  // since story decomposition only needs a pointer into the relevant repos plus notes.
-  if (!p.epic_features_enriched || typeof p.epic_features_enriched !== 'object') {
-    issues.push('root: "epic_features_enriched" object is required — story decomposition agents depend on this field');
-  } else {
-    const efe = p.epic_features_enriched;
-    if (!efe.epic?.title) issues.push('epic_features_enriched.epic: "title" is required');
-    const features = reqArray(efe, 'features', 'epic_features_enriched', issues, 1);
-    features?.forEach((f: any, i: number) => {
-      const lp = `epic_features_enriched.features[${i}]`;
-      req(f, 'title', lp, issues);
-      req(f, 'technical_notes', lp, issues);
-      if (!Array.isArray(f.target_repos) || f.target_repos.length === 0) {
-        issues.push(`${lp}: "target_repos" must be a non-empty array`);
-      }
-    });
+    req(p.infrastructure, 'hosting', 'infrastructure', issues);
   }
 
   return result(issues);

@@ -597,8 +597,7 @@ Return a JSON structure (use F${featureNum} for all story IDs):
         "functional_requirements": ["FR-01"],
         "non_functional_requirements": ["NFR1"]
       },
-      "platform": "backend",
-      "estimated_points": 3
+      "platform": "backend"
     }
   ]
 }
@@ -795,9 +794,7 @@ Merge all contributions into a single JSON artifact following the backlog templa
   "epic": {
     "title": "...",
     "description": "...",
-    "business_value": "...",
-    "definition_of_done": "...",
-    "out_of_scope": ["..."]
+    "definition_of_done": "..."
   },
   "features": [
     {
@@ -824,7 +821,6 @@ Merge all contributions into a single JSON artifact following the backlog templa
             "non_functional_requirements": ["NFR1"]
           },
           "platform": "backend",
-          "estimated_points": 5,
           "depends_on": [],
           "technical_notes": "..."
         }
@@ -836,7 +832,7 @@ Merge all contributions into a single JSON artifact following the backlog templa
 
 **Important:**
 - Include ONLY the JSON artifact in your response (no explanatory text before or after)
-- Carry forward epic fields (business_value, definition_of_done, out_of_scope) and feature fields (phase, acceptance_criteria) from the Feature Brief at the top of this prompt — do not drop or weaken them
+- Carry forward epic fields (definition_of_done) and feature fields (phase, acceptance_criteria) from the Feature Brief at the top of this prompt — do not drop or weaken them
 - The feature acceptance_criteria array must match the Feature Acceptance Criteria from the brief verbatim — these are approved conditions, not suggestions
 - The feature phase must match the Phase label from the brief
 - Every story must include prd_ref with functional_requirements (the FR IDs from the PRD this story satisfies) and non_functional_requirements (the NFR IDs that constrain this story). Copy from the feature's prdRef where applicable and refine per story. Use [] for non_functional_requirements only if no NFR genuinely applies to this specific story.
@@ -982,8 +978,7 @@ Using your testability notes and the finalised story list above, produce a JSON 
       },
       "preconditions": ["<required system state before test>"],
       "test_data": {},
-      "tags": ["@smoke", "@regression"],
-      "automation_notes": "<how to automate this — API mock, UI selector, data setup>"
+      "tags": ["@smoke", "@regression"]
     }
   ]
 }
@@ -999,7 +994,6 @@ Requirements:
 - prd_ref must list the functional requirement ID(s) (e.g. "FR-01") this test verifies — copy from the referenced story's prd_ref
 - type must be exactly one of: happy_path, negative, edge, boundary, security, performance — at least one negative-type case is required, and at least 20% of cases should be negative/edge
 - tags must be a non-empty array using only: @smoke, @regression, @negative, @edge, @security, @performance — tag at least one critical happy-path case @smoke
-- automation_notes must be specific enough for a QA engineer to implement the test (UI selector, user action, mock of the backend dependency — not an API contract assertion)
 - Include ONLY the JSON artifact in your response (no explanatory text before or after)
 `;
 

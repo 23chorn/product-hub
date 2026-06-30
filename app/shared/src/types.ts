@@ -256,7 +256,7 @@ export interface QuickItem {
 // ============================================
 
 export type AppMode = 'prd' | 'backlog' | 'analyst' | 'epic_features' | 'architecture' | 'context' | 'prototype' | 'qa' | 'tech_refinement' | 'figma_design';
-export type AgentType = 'pm' | 'analyst' | 'epic-feature-planner' | 'architect' | 'story-decomposition' | 'context-keeper' | 'prototype-builder' | 'qa-engineer' | 'tech-refinement' | 'backend-engineer' | 'web-engineer' | 'ios-engineer' | 'android-engineer' | 'figma-designer';
+export type AgentType = 'pm' | 'analyst' | 'epic-feature-planner' | 'architect' | 'api-spec-designer' | 'story-decomposition' | 'context-keeper' | 'prototype-builder' | 'qa-engineer' | 'tech-refinement' | 'backend-engineer' | 'web-engineer' | 'ios-engineer' | 'android-engineer' | 'figma-designer';
 
 
 // ============================================

@@ -712,6 +712,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
           featureButtons={featureButtons}
           initiativeTitle={activeWorkflow.summary ?? activeWorkflow.goal.split('\n')[0]}
           epicFeaturesArtifactId={epicFeaturesArtifactId}
+          workflowId={activeWorkflow.id}
           onClose={() => setShowBacklogOverview(false)}
         />
       )}

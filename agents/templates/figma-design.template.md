@@ -11,7 +11,7 @@ Produce a single valid JSON object matching the schema below, wrapped in a ```js
   "screens_created": [
     {
       "name": "<screen name, e.g. Channel List>",
-      "frame_url": "",
+      "frame_url": "<URL to the Figma frame or Section for this screen. If the screen has multiple states (empty, loading, error, modal open), group all state frames inside a Figma Section and link to the Section — get_figma_data returns the full subtree including all child frames.>",
       "prd_journeys": ["<journey name from PRD>"],
       "description": "<one or two sentences: what this screen shows and its role in the flow>",
       "layout_notes": "<the few things the designer needs to know to build this screen: structure, which existing components to reuse, anything non-obvious>",
@@ -34,6 +34,7 @@ Produce a single valid JSON object matching the schema below, wrapped in a ```js
 ## Field requirements
 
 - `figma_file_url`: Use the file URL from the **Target Figma File** section of your context if provided. Leave as an empty string if no target file was specified or this stage is running in bypass mode.
+- `frame_url`: Link to the Figma frame for this screen. If the screen has multiple states (empty state, loading, error, modal open, etc.), group all state frames inside a **Figma Section** and link to the Section — the API contract stage fetches the full subtree, so all states are captured in one link.
 - `figma_write_status`: Always set to `"planned"` — later steps stamp this to `"annotated"`, `"created"`, or `"reviewed"` automatically.
 - `screens_created`: Minimum 3, maximum 8. Each screen must correspond to a named user journey from the PRD. This is a brief for a human designer, not a spec — keep each field short.
 - `layout_notes`: The few things a designer actually needs to know to build the screen correctly. Do not enumerate tokens or pixel values — the designer has the design system open already.

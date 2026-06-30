@@ -30,6 +30,7 @@ const DEMO_FIXTURE_FILES: Record<string, string> = {
   pm_prd:                'prd.json',
   epic_feature_planner:  'epic-features.json',
   solution_architect:    'architecture.json',
+  api_spec:              'api-spec.json',
   story_decomposition:   'backlog.json',
   prototype:             'prototype.json',
   figma_design:          'figma-design.json',
@@ -141,6 +142,7 @@ export const DEMO_STAGE_DELAY_MS: Record<string, number> = {
   // as visibly parallel rather than sequential.
   story_decomposition_F4:   4_000,
   story_decomposition_F5:   4_000,
+  api_spec:                 2_500,
   prototype:                3_000,
   figma_design:             2_500,
   curator:                  1_500,

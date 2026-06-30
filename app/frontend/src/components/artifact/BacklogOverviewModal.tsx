@@ -5,6 +5,7 @@ import { type FeatureArtifactRef } from '../../utils/feature-artifacts';
 import { BacklogView } from './BacklogView';
 import { QATestsView } from './QATestsView';
 import { tryParseEpicFeatures, type EpicFeaturesData } from './EpicFeaturesView';
+import { ArtifactTabShell } from './ArtifactPrimitives';
 
 interface StoriesTestsProps {
   featureButtons: FeatureArtifactRef[];
@@ -18,6 +19,7 @@ interface StoriesTestsProps {
 
 interface Props extends StoriesTestsProps {
   onClose: () => void;
+  workflowId?: string;
 }
 
 /** Merge each feature's isolated artifact (epic + its own single-feature array) into one epic + multi-feature backlog. */
@@ -85,47 +87,27 @@ export function BacklogStoriesTests({ featureButtons, initiativeTitle, epicFeatu
   const totalStories = backlog?.features?.reduce((sum, f) => sum + (f.stories?.length ?? 0), 0) ?? 0;
   const totalTests = qa?.test_cases.length ?? 0;
 
-  return (
-    <div className="flex flex-col h-full min-h-0">
-      <div className="flex border-b border-surface-200 dark:border-surface-700 flex-shrink-0">
-        <button
-          onClick={() => setTab('stories')}
-          className={`flex-1 px-4 py-2 text-xs font-medium transition-colors ${
-            tab === 'stories'
-              ? 'text-brand-600 dark:text-brand-400 border-b-2 border-brand-500'
-              : 'text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200'
-          }`}
-        >
-          Stories{totalStories > 0 && <span className="ml-1 opacity-60">({totalStories})</span>}
-        </button>
-        <button
-          onClick={() => setTab('tests')}
-          className={`flex-1 px-4 py-2 text-xs font-medium transition-colors ${
-            tab === 'tests'
-              ? 'text-brand-600 dark:text-brand-400 border-b-2 border-brand-500'
-              : 'text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200'
-          }`}
-        >
-          Tests{totalTests > 0 && <span className="ml-1 opacity-60">({totalTests})</span>}
-        </button>
-      </div>
+  const tabs = [
+    { id: 'stories', label: 'Stories', count: totalStories > 0 ? totalStories : undefined },
+    { id: 'tests', label: 'Tests', count: totalTests > 0 ? totalTests : undefined },
+  ];
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
-        {loading ? (
-          <p className="text-sm text-surface-400 animate-pulse">Loading...</p>
-        ) : tab === 'stories' ? (
-          backlog && (backlog.features?.length ?? 0) > 0 ? (
-            <BacklogView data={backlog} initiativeTitle={initiativeTitle} epicFeatures={epicFeatures} />
-          ) : (
-            <p className="text-sm text-surface-400 italic">No features approved yet.</p>
-          )
-        ) : qa && qa.test_cases.length > 0 ? (
-          <QATestsView data={qa} />
+  return (
+    <ArtifactTabShell tabs={tabs} activeTab={tab} onTabChange={t => setTab(t as 'stories' | 'tests')}>
+      {loading ? (
+        <p className="text-sm text-surface-400 animate-pulse">Loading...</p>
+      ) : tab === 'stories' ? (
+        backlog && (backlog.features?.length ?? 0) > 0 ? (
+          <BacklogView data={backlog} initiativeTitle={initiativeTitle} epicFeatures={epicFeatures} />
         ) : (
-          <p className="text-sm text-surface-400 italic">No QA tests approved yet.</p>
-        )}
-      </div>
-    </div>
+          <p className="text-sm text-surface-400 italic">No features approved yet.</p>
+        )
+      ) : qa && qa.test_cases.length > 0 ? (
+        <QATestsView data={qa} />
+      ) : (
+        <p className="text-sm text-surface-400 italic">No QA tests approved yet.</p>
+      )}
+    </ArtifactTabShell>
   );
 }
 
@@ -133,19 +115,58 @@ export function BacklogStoriesTests({ featureButtons, initiativeTitle, epicFeatu
  * Drawer chrome around BacklogStoriesTests — opened from the pipeline terminal's bottom-bar
  * "Stories/Tests" button.
  */
-export function BacklogOverviewModal({ onClose, ...storiesTestsProps }: Props) {
+export function BacklogOverviewModal({ onClose, workflowId, ...storiesTestsProps }: Props) {
+  const [toast, setToast] = useState<string | null>(null);
+
+  const handleShare = () => {
+    if (!workflowId) return;
+    const url = `${window.location.origin}${window.location.pathname}?workflowId=${workflowId}`;
+    navigator.clipboard.writeText(url);
+    setToast('Link copied!');
+    setTimeout(() => setToast(null), 2000);
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
+    <div className="fixed inset-0 z-50 flex justify-center">
       <div className="absolute inset-0 bg-black/30 dark:bg-black/50" onClick={onClose} />
 
-      <div className="relative w-full max-w-2xl h-full bg-white dark:bg-surface-800 shadow-xl flex flex-col overflow-hidden">
+      <div className="relative h-full bg-white dark:bg-surface-800 shadow-xl flex flex-col overflow-hidden w-full max-w-4xl">
         <div className="px-4 py-3 border-b border-surface-200 dark:border-surface-700 flex items-center justify-between flex-shrink-0">
           <h2 className="text-sm font-semibold text-surface-900 dark:text-surface-100">Stories &amp; Tests</h2>
-          <button onClick={onClose} className="text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 transition-colors">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-1">
+            {workflowId && (
+              <button
+                onClick={handleShare}
+                className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md border transition-colors ${
+                  toast === 'Link copied!'
+                    ? 'border-green-300 dark:border-green-700 text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20'
+                    : 'border-surface-200 dark:border-surface-700 text-surface-500 dark:text-surface-400 hover:border-surface-300 dark:hover:border-surface-600 hover:text-surface-700 dark:hover:text-surface-200'
+                }`}
+                title="Copy shareable link"
+              >
+                {toast === 'Link copied!' ? (
+                  <>
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Link copied!
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                    </svg>
+                    Share
+                  </>
+                )}
+              </button>
+            )}
+            <button onClick={onClose} className="p-1 rounded text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 transition-colors">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <BacklogStoriesTests {...storiesTestsProps} />

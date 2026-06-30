@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { DeleteItemButton } from '../common/DeleteItemButton';
+import { Chevron, InitiativeHeader, PhaseTag } from './ArtifactPrimitives';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -165,64 +166,53 @@ export function PrdRefTags({ prdRef }: { prdRef: PrdRef }) {
 
 function FeatureCard({ feature, idx, phaseIndex, onDeleteFeature }: { feature: EpicFeature; idx: number; phaseIndex: number; onDeleteFeature?: (phaseIndex: number, featureIndex: number) => void }) {
   const [expanded, setExpanded] = useState(false);
-  const hasDetail = (feature.acceptanceCriteria?.length ?? 0) > 0 || feature.rationale || feature.prdRef;
+  const hasDetail = (feature.acceptanceCriteria?.length ?? 0) > 0 || !!feature.rationale || !!feature.prdRef;
 
   return (
-    <div className="border border-surface-200 dark:border-surface-700 rounded-lg overflow-hidden">
-      <div className="flex items-stretch hover:bg-surface-50 dark:hover:bg-surface-800/60 transition-colors">
+    <div className="rounded-lg border border-surface-200 dark:border-surface-700 overflow-hidden">
+      <div className="flex items-stretch">
         <button
           onClick={() => setExpanded(e => !e)}
-          className="flex-1 min-w-0 text-left px-4 py-3"
           disabled={!hasDetail}
+          className="flex-1 min-w-0 text-left flex items-start gap-2 px-4 py-3 bg-surface-50 dark:bg-surface-800/60 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors disabled:cursor-default"
         >
-          <div className="flex items-start gap-3">
-            <span className="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-400 text-[10px] font-bold flex items-center justify-center">
-              {idx + 1}
-            </span>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold text-surface-900 dark:text-surface-100">{feature.title}</p>
-                {feature.deferredTo && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 flex-shrink-0">
-                    → {feature.deferredTo}
-                  </span>
-                )}
-                {(feature.dependsOn?.length ?? 0) > 0 ? (
-                  <span
-                    className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-400 flex-shrink-0"
-                    title={`Cannot start until: ${feature.dependsOn!.join(', ')}`}
-                  >
-                    Sequential — after {feature.dependsOn!.join(', ')}
-                  </span>
-                ) : (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 flex-shrink-0">
-                    Parallel
-                  </span>
-                )}
-                {hasDetail && (
-                  <svg
-                    className={`w-3.5 h-3.5 text-surface-400 flex-shrink-0 ml-auto transition-transform ${expanded ? 'rotate-180' : ''}`}
-                    fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                )}
-              </div>
-              {feature.description && (
-                <p className="mt-1 text-xs text-surface-600 dark:text-surface-400 leading-relaxed">{feature.description}</p>
+          <Chevron expanded={expanded} className="w-3.5 h-3.5 mt-0.5 text-surface-400" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+              <span className="text-xs font-semibold uppercase tracking-wide text-brand-500 dark:text-brand-400">Feature</span>
+              {feature.deferredTo && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 flex-shrink-0">
+                  → {feature.deferredTo}
+                </span>
+              )}
+              {(feature.dependsOn?.length ?? 0) > 0 ? (
+                <span
+                  className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-400 flex-shrink-0"
+                  title={`Cannot start until: ${feature.dependsOn!.join(', ')}`}
+                >
+                  Sequential — after {feature.dependsOn!.join(', ')}
+                </span>
+              ) : (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 flex-shrink-0">
+                  Parallel
+                </span>
               )}
             </div>
+            <h4 className="text-base font-semibold text-surface-900 dark:text-surface-100">{feature.title}</h4>
+            {feature.description && (
+              <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">{feature.description}</p>
+            )}
           </div>
         </button>
         {onDeleteFeature && (
-          <div className="flex items-center pr-3">
+          <div className="flex items-center pr-3 bg-surface-50 dark:bg-surface-800/60">
             <DeleteItemButton onDelete={() => onDeleteFeature(phaseIndex, idx)} label="Delete feature" />
           </div>
         )}
       </div>
 
       {expanded && hasDetail && (
-        <div className="px-4 pb-4 border-t border-surface-100 dark:border-surface-700/60 space-y-3 mt-0 pt-3">
+        <div className="px-4 pb-4 border-t border-surface-100 dark:border-surface-700/60 space-y-3 pt-3">
           {feature.rationale && (
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-1">Rationale</p>
@@ -250,10 +240,10 @@ function FeatureCard({ feature, idx, phaseIndex, onDeleteFeature }: { feature: E
 }
 
 export const PHASE_COLORS: Record<string, string> = {
-  MVP:      'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800',
-  'Phase 1':'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800',
-  'Phase 2':'bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-800',
-  'Phase 3':'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800',
+  MVP:      'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400',
+  'Phase 1':'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400',
+  'Phase 2':'bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400',
+  'Phase 3':'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400',
 };
 
 interface PhaseSectionProps {
@@ -264,28 +254,47 @@ interface PhaseSectionProps {
 }
 
 function PhaseSection({ phase, phaseIndex, onDeletePhase, onDeleteFeature }: PhaseSectionProps) {
-  const colorClass = PHASE_COLORS[phase.label] ?? 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 border-surface-200 dark:border-surface-600';
+  const [expanded, setExpanded] = useState(true);
+  const colorClass = PHASE_COLORS[phase.label] ?? 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300';
+  const epicTitle = phase.epicTitle?.replace(/^(MVP|Phase \d+)\s*[—–-]\s*/i, '');
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2.5">
-        <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${colorClass}`}>{phase.label}</span>
-        {phase.epicTitle && (
-          <span className="text-sm font-semibold text-surface-700 dark:text-surface-300">{phase.epicTitle.replace(/^(MVP|Phase \d+)\s*[—–-]\s*/i, '')}</span>
-        )}
+    <div className="rounded-lg border border-surface-200 dark:border-surface-700 hover:border-violet-200 dark:hover:border-violet-800 transition-colors overflow-hidden">
+      <div className="flex items-stretch bg-surface-50 dark:bg-surface-800/40">
+        <button
+          onClick={() => setExpanded(e => !e)}
+          className="group flex-1 min-w-0 text-left flex items-start gap-2 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors p-4"
+        >
+          <Chevron expanded={expanded} className="w-4 h-4 mt-1 text-surface-400 group-hover:text-violet-500 transition-colors" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <span className="text-xs font-semibold uppercase tracking-wide text-violet-500 dark:text-violet-400">Epic</span>
+              <PhaseTag label={phase.label} colorClass={colorClass} />
+              <span className="text-xs text-surface-400">·</span>
+              <span className="text-xs text-surface-500 dark:text-surface-400">
+                {phase.features.length} feature{phase.features.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+            {epicTitle && <h3 className="text-lg font-semibold text-surface-900 dark:text-surface-100">{epicTitle}</h3>}
+            {phase.deliverable && (
+              <p className="text-xs text-surface-500 dark:text-surface-400 mt-1 italic">
+                <span className="font-medium not-italic">Ships: </span>{phase.deliverable}
+              </p>
+            )}
+          </div>
+        </button>
         {onDeletePhase && (
-          <DeleteItemButton onDelete={() => onDeletePhase(phaseIndex)} label="Delete epic" className="ml-auto" />
+          <div className="flex items-center pr-4">
+            <DeleteItemButton onDelete={() => onDeletePhase(phaseIndex)} label="Delete epic" />
+          </div>
         )}
       </div>
-      {phase.deliverable && (
-        <p className="text-xs text-surface-500 dark:text-surface-400 italic pl-1">
-          <span className="font-medium text-surface-600 dark:text-surface-300">Ships: </span>{phase.deliverable}
-        </p>
+      {expanded && (
+        <div className="border-t border-surface-200 dark:border-surface-700 p-4 space-y-2">
+          {phase.features.map((f, i) => (
+            <FeatureCard key={i} feature={f} idx={i} phaseIndex={phaseIndex} onDeleteFeature={onDeleteFeature} />
+          ))}
+        </div>
       )}
-      <div className="space-y-2 pl-0">
-        {phase.features.map((f, i) => (
-          <FeatureCard key={i} feature={f} idx={i} phaseIndex={phaseIndex} onDeleteFeature={onDeleteFeature} />
-        ))}
-      </div>
     </div>
   );
 }
@@ -294,11 +303,12 @@ function PhaseSection({ phase, phaseIndex, onDeletePhase, onDeleteFeature }: Pha
 
 interface EpicFeaturesViewProps {
   data: EpicFeaturesData;
+  initiativeTitle?: string;
   onDeletePhase?: (phaseIndex: number) => void;
   onDeleteFeature?: (phaseIndex: number, featureIndex: number) => void;
 }
 
-export function EpicFeaturesView({ data, onDeletePhase, onDeleteFeature }: EpicFeaturesViewProps) {
+export function EpicFeaturesView({ data, initiativeTitle, onDeletePhase, onDeleteFeature }: EpicFeaturesViewProps) {
   const phases = toPhases(data);
   const totalFeatures = phases.reduce((sum, p) => sum + p.features.length, 0);
   // Legacy flat features[] data has no real phases[] array to splice from — the removal
@@ -308,29 +318,21 @@ export function EpicFeaturesView({ data, onDeletePhase, onDeleteFeature }: EpicF
   return (
     // font-sans: this view can render inside the font-mono pipeline terminal subtree
     // (e.g. the Stories/Tests overview); pin the app font so it never inherits monospace.
-    <div className="space-y-6 text-sm font-sans">
-      {/* Epic header */}
-      <div className="space-y-2">
-        <div className="flex items-start gap-3">
-          <div className="flex-1 min-w-0">
-            <h2 className="text-base font-bold text-surface-900 dark:text-surface-100">{data.epic.title}</h2>
-            {data.epic.description && (
-              <p className="mt-1 text-sm text-surface-600 dark:text-surface-400">{data.epic.description}</p>
-            )}
-          </div>
-          <div className="flex flex-col items-end gap-1 flex-shrink-0">
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400">
-              {phases.length} phase{phases.length !== 1 ? 's' : ''} · {totalFeatures} feature{totalFeatures !== 1 ? 's' : ''}
-            </span>
-          </div>
-        </div>
-        {data.epic.businessValue && (
-          <div className="px-3 py-2.5 rounded-lg bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800">
-            <p className="text-xs text-brand-800 dark:text-brand-300 leading-relaxed">
-              <span className="font-semibold">Business value: </span>{data.epic.businessValue}
-            </p>
-          </div>
+    <div className="space-y-3 text-sm font-sans">
+      {/* Initiative / epic overview card — same structure as BacklogView's !isFeaturePreview path */}
+      <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/40 p-4 space-y-2">
+        <InitiativeHeader title={initiativeTitle ?? data.epic.title} />
+        {data.epic.description && (
+          <p className="text-sm text-surface-600 dark:text-surface-300">{data.epic.description}</p>
         )}
+        {data.epic.businessValue && (
+          <p className="text-xs text-surface-500 dark:text-surface-400">
+            <span className="font-semibold">Business value: </span>{data.epic.businessValue}
+          </p>
+        )}
+        <p className="text-[10px] font-semibold text-surface-400 dark:text-surface-500">
+          {phases.length} phase{phases.length !== 1 ? 's' : ''} · {totalFeatures} feature{totalFeatures !== 1 ? 's' : ''}
+        </p>
       </div>
 
       {/* Phases */}

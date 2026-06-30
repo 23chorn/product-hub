@@ -62,18 +62,12 @@
       { "metric": "Ticker card share actions per DAU", "baseline": "0", "target": "0.4", "timeframe": "30 days post-launch", "measurement": "Analytics event share_to_chat with tickerRef set" },
       { "metric": "30-day retention lift (Chat users vs non-Chat users)", "baseline": "—", "target": "+15%", "timeframe": "90 days post-launch", "measurement": "Cohort comparison: login_event within 30 days of signup, Chat vs non-Chat cohort" }
     ],
-    "counter": [
-      { "metric": "Moderation false-positive rate (legit messages incorrectly held)", "current_value": "N/A", "acceptable_floor": "Must stay below 5%", "measurement": "Human review queue: reviewer_verdict = approved / total reviewed" },
-      { "metric": "Message delivery latency (p95)", "current_value": "N/A", "acceptable_floor": "Must stay below 500ms", "measurement": "Prometheus metric: message_delivery_latency_p95" }
     ]
   },
   "non_functional_requirements": [
     { "id": "NFR-01", "category": "Performance", "requirement": "Message delivery end-to-end latency < 500ms at p95 under 5,000 concurrent users", "priority": "Must" },
-    { "id": "NFR-02", "category": "Performance", "requirement": "Message history loads within 1 second for up to 500 messages per channel", "priority": "Must" },
-    { "id": "NFR-03", "category": "Scalability", "requirement": "System supports 10,000 concurrent WebSocket connections", "priority": "Must" },
-    { "id": "NFR-04", "category": "Compliance", "requirement": "All messages retained in cold storage for 7 years (MiFID II Article 16)", "priority": "Must" },
-    { "id": "NFR-05", "category": "Safety", "requirement": "Moderation classifier achieves >92% precision on pump-and-dump detection", "priority": "Must" },
-    { "id": "NFR-06", "category": "Platform", "requirement": "MVP available on iOS and Android; Phase 1 adds push notifications (APNs + FCM); web platform in Phase 2", "priority": "Must" }
+    { "id": "NFR-02", "category": "Scalability", "requirement": "System supports 10,000 concurrent WebSocket connections", "priority": "Must" },
+    { "id": "NFR-03", "category": "Compliance", "requirement": "All messages retained in cold storage for 7 years (MiFID II Article 16)", "priority": "Must" }
   ],
   "functional_requirements": [
     { "id": "FR-01", "requirement": "Users can browse a list of public channels sorted by activity." },

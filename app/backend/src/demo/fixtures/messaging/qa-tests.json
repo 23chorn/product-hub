@@ -3,7 +3,11 @@
   "version": "1.0",
   "metadata": {
     "prd_version": "1.0",
-    "source_documents": ["PRD", "Backlog", "Architecture Document"],
+    "source_documents": [
+      "PRD",
+      "Backlog",
+      "Architecture Document"
+    ],
     "notes": "Test suite covers all five features: Channel Management, Real-time Text Messaging, Live Ticker Card Sharing, Push Notifications for Channel Activity, and Content Moderation"
   },
   "test_cases": [
@@ -31,16 +35,28 @@
           "Join button is visible for channels the user hasn't joined"
         ]
       },
-      "preconditions": ["User account exists and is authenticated"],
+      "preconditions": [
+        "User account exists and is authenticated"
+      ],
       "test_data": {
         "user_email": "test.trader@example.com",
         "channels": [
-          { "name": "AAPL Watchers", "topic": "Apple stock discussion", "members": 245 },
-          { "name": "Tech Sector", "topic": "Technology stocks", "members": 892 }
+          {
+            "name": "AAPL Watchers",
+            "topic": "Apple stock discussion",
+            "members": 245
+          },
+          {
+            "name": "Tech Sector",
+            "topic": "Technology stocks",
+            "members": 892
+          }
         ]
       },
-      "tags": ["@smoke", "@regression"],
-      "automation_notes": "Use mock channel data; verify UI renders list correctly"
+      "tags": [
+        "@smoke",
+        "@regression"
+      ]
     },
     {
       "id": "TC-F1-002",
@@ -67,14 +83,19 @@
           "Member count increments by 1"
         ]
       },
-      "preconditions": ["User is authenticated", "Channel exists"],
+      "preconditions": [
+        "User is authenticated",
+        "Channel exists"
+      ],
       "test_data": {
         "channel_id": "ch_12345",
         "channel_name": "AAPL Watchers",
         "user_id": "usr_67890"
       },
-      "tags": ["@smoke", "@regression"],
-      "automation_notes": "Verify API call to POST /channels/{id}/members succeeds"
+      "tags": [
+        "@smoke",
+        "@regression"
+      ]
     },
     {
       "id": "TC-F1-003",
@@ -97,13 +118,17 @@
           "Channel shows 'Joined' indicator instead"
         ]
       },
-      "preconditions": ["User is a member of at least one channel"],
+      "preconditions": [
+        "User is a member of at least one channel"
+      ],
       "test_data": {
         "channel_id": "ch_12345",
         "user_id": "usr_67890"
       },
-      "tags": ["@regression", "@negative"],
-      "automation_notes": "Mock membership status; verify UI state"
+      "tags": [
+        "@regression",
+        "@negative"
+      ]
     },
     {
       "id": "TC-F2-001",
@@ -129,14 +154,19 @@
           "Compose box is cleared"
         ]
       },
-      "preconditions": ["User is channel member", "WebSocket connection is active"],
+      "preconditions": [
+        "User is channel member",
+        "WebSocket connection is active"
+      ],
       "test_data": {
         "channel_id": "ch_12345",
         "user_id": "usr_67890",
         "message_text": "AAPL holding above 225 support"
       },
-      "tags": ["@smoke", "@regression"],
-      "automation_notes": "Verify POST /channels/{id}/messages API call and WebSocket message receipt"
+      "tags": [
+        "@smoke",
+        "@regression"
+      ]
     },
     {
       "id": "TC-F2-002",
@@ -161,15 +191,19 @@
           "Timestamp matches send time"
         ]
       },
-      "preconditions": ["Two active WebSocket connections"],
+      "preconditions": [
+        "Two active WebSocket connections"
+      ],
       "test_data": {
         "user_a_id": "usr_11111",
         "user_b_id": "usr_22222",
         "channel_id": "ch_12345",
         "message_text": "Market looking bullish today"
       },
-      "tags": ["@smoke", "@regression"],
-      "automation_notes": "Use two browser contexts; verify WebSocket push event delivery"
+      "tags": [
+        "@smoke",
+        "@regression"
+      ]
     },
     {
       "id": "TC-F2-003",
@@ -193,13 +227,17 @@
           "No API call is made"
         ]
       },
-      "preconditions": ["User is channel member"],
+      "preconditions": [
+        "User is channel member"
+      ],
       "test_data": {
         "channel_id": "ch_12345",
         "message_text": ""
       },
-      "tags": ["@regression", "@negative"],
-      "automation_notes": "Verify button disabled state via DOM query"
+      "tags": [
+        "@regression",
+        "@negative"
+      ]
     },
     {
       "id": "TC-F2-004",
@@ -225,14 +263,17 @@
           "No message loss occurs"
         ]
       },
-      "preconditions": ["Load test environment configured"],
+      "preconditions": [
+        "Load test environment configured"
+      ],
       "test_data": {
         "concurrent_users": 5000,
         "test_duration_seconds": 300,
         "messages_per_second": 50
       },
-      "tags": ["@performance"],
-      "automation_notes": "Use k6 or Artillery for load testing; measure WebSocket RTT"
+      "tags": [
+        "@performance"
+      ]
     },
     {
       "id": "TC-F3-001",
@@ -261,19 +302,24 @@
           "Card is rendered inline with the message text"
         ]
       },
-      "preconditions": ["User is channel member", "Market data API is available"],
+      "preconditions": [
+        "User is channel member",
+        "Market data API is available"
+      ],
       "test_data": {
         "channel_id": "ch_12345",
         "ticker_symbol": "AAPL",
         "message_text": "My entry target:",
         "expected_card_data": {
           "symbol": "AAPL",
-          "price": 225.50,
+          "price": 225.5,
           "change_percent": 1.2
         }
       },
-      "tags": ["@smoke", "@regression"],
-      "automation_notes": "Mock market data API; verify card rendering in message payload"
+      "tags": [
+        "@smoke",
+        "@regression"
+      ]
     },
     {
       "id": "TC-F3-002",
@@ -299,15 +345,19 @@
           "Update happens without full page refresh"
         ]
       },
-      "preconditions": ["Market hours", "WebSocket subscription active"],
+      "preconditions": [
+        "Market hours",
+        "WebSocket subscription active"
+      ],
       "test_data": {
         "ticker_symbol": "AAPL",
-        "initial_price": 225.50,
+        "initial_price": 225.5,
         "updated_price": 225.75,
         "update_interval_seconds": 15
       },
-      "tags": ["@regression"],
-      "automation_notes": "Use mock WebSocket feed; verify UI updates via DOM query after 15s"
+      "tags": [
+        "@regression"
+      ]
     },
     {
       "id": "TC-F3-003",
@@ -332,12 +382,16 @@
           "Picker remains open for retry"
         ]
       },
-      "preconditions": ["Market data API available"],
+      "preconditions": [
+        "Market data API available"
+      ],
       "test_data": {
         "invalid_symbol": "INVALID_SYMBOL_XYZ"
       },
-      "tags": ["@regression", "@negative"],
-      "automation_notes": "Mock empty search response; verify error state UI"
+      "tags": [
+        "@regression",
+        "@negative"
+      ]
     },
     {
       "id": "TC-F3-004",
@@ -362,15 +416,19 @@
           "Price does not auto-update"
         ]
       },
-      "preconditions": ["After-hours time"],
+      "preconditions": [
+        "After-hours time"
+      ],
       "test_data": {
         "ticker_symbol": "AAPL",
-        "last_price": 225.50,
+        "last_price": 225.5,
         "market_status": "closed",
         "last_updated": "2024-06-10T16:00:00Z"
       },
-      "tags": ["@regression", "@edge"],
-      "automation_notes": "Mock system clock or market status API response"
+      "tags": [
+        "@regression",
+        "@edge"
+      ]
     },
     {
       "id": "TC-F4-001",
@@ -394,14 +452,19 @@
           "Notification shows sender name, channel name, and a message preview"
         ]
       },
-      "preconditions": ["Push token registered", "User is a channel member"],
+      "preconditions": [
+        "Push token registered",
+        "User is a channel member"
+      ],
       "test_data": {
         "channel_id": "ch_12345",
         "sender": "Alex",
         "message_text": "Bullish on $AAPL"
       },
-      "tags": ["@smoke", "@regression"],
-      "automation_notes": "Mock APNs/FCM delivery; verify notification payload fields"
+      "tags": [
+        "@smoke",
+        "@regression"
+      ]
     },
     {
       "id": "TC-F4-002",
@@ -425,13 +488,16 @@
           "Unread badge clears for that channel"
         ]
       },
-      "preconditions": ["Notification was delivered while app was backgrounded"],
+      "preconditions": [
+        "Notification was delivered while app was backgrounded"
+      ],
       "test_data": {
         "channel_id": "ch_67890",
         "message_id": "msg_001"
       },
-      "tags": ["@regression"],
-      "automation_notes": "Verify deep link payload routes to ChannelDetailScreen with correct channel_id/message_id"
+      "tags": [
+        "@regression"
+      ]
     },
     {
       "id": "TC-F4-003",
@@ -455,13 +521,17 @@
           "A muted indicator displays on the channel in the list"
         ]
       },
-      "preconditions": ["Per-channel mute preference saved"],
+      "preconditions": [
+        "Per-channel mute preference saved"
+      ],
       "test_data": {
         "channel_id": "ch_penny",
         "muted_by": "usr_22222"
       },
-      "tags": ["@regression", "@negative"],
-      "automation_notes": "Verify notification fan-out query excludes muted user server-side"
+      "tags": [
+        "@regression",
+        "@negative"
+      ]
     },
     {
       "id": "TC-F4-004",
@@ -485,12 +555,15 @@
           "No duplicate notifications are sent to any member"
         ]
       },
-      "preconditions": ["Large channel fixture with 50,000 members"],
+      "preconditions": [
+        "Large channel fixture with 50,000 members"
+      ],
       "test_data": {
         "channel_member_count": 50000
       },
-      "tags": ["@performance"],
-      "automation_notes": "Use a load test harness to simulate fan-out; assert batching respects 30 pushes/sec/device cap"
+      "tags": [
+        "@performance"
+      ]
     },
     {
       "id": "TC-F5-001",
@@ -514,12 +587,16 @@
           "moderation_status is set to 'approved'"
         ]
       },
-      "preconditions": ["Moderation service is reachable"],
+      "preconditions": [
+        "Moderation service is reachable"
+      ],
       "test_data": {
         "message_text": "AAPL holding above 225 support"
       },
-      "tags": ["@smoke", "@regression"],
-      "automation_notes": "Assert moderation latency and final moderation_status via API response"
+      "tags": [
+        "@smoke",
+        "@regression"
+      ]
     },
     {
       "id": "TC-F5-002",
@@ -543,12 +620,16 @@
           "Message appears in the moderator review queue"
         ]
       },
-      "preconditions": ["Blocklist contains the test keyword"],
+      "preconditions": [
+        "Blocklist contains the test keyword"
+      ],
       "test_data": {
         "message_text": "guaranteed 10x pump incoming on $XYZ"
       },
-      "tags": ["@regression", "@negative"],
-      "automation_notes": "Verify message is excluded from Redis fan-out and written with moderation_status=pending"
+      "tags": [
+        "@regression",
+        "@negative"
+      ]
     },
     {
       "id": "TC-F5-003",
@@ -571,13 +652,16 @@
           "Message displays its original send timestamp, not the approval time"
         ]
       },
-      "preconditions": ["Moderator has queue access"],
+      "preconditions": [
+        "Moderator has queue access"
+      ],
       "test_data": {
         "message_id": "msg_held_001",
         "decision": "approved"
       },
-      "tags": ["@regression"],
-      "automation_notes": "Verify POST /api/moderation/:messageId/resolve triggers fan-out and preserves created_at"
+      "tags": [
+        "@regression"
+      ]
     },
     {
       "id": "TC-F5-004",
@@ -601,13 +685,17 @@
           "Suspension is logged to the audit trail"
         ]
       },
-      "preconditions": ["User has an existing violation history of 2"],
+      "preconditions": [
+        "User has an existing violation history of 2"
+      ],
       "test_data": {
         "user_id": "usr_repeat_offender",
         "prior_violations": 2
       },
-      "tags": ["@regression", "@edge"],
-      "automation_notes": "Verify violation counter and suspension trigger logic at the 3rd rejection"
+      "tags": [
+        "@regression",
+        "@edge"
+      ]
     }
   ],
   "coverage": {

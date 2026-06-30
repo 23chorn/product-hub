@@ -18,6 +18,7 @@ export const STAGE_PERSONAS: Record<string, StagePersonaInfo> = {
   qa_engineer:           { role: 'QA Engineer',                   persona: 'Vera' },
   prototype:             { role: 'Prototype',                     persona: 'Nova' },
   figma_design:          { role: 'Figma Design',                  persona: 'Luma' },
+  api_spec:              { role: 'API Contract',                  persona: 'Kira' },
   critic:                { role: 'Critic',                        persona: 'Flint' },
   curator:               { role: 'Curator',                       persona: 'Ivy' },
 };

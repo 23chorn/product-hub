@@ -68,7 +68,7 @@ function RefinementCard({ item }: { item: TechRefinement }) {
               </span>
             )}
           </div>
-          <p className="text-sm text-surface-800 dark:text-surface-200 mt-0.5 leading-snug">{item.title}</p>
+          <p className="text-base text-surface-800 dark:text-surface-200 mt-0.5 leading-snug">{item.title}</p>
         </div>
         <svg className={`w-3.5 h-3.5 text-surface-400 flex-shrink-0 mt-1 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />

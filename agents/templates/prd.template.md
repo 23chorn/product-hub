@@ -21,13 +21,10 @@ Schema:
     "primary": { "metric": "Metric name", "baseline": "Current value", "target": "Goal value", "timeframe": "e.g. 60 days post-launch", "measurement": "How measured" },
     "secondary": [
       { "metric": "Metric name", "baseline": "", "target": "", "timeframe": "", "measurement": "" }
-    ],
-    "counter": [
-      { "metric": "Metric name", "current_value": "", "acceptable_floor": "Must stay above X", "measurement": "" }
     ]
   },
   "non_functional_requirements": [
-    { "id": "NFR1", "category": "Performance|Scalability|Security|Data retention|Availability", "requirement": "Specific measurable threshold", "priority": "Must|Should|Nice-to-have" }
+    { "id": "NFR1", "category": "Performance|Scalability|Compliance|Availability", "requirement": "Specific measurable threshold", "priority": "Must|Should" }
   ],
   "functional_requirements": [
     { "id": "FR1", "requirement": "The system shall…" }
@@ -42,6 +39,6 @@ Schema:
 ```
 
 Rules:
-- Include only NFR categories relevant to this initiative.
+- non_functional_requirements: 3 max — only the highest-priority thresholds that engineering absolutely must design to. Common candidates: a latency SLA, a data retention requirement, a scalability target.
 - Aim for 10–20 functional requirements.
 - List up to 10 open questions/risks ranked by impact.

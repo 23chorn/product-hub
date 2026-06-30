@@ -265,12 +265,14 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
             const result = await pushEpicAndFeaturesToADO(workflowId);
             const { getAzureDevOpsClient } = await import('../integrations/azure-devops');
             const client = getAzureDevOpsClient();
-            const epicUrl = client.getEpicUrl(result.epicId);
+            const epicUrls = result.epicIds.map(id => client.getEpicUrl(id));
+            const epicUrl = epicUrls[0];
             stampArtifactUrl(epicUrl);
+            const epicCount = result.epicIds.length;
             insertEvent(workflowId, 'ado_pushed', 'epic_feature_planner',
-              `Epic & ${result.featureIds.length} features pushed to Azure DevOps`,
-              { ado_url: epicUrl });
-            logger.info(`[CHECKPOINT] epic_feature_planner → pushed epic #${result.epicId} + ${result.featureIds.length} features to ADO`);
+              `${epicCount === 1 ? 'Epic' : `${epicCount} Epics`} & ${result.featureIds.length} features pushed to Azure DevOps`,
+              epicUrls.length === 1 ? { ado_url: epicUrls[0] } : { ado_url: epicUrls[0], ado_urls: epicUrls });
+            logger.info(`[CHECKPOINT] epic_feature_planner → pushed ${epicCount} epic(s) + ${result.featureIds.length} features to ADO`);
           }
         } catch (err: any) {
           logger.error(`[CHECKPOINT] Failed to push epic to ADO: ${err.message}`);
@@ -769,7 +771,6 @@ workflowRoutes.get('/:id/artifacts', (req: Request, res: Response) => {
       WHERE s.item_id = ?
       AND a.type != 'critic_review'
       AND a.type NOT LIKE '%_diff'
-      AND a.type != 'epic_features_enriched'
       ORDER BY a.created_at
     `).all(workflow.item_id);
 

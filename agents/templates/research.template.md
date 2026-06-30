@@ -8,7 +8,7 @@ Schema:
   "executive_summary": "Exactly two paragraphs, separated by a literal blank line (\n\n) inside the string. Paragraph 1: market opportunity. Paragraph 2: top 2–3 findings the PM needs to act on. Inline refs like [1].",
   "problem_space": "1–3 short paragraphs. If more than one, separate each with a literal blank line (\n\n) inside the string. What problem are users experiencing today, what it costs them. Cite evidence with [N] refs.",
   "market_size": {
-    "tam": "Total addressable market figure + source ref",
+    "tam": "Total addressable market figure + source ref — omit this field entirely (set market_size to null) if no web search tool is available, since TAM figures without live sources are unreliable",
     "growth_cagr": "Growth rate + source ref",
     "key_driver": "Primary growth driver"
   },
@@ -48,3 +48,4 @@ Citation rules:
 - If no source exists for a claim, write "[Unverified]" instead of a number.
 - Every inline [N] must appear in references; every references entry must be cited inline.
 - If you have no web search tool available in this session, omit "references" entirely (use `[]`) and do not use [N] markers — see your system prompt's citation policy for this case.
+- If no web search tool is available, set `market_size` to `null` — TAM/SAM/SOM figures without live sources are unreliable and should not be invented.

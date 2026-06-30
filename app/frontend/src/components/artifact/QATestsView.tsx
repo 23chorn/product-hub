@@ -91,7 +91,7 @@ function TestCaseCard({ tc, onDelete }: { tc: TestCase; onDelete?: () => void })
             {tc.prd_ref && <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400">{tc.prd_ref}</span>}
             {(tc.story_ref || tc.linkedStory) && <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400">{tc.story_ref ?? tc.linkedStory}</span>}
           </div>
-          <p className="text-sm text-surface-800 dark:text-surface-200 mt-0.5 leading-snug">{tc.title}</p>
+          <p className="text-base text-surface-800 dark:text-surface-200 mt-0.5 leading-snug">{tc.title}</p>
           {tc.category && <p className="text-[10px] text-surface-400 dark:text-surface-500 mt-0.5">{tc.category}</p>}
         </div>
         <svg className={`w-3.5 h-3.5 text-surface-400 flex-shrink-0 mt-1 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">

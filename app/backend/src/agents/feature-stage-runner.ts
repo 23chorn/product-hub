@@ -396,7 +396,7 @@ const STORY_REVISION_SPEC: SurgicalRevisionSpec = {
       `- Copy all other stories for Feature ${featureNum} EXACTLY as-is.\n` +
       `- Do NOT add new stories unless the feedback explicitly requests it.\n` +
       `- Do NOT restructure, reorder, rename, or rewrite any field not mentioned in the feedback.\n` +
-      `- Preserve the exact JSON schema: every story must have story_id, title, as_a, i_want, so_that, acceptance_criteria, technical_acceptance_criteria, platform, estimated_points, depends_on.\n` +
+      `- Preserve the exact JSON schema: every story must have story_id, title, as_a, i_want, so_that, acceptance_criteria, technical_acceptance_criteria, platform, depends_on.\n` +
       `- Return the complete Feature ${featureNum} JSON (epic + this one feature + all its stories) — only the flagged stories will differ from the prior draft.${platformScopeSection ? '\n- Stay within the Platform Scope above — drop any existing story that falls outside it even if the feedback didn\'t mention it.' : ''}`
     );
   },

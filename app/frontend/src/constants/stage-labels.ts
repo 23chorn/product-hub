@@ -59,6 +59,7 @@ const ARTIFACT_TYPE_LABELS_BASE: Record<string, string> = {
   qa:            'QA Tests',       // session-mode alias
   prototype:     'Prototype',
   figma_design:  'Figma Mockups',
+  api_spec:      'API Contract',
   critic_review: 'Critic Review',
   document:      'Document',
 };

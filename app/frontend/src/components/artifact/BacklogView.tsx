@@ -6,9 +6,10 @@ import { toPhases, PHASE_COLORS, PrdRefTags, type EpicFeature, type EpicFeatures
 import { ExpandableText } from '../common/ExpandableText';
 import { ExpandableList } from '../common/ExpandableList';
 import { DeleteItemButton } from '../common/DeleteItemButton';
+import { Chevron, InitiativeHeader, PhaseTag } from './ArtifactPrimitives';
 
 const DEFAULT_PHASE_LABEL = 'MVP';
-const UNKNOWN_PHASE_COLOR = 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 border-surface-200 dark:border-surface-600';
+const UNKNOWN_PHASE_COLOR = 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300';
 
 interface EpicSection {
   key: string;
@@ -98,26 +99,6 @@ function StateBucketPill({ bucket }: { bucket?: WorkItemStateBucket }) {
   );
 }
 
-/** Shared expand/collapse caret — used by the story, feature, and epic toggle rows. */
-function Chevron({ expanded, className = 'w-3.5 h-3.5 text-surface-400' }: { expanded: boolean; className?: string }) {
-  return (
-    <svg className={`${className} flex-shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-    </svg>
-  );
-}
-
-/** Initiative label shown above the epic — in the single-feature checkpoint preview and the
- *  merged multi-feature overview alike, so both contexts root the same way. */
-function InitiativeHeader({ title }: { title?: string }) {
-  if (!title) return null;
-  return (
-    <div>
-      <span className="text-[10px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500">Initiative</span>
-      <p className="text-sm font-medium text-surface-600 dark:text-surface-400 truncate">{title}</p>
-    </div>
-  );
-}
 
 
 /** Render hours with AI comparison: "3h (was 8h)" or just "8h" when not AI-assisted. */
@@ -231,7 +212,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
           <Chevron expanded={isExpanded} className="w-3.5 h-3.5 mt-0.5 text-surface-400" />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <span className="text-sm text-surface-900 dark:text-surface-100 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">
+              <span className="text-base text-surface-900 dark:text-surface-100 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">
                 {story.title}
               </span>
               {story.effort != null && (
@@ -411,7 +392,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
     const featureAcceptanceCriteria = feature.acceptance_criteria ?? epicMatch?.acceptanceCriteria;
     const hasExpandedDetail = !!epicMatch?.rationale || (featureAcceptanceCriteria?.length ?? 0) > 0 || !!epicMatch?.prdRef;
     return (
-      <div key={fi}>
+      <div key={fi} className="rounded-lg border border-surface-200 dark:border-surface-700 overflow-hidden">
         <button
           onClick={() => toggleFeature(fi)}
           className="w-full text-left flex items-start gap-2 px-4 py-3 bg-surface-50 dark:bg-surface-800/60 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
@@ -420,15 +401,6 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-0.5 flex-wrap">
               <span className="text-xs font-semibold uppercase tracking-wide text-brand-500 dark:text-brand-400">Feature</span>
-              {feature.phase && (
-                <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                  feature.phase === 'MVP'
-                    ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                    : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-400'
-                }`}>
-                  {feature.phase}
-                </span>
-              )}
               {featureEffort > 0 && (
                 <span className="text-xs text-surface-400 dark:text-surface-500">
                   {featureEffort} pts
@@ -457,9 +429,9 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
               ) : null}
               <StateBucketPill bucket={stateByLocalKey?.get(featureKey)} />
             </div>
-            <h4 className="text-sm font-semibold text-surface-900 dark:text-surface-100">{feature.title}</h4>
+            <h4 className="text-base font-semibold text-surface-900 dark:text-surface-100">{feature.title}</h4>
             {feature.description && (
-              <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">{feature.description}</p>
+              <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">{feature.description}</p>
             )}
             {!isExpanded && (
               <p className="text-xs text-surface-400 dark:text-surface-500 mt-1">
@@ -512,56 +484,44 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
         </div>
       )}
 
-      {/* Initiative → Epic → Feature hierarchy — only for a single feature's refinement checkpoint */}
+      {/* Initiative / Epic / Feature context — same card structure as the !isFeaturePreview path */}
       {tier === 3 && data.epic && isFeaturePreview && (() => {
         const feature = features[0];
+        const epic = data.epic;
         return (
           <div className="space-y-3">
-            <InitiativeHeader title={initiativeTitle} />
-
-            <div className="pl-3 border-l-2 border-cyan-200 dark:border-cyan-800 space-y-2">
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-cyan-500 dark:text-cyan-400">Epic</span>
-              <h2 className="text-base font-bold text-surface-900 dark:text-surface-100">{data.epic.title}</h2>
-              {data.epic.description && (
-                <ExpandableText text={data.epic.description} className="text-sm text-surface-600 dark:text-surface-400" />
+            <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/40 p-4 space-y-2">
+              <InitiativeHeader title={initiativeTitle ?? epic.title} />
+              {epic.description && (
+                <ExpandableText text={epic.description} className="text-sm text-surface-600 dark:text-surface-300" />
               )}
-              {data.epic.businessValue && (
-                <div className="px-3 py-2 rounded-lg bg-brand-50 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800">
-                  <p className="text-xs text-brand-800 dark:text-brand-300 leading-relaxed">
-                    <span className="font-semibold">Business value: </span>{data.epic.businessValue}
-                  </p>
-                </div>
-              )}
-
-              {feature && (
-                <div className="pl-4 border-l-2 border-brand-200 dark:border-brand-800 space-y-1 pt-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-semibold uppercase tracking-wide text-brand-500 dark:text-brand-400">Feature — being refined</span>
-                    {feature.phase && (
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                        feature.phase === 'MVP'
-                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                          : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-400'
-                      }`}>
-                        {feature.phase}
-                      </span>
-                    )}
-                  </div>
-                  <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100">{feature.title}</h3>
-                  {feature.description && (
-                    <p className="text-xs text-surface-600 dark:text-surface-400">{feature.description}</p>
-                  )}
-                  <span className="inline-block text-xs text-surface-400 dark:text-surface-500 pt-0.5">
-                    {totalStories} stor{totalStories !== 1 ? 'ies' : 'y'}
-                    {totalEffort > 0 && <> · {totalEffort} pts</>}
-                    <AggregateHours hours={totalHours} traditionalHours={totalTraditionalHours} aiAssisted={aiAssisted} />
-                    {sprintMeta?.sprintsRequired != null && (
-                      <> · {sprintMeta.sprintsRequired} sprints</>
-                    )}
-                  </span>
-                </div>
+              {epic.businessValue && (
+                <p className="text-xs text-surface-500 dark:text-surface-400">
+                  <span className="font-semibold">Business value: </span>{epic.businessValue}
+                </p>
               )}
             </div>
+            {feature && (
+              <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/60 px-4 py-3">
+                <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-brand-500 dark:text-brand-400">Feature</span>
+                  {totalEffort > 0 && (
+                    <span className="text-xs text-surface-400 dark:text-surface-500">
+                      {totalEffort} pts
+                      <AggregateHours hours={totalHours} traditionalHours={totalTraditionalHours} aiAssisted={aiAssisted} />
+                      {sprintMeta?.sprintsRequired != null && <> · {sprintMeta.sprintsRequired} sprints</>}
+                    </span>
+                  )}
+                </div>
+                <h4 className="text-base font-semibold text-surface-900 dark:text-surface-100">{feature.title}</h4>
+                {feature.description && (
+                  <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">{feature.description}</p>
+                )}
+                <p className="text-xs text-surface-400 dark:text-surface-500 mt-1">
+                  {totalStories} stor{totalStories !== 1 ? 'ies' : 'y'}
+                </p>
+              </div>
+            )}
           </div>
         );
       })()}
@@ -610,21 +570,22 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
               const isExpanded = expandedEpics.has(section.key);
               const sectionStories = section.entries.reduce((sum, { feature }) => sum + feature.stories.length, 0);
               return (
-                <div key={section.key} className="rounded-lg border border-surface-200 dark:border-surface-700 hover:border-cyan-200 dark:hover:border-cyan-800 transition-colors overflow-hidden">
+                <div key={section.key} className="rounded-lg border border-surface-200 dark:border-surface-700 hover:border-violet-200 dark:hover:border-violet-800 transition-colors overflow-hidden">
                   <button
                     onClick={() => toggleEpic(section.key)}
-                    className="group w-full text-left flex items-start gap-2 bg-surface-50 dark:bg-surface-800/40 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 transition-colors p-4"
+                    className="group w-full text-left flex items-start gap-2 bg-surface-50 dark:bg-surface-800/40 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors p-4"
                   >
-                    <Chevron expanded={isExpanded} className="w-4 h-4 mt-1 text-surface-400 group-hover:text-cyan-500 transition-colors" />
+                    <Chevron expanded={isExpanded} className="w-4 h-4 mt-1 text-surface-400 group-hover:text-violet-500 transition-colors" />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${section.colorClass}`}>{section.key}</span>
+                        <span className="text-xs font-semibold uppercase tracking-wide text-violet-500 dark:text-violet-400">Epic</span>
+                        <PhaseTag label={section.key} colorClass={section.colorClass} />
                         <span className="text-xs text-surface-400">·</span>
                         <span className="text-xs text-surface-500 dark:text-surface-400">
                           {section.entries.length} feature{section.entries.length !== 1 ? 's' : ''} · {sectionStories} stor{sectionStories !== 1 ? 'ies' : 'y'}
                         </span>
                       </div>
-                      <h3 className="text-base font-semibold text-surface-900 dark:text-surface-100">{section.title}</h3>
+                      <h3 className="text-lg font-semibold text-surface-900 dark:text-surface-100">{section.title}</h3>
                       {section.deliverable && (
                         <p className="text-xs text-surface-500 dark:text-surface-400 mt-1 italic">
                           <span className="font-medium not-italic">Ships: </span>{section.deliverable}
@@ -634,7 +595,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
                   </button>
 
                   {isExpanded && (
-                    <div className="divide-y divide-surface-100 dark:divide-surface-700 border-t border-surface-200 dark:border-surface-700">
+                    <div className="border-t border-surface-200 dark:border-surface-700 p-4 space-y-2">
                       {section.entries.map(({ feature, fi }) =>
                         renderFeatureRow(feature, fi, epicFeatureLookup.get(`${section.key}::${feature.title}`))
                       )}
@@ -841,11 +802,11 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
           );
         }
 
-        // Tier 3 with no epic data (rare) — same collapsible feature rows, just not nested
+        // Tier 3 with no epic data (rare) — same collapsible feature cards, just not nested
         // under an epic card since there's no epic to nest them under.
         if (hasFeatures) {
           return (
-            <div className="rounded-lg border border-surface-200 dark:border-surface-700 divide-y divide-surface-100 dark:divide-surface-700">
+            <div className="space-y-2">
               {features.map((feature, fi) => renderFeatureRow(feature, fi))}
             </div>
           );

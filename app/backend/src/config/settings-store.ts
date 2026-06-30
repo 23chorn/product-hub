@@ -89,7 +89,7 @@ export function getSprintSettings(): SprintSettings {
  */
 export const ALL_STAGES = [
   'analyst', 'pm_prd', 'prototype', 'figma_design',
-  'solution_architect', 'epic_feature_planner', 'story_decomposition',
+  'solution_architect', 'api_spec', 'epic_feature_planner', 'story_decomposition',
 ];
 
 const STAGE_KEY_PREFIX = 'stage_enabled:';

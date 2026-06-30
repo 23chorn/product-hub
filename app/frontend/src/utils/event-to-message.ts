@@ -34,6 +34,8 @@ export function eventToMessage(event: WorkflowEvent): { role: 'coordinator'; con
         if (details.feature_url) lines.push(`→ View Feature: ${details.feature_url}`);
         if (details.test_plan_url) lines.push(`→ View Test Plan: ${details.test_plan_url}`);
         if (lines.length > 0) content = `${content}\n${lines.join('\n')}`;
+      } else if (details.ado_urls && Array.isArray(details.ado_urls) && details.ado_urls.length > 0) {
+        content = `${content}\n${(details.ado_urls as string[]).map((u: string) => `→ ${u}`).join('\n')}`;
       } else if (details.ado_url) {
         content = `${content}\n→ ${details.ado_url}`;
       }

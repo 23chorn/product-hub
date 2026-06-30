@@ -1,0 +1,341 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "xCube In-App Messaging & Trade Chat API",
+    "version": "1.0.0",
+    "description": "REST and WebSocket contract for the channel-based real-time trade chat layer added to xCube."
+  },
+  "servers": [
+    { "url": "/api/v1", "description": "xCube API — all REST endpoints" }
+  ],
+  "tags": [
+    { "name": "Channels", "description": "Channel discovery, creation, and membership management" },
+    { "name": "Messages", "description": "Message history retrieval (cursor-based)" },
+    { "name": "WebSocket", "description": "Real-time send/receive over a persistent WebSocket connection" }
+  ],
+  "paths": {
+    "/channels": {
+      "get": {
+        "operationId": "listChannels",
+        "summary": "List public channels",
+        "description": "Satisfies FR-01: Users can browse available topic channels sorted by most recent activity.",
+        "tags": ["Channels"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "cursor", "in": "query", "schema": { "type": "string" }, "description": "Pagination cursor — value of next_cursor from the previous response" },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 }, "description": "Number of channels to return" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data", "next_cursor"],
+                  "properties": {
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/Channel" } },
+                    "next_cursor": { "type": "string", "nullable": true }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "operationId": "createChannel",
+        "summary": "Create a public channel",
+        "description": "Satisfies FR-02: Authenticated users can create a new topic channel with a unique name.",
+        "tags": ["Channels"],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateChannelRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Channel" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "409": {
+            "description": "Channel name already taken",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error", "message"],
+                  "properties": {
+                    "error": { "type": "string", "example": "CONFLICT" },
+                    "message": { "type": "string", "example": "Channel name is already taken" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/channels/{id}/join": {
+      "post": {
+        "operationId": "joinChannel",
+        "summary": "Join a channel",
+        "description": "Satisfies FR-03: Users can join any public channel; the member_count is incremented atomically. Idempotent — joining an already-joined channel returns 200.",
+        "tags": ["Channels"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "Joined (or already a member)" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/channels/{id}/leave": {
+      "post": {
+        "operationId": "leaveChannel",
+        "summary": "Leave a channel",
+        "description": "Satisfies FR-04: Users can leave a channel; member_count is decremented atomically. Idempotent — leaving a channel the user is not a member of returns 200.",
+        "tags": ["Channels"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "Left (or already not a member)" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/channels/{id}/messages": {
+      "get": {
+        "operationId": "listMessages",
+        "summary": "Fetch message history for a channel",
+        "description": "Satisfies FR-05: Members can retrieve paginated message history sorted most-recent-first. Reads from Cassandra; cursor is the created_at of the oldest message in the previous page.",
+        "tags": ["Messages"],
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "before", "in": "query", "schema": { "type": "string", "format": "date-time" }, "description": "ISO 8601 timestamp — return messages created before this value (pagination cursor)" },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data", "next_cursor"],
+                  "properties": {
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/Message" } },
+                    "next_cursor": { "type": "string", "format": "date-time", "nullable": true, "description": "created_at of the oldest returned message; pass as ?before= on the next request" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": {
+            "description": "User is not a member of this channel",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error", "message"],
+                  "properties": {
+                    "error": { "type": "string", "example": "FORBIDDEN" },
+                    "message": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/ws/chat": {
+      "get": {
+        "operationId": "connectWebSocket",
+        "summary": "Open a real-time WebSocket connection",
+        "description": "Satisfies FR-06 / FR-07: Delivers messages within 500ms to all channel subscribers and pushes live ticker card price updates on the same stream. JWT is passed as ?token= query parameter; connection is rejected immediately if the token is invalid or expired.",
+        "tags": ["WebSocket"],
+        "parameters": [
+          { "name": "token", "in": "query", "required": true, "schema": { "type": "string" }, "description": "JWT bearer token — used instead of Authorization header for the initial WebSocket upgrade" }
+        ],
+        "responses": {
+          "101": { "description": "Switching Protocols — WebSocket connection established" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        },
+        "x-websocket-frames": {
+          "client_to_server": [
+            {
+              "type": "subscribe",
+              "description": "Subscribe to real-time updates for a channel",
+              "schema": { "type": "object", "required": ["type", "channel_id"], "properties": { "type": { "type": "string", "enum": ["subscribe"] }, "channel_id": { "type": "string", "format": "uuid" } } }
+            },
+            {
+              "type": "unsubscribe",
+              "description": "Stop receiving updates for a channel",
+              "schema": { "type": "object", "required": ["type", "channel_id"], "properties": { "type": { "type": "string", "enum": ["unsubscribe"] }, "channel_id": { "type": "string", "format": "uuid" } } }
+            },
+            {
+              "type": "send",
+              "description": "Send a message to a subscribed channel; subject to the 30 msg/min rate limit",
+              "schema": { "type": "object", "required": ["type", "channel_id", "content"], "properties": { "type": { "type": "string", "enum": ["send"] }, "channel_id": { "type": "string", "format": "uuid" }, "content": { "type": "string", "maxLength": 4000 }, "ticker_ref": { "type": "string", "nullable": true, "description": "JSON-encoded ticker card attachment, e.g. {\"symbol\":\"NVDA\",\"price\":875.42}" } } }
+            }
+          ],
+          "server_to_client": [
+            {
+              "type": "message",
+              "description": "A new message delivered to a subscribed channel",
+              "schema": { "$ref": "#/components/schemas/Message" }
+            },
+            {
+              "type": "ticker_update",
+              "description": "Real-time price update for a ticker card already attached to a channel message; batched to a maximum of 1 update/second per card",
+              "schema": { "type": "object", "required": ["type", "symbol", "price", "change_pct"], "properties": { "type": { "type": "string", "enum": ["ticker_update"] }, "symbol": { "type": "string" }, "price": { "type": "number" }, "change_pct": { "type": "number" } } }
+            },
+            {
+              "type": "moderation_held",
+              "description": "Sent back to the originating client when their message has been flagged and is pending human review",
+              "schema": { "type": "object", "required": ["type", "message_id"], "properties": { "type": { "type": "string", "enum": ["moderation_held"] }, "message_id": { "type": "string", "format": "uuid" } } }
+            },
+            {
+              "type": "error",
+              "description": "Protocol-level error (e.g. rate limit exceeded, invalid frame)",
+              "schema": { "type": "object", "required": ["type", "code", "message"], "properties": { "type": { "type": "string", "enum": ["error"] }, "code": { "type": "integer", "example": 429 }, "message": { "type": "string" } } }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Channel": {
+        "type": "object",
+        "description": "Matches the channels entity from the architecture data model (PostgreSQL).",
+        "required": ["id", "name", "topic", "member_count", "last_message_at", "created_at"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string", "example": "aapl-watchers" },
+          "topic": { "type": "string", "example": "AAPL price action and setups" },
+          "member_count": { "type": "integer", "example": 142 },
+          "last_message_at": { "type": "string", "format": "date-time", "nullable": true },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Message": {
+        "type": "object",
+        "description": "Matches the messages entity from the architecture data model (Cassandra). Content is never returned if moderation_status is rejected.",
+        "required": ["message_id", "channel_id", "user_id", "content", "moderation_status", "created_at"],
+        "properties": {
+          "message_id": { "type": "string", "format": "uuid" },
+          "channel_id": { "type": "string", "format": "uuid" },
+          "user_id": { "type": "string", "format": "uuid" },
+          "content": { "type": "string" },
+          "ticker_ref": {
+            "type": "object",
+            "nullable": true,
+            "description": "Attached ticker card; null if no ticker was shared",
+            "properties": {
+              "symbol": { "type": "string", "example": "NVDA" },
+              "price": { "type": "number", "example": 875.42 },
+              "change_pct": { "type": "number", "example": 2.31 }
+            }
+          },
+          "moderation_status": { "type": "string", "enum": ["approved", "pending", "rejected"] },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateChannelRequest": {
+        "type": "object",
+        "required": ["name", "topic"],
+        "properties": {
+          "name": { "type": "string", "minLength": 2, "maxLength": 64, "pattern": "^[a-z0-9-]+$", "example": "nvda-bulls" },
+          "topic": { "type": "string", "maxLength": 256, "example": "NVDA news and price action" }
+        }
+      }
+    },
+    "responses": {
+      "ValidationError": {
+        "description": "Request validation failed",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["error", "message"],
+              "properties": {
+                "error": { "type": "string", "example": "VALIDATION_ERROR" },
+                "message": { "type": "string" },
+                "details": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "field": { "type": "string" },
+                      "message": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Authentication required or token invalid",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["error", "message"],
+              "properties": {
+                "error": { "type": "string", "example": "UNAUTHORIZED" },
+                "message": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": ["error", "message"],
+              "properties": {
+                "error": { "type": "string", "example": "NOT_FOUND" },
+                "message": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}

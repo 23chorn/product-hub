@@ -2,19 +2,17 @@
   "epic": {
     "title": "In-App Messaging & Trade Chat",
     "description": "Enable retail investors to discuss trade ideas, share live ticker cards, and build investment communities within xCube without switching to external platforms like Discord or WhatsApp.",
-    "businessValue": "Reduces the 6–8 minute context-switch gap to external chat tools, targeting an 18% increase in trade conversion from peer discussions. Users who engage in in-app chat are 3.4× more likely to remain active after 30 days.",
-    "prdLink": "PRD: In-App Messaging & Trade Chat — xCube"
+    "businessValue": "Reduces the 6\u20138 minute context-switch gap to external chat tools, targeting an 18% increase in trade conversion from peer discussions. Users who engage in in-app chat are 3.4\u00d7 more likely to remain active after 30 days.",
+    "prdLink": "PRD: In-App Messaging & Trade Chat \u2014 xCube"
   },
   "phases": [
     {
       "label": "MVP",
-      "epicTitle": "MVP — Core Chat Infrastructure",
-      "deliverable": "Users can create or join topic-based channels, send text messages in real time, and have those messages persist and sync across devices",
+      "epicTitle": "MVP \u2014 Core Chat Infrastructure",
       "features": [
         {
           "title": "Channel Management",
-          "description": "Users can create, join, and leave topic-based trading channels with configurable public or private membership. Channel organisation is how traders self-select into relevant communities (by ticker, sector, or strategy), which directly drives the retention metric the initiative is targeting. A messaging transport without addressable channels has no product value — users cannot find relevant conversations.",
-          "rationale": "Inseparable from message delivery in MVP — a transport with no room structure cannot be tested with real users or validate the community hypothesis.",
+          "description": "Users can create, join, and leave topic-based trading channels with configurable public or private membership. Channel organisation is how traders self-select into relevant communities (by ticker, sector, or strategy), which directly drives the retention metric the initiative is targeting. A messaging transport without addressable channels has no product value \u2014 users cannot find relevant conversations.",
           "acceptanceCriteria": [
             "Users can create a channel with a name, topic description, and privacy setting (public or private) in under 3 taps",
             "Channel creators can invite members to private channels via a uniquely generated shareable link that expires after 48 hours",
@@ -22,27 +20,34 @@
             "A public channel directory is searchable by channel name and topic tag with results returning in under 300ms"
           ],
           "prdRef": {
-            "functionalRequirements": ["FR-03", "FR-04"],
-            "nonFunctionalRequirements": [],
-            "userJourneys": ["Journey 1: Join a topic channel and discuss a ticker"]
+            "functionalRequirements": [
+              "FR-03",
+              "FR-04"
+            ],
+            "userJourneys": [
+              "Journey 1: Join a topic channel and discuss a ticker"
+            ]
           },
           "deferredTo": null,
           "stories": []
         },
         {
           "title": "Real-time Text Messaging",
-          "description": "Users can send and receive text messages in topic-based channels with sub-500ms delivery during market hours. This is the foundational interaction that eliminates the need to leave xCube for Discord or WhatsApp — the core hypothesis to validate before investing in enrichment features. Without reliable, low-latency delivery, every downstream feature in this initiative is worthless.",
-          "rationale": "The transport layer is the prerequisite for all other features in this initiative. Nothing can ship before it, and it must be validated with real users before Phase 1 features are layered on.",
+          "description": "Users can send and receive text messages in topic-based channels with sub-500ms delivery during market hours. This is the foundational interaction that eliminates the need to leave xCube for Discord or WhatsApp \u2014 the core hypothesis to validate before investing in enrichment features. Without reliable, low-latency delivery, every downstream feature in this initiative is worthless.",
           "acceptanceCriteria": [
-            "Messages are delivered to all channel members within 500ms at p99 during market hours (NFR2 — Performance)",
-            "Messages persist and are retrievable across devices for 7 years with cryptographic integrity verification (NFR5 — Data Retention)",
+            "Messages are delivered to all channel members within 500ms at p99 during market hours (NFR2 \u2014 Performance)",
+            "Messages persist and are retrievable across devices for 7 years with cryptographic integrity verification (NFR5 \u2014 Data Retention)",
             "Offline messages are queued and delivered automatically when the user reconnects within the same session",
             "Message send failures surface a user-visible error with a manual retry option within 3 seconds of failure detection"
           ],
           "prdRef": {
-            "functionalRequirements": ["FR-01", "FR-02"],
-            "nonFunctionalRequirements": ["NFR2", "NFR5"],
-            "userJourneys": ["Journey 3: Send a message in a channel"]
+            "functionalRequirements": [
+              "FR-01",
+              "FR-02"
+            ],
+            "userJourneys": [
+              "Journey 3: Send a message in a channel"
+            ]
           },
           "deferredTo": null,
           "stories": []
@@ -51,58 +56,62 @@
     },
     {
       "label": "Phase 1",
-      "epicTitle": "Phase 1 — Engagement & Trade Conversion",
-      "deliverable": "Users can embed live ticker cards in messages to drive trade conversion from discussions, and receive push notifications that re-engage them when the app is backgrounded",
+      "epicTitle": "Phase 1 \u2014 Engagement & Trade Conversion",
       "features": [
         {
           "title": "Live Ticker Card Sharing",
-          "description": "Users can embed a live-updating stock ticker price card directly into any message; recipients can tap the card to navigate to the instrument detail screen with a pre-filled buy order. This is the feature that closes the loop from social discussion to trade execution — the primary conversion mechanism underpinning the 18% trade conversion hypothesis. It cannot ship in MVP because it requires stable message delivery and real channel membership data to validate card engagement rates.",
-          "rationale": "Depends on validated message delivery from MVP. Shipping it in MVP would conflate messaging reliability signals with ticker-card engagement signals, making the MVP hypothesis unreadable.",
+          "description": "Users can embed a live-updating stock ticker price card directly into any message; recipients can tap the card to navigate to the instrument detail screen with a pre-filled buy order. This is the feature that closes the loop from social discussion to trade execution \u2014 the primary conversion mechanism underpinning the 18% trade conversion hypothesis. It cannot ship in MVP because it requires stable message delivery and real channel membership data to validate card engagement rates.",
           "acceptanceCriteria": [
             "Users can attach a ticker card to a message from any instrument detail screen via a 'Share to Chat' button without leaving the instrument view",
-            "Ticker cards render current price and percentage change within 200ms of message open at p95 (NFR2 — Performance)",
+            "Ticker cards render current price and percentage change within 200ms of message open at p95 (NFR2 \u2014 Performance)",
             "Tapping a ticker card navigates the recipient directly to the instrument detail screen with a pre-filled buy order at the card's displayed price",
             "Cards display live price updates during market hours without requiring a manual message refresh or re-open"
           ],
           "prdRef": {
-            "functionalRequirements": ["FR-05", "FR-06"],
-            "nonFunctionalRequirements": ["NFR2"],
-            "userJourneys": ["Journey 2: Share a live ticker card in a message"]
+            "functionalRequirements": [
+              "FR-05",
+              "FR-06"
+            ],
+            "userJourneys": [
+              "Journey 2: Share a live ticker card in a message"
+            ]
           },
           "deferredTo": null,
           "stories": []
         },
         {
           "title": "Push Notifications for Channel Activity",
-          "description": "Users receive push notifications for new messages in joined channels when the app is backgrounded, with per-channel muting controls. Notifications close the re-engagement loop — without them, users must actively return to xCube to discover new messages, which is the primary drop-off point identified in the retention analysis. Phase 1 is the correct slot because notification reliability depends on stable message delivery from MVP.",
-          "rationale": "Notification payload accuracy depends on message delivery stability from MVP. Shipping in MVP would add notification infrastructure complexity before the core transport is validated.",
+          "description": "Users receive push notifications for new messages in joined channels when the app is backgrounded, with per-channel muting controls. Notifications close the re-engagement loop \u2014 without them, users must actively return to xCube to discover new messages, which is the primary drop-off point identified in the retention analysis. Phase 1 is the correct slot because notification reliability depends on stable message delivery from MVP.",
           "acceptanceCriteria": [
-            "Push notifications are delivered within 2 seconds of message send at p95 (NFR2 — Performance)",
+            "Push notifications are delivered within 2 seconds of message send at p95 (NFR2 \u2014 Performance)",
             "Users can mute notifications independently per channel without leaving the channel or losing membership",
             "Tapping a notification deep-links the user directly to the correct channel and the specific message that triggered the notification",
             "Notification payload includes sender display name, channel name, and a 100-character message preview truncated with ellipsis"
           ],
           "prdRef": {
-            "functionalRequirements": ["FR-07"],
-            "nonFunctionalRequirements": ["NFR2"],
-            "userJourneys": ["Journey 1: Join a topic channel and discuss a ticker"]
+            "functionalRequirements": [
+              "FR-07"
+            ],
+            "userJourneys": [
+              "Journey 1: Join a topic channel and discuss a ticker"
+            ]
           },
           "deferredTo": null,
           "stories": []
         },
         {
           "title": "Content Moderation",
-          "description": "The system automatically flags messages containing hate speech or pump-and-dump signals for human moderator review within 1 second of send, with a graduated enforcement policy for repeat offenders. Without moderation, regulatory exposure and community quality degradation will erode the retention gains from core messaging — FCA and SEC guidelines require timely review of flagged financial promotion signals. Phase 1 is the right slot because MVP needs real message volume to tune detection thresholds before automated enforcement is reliable.",
-          "rationale": "Detection threshold tuning requires real message volume from MVP. A manual review queue ships in MVP as interim mitigation to satisfy compliance obligations during the validation window.",
+          "description": "The system automatically flags messages containing hate speech or pump-and-dump signals for human moderator review within 1 second of send, with a graduated enforcement policy for repeat offenders. Without moderation, regulatory exposure and community quality degradation will erode the retention gains from core messaging \u2014 FCA and SEC guidelines require timely review of flagged financial promotion signals. Phase 1 is the right slot because MVP needs real message volume to tune detection thresholds before automated enforcement is reliable.",
           "acceptanceCriteria": [
-            "Messages containing hate speech or identifiable pump-and-dump patterns are auto-flagged within 1 second of send and quarantined from public view (NFR4 — Compliance)",
+            "Messages containing hate speech or identifiable pump-and-dump patterns are auto-flagged within 1 second of send and quarantined from public view (NFR4 \u2014 Compliance)",
             "Flagged messages are assigned to a human moderator review queue with a target 24-hour SLA for first review",
             "Users accumulating 3 confirmed violations within a rolling 30-day window receive a graduated response: written warning, then 7-day suspension, then permanent ban",
             "Moderators can overturn false-positive flags and restore messages; false-positive rate is logged and reported weekly to the Trust & Safety team"
           ],
           "prdRef": {
-            "functionalRequirements": ["FR-08"],
-            "nonFunctionalRequirements": ["NFR4"],
+            "functionalRequirements": [
+              "FR-08"
+            ],
             "userJourneys": []
           },
           "deferredTo": null,
@@ -110,14 +119,5 @@
         }
       ]
     }
-  ],
-  "outOfScope": [
-    "Message threading (replies) — deferred to Phase 2 after validating flat channel engagement",
-    "Direct messages (1:1 DMs) — Phase 2; MVP and Phase 1 are group channels only",
-    "Message reactions (emoji) — Phase 2 after user feedback on core chat experience",
-    "Voice messaging — no audio infrastructure planned; deferred to Phase 3",
-    "Video chat or screen sharing — not planned for this initiative",
-    "Desktop or web app — mobile-only for MVP and Phase 1; web in Phase 2",
-    "Automated compliance reporting to regulators — Phase 2 after manual moderation workflow is established"
   ]
 }

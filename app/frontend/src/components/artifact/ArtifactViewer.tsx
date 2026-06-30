@@ -16,7 +16,7 @@ import { ApproveConfirmModal } from './ApproveConfirmModal';
 import { RejectConfirmModal } from './RejectConfirmModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { useCheckpointActions } from '../../hooks/useCheckpointActions';
-import { renderStructuredArtifact } from './artifact-content-view';
+import { renderStructuredArtifact } from './ArtifactContentView';
 import { FigmaDesignActions } from './FigmaDesignActions';
 import { parseFigmaDesignContent } from '../../utils/figma-design';
 
@@ -32,7 +32,6 @@ export function ArtifactViewer() {
   const [showRejectConfirm, setShowRejectConfirm] = useState(false);
   const [showIssuesPanel, setShowIssuesPanel] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const [showCriticFlyout, setShowCriticFlyout] = useState(false);
   const [versionInfo, setVersionInfo] = useState<{ change_request_id: number; version: number } | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -240,19 +239,18 @@ export function ArtifactViewer() {
   const hasOpenQuestions = openQuestions.length > 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end">
+    <div className="fixed inset-0 z-50 flex justify-center">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/30 dark:bg-black/50"
-        onClick={() => { setViewingArtifactId(null); setIsFullscreen(false); }}
+        onClick={() => setViewingArtifactId(null)}
       />
 
       {/* Side-by-side container — expands as panels are opened */}
       <div className={`relative flex h-full overflow-hidden transition-all duration-200 ${
-        isFullscreen ? 'w-full'
-          : showSidePanel && showIssuesPanel ? 'w-full max-w-[90rem]'
+        showSidePanel && showIssuesPanel ? 'w-full max-w-[90rem]'
           : showSidePanel ? 'w-full max-w-[72rem]'
-          : 'w-full max-w-2xl'
+          : 'w-full max-w-4xl'
       }`}>
         {/* Issues panel — far left, toggled from review header */}
         {showCriticPanel && showIssuesPanel && hasIssues && (
@@ -363,13 +361,28 @@ export function ArtifactViewer() {
                     setSaveToast('Link copied!');
                     setTimeout(() => setSaveToast(null), 2000);
                   }}
-                  className="flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-surface-200 dark:border-surface-700 text-surface-500 dark:text-surface-400 hover:border-surface-300 dark:hover:border-surface-600 hover:text-surface-700 dark:hover:text-surface-200 transition-colors"
+                  className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md border transition-colors ${
+                    saveToast === 'Link copied!'
+                      ? 'border-green-300 dark:border-green-700 text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20'
+                      : 'border-surface-200 dark:border-surface-700 text-surface-500 dark:text-surface-400 hover:border-surface-300 dark:hover:border-surface-600 hover:text-surface-700 dark:hover:text-surface-200'
+                  }`}
                   title="Copy shareable link"
                 >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                  </svg>
-                  Share
+                  {saveToast === 'Link copied!' ? (
+                    <>
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Link copied!
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                      </svg>
+                      Share
+                    </>
+                  )}
                 </button>
               )}
               <ArtifactSyncActions
@@ -425,22 +438,7 @@ export function ArtifactViewer() {
                 </button>
               )}
               <button
-                onClick={() => setIsFullscreen(f => !f)}
-                className="p-1 rounded text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
-                title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-              >
-                {isFullscreen ? (
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9L4 4m0 0v4m0-4h4m6 6l5 5m0 0v-4m0 4h-4M9 15l-5 5m0 0v-4m0 4h4m6-6l5-5m0 0v4m0-4h-4" />
-                  </svg>
-                ) : (
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0-4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5h-4m4 0v-4m0 4l-5-5" />
-                  </svg>
-                )}
-              </button>
-              <button
-                onClick={() => { setViewingArtifactId(null); setIsFullscreen(false); }}
+                onClick={() => setViewingArtifactId(null)}
                 className="text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 transition-colors"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -453,15 +451,15 @@ export function ArtifactViewer() {
           {/* Content */}
           {(() => {
             // backlogData is also computed inside renderStructuredArtifact; kept here only
-            // to drive the absolutely-positioned persona panel (fullscreen backlog view).
+            // to drive the absolutely-positioned persona panel shown beside the artifact.
             const backlogData = content && isBacklogArtifactType(artifactType) ? tryParseBacklog(content) : null;
-            const showPersonaPanel = isFullscreen && backlogData && extractPersonas(backlogData).length > 0;
+            const showPersonaPanel = backlogData && extractPersonas(backlogData).length > 0;
 
             return (
               <div className="flex-1 min-h-0 relative">
                 {/* Content — always takes full width, centered with max-w in fullscreen */}
                 <div className={`h-full ${isEditing ? 'flex flex-col px-4 py-4' : 'overflow-y-auto px-4 py-4'}`}>
-                  <div className={`${isEditing ? 'flex-1 min-h-0 flex flex-col' : ''} ${isFullscreen ? 'mx-auto w-full max-w-4xl' : ''}`}>
+                  <div className={`${isEditing ? 'flex-1 min-h-0 flex flex-col' : ''}`}>
                     {revisionSummary && !isEditing && (
                       <div className="mb-4 rounded-lg border border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-900/20 px-3.5 py-3">
                         <button
@@ -552,7 +550,7 @@ export function ArtifactViewer() {
 
           {/* Save bar (editing mode) */}
           {isEditing && (
-            <div className={`px-4 pb-4 pt-3 border-t border-surface-200 dark:border-surface-700 flex-shrink-0 space-y-2 ${isFullscreen ? 'mx-auto w-full max-w-4xl' : ''}`}>
+            <div className={`px-4 pb-4 pt-3 border-t border-surface-200 dark:border-surface-700 flex-shrink-0 space-y-2`}>
               {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
               {saveToast && <p className="text-xs text-green-600 dark:text-green-400">{saveToast}</p>}
               <div className="flex gap-2">
@@ -585,7 +583,7 @@ export function ArtifactViewer() {
 
           {/* Approved-by note (shown when this artifact's checkpoint is already approved) */}
           {approvedCheckpoint && !isEditing && (
-            <div className={`px-4 pb-3 pt-3 border-t border-surface-200 dark:border-surface-700 flex-shrink-0 flex items-center gap-2 text-xs text-surface-500 dark:text-surface-400 ${isFullscreen ? 'mx-auto w-full max-w-4xl' : ''}`}>
+            <div className={`px-4 pb-3 pt-3 border-t border-surface-200 dark:border-surface-700 flex-shrink-0 flex items-center gap-2 text-xs text-surface-500 dark:text-surface-400`}>
               <svg className="w-3.5 h-3.5 text-green-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
@@ -603,7 +601,7 @@ export function ArtifactViewer() {
 
           {/* Action buttons (only for pending checkpoints, hidden while editing) */}
           {pendingCheckpoint && !isEditing && (
-            <div className={`px-4 pb-4 pt-3 border-t border-surface-200 dark:border-surface-700 flex-shrink-0 space-y-2 ${isFullscreen ? 'mx-auto w-full max-w-4xl' : ''}`}>
+            <div className={`px-4 pb-4 pt-3 border-t border-surface-200 dark:border-surface-700 flex-shrink-0 space-y-2`}>
               {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
 
               {/* Permission lock — shown when user lacks the required role */}

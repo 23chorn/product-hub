@@ -9,6 +9,7 @@ export const STAGE_SESSION_MAP: Record<string, { mode: AppMode; agentType: Agent
   solution_architect:   { mode: 'architecture',      agentType: 'architect' },
   prototype:            { mode: 'prototype',         agentType: 'prototype-builder' },
   figma_design:         { mode: 'figma_design',      agentType: 'figma-designer' },
+  api_spec:             { mode: 'architecture',      agentType: 'api-spec-designer' },
 };
 
 // Per-stage output token ceiling. Backlog gets more headroom because the JSON
@@ -19,11 +20,12 @@ export const STAGE_MAX_OUTPUT_TOKENS: Record<string, number> = {
   analyst:              12_000,
   pm_prd:               12_000,
   epic_feature_planner: 16_000,
-  solution_architect:   32_000,  // heaviest stage: full data model/API surface/infra plus epic_features_enriched for every feature
+  solution_architect:   20_000,  // data model, API surface, infra, repo impact, new dependencies, open questions
   story_decomposition:  24_000,  // single feature backlog — up to the validator's 12-story limit with full prd_ref/technical detail; 16k was observed hitting the ceiling on a dense feature
   qa_engineer:          14_000,  // 10-15 test cases per feature with full test detail
   prototype:            64_000,
   figma_design:         16_000,
+  api_spec:             12_000,  // 10-20 endpoints with schemas; full OpenAPI 3.0 JSON
 };
 
 // Maps stage name to the artifact.type value stored in the DB.
@@ -34,6 +36,7 @@ export const STAGE_ARTIFACT_TYPE: Record<string, string> = {
   epic_feature_planner: 'epic_features',
   solution_architect:   'architecture',
   figma_design:         'figma_design',
+  api_spec:             'api_spec',
 };
 
 // Human-readable labels for stage names (used for revision diffs and events).
@@ -52,6 +55,7 @@ export const STAGE_ARTIFACT_LABEL: Record<string, string> = {
   curator: 'Context Update',
   tech_refinement: 'Tech Refinement',
   critic: 'Critic Review',
+  api_spec: 'API Contract',
 };
 
 /**
@@ -73,7 +77,7 @@ export const STAGE_LABELS_INTERNAL: Record<string, string> = Object.fromEntries(
 );
 
 // Brief labels used in coordinator stage briefing — artifact noun + persona first name.
-const BRIEF_STAGES = ['analyst', 'pm_prd', 'epic_feature_planner', 'solution_architect', 'prototype', 'figma_design'] as const;
+const BRIEF_STAGES = ['analyst', 'pm_prd', 'epic_feature_planner', 'solution_architect', 'prototype', 'figma_design', 'api_spec'] as const;
 export const STAGE_LABELS_BRIEF: Record<string, string> = Object.fromEntries(
   BRIEF_STAGES.map(stage => [stage, `${STAGE_ARTIFACT_LABEL[stage]} (${STAGE_PERSONAS[stage].persona})`])
 );
@@ -105,13 +109,11 @@ The output template defines the exact JSON schema. Fill every field. Aim for dep
 Key requirements:
 - **Phases structure**: Output \`phases[]\` — one entry per deliverable phase (MVP, Phase 2, Phase 3, Phase 4). Features are nested under each phase, not in a top-level features array.
 - **Max 5 features per phase**: If a phase needs more, create a new phase instead.
-- **Max 4 phases**: MVP + up to 3 post-MVP phases. Defer anything beyond to outOfScope.
+- **Max 4 phases**: MVP + up to 3 post-MVP phases. Anything beyond is out of scope.
 - **Feature scope discipline**: Every feature must be decomposable into ≤8 user stories. Wide features must be split before output.
-- **Phase deliverable**: Each phase must have a \`deliverable\` field — one sentence on what ships independently in that phase.
 - **Phase labels**: Exactly \`"MVP"\`, \`"Phase 2"\`, \`"Phase 3"\`, \`"Phase 4"\` — no variations (MVP is the first phase, so numbering continues from 2).
 - **Feature-level acceptance criteria**: 3-5 testable conditions per feature (outcome-focused, not story-level)
 - **PRD traceability**: Each feature must reference which FRs and user journeys it satisfies
-- **Out of scope section**: Explicitly list what's NOT being built or is deferred
 - **Dependency tagging**: Every feature must include a \`dependsOn\` array — exact titles of features it cannot start before (empty array if independent). Default to independent; only tag a dependency when truly blocking. No circular dependencies.
 - **NO user stories**: You are forbidden from writing "As a user, I want..." stories
 - **NO technical tasks**: You are forbidden from referencing implementation details (databases, APIs, repos)
@@ -124,8 +126,8 @@ The output template defines the exact JSON structure. Follow it precisely.`,
     format: `Produce a single valid JSON object wrapped in a \`\`\`json code block following the PRD output template injected into your system prompt. No prose before or after the JSON block.
 
 Key requirements:
-- **success_metrics**: all three sub-objects required — primary (single metric), secondary (2–3 metrics), counter (1–2 metrics that must not regress). Omitting counter is a quality failure.
-- **non_functional_requirements**: include only NFR categories relevant to this initiative; each must have a measurable threshold and priority.
+- **success_metrics**: primary (single metric) and secondary (2–3 metrics). No counter metrics.
+- **non_functional_requirements**: 3 max — only the highest-priority thresholds engineering must design to (latency SLA, retention requirement, scalability target).
 - **functional_requirements**: aim for 10–20 FRs; each states WHAT the system does, not HOW.
 - **open_questions**: up to 10 entries ranked by impact.`,
   },
@@ -137,11 +139,11 @@ Key requirements:
 This stage is intentionally scoped down for reliability right now — fewer sections, written concisely. More sections (diagrams, data-flow walkthroughs, deployment/failure-mode detail) will be reintroduced once this smaller scope is solid. Do not add sections beyond the template.
 
 Key requirements:
-- **technology_decisions**: name specific products, versions, and pricing tiers. State alternatives and rationale for every decision, briefly. Include only platform keys that are in scope.
+- **technology_decisions**: name specific products for each decision area; include only platform keys that are in scope. No rationale prose — decision and choice only.
 - **data_model.entities**: table with PKs, key fields, relationships, and notes. entity_relationship_diagram must be an ASCII string.
 - **api_surface**: every endpoint with method, path, request/response shapes, auth, and idempotency notes — keep each note to one line.
-- **infrastructure**: hosting topology and per-component cost estimates only — no deployment pipeline or failure-mode table for now.
-- **epic_features_enriched**: take the epic/phases/features from the prior stage and enrich each feature with target_repos and a short technical_notes line. Preserve the \`phases[]\` structure exactly — do not flatten. This field is consumed by the story decomposition agent.
+- **infrastructure**: hosting topology only — where each service runs and how it scales. No cost estimates, no deployment pipeline, no failure-mode table.
+- **new_dependencies**: name, type, and not_solvable_with_existing_stack_because only. No alternatives evaluated, no cost breakdown.
 
 If a context/tech-stack.md file was provided, align all choices with the existing stack and explain deviations. If no tech stack was provided, recommend specific technologies with tradeoffs.`,
   },
@@ -200,6 +202,20 @@ Format each diff block as:
 Only propose changes that are factually grounded in the workflow outputs provided.
 Do not invent or speculate. File names must already exist in context/.`,
   },
+
+  api_spec: {
+    label: 'API Contract (Kira)',
+    format: `Produce a single valid JSON object wrapped in a \`\`\`json code block following the api-spec output template injected into your system prompt. No prose before or after the JSON block.
+
+Key requirements:
+- **FR traceability**: Only define endpoints that satisfy a named PRD functional requirement. State the FR-ID in every endpoint's description field (e.g. "Satisfies FR-05: User can filter task list by status.").
+- **Schema derivation**: All component schemas must be derived from the data model entities in the architecture brief. Use exact entity names from the architecture as schema names. Do not invent entity shapes.
+- **Response shapes from Figma**: Response schemas must include only the fields visible in the Figma screens for that flow — no speculative or "might be useful" fields.
+- **Existing API conventions**: If live swagger docs are provided, match their auth scheme, server base path, error response format, and pagination convention exactly. Replace the template defaults with the real patterns from the existing API.
+- **Shared error components**: All endpoints must reference error responses via $ref (e.g. $ref: '#/components/responses/Unauthorized'). Never repeat error schemas inline. Minimum: 401 on every authenticated endpoint; 404 on all resource lookups; 400 on all write operations.
+- **No speculative endpoints**: If an endpoint cannot be traced to a PRD functional requirement, it does not belong in this spec.
+- **JSON validity**: All string values must be valid JSON strings with no literal newline characters.`,
+  },
 };
 
 // Per-stage goal sentence templates (used in coordinator briefing)
@@ -211,6 +227,7 @@ export function stageGoal(stage: string, goal: string): string {
     solution_architect:   `Produce a cross-platform architecture document covering technology decisions, data model, API surface, repository impact across all repos, and cross-platform contracts — to serve as the technical reference for epic planning and story decomposition for: ${goal}`,
     prototype:            `Produce a focused, low-fidelity wireframe of the screen(s) where this change occurs (plus before/after states if there's a transition), built from generic reusable components rather than branded visuals, for: ${goal}`,
     figma_design:         `Produce a concise screen-by-screen design brief a human designer can use to build the mockups in Figma for: ${goal}`,
+    api_spec:             `Produce a valid OpenAPI 3.0 contract derived from the approved architecture data model and PRD functional requirements, aligned with existing API conventions, for: ${goal}`,
   };
   const outputLabel = STAGE_LABELS_BRIEF[stage] ?? stage;
   return STAGE_GOAL[stage] ?? `Produce the required ${outputLabel} for: ${goal}`;
@@ -224,6 +241,7 @@ export function stageProgressTarget(stage: string): string {
     solution_architect: 'the Architecture Document',
     prototype: 'the prototype wireframe and file map',
     figma_design: 'the Figma mockup plan',
+    api_spec: 'the API Contract',
   };
   return target[stage] ?? `the ${STAGE_ARTIFACT_LABEL[stage] ?? stage}`;
 }
@@ -237,6 +255,7 @@ export function stageProgressWorking(stage: string): string {
     solution_architect: 'Atlas',
     prototype: 'Nova',
     figma_design: 'Luma',
+    api_spec: 'Kira',
   };
   const name = actor[stage];
   if (stage === 'prototype' || stage === 'figma_design') return `${name} is generating ${subject}.`;
@@ -255,6 +274,7 @@ const STAGE_STARTED_NARRATION: Record<string, string> = {
   solution_architect:   'Atlas is writing the architecture sections, API surface, and data model.',
   prototype:            'Nova is generating the prototype wireframe and file map from the workflow artifacts.',
   figma_design:         'Luma is generating the Figma mockup plan from the workflow artifacts.',
+  api_spec:             'Kira is writing the API Contract from the approved architecture data model and PRD functional requirements.',
 };
 
 export function stageStartedNarration(stage: string): string {
@@ -372,7 +392,7 @@ export const STAGE_TOOL_DEFINITIONS: Record<string, StageToolDefinition[]> = {
   pm_prd: [
     {
       name: 'validate_prd_json',
-      description: 'Validate your PRD JSON before returning it. Checks personas, user journeys, success_metrics (primary/secondary/counter), NFR measurability, functional requirement count (10–20), out_of_scope, and open_questions. Call after completing the full JSON object.',
+      description: 'Validate your PRD JSON before returning it. Checks personas, user journeys, success_metrics (primary/secondary), non_functional_requirements (max 3), functional requirement count (10–20), out_of_scope, and open_questions. Call after completing the full JSON object.',
       input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete PRD JSON string (may be wrapped in a ```json code block)' } }, required: ['json'] },
     },
   ],
@@ -380,7 +400,7 @@ export const STAGE_TOOL_DEFINITIONS: Record<string, StageToolDefinition[]> = {
   epic_feature_planner: [
     {
       name: 'validate_epic_features_json',
-      description: 'Validate your epic and feature plan JSON before returning it. Checks: epic header fields (title ≤6 words, description, businessValue, prdLink); phases[] structure (required — features must be nested under phases, not at root level); phase labels (exactly "MVP", "Phase 2", "Phase 3", "Phase 4"); max 5 features per phase; max 4 phases; each phase has a deliverable; per-feature checks: acceptance criteria (3–5, no user-story format), prdRef.functionalRequirements (FR-XX format), stories must be empty []; outOfScope list; TBD flags. Call after completing the full JSON object.',
+      description: 'Validate your epic and feature plan JSON before returning it. Checks: epic header fields (title ≤6 words, description, prdLink); phases[] structure (required — features must be nested under phases, not at root level); phase labels (exactly "MVP", "Phase 2", "Phase 3", "Phase 4"); max 5 features per phase; max 4 phases; per-feature checks: acceptance criteria (3–5, no user-story format), prdRef.functionalRequirements (FR-XX format), stories must be empty []; TBD flags. Call after completing the full JSON object.',
       input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete epic & features JSON string (may be wrapped in a ```json code block)' } }, required: ['json'] },
     },
   ],
@@ -388,7 +408,7 @@ export const STAGE_TOOL_DEFINITIONS: Record<string, StageToolDefinition[]> = {
   solution_architect: [
     {
       name: 'validate_architecture_json',
-      description: 'Validate your architecture JSON before returning it. Checks technology_decisions (including that alternatives are substantive), new_dependencies structure, data_model entities and ERD, api_surface endpoints, repository_impact, infrastructure (hosting, cost_estimate), security_considerations, and the epic_features_enriched block required by story decomposition agents. Also scans for unresolved TBD decisions. Call after completing the full JSON object.',
+      description: 'Validate your architecture JSON before returning it. Checks technology_decisions (decision and choice fields only), new_dependencies structure, data_model entities and ERD, api_surface endpoints, repository_impact, infrastructure (hosting only), and open_questions. Also scans for unresolved TBD decisions. Call after completing the full JSON object.',
       input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete architecture JSON string (may be wrapped in a ```json code block)' } }, required: ['json'] },
     },
   ],
@@ -404,7 +424,7 @@ export const STAGE_TOOL_DEFINITIONS: Record<string, StageToolDefinition[]> = {
   story_decomposition: [
     {
       name: 'validate_backlog_json',
-      description: 'Validate your backlog JSON structure before returning it. Checks story_id format (F?.S?), as_a/i_want/so_that fields, Given/When/Then acceptance criteria (2–5 per story), technical_acceptance_criteria, platform tags, Fibonacci estimated_points, and story/feature count limits. Call after drafting.',
+      description: 'Validate your backlog JSON structure before returning it. Checks story_id format (F?.S?), as_a/i_want/so_that fields, Given/When/Then acceptance criteria (2–5 per story), technical_acceptance_criteria, platform tags, and story/feature count limits. Call after drafting.',
       input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete backlog JSON string to validate' } }, required: ['json'] },
     },
   ],
