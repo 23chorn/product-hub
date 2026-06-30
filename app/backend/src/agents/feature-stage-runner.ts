@@ -50,35 +50,52 @@ export async function runBacklogMerge(
   insertEvent(workflowId, 'stage_progress', 'backlog_merge',
     'Merging all feature artifacts into final backlog...');
 
-  // Load all feature artifacts (backlog_F1, backlog_F2, ...)
-  const featureArtifacts: any[] = [];
-  let featureIndex = 1;
+  // Load epic_features first — it's the authoritative source for feature count and phase
+  // labels. Both the gap-safe iteration below and the phase back-fill rely on it.
+  const { flattenFeatures } = await import('./feature-decomposition');
+  const epicFeaturesRaw = await loadLatestArtifactContent(itemId, 'epic_features');
+  let authoritativeFeatures: any[] = [];
   let mergedEpic: any = null;
+  if (epicFeaturesRaw) {
+    try {
+      authoritativeFeatures = flattenFeatures(JSON.parse(epicFeaturesRaw));
+    } catch (err: any) {
+      logger.warn(`[BACKLOG MERGE] Could not parse epic_features: ${err.message}`);
+    }
+  }
 
-  while (true) {
-    const artifactType = `backlog_F${featureIndex}`;
-    const content = await loadLatestArtifactContent(itemId, artifactType);
-    if (!content) break; // No more features
+  // Iterate over every feature slot by authoritative count so a missing backlog_F* in the
+  // middle (e.g. F2 not yet refined when F1 and F3 exist) doesn't silently drop everything
+  // after the gap. Falls back to open-ended scan when epic_features is unavailable.
+  const featureArtifacts: any[] = [];
+  const totalFeatures = authoritativeFeatures.length > 0 ? authoritativeFeatures.length : Infinity;
+  const missingSlots: number[] = [];
 
+  for (let i = 1; i <= totalFeatures; i++) {
+    const content = await loadLatestArtifactContent(itemId, `backlog_F${i}`);
+    if (!content) {
+      if (totalFeatures === Infinity) break; // open-ended scan — first gap means done
+      missingSlots.push(i);
+      logger.warn(`[BACKLOG MERGE] backlog_F${i} not found — feature ${i} will be absent from merged backlog`);
+      continue;
+    }
     try {
       const parsed = JSON.parse(stripJsonFence(content));
-
-      // Store epic from first feature (they should all be identical)
-      if (!mergedEpic && parsed.epic) {
-        mergedEpic = parsed.epic;
-      }
-
-      // Collect features array
+      if (!mergedEpic && parsed.epic) mergedEpic = parsed.epic;
       if (parsed.features && Array.isArray(parsed.features)) {
         featureArtifacts.push(...parsed.features);
       }
-
-      logger.info(`[BACKLOG MERGE] Loaded Feature ${featureIndex}: ${parsed.features?.length ?? 0} features`);
-      featureIndex++;
+      logger.info(`[BACKLOG MERGE] Loaded backlog_F${i}: ${parsed.features?.length ?? 0} feature(s)`);
     } catch (err: any) {
-      logger.error(`[BACKLOG MERGE] Failed to parse ${artifactType}: ${err.message}`);
-      break;
+      logger.error(`[BACKLOG MERGE] Failed to parse backlog_F${i}: ${err.message}`);
+      missingSlots.push(i);
     }
+  }
+
+  if (missingSlots.length > 0) {
+    insertEvent(workflowId, 'validation_warning', 'backlog_merge',
+      `${missingSlots.length} feature artifact(s) missing from merge: F${missingSlots.join(', F')} — run story_decomposition for those features and re-merge`,
+      { missing_features: missingSlots.map(i => `F${i}`) });
   }
 
   if (featureArtifacts.length === 0) {
@@ -86,6 +103,15 @@ export async function runBacklogMerge(
     insertEvent(workflowId, 'error', 'backlog_merge', 'No feature artifacts found to merge');
     return;
   }
+
+  // Back-fill any missing phase fields from epic_features (authoritative source).
+  // The LLM sometimes drops the phase field from the backlog_F* output.
+  featureArtifacts.forEach((f: any, i: number) => {
+    if (!f.phase && authoritativeFeatures[i]?.phase) {
+      f.phase = authoritativeFeatures[i].phase;
+      logger.info(`[BACKLOG MERGE] Back-filled phase="${f.phase}" for feature ${i + 1} (was missing)`);
+    }
+  });
 
   // Build final merged backlog
   const mergedBacklog = {

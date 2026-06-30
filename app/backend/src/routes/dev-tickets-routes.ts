@@ -79,10 +79,11 @@ export function matchesStream(platforms: TicketPlatform[], streamFilter: Set<Tic
   return !streamFilter || platforms.length === 0 || platforms.some(p => streamFilter.has(p));
 }
 
-/** A feature "matches" an active phase filter if its phase (case-insensitive) is in the set,
- *  OR if it has no phase assigned — untagged features are included rather than dropped. */
+/** A feature "matches" an active phase filter if its phase (case-insensitive) is in the set.
+ *  Features with no phase assigned are excluded when a filter is active — null phase means
+ *  the backlog artifact hasn't supplied phase data yet, not that the feature is unphased. */
 export function matchesPhase(featurePhase: string | null | undefined, phaseFilter: Set<string> | null): boolean {
-  return !phaseFilter || !featurePhase || phaseFilter.has(featurePhase.toLowerCase());
+  return !phaseFilter || (!!featurePhase && phaseFilter.has(featurePhase.toLowerCase()));
 }
 
 /** Parse the epic-level description and businessValue from an epic_features artifact. Used
@@ -124,8 +125,19 @@ function mergeAdoAndContent<T extends object>(row: AdoWorkItemRow, content: T | 
  *  to write it) carries the content. A feature that had stories but lost every one of them
  *  to the stream filter is dropped rather than returned as an empty shell. */
 export function buildFeatures(workItemRows: AdoWorkItemRow[], backlog: BacklogData | null, streamFilter: Set<TicketPlatform> | null, phaseFilter: Set<string> | null = null) {
-  const featureRows = workItemRows.filter(r => r.ado_type === 'feature');
-  const storyRows = workItemRows.filter(r => r.ado_type === 'story');
+  const featureRows = workItemRows
+    .filter(r => r.ado_type === 'feature')
+    .sort((a, b) => (parseFeatureLocalKey(a.local_key) ?? 0) - (parseFeatureLocalKey(b.local_key) ?? 0));
+  const storyRows = workItemRows
+    .filter(r => r.ado_type === 'story')
+    .sort((a, b) => {
+      const pa = parseStoryLocalKey(a.local_key);
+      const pb = parseStoryLocalKey(b.local_key);
+      if (!pa || !pb) return 0;
+      return pa.featureIndex !== pb.featureIndex
+        ? pa.featureIndex - pb.featureIndex
+        : pa.storyIndex - pb.storyIndex;
+    });
 
   const features: Array<Record<string, unknown>> = [];
   for (const featureRow of featureRows) {
@@ -363,8 +375,19 @@ router.get('/:seqNum/manifest', async (req: Request, res: Response) => {
       stateBucket: epicRow.state != null ? bucketWorkItemState(epicRow.state) : null,
     } : null;
 
-    const featureRows = workItemRows.filter(r => r.ado_type === 'feature');
-    const storyRows = workItemRows.filter(r => r.ado_type === 'story');
+    const featureRows = workItemRows
+      .filter(r => r.ado_type === 'feature')
+      .sort((a, b) => (parseFeatureLocalKey(a.local_key) ?? 0) - (parseFeatureLocalKey(b.local_key) ?? 0));
+    const storyRows = workItemRows
+      .filter(r => r.ado_type === 'story')
+      .sort((a, b) => {
+        const pa = parseStoryLocalKey(a.local_key);
+        const pb = parseStoryLocalKey(b.local_key);
+        if (!pa || !pb) return 0;
+        return pa.featureIndex !== pb.featureIndex
+          ? pa.featureIndex - pb.featureIndex
+          : pa.storyIndex - pb.storyIndex;
+      });
     const storyIdToLocalKey = buildStoryIdToLocalKeyMap(backlog);
 
     const allFeatures = featureRows.map(featureRow => {

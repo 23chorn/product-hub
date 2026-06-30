@@ -100,6 +100,7 @@ export const WORKFLOW_PRESETS: {
     { key: 'api_spec',             label: 'API Contract',    short: 'Kira · API' },
     { key: 'epic_feature_planner', label: 'Epic & Features', short: 'Apex · Features' },
     { key: 'story_decomposition',  label: 'Refinement',      short: 'Multi-Agent · Refinement' },
+    { key: 'curator',              label: 'Curator',         short: 'Ivy · Curator' },
   ],
   full: TOGGLEABLE_STAGES, // Full pipeline uses all toggleable stages
 };

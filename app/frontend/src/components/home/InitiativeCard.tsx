@@ -24,15 +24,6 @@ function displayStages(stageSequence: string[] | undefined): string[] {
   return stageSequence.filter(s => !/story_decomposition_F\d/.test(s));
 }
 
-/** Calculate workflow progress percentage (stages completed before current). */
-function calculateDisplayProgress(currentStage: string | null, status: string, stages: string[]): number {
-  if (status === 'complete') return 100;
-  if (!currentStage || stages.length === 0) return 0;
-  const idx = stages.indexOf(currentStage);
-  if (idx === -1) return 0;
-  return Math.round((idx / stages.length) * 100);
-}
-
 /** Map a current stage to its display-stage equivalent.
  *  story_decomposition_F* stages are filtered from the dot bar, so while they're active
  *  we pin the indicator to backlog_merge (the next visible stage they're heading toward). */
@@ -43,15 +34,6 @@ function normalizeCurrentStage(currentStage: string | null, stages: string[]): s
     return 'backlog_merge';
   }
   return null;
-}
-
-/** Calculate bar width to align with checkpoint dot positions. */
-function calculateBarWidth(currentStage: string | null, status: string, stages: string[]): number {
-  if (status === 'complete') return 100;
-  if (!currentStage || stages.length <= 1) return 0;
-  const idx = stages.indexOf(currentStage);
-  if (idx === -1) return 0;
-  return Math.round((idx / (stages.length - 1)) * 100);
 }
 
 /** Card for one initiative in the HomeScreen grid: title, status, tags, and launch/resume/delete actions.
@@ -277,17 +259,30 @@ export function InitiativeCard({
         ) : null}
       </div>
 
-      {/* Progress bar with stage checkpoints (only show for active workflows) */}
-      {wf && isActive && (() => {
+      {/* Progress bar with stage checkpoints */}
+      {wf && (isActive || isComplete) && (() => {
         const stages = displayStages(wf.stageSequence);
-        const effectiveStage = normalizeCurrentStage(wf.currentStage, stages);
-        const currentStageIdx = effectiveStage ? stages.indexOf(effectiveStage) : -1;
-        if (stages.length === 0) return null;
+        // Always append a virtual 'complete' dot — 100% is only reached when the workflow finishes.
+        const stagesWithComplete = [...stages, 'complete'];
+        const total = stagesWithComplete.length;
+
+        let currentStageIdx: number;
+        if (isComplete) {
+          currentStageIdx = total - 1;
+        } else {
+          const effectiveStage = normalizeCurrentStage(wf.currentStage, stages);
+          currentStageIdx = effectiveStage ? stages.indexOf(effectiveStage) : -1;
+        }
+
+        if (!isComplete && stages.length === 0) return null;
+
+        const pct = currentStageIdx <= 0 ? 0 : Math.round((currentStageIdx / (total - 1)) * 100);
+
         return (
           <div className="flex-shrink-0 mb-2">
             <div className="flex items-center justify-end mb-1">
               <span className="text-[10px] font-medium text-surface-500 dark:text-surface-400">
-                {calculateDisplayProgress(effectiveStage, wf.status, stages)}%
+                {pct}%
               </span>
             </div>
 
@@ -297,16 +292,17 @@ export function InitiativeCard({
               <div className="h-1.5 bg-surface-200 dark:bg-surface-700 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-brand-500 transition-all duration-300 ease-out"
-                  style={{ width: `${calculateBarWidth(effectiveStage, wf.status, stages)}%` }}
+                  style={{ width: `${pct}%` }}
                 />
               </div>
 
               {/* Stage checkpoint markers */}
               <div className="absolute top-0 left-0 right-0 h-1.5 flex items-center justify-between">
-                {stages.map((stage, idx) => {
+                {stagesWithComplete.map((stage, idx) => {
                   const isCompleted = idx < currentStageIdx;
                   const isCurrent = idx === currentStageIdx;
-                  const shortName = stage === 'pm_prd' ? 'prd'
+                  const shortName = stage === 'complete' ? 'done'
+                    : stage === 'pm_prd' ? 'prd'
                     : stage === 'solution_architect' ? 'architect'
                     : stage === 'epic_feature_planner' ? 'epics'
                     : stage === 'story_decomposition' ? 'stories'
@@ -317,7 +313,7 @@ export function InitiativeCard({
                   return (
                     <div key={stage} className="relative flex flex-col items-center">
                       <div className={`w-2 h-2 rounded-full border-2 transition-all ${
-                        isCompleted
+                        isCompleted || (isCurrent && stage === 'complete')
                           ? 'bg-brand-500 border-brand-500'
                           : isCurrent
                           ? 'bg-white dark:bg-surface-900 border-brand-500 ring-2 ring-brand-500 ring-offset-1'

@@ -43,6 +43,23 @@ db.pragma('busy_timeout = 10000');
 // still referenced by another table's column declaration both need it off to complete.
 db.pragma('foreign_keys = OFF');
 migrate(drizzle(db), { migrationsFolder: MIGRATIONS });
+// Defensive column additions — runs only when the column is absent, safe to repeat.
+// Guards against Drizzle silently skipping a migration due to timestamp ordering quirks.
+const itemCols = (db.prepare('PRAGMA table_info(items)').all() as { name: string }[]).map(c => c.name);
+if (!itemCols.includes('is_paused')) db.exec('ALTER TABLE items ADD COLUMN is_paused INTEGER NOT NULL DEFAULT 0');
+if (!itemCols.includes('paused_at'))  db.exec('ALTER TABLE items ADD COLUMN paused_at INTEGER');
+db.exec(`CREATE TABLE IF NOT EXISTS initiative_comments (
+  id          TEXT    PRIMARY KEY,
+  item_id     TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  user_id     TEXT,
+  author_name TEXT    NOT NULL,
+  body        TEXT    NOT NULL,
+  type        TEXT    NOT NULL DEFAULT 'note'
+              CHECK(type IN ('note','decision','pause','resume')),
+  title       TEXT,
+  created_at  INTEGER NOT NULL
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_initiative_comments_item_id ON initiative_comments(item_id)');
 db.pragma('foreign_keys = ON');
 
 // ---------------------------------------------------------------------------
