@@ -27,13 +27,14 @@ const STAGE_LABELS: Record<string, string> = {
   prototype: 'Prototype',
   figma_design: 'Figma Design',
   solution_architect: 'Solution Architect',
+  api_spec: 'API Contract — Kira',
   epic_feature_planner: 'Epic & Feature Planning',
   story_decomposition: 'Shard - Product Owner',
 };
 
 const STAGE_ORDER = [
   'analyst', 'pm_prd', 'prototype', 'figma_design',
-  'solution_architect', 'epic_feature_planner', 'story_decomposition',
+  'solution_architect', 'api_spec', 'epic_feature_planner', 'story_decomposition',
 ];
 const ALWAYS_ON = new Set(['curator']);
 
