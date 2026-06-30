@@ -97,6 +97,7 @@ export const WORKFLOW_PRESETS: {
   small: [
     { key: 'pm_prd',               label: 'PRD',             short: 'Rex · PM' },
     { key: 'solution_architect',   label: 'Architecture',    short: 'Atlas · Architect' },
+    { key: 'api_spec',             label: 'API Contract',    short: 'Kira · API' },
     { key: 'epic_feature_planner', label: 'Epic & Features', short: 'Apex · Features' },
     { key: 'story_decomposition',  label: 'Refinement',      short: 'Multi-Agent · Refinement' },
   ],
