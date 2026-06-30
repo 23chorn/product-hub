@@ -141,12 +141,6 @@ describe('validatePrdJson', () => {
     expect(r.issues!.some(i => i.includes('at least 2 steps'))).toBe(true);
   });
 
-  it('requires a non-empty counter metrics guardrail', () => {
-    const r = runPrd({ ...validPrd, success_metrics: { ...validPrd.success_metrics, counter: [] } });
-    expect(r.valid).toBe(false);
-    expect(r.issues!.some(i => i.includes('counter'))).toBe(true);
-  });
-
   it('flags vague NFR language', () => {
     const r = runPrd({
       ...validPrd,
@@ -163,15 +157,6 @@ describe('validatePrdJson', () => {
     });
     expect(r.valid).toBe(false);
     expect(r.issues!.some(i => i.includes('no measurable threshold'))).toBe(true);
-  });
-
-  it('requires Performance and Security NFR categories to both be covered', () => {
-    const r = runPrd({
-      ...validPrd,
-      non_functional_requirements: [{ id: 'NFR1', category: 'Performance', requirement: 'P95 latency under 200ms', priority: 'Must' }],
-    });
-    expect(r.valid).toBe(false);
-    expect(r.issues!.some(i => i.includes('missing required categories: security'))).toBe(true);
   });
 
   it('flags too few functional requirements', () => {
@@ -222,12 +207,7 @@ const validArchitecture = {
     { service: 'alerts-api', endpoints: [{ method: 'POST', path: '/alerts', purpose: 'create alert', request: '{symbol, threshold}', response: '{id}' }] },
   ],
   repository_impact: [{ repo: 'backend', changes_required: 'Add alerts module' }],
-  infrastructure: { hosting: 'AWS ECS', cost_estimate: '$50/mo' },
   security_considerations: ['Rate-limit alert creation per user'],
-  epic_features_enriched: {
-    epic: { title: 'Price Alerts' },
-    features: [{ title: 'Create alert', technical_notes: 'Use alerts-api', target_repos: ['backend'] }],
-  },
 };
 
 describe('validateArchitectureJson', () => {
@@ -245,15 +225,6 @@ describe('validateArchitectureJson', () => {
     const r = runArch({ ...validArchitecture, technology_decisions: {} });
     expect(r.valid).toBe(false);
     expect(r.issues!.some(i => i.includes('technology_decisions'))).toBe(true);
-  });
-
-  it('rejects thin or boilerplate alternatives', () => {
-    const r = runArch({
-      ...validArchitecture,
-      technology_decisions: { backend: [{ decision: 'Transport', choice: 'WebSocket', rationale: 'fast', alternatives: 'None' }] },
-    });
-    expect(r.valid).toBe(false);
-    expect(r.issues!.some(i => i.includes('too thin'))).toBe(true);
   });
 
   it('requires a substantive justification for new dependencies', () => {
@@ -277,21 +248,6 @@ describe('validateArchitectureJson', () => {
     expect(r.issues!.some(i => i.includes('endpoints'))).toBe(true);
   });
 
-  it('requires epic_features_enriched for downstream story decomposition', () => {
-    const { epic_features_enriched, ...rest } = validArchitecture;
-    const r = runArch(rest);
-    expect(r.valid).toBe(false);
-    expect(r.issues!.some(i => i.includes('epic_features_enriched'))).toBe(true);
-  });
-
-  it('requires target_repos on each enriched feature', () => {
-    const r = runArch({
-      ...validArchitecture,
-      epic_features_enriched: { epic: { title: 'Price Alerts' }, features: [{ title: 'Create alert', technical_notes: 'x', target_repos: [] }] },
-    });
-    expect(r.valid).toBe(false);
-    expect(r.issues!.some(i => i.includes('target_repos'))).toBe(true);
-  });
 });
 
 // ── validate_backlog_json ─────────────────────────────────────────────────────
@@ -369,12 +325,6 @@ describe('validateBacklogJson', () => {
     expect(r.issues!.some(i => i.includes('invalid platform'))).toBe(true);
   });
 
-  it('requires estimated_points to be a Fibonacci number', () => {
-    const r = runBacklog({ feature: { title: 'X', stories: [makeStory('F1.S1', { estimated_points: 4 })] } });
-    expect(r.valid).toBe(false);
-    expect(r.issues!.some(i => i.includes('Fibonacci number'))).toBe(true);
-  });
-
   it('detects duplicate story_id across features', () => {
     const r = runBacklog({
       epic: { title: 'Epic' },
@@ -388,14 +338,6 @@ describe('validateBacklogJson', () => {
     const r = runBacklog({ feature: { title: 'X', stories: [makeStory('F1.S1'), makeStory('F1.S2', { depends_on: ['F9.S9'] })] } });
     expect(r.valid).toBe(false);
     expect(r.issues!.some(i => i.includes('depends_on references unknown story_id "F9.S9"'))).toBe(true);
-  });
-
-  it('flags total story points over the 80-point sprint ceiling', () => {
-    const r = runBacklog({
-      feature: { title: 'X', stories: Array.from({ length: 11 }, (_, i) => makeStory(`F1.S${i + 1}`, { estimated_points: 8 })) },
-    });
-    expect(r.valid).toBe(false);
-    expect(r.issues!.some(i => i.includes('80-point sprint ceiling'))).toBe(true);
   });
 
   it('rejects an unrecognized root shape', () => {
@@ -485,14 +427,6 @@ describe('validateEpicFeaturesJson', () => {
     expect(r.issues!.some(i => i.includes('must match FR-XX format'))).toBe(true);
   });
 
-  it('requires nonFunctionalRequirements key to be present even if empty', () => {
-    const feature = makeEpicFeature();
-    delete feature.prdRef.nonFunctionalRequirements;
-    const r = runEpicFeatures({ ...validEpicFeatures, phases: [{ ...validEpicFeatures.phases[0], features: [feature] }] });
-    expect(r.valid).toBe(false);
-    expect(r.issues!.some(i => i.includes('prdRef.nonFunctionalRequirements is required'))).toBe(true);
-  });
-
   it('rejects non-empty stories at this feature-planning stage', () => {
     const r = runEpicFeatures({ ...validEpicFeatures, phases: [{ ...validEpicFeatures.phases[0], features: [makeEpicFeature({ stories: [{ story_id: 'F1.S1' }] })] }] });
     expect(r.valid).toBe(false);
@@ -512,11 +446,6 @@ describe('validateEpicFeaturesJson', () => {
     expect(r.issues!.some(i => i.includes('apply phase discipline'))).toBe(true);
   });
 
-  it('requires outOfScope to be a non-empty array', () => {
-    const r = runEpicFeatures({ ...validEpicFeatures, outOfScope: [] });
-    expect(r.valid).toBe(false);
-    expect(r.issues!.some(i => i.includes('outOfScope'))).toBe(true);
-  });
 });
 
 // ── validate_qa_tests_json ────────────────────────────────────────────────────

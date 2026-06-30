@@ -61,7 +61,6 @@
       { "metric": "Message-to-trade conversion rate (user chats then trades within 10 min)", "baseline": "0%", "target": "8%", "timeframe": "90 days post-launch", "measurement": "Analytics funnel event: ticker_card_tap → order_submitted within 10 min window" },
       { "metric": "Ticker card share actions per DAU", "baseline": "0", "target": "0.4", "timeframe": "30 days post-launch", "measurement": "Analytics event share_to_chat with tickerRef set" },
       { "metric": "30-day retention lift (Chat users vs non-Chat users)", "baseline": "—", "target": "+15%", "timeframe": "90 days post-launch", "measurement": "Cohort comparison: login_event within 30 days of signup, Chat vs non-Chat cohort" }
-    ],
     ]
   },
   "non_functional_requirements": [

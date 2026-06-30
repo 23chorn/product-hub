@@ -6,6 +6,7 @@ import { BacklogView } from './BacklogView';
 import { QATestsView } from './QATestsView';
 import { tryParseEpicFeatures, type EpicFeaturesData } from './EpicFeaturesView';
 import { ArtifactTabShell } from './ArtifactPrimitives';
+import { copyToClipboard } from '../../utils/markdown';
 
 interface StoriesTestsProps {
   featureButtons: FeatureArtifactRef[];
@@ -121,7 +122,7 @@ export function BacklogOverviewModal({ onClose, workflowId, ...storiesTestsProps
   const handleShare = () => {
     if (!workflowId) return;
     const url = `${window.location.origin}${window.location.pathname}?workflowId=${workflowId}`;
-    navigator.clipboard.writeText(url);
+    copyToClipboard(url);
     setToast('Link copied!');
     setTimeout(() => setToast(null), 2000);
   };

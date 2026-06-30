@@ -359,13 +359,6 @@ export function validateArchitectureJson(input: Record<string, unknown>): string
     req(r, 'changes_required', lp, issues);
   });
 
-  // infrastructure
-  if (!p.infrastructure || typeof p.infrastructure !== 'object') {
-    issues.push('root: "infrastructure" object is required');
-  } else {
-    req(p.infrastructure, 'hosting', 'infrastructure', issues);
-  }
-
   return result(issues);
 }
 

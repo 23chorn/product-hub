@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { FigmaScreenRef } from '../../utils/figma-design';
+import type { FigmaScreenRef, ParsedFigmaDesign } from '../../utils/figma-design';
 
 const FALLBACK_KEY = '__file__';
 
@@ -15,6 +15,235 @@ function FigmaLogo({ size }: { size: number }) {
   );
 }
 
+/**
+ * Full-drawer screen-by-screen previewer for the figma_design stage.
+ * Shows one screen at a time with its rich content and a per-screen URL input.
+ * Used in the main content area of ArtifactViewer (non-compact path only).
+ */
+export function FigmaScreenPreviewer({
+  figmaDesign,
+  links,
+  onLinkChange,
+}: {
+  figmaDesign: ParsedFigmaDesign;
+  links: Record<string, string>;
+  onLinkChange: (key: string, value: string) => void;
+}) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const { screens, figmaFileUrl, designGaps, navigationFlow, notes } = figmaDesign;
+
+  const inputClass = 'w-full text-sm rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 px-3 py-2 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-rose-500';
+
+  if (screens.length === 0) {
+    return (
+      <div className="flex flex-col h-full overflow-y-auto px-4 py-4 space-y-4">
+        <p className="text-sm text-surface-500 dark:text-surface-400">
+          {figmaFileUrl
+            ? 'No individual screens were generated. Paste the file-level Figma link below, or leave blank.'
+            : 'No Figma file was created automatically. Build the design from the notes above, then paste a link below (or leave blank).'}
+        </p>
+        {figmaFileUrl && (
+          <a
+            href={figmaFileUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 w-full py-2 px-3 bg-[#1E1E1E] hover:bg-[#333] text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            <FigmaLogo size={14} />
+            Open in Figma
+          </a>
+        )}
+        <div>
+          <label className="block text-[11px] font-medium text-surface-500 dark:text-surface-400 mb-1">
+            Figma Frame Link (optional)
+          </label>
+          <input
+            type="text"
+            value={links[FALLBACK_KEY] ?? ''}
+            onChange={e => onLinkChange(FALLBACK_KEY, e.target.value)}
+            placeholder="https://www.figma.com/design/... (leave blank if not created)"
+            className={inputClass}
+          />
+        </div>
+        {designGaps && designGaps.length > 0 && (
+          <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-3 py-2.5">
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-1.5">
+              Design gaps ({designGaps.length})
+            </p>
+            <ul className="space-y-0.5">
+              {designGaps.map((gap, i) => (
+                <li key={i} className="text-xs text-amber-700 dark:text-amber-300">• {gap}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const screen = screens[currentIndex];
+  const safeIndex = Math.min(currentIndex, screens.length - 1);
+  if (safeIndex !== currentIndex) setCurrentIndex(safeIndex);
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Navigation bar */}
+      <div className="flex items-center justify-between gap-2 px-4 py-2 border-b border-surface-200 dark:border-surface-700 flex-shrink-0 bg-surface-50 dark:bg-surface-900">
+        <button
+          onClick={() => setCurrentIndex(i => Math.max(0, i - 1))}
+          disabled={currentIndex === 0}
+          className="px-2.5 py-1 text-xs rounded-md border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          ← Prev
+        </button>
+        <span className="text-xs font-medium text-surface-600 dark:text-surface-300 text-center min-w-0">
+          Screen {currentIndex + 1} of {screens.length}
+          <span className="mx-1.5 text-surface-300 dark:text-surface-600">·</span>
+          <span className="text-surface-800 dark:text-surface-100">{screen.name}</span>
+        </span>
+        <button
+          onClick={() => setCurrentIndex(i => Math.min(screens.length - 1, i + 1))}
+          disabled={currentIndex === screens.length - 1}
+          className="px-2.5 py-1 text-xs rounded-md border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          Next →
+        </button>
+      </div>
+
+      {/* Screen content */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
+        {/* Screen title */}
+        <h3 className="text-base font-semibold text-surface-900 dark:text-surface-100">{screen.name}</h3>
+
+        {screen.description && (
+          <p className="text-sm text-surface-700 dark:text-surface-300 leading-relaxed">{screen.description}</p>
+        )}
+
+        {screen.prd_journeys && screen.prd_journeys.length > 0 && (
+          <div>
+            <p className="text-[11px] font-medium text-surface-500 dark:text-surface-400 uppercase tracking-wide mb-1">
+              Covers journeys
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {screen.prd_journeys.map((j, i) => (
+                <span
+                  key={i}
+                  className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-200 dark:border-brand-700"
+                >
+                  {j}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {screen.layout_notes && (
+          <div>
+            <p className="text-[11px] font-medium text-surface-500 dark:text-surface-400 uppercase tracking-wide mb-1">
+              Layout
+            </p>
+            <p className="text-sm text-surface-700 dark:text-surface-300 leading-relaxed">{screen.layout_notes}</p>
+          </div>
+        )}
+
+        {screen.interactions && screen.interactions.length > 0 && (
+          <div>
+            <p className="text-[11px] font-medium text-surface-500 dark:text-surface-400 uppercase tracking-wide mb-1.5">
+              Interactions
+            </p>
+            <ul className="space-y-1">
+              {screen.interactions.map((interaction, i) => (
+                <li key={i} className="text-sm text-surface-700 dark:text-surface-300 flex items-start gap-1.5">
+                  <span className="text-surface-400 flex-shrink-0 mt-0.5">•</span>
+                  <span>
+                    <span className="font-medium">{interaction.trigger ?? 'Action'}</span>
+                    {interaction.target_screen && (
+                      <> → <span className="text-brand-600 dark:text-brand-400">{interaction.target_screen}</span></>
+                    )}
+                    {interaction.notes && (
+                      <span className="text-surface-500 dark:text-surface-400"> — {interaction.notes}</span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* URL input for this screen */}
+        <div className="pt-1">
+          <label className="block text-[11px] font-medium text-surface-500 dark:text-surface-400 mb-1">
+            Figma Frame Link (optional)
+          </label>
+          <input
+            type="text"
+            value={links[screen.name] ?? ''}
+            onChange={e => onLinkChange(screen.name, e.target.value)}
+            placeholder="https://www.figma.com/design/... (leave blank if not created)"
+            className={inputClass}
+          />
+        </div>
+
+        {/* Global info shown on first screen */}
+        {currentIndex === 0 && designGaps && designGaps.length > 0 && (
+          <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-3 py-2.5">
+            <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-1.5">
+              Design gaps ({designGaps.length})
+            </p>
+            <ul className="space-y-0.5">
+              {designGaps.map((gap, i) => (
+                <li key={i} className="text-xs text-amber-700 dark:text-amber-300">• {gap}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {currentIndex === screens.length - 1 && (navigationFlow || notes) && (
+          <div className="space-y-3 border-t border-surface-200 dark:border-surface-700 pt-4">
+            {navigationFlow && (
+              <div>
+                <p className="text-[11px] font-medium text-surface-500 dark:text-surface-400 uppercase tracking-wide mb-1">
+                  Navigation flow
+                </p>
+                <pre className="text-xs font-mono text-surface-700 dark:text-surface-300 bg-surface-50 dark:bg-surface-900 border border-surface-200 dark:border-surface-700 rounded-lg p-3 overflow-auto whitespace-pre-wrap">{navigationFlow}</pre>
+              </div>
+            )}
+            {notes && (
+              <div>
+                <p className="text-[11px] font-medium text-surface-500 dark:text-surface-400 uppercase tracking-wide mb-1">
+                  Notes
+                </p>
+                <p className="text-sm text-surface-700 dark:text-surface-300 leading-relaxed">{notes}</p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Dot navigation */}
+      <div className="flex gap-1 px-4 py-2.5 border-t border-surface-200 dark:border-surface-700 flex-shrink-0 bg-surface-50 dark:bg-surface-900">
+        {screens.map((s, idx) => {
+          const hasLink = !!links[s.name]?.trim();
+          return (
+            <button
+              key={s.name}
+              onClick={() => setCurrentIndex(idx)}
+              title={`${s.name}${hasLink ? ' (has link)' : ''}`}
+              className={`flex-1 h-1.5 rounded-full transition-colors ${
+                idx === currentIndex
+                  ? 'bg-rose-500'
+                  : hasLink
+                  ? 'bg-green-400 dark:bg-green-600'
+                  : 'bg-surface-300 dark:bg-surface-600'
+              }`}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 interface FigmaDesignActionsProps {
   figmaFileUrl: string | null;
   /** Screens from the artifact's `screens_created`. Empty when the artifact didn't parse —
@@ -23,6 +252,12 @@ interface FigmaDesignActionsProps {
   loading: boolean;
   /** Smaller text/padding for the inline checkpoint card vs. the full artifact drawer. */
   compact?: boolean;
+  /**
+   * When provided, link inputs are managed externally (e.g. by FigmaScreenPreviewer in the
+   * full artifact drawer). The component skips rendering its own URL inputs and uses these
+   * links for the submit payload instead.
+   */
+  externalLinks?: Record<string, string>;
   onMarkComplete: (payload: { figmaUrl?: string; screenLinks?: Record<string, string> }) => void;
   onRevise: () => void;
   onReject: () => void;
@@ -33,24 +268,30 @@ interface FigmaDesignActionsProps {
  * screen (so each screen's own Figma frame can be cited downstream instead of one
  * whole-file link), then mark-complete/revise/reject. Shared by the inline checkpoint
  * card and the full artifact drawer so the per-screen link UX can't drift between them.
+ *
+ * In the full artifact drawer, pass `externalLinks` — the URL inputs live in
+ * FigmaScreenPreviewer instead, and this component renders only the action buttons.
  */
 export function FigmaDesignActions({
   figmaFileUrl,
   screens,
   loading,
   compact = false,
+  externalLinks,
   onMarkComplete,
   onRevise,
   onReject,
 }: FigmaDesignActionsProps) {
-  const [links, setLinks] = useState<Record<string, string>>(
+  const [selfLinks, setSelfLinks] = useState<Record<string, string>>(
     () => Object.fromEntries(screens.map(s => [s.name, s.frame_url ?? '']))
   );
   const [currentScreenIndex, setCurrentScreenIndex] = useState(0);
 
-  const setLink = (key: string, value: string) => setLinks(prev => ({ ...prev, [key]: value }));
+  const links = externalLinks ?? selfLinks;
+  const setLink = (key: string, value: string) => {
+    if (!externalLinks) setSelfLinks(prev => ({ ...prev, [key]: value }));
+  };
 
-  // Allow submitting even with no links (user can leave all fields blank)
   const canSubmit = !loading;
 
   function submit() {
@@ -81,6 +322,9 @@ export function FigmaDesignActions({
     : 'py-2 px-3 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 text-red-700 dark:text-red-400 text-sm font-medium rounded-lg transition-colors';
   const noteClass = 'text-xs text-surface-500 dark:text-surface-400';
 
+  // Self-managed URL inputs (compact inline card only)
+  const showUrlInputs = !externalLinks;
+
   return (
     <div className={compact ? 'space-y-2' : 'space-y-3'}>
       {figmaFileUrl && (
@@ -97,81 +341,82 @@ export function FigmaDesignActions({
         </a>
       )}
 
-      <p className={noteClass}>
-        {figmaFileUrl
-          ? "Paste frame links for each screen, or leave blank if not created. Use the navigation to move between screens."
-          : "No Figma file was created automatically. Build the design from the screens and notes above, then paste frame links below (or leave blank)."}
-      </p>
+      {showUrlInputs && (
+        <>
+          <p className={noteClass}>
+            {figmaFileUrl
+              ? "Paste frame links for each screen, or leave blank if not created. Use the navigation to move between screens."
+              : "No Figma file was created automatically. Build the design from the screens and notes above, then paste frame links below (or leave blank)."}
+          </p>
 
-      {screens.length > 0 ? (
-        <div className="space-y-2">
-          {/* Screen navigation */}
-          <div className="flex items-center justify-between gap-2">
-            <button
-              onClick={() => setCurrentScreenIndex(Math.max(0, currentScreenIndex - 1))}
-              disabled={currentScreenIndex === 0}
-              className="px-2 py-1 text-xs rounded-md border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              ← Prev
-            </button>
-            <span className="text-xs text-surface-500 dark:text-surface-400 font-medium">
-              Screen {currentScreenIndex + 1} of {screens.length}
-            </span>
-            <button
-              onClick={() => setCurrentScreenIndex(Math.min(screens.length - 1, currentScreenIndex + 1))}
-              disabled={currentScreenIndex === screens.length - 1}
-              className="px-2 py-1 text-xs rounded-md border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              Next →
-            </button>
-          </div>
+          {screens.length > 0 ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  onClick={() => setCurrentScreenIndex(Math.max(0, currentScreenIndex - 1))}
+                  disabled={currentScreenIndex === 0}
+                  className="px-2 py-1 text-xs rounded-md border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  ← Prev
+                </button>
+                <span className="text-xs text-surface-500 dark:text-surface-400 font-medium">
+                  Screen {currentScreenIndex + 1} of {screens.length}
+                </span>
+                <button
+                  onClick={() => setCurrentScreenIndex(Math.min(screens.length - 1, currentScreenIndex + 1))}
+                  disabled={currentScreenIndex === screens.length - 1}
+                  className="px-2 py-1 text-xs rounded-md border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Next →
+                </button>
+              </div>
 
-          {/* Current screen input */}
-          {screens[currentScreenIndex] && (
+              {screens[currentScreenIndex] && (
+                <div>
+                  <label className={labelClass}>{screens[currentScreenIndex].name}</label>
+                  <input
+                    type="text"
+                    value={links[screens[currentScreenIndex].name] ?? ''}
+                    onChange={e => setLink(screens[currentScreenIndex].name, e.target.value)}
+                    placeholder="https://www.figma.com/design/... (optional - leave blank if not created)"
+                    className={inputClass}
+                  />
+                </div>
+              )}
+
+              <div className="flex gap-1">
+                {screens.map((s, idx) => {
+                  const hasValue = !!links[s.name]?.trim();
+                  return (
+                    <button
+                      key={s.name}
+                      onClick={() => setCurrentScreenIndex(idx)}
+                      title={`${s.name}${hasValue ? ' (has link)' : ' (empty)'}`}
+                      className={`flex-1 h-1 rounded-full transition-colors ${
+                        idx === currentScreenIndex
+                          ? 'bg-rose-500'
+                          : hasValue
+                          ? 'bg-green-400 dark:bg-green-600'
+                          : 'bg-surface-300 dark:bg-surface-600'
+                      }`}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
             <div>
-              <label className={labelClass}>{screens[currentScreenIndex].name}</label>
+              <label className={labelClass}>Figma Frame Link (optional)</label>
               <input
                 type="text"
-                value={links[screens[currentScreenIndex].name] ?? ''}
-                onChange={e => setLink(screens[currentScreenIndex].name, e.target.value)}
-                placeholder="https://www.figma.com/design/... (optional - leave blank if not created)"
+                value={links[FALLBACK_KEY] ?? ''}
+                onChange={e => setLink(FALLBACK_KEY, e.target.value)}
+                placeholder="https://www.figma.com/design/... (leave blank if not created)"
                 className={inputClass}
               />
             </div>
           )}
-
-          {/* Progress indicator */}
-          <div className="flex gap-1">
-            {screens.map((s, idx) => {
-              const hasValue = !!links[s.name]?.trim();
-              return (
-                <button
-                  key={s.name}
-                  onClick={() => setCurrentScreenIndex(idx)}
-                  title={`${s.name}${hasValue ? ' (has link)' : ' (empty)'}`}
-                  className={`flex-1 h-1 rounded-full transition-colors ${
-                    idx === currentScreenIndex
-                      ? 'bg-rose-500'
-                      : hasValue
-                      ? 'bg-green-400 dark:bg-green-600'
-                      : 'bg-surface-300 dark:bg-surface-600'
-                  }`}
-                />
-              );
-            })}
-          </div>
-        </div>
-      ) : (
-        <div>
-          <label className={labelClass}>Figma Frame Link (optional)</label>
-          <input
-            type="text"
-            value={links[FALLBACK_KEY] ?? ''}
-            onChange={e => setLink(FALLBACK_KEY, e.target.value)}
-            placeholder="https://www.figma.com/design/... (leave blank if not created)"
-            className={inputClass}
-          />
-        </div>
+        </>
       )}
 
       <div className={compact ? 'flex items-center gap-2' : 'flex gap-2'}>

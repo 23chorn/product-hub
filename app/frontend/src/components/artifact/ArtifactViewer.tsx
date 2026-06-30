@@ -17,8 +17,9 @@ import { RejectConfirmModal } from './RejectConfirmModal';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { useCheckpointActions } from '../../hooks/useCheckpointActions';
 import { renderStructuredArtifact } from './ArtifactContentView';
-import { FigmaDesignActions } from './FigmaDesignActions';
+import { FigmaDesignActions, FigmaScreenPreviewer } from './FigmaDesignActions';
 import { parseFigmaDesignContent } from '../../utils/figma-design';
+import { copyToClipboard } from '../../utils/markdown';
 
 export function ArtifactViewer() {
   const { viewingArtifactId, setViewingArtifactId, checkpoints, activeWorkflow, applyWorkflowStatus, addCoordinatorMessage } = useWorkflowStore();
@@ -41,6 +42,8 @@ export function ArtifactViewer() {
   const [showOpenQPanel, setShowOpenQPanel] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<{ itemLabel: string; run: () => string } | null>(null);
   const [showRevisionSummary, setShowRevisionSummary] = useState(false);
+  const [figmaLinks, setFigmaLinks] = useState<Record<string, string>>({});
+  const setFigmaLink = (key: string, value: string) => setFigmaLinks(prev => ({ ...prev, [key]: value }));
 
   const { user, noAuth } = useAuthStore();
 
@@ -71,6 +74,7 @@ export function ArtifactViewer() {
     setLoading(true);
     setError(null);
     setVersionInfo(null);
+    setFigmaLinks({});
 
     api.getArtifactContent(viewingArtifactId)
       .then(({ content: c, type: t }) => {
@@ -78,6 +82,10 @@ export function ArtifactViewer() {
           console.log(`[ArtifactViewer] Loaded artifact ${viewingArtifactId}, type="${t}", content length=${c.length}`);
           setContent(c);
           setArtifactType(t);
+          if (t === 'figma_design') {
+            const parsed = parseFigmaDesignContent(c);
+            setFigmaLinks(Object.fromEntries(parsed.screens.map(s => [s.name, s.frame_url ?? ''])));
+          }
         }
       })
       .catch((err) => {
@@ -357,7 +365,7 @@ export function ArtifactViewer() {
                 <button
                   onClick={() => {
                     const url = `${window.location.origin}${window.location.pathname}?workflowId=${activeWorkflow.id}&artifactId=${viewingArtifactId}`;
-                    navigator.clipboard.writeText(url);
+                    copyToClipboard(url);
                     setSaveToast('Link copied!');
                     setTimeout(() => setSaveToast(null), 2000);
                   }}
@@ -458,7 +466,7 @@ export function ArtifactViewer() {
             return (
               <div className="flex-1 min-h-0 relative">
                 {/* Content — always takes full width, centered with max-w in fullscreen */}
-                <div className={`h-full ${isEditing ? 'flex flex-col px-4 py-4' : 'overflow-y-auto px-4 py-4'}`}>
+                <div className={`h-full ${isEditing ? 'flex flex-col px-4 py-4' : isFigmaDesign && figmaDesign && !loading && !error ? 'overflow-hidden flex flex-col' : 'overflow-y-auto px-4 py-4'}`}>
                   <div className={`${isEditing ? 'flex-1 min-h-0 flex flex-col' : ''}`}>
                     {revisionSummary && !isEditing && (
                       <div className="mb-4 rounded-lg border border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-900/20 px-3.5 py-3">
@@ -492,6 +500,12 @@ export function ArtifactViewer() {
                         onChange={(e) => setEditContent(e.target.value)}
                         className="w-full flex-1 min-h-0 text-sm font-mono resize-none bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 border border-surface-200 dark:border-surface-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
                         spellCheck={false}
+                      />
+                    ) : isFigmaDesign && figmaDesign && content ? (
+                      <FigmaScreenPreviewer
+                        figmaDesign={figmaDesign}
+                        links={figmaLinks}
+                        onLinkChange={setFigmaLink}
                       />
                     ) : content ? renderStructuredArtifact(content, {
                       artifactType,
@@ -653,6 +667,7 @@ export function ArtifactViewer() {
                   figmaFileUrl={figmaDesign.figmaFileUrl}
                   screens={figmaDesign.screens}
                   loading={resolveLoading}
+                  externalLinks={figmaLinks}
                   onMarkComplete={({ figmaUrl, screenLinks }) => figmaComplete(figmaUrl, undefined, screenLinks)}
                   onRevise={() => setShowReviseForm(true)}
                   onReject={() => setShowRejectConfirm(true)}

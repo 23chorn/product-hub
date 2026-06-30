@@ -2,11 +2,19 @@
 export interface FigmaScreenRef {
   name: string;
   frame_url?: string;
+  description?: string;
+  prd_journeys?: string[];
+  layout_notes?: string;
+  interactions?: Array<{ trigger?: string; target_screen?: string; notes?: string }>;
 }
 
 export interface ParsedFigmaDesign {
   figmaFileUrl: string | null;
   screens: FigmaScreenRef[];
+  title?: string;
+  designGaps?: string[];
+  navigationFlow?: string;
+  notes?: string;
 }
 
 /**
@@ -23,9 +31,23 @@ export function parseFigmaDesignContent(content: string | null | undefined): Par
     const screens: FigmaScreenRef[] = Array.isArray(parsed.screens_created)
       ? parsed.screens_created
           .filter((s: any) => s && typeof s.name === 'string')
-          .map((s: any) => ({ name: s.name, frame_url: s.frame_url || undefined }))
+          .map((s: any) => ({
+            name: s.name,
+            frame_url: s.frame_url || undefined,
+            description: s.description || undefined,
+            prd_journeys: Array.isArray(s.prd_journeys) && s.prd_journeys.length ? s.prd_journeys : undefined,
+            layout_notes: s.layout_notes || undefined,
+            interactions: Array.isArray(s.interactions) && s.interactions.length ? s.interactions : undefined,
+          }))
       : [];
-    return { figmaFileUrl: parsed.figma_file_url || null, screens };
+    return {
+      figmaFileUrl: parsed.figma_file_url || null,
+      screens,
+      title: parsed.title || undefined,
+      designGaps: Array.isArray(parsed.design_gaps) && parsed.design_gaps.length ? parsed.design_gaps : undefined,
+      navigationFlow: parsed.navigation_flow || undefined,
+      notes: parsed.notes || undefined,
+    };
   } catch {
     return { figmaFileUrl: null, screens: [] };
   }

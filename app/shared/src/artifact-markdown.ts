@@ -150,7 +150,10 @@ function prdToMarkdown(d: Record<string, any>): string {
   if (Array.isArray(d.open_questions) && d.open_questions.length) {
     lines.push(`## Open Questions & Risks\n`);
     lines.push(tableHeader('#', 'Type', 'Question / Risk', 'Impact', 'Owner', 'Status'));
-    for (const q of d.open_questions) lines.push(row(String(q.id ?? ''), q.type ?? '', q.description ?? '', q.impact ?? '', q.owner ?? '', q.status ?? ''));
+    for (const q of d.open_questions) {
+      const desc = q.answer ? `${q.description ?? ''} — *${q.answer}*` : (q.description ?? '');
+      lines.push(row(String(q.id ?? ''), q.type ?? '', desc, q.impact ?? '', q.owner ?? '', q.status ?? ''));
+    }
     lines.push('');
   }
 
@@ -173,14 +176,12 @@ function architectureToMarkdown(d: Record<string, any>, variant: MarkdownVariant
       lines.push(variant === 'display'
         ? `## ⚠ New Dependencies (${d.new_dependencies.length})\n\n> **Review required.** The following technologies are not in the existing tech stack. Each must be approved before implementation begins.\n`
         : `## New Dependencies (${d.new_dependencies.length})\n\n> The following technologies are not in the existing tech stack and require approval before implementation.\n`);
-      lines.push(tableHeader('Name', 'Type', 'Why existing stack cannot solve this', 'Alternatives evaluated', 'Cost / Risk'));
+      lines.push(tableHeader('Name', 'Type', 'Why existing stack cannot solve this'));
       for (const dep of d.new_dependencies as any[]) {
         lines.push(row(
           dep.name ?? '',
           dep.type ?? '',
-          dep.not_solvable_with_existing_stack_because ?? '',
-          dep.existing_alternatives_evaluated ?? '',
-          dep.cost_or_risk ?? ''
+          dep.not_solvable_with_existing_stack_because ?? ''
         ));
       }
       lines.push('');
@@ -192,8 +193,8 @@ function architectureToMarkdown(d: Record<string, any>, variant: MarkdownVariant
     for (const [platform, decisions] of Object.entries(d.technology_decisions)) {
       if (!Array.isArray(decisions) || decisions.length === 0) continue;
       lines.push(`### ${platform.charAt(0).toUpperCase() + platform.slice(1)}\n`);
-      lines.push(tableHeader('Decision', 'Choice', 'Alternatives', 'Rationale'));
-      for (const dec of decisions as any[]) lines.push(row(dec.decision ?? '', dec.choice ?? '', dec.alternatives ?? '', dec.rationale ?? ''));
+      lines.push(tableHeader('Decision', 'Choice'));
+      for (const dec of decisions as any[]) lines.push(row(dec.decision ?? '', dec.choice ?? ''));
       lines.push('');
     }
   }
@@ -236,24 +237,6 @@ function architectureToMarkdown(d: Record<string, any>, variant: MarkdownVariant
     for (const flow of d.data_flows) {
       lines.push(`### ${flow.name ?? 'Flow'}\n`);
       if (Array.isArray(flow.steps)) flow.steps.forEach((s: string, i: number) => lines.push(`${i + 1}. ${s}`));
-      lines.push('');
-    }
-  }
-
-  if (d.infrastructure) {
-    lines.push(`## Infrastructure\n`);
-    const inf = d.infrastructure;
-    if (inf.hosting) lines.push(`**Hosting:** ${inf.hosting}\n`);
-    if (inf.cost_estimate) lines.push(`**Cost estimate:** ${inf.cost_estimate}\n`);
-    if (Array.isArray(inf.deployment_pipeline) && inf.deployment_pipeline.length) {
-      lines.push('**Deployment pipeline:**');
-      inf.deployment_pipeline.forEach((s: string, i: number) => lines.push(`${i + 1}. ${s}`));
-      lines.push('');
-    }
-    if (Array.isArray(inf.failure_modes) && inf.failure_modes.length) {
-      lines.push('**Failure modes:**\n');
-      lines.push(tableHeader('Mode', 'Mitigation'));
-      for (const f of inf.failure_modes) lines.push(row(f.mode ?? '', f.mitigation ?? ''));
       lines.push('');
     }
   }
