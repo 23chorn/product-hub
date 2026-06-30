@@ -111,10 +111,10 @@ router.get('/', (req: Request, res: Response) => {
     const rows = (includeArchived ? stmts.listArchived : stmts.list).all() as InitiativeRow[];
 
     // Batch-fetch latest workflow per item
-    const workflowMap = new Map<string, { id: string; status: string; current_stage: string | null; summary: string | null; policy_overrides: string; updated_at: number }>();
-    const wfRows: { item_id: string; id: string; status: string; current_stage: string | null; summary: string | null; policy_overrides: string; updated_at: number }[] = rows.length > 0
+    const workflowMap = new Map<string, { id: string; status: string; current_stage: string | null; summary: string | null; policy_overrides: string; stage_sequence: string; updated_at: number }>();
+    const wfRows: { item_id: string; id: string; status: string; current_stage: string | null; summary: string | null; policy_overrides: string; stage_sequence: string; updated_at: number }[] = rows.length > 0
       ? db.prepare(`
-          SELECT w.item_id, w.id, w.status, w.current_stage, w.summary, w.policy_overrides, w.updated_at
+          SELECT w.item_id, w.id, w.status, w.current_stage, w.summary, w.policy_overrides, w.stage_sequence, w.updated_at
           FROM workflows w
           INNER JOIN (
             SELECT item_id, MAX(created_at) as max_created
@@ -182,7 +182,7 @@ router.get('/', (req: Request, res: Response) => {
       return {
         ...toAirtableItem(r),
         source: r.source,
-        workflow: wf ? { id: wf.id, status: wf.status, currentStage: wf.current_stage, summary: wf.summary, pipelineStatus, isCancelled, isDemo, pendingStage, pendingApprovals, updatedAt: wf.updated_at } : undefined,
+        workflow: wf ? { id: wf.id, status: wf.status, currentStage: wf.current_stage, summary: wf.summary, stageSequence: JSON.parse(wf.stage_sequence ?? '[]') as string[], pipelineStatus, isCancelled, isDemo, pendingStage, pendingApprovals, updatedAt: wf.updated_at } : undefined,
       };
     });
 

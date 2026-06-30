@@ -6,12 +6,6 @@ import { useAuthStore, ROLE_LABELS, canLaunchWorkflow } from '../../stores/authS
 import { CardContextMenu } from '../common/CardContextMenu';
 import { ArchiveConfirmModal } from '../common/ArchiveConfirmModal';
 
-// Standard pipeline stages in order
-const PIPELINE_STAGES = [
-  'analyst', 'pm_prd', 'prototype', 'figma_design',
-  'solution_architect', 'epic_feature_planner', 'story_decomposition',
-];
-
 /** Format a workflow's last state-change timestamp, e.g. "18 Jun, 14:32". */
 function formatUpdatedAt(ms: number): string {
   const d = new Date(ms);
@@ -20,29 +14,32 @@ function formatUpdatedAt(ms: number): string {
   return `${date}, ${time}`;
 }
 
-/** Calculate workflow progress for display (stages completed before current). */
-function calculateDisplayProgress(currentStage: string | null, status: string): number {
-  if (status === 'complete') return 100;
-  if (!currentStage) return 0;
-
-  const stageIndex = PIPELINE_STAGES.indexOf(currentStage);
-  if (stageIndex === -1) return 0;
-
-  // Start at 0%: being AT stage N means N-1 stages are completed (current is in-progress)
-  // Stage 1 (index 0) = 0% (0/7), Stage 2 (index 1) = 14% (1/7), Stage 3 (index 2) = 29% (2/7)
-  return Math.round((stageIndex / PIPELINE_STAGES.length) * 100);
+/**
+ * Derive the display stage list from the workflow's actual stage_sequence.
+ * Strips out dynamic feature sub-stages (story_decomposition_F*) that are
+ * injected after approval and would overflow the dot bar.
+ */
+function displayStages(stageSequence: string[] | undefined): string[] {
+  if (!stageSequence || stageSequence.length === 0) return [];
+  return stageSequence.filter(s => !/story_decomposition_F\d/.test(s));
 }
 
-/** Calculate bar width to align with checkpoint positions (visual alignment). */
-function calculateBarWidth(currentStage: string | null, status: string): number {
+/** Calculate workflow progress percentage (stages completed before current). */
+function calculateDisplayProgress(currentStage: string | null, status: string, stages: string[]): number {
   if (status === 'complete') return 100;
-  if (!currentStage) return 0;
+  if (!currentStage || stages.length === 0) return 0;
+  const idx = stages.indexOf(currentStage);
+  if (idx === -1) return 0;
+  return Math.round((idx / stages.length) * 100);
+}
 
-  const stageIndex = PIPELINE_STAGES.indexOf(currentStage);
-  if (stageIndex === -1) return 0;
-
-  // Bar extends to checkpoint position (evenly distributed from 0% to 100%)
-  return Math.round((stageIndex / (PIPELINE_STAGES.length - 1)) * 100);
+/** Calculate bar width to align with checkpoint dot positions. */
+function calculateBarWidth(currentStage: string | null, status: string, stages: string[]): number {
+  if (status === 'complete') return 100;
+  if (!currentStage || stages.length <= 1) return 0;
+  const idx = stages.indexOf(currentStage);
+  if (idx === -1) return 0;
+  return Math.round((idx / (stages.length - 1)) * 100);
 }
 
 /** Card for one initiative in the HomeScreen grid: title, status, tags, and launch/resume/delete actions.
@@ -273,67 +270,64 @@ export function InitiativeCard({
       </div>
 
       {/* Progress bar with stage checkpoints (only show for active workflows) */}
-      {wf && isActive && (
-        <div className="flex-shrink-0 mb-2">
-          <div className="flex items-center justify-end mb-1">
-            <span className="text-[10px] font-medium text-surface-500 dark:text-surface-400">
-              {calculateDisplayProgress(wf.currentStage, wf.status)}%
-            </span>
-          </div>
-
-          {/* Progress bar with checkpoint markers */}
-          <div className="relative pb-6">
-            {/* Background bar */}
-            <div className="h-1.5 bg-surface-200 dark:bg-surface-700 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-brand-500 transition-all duration-300 ease-out"
-                style={{ width: `${calculateBarWidth(wf.currentStage, wf.status)}%` }}
-              />
+      {wf && isActive && (() => {
+        const stages = displayStages(wf.stageSequence);
+        const currentStageIdx = wf.currentStage ? stages.indexOf(wf.currentStage) : -1;
+        if (stages.length === 0) return null;
+        return (
+          <div className="flex-shrink-0 mb-2">
+            <div className="flex items-center justify-end mb-1">
+              <span className="text-[10px] font-medium text-surface-500 dark:text-surface-400">
+                {calculateDisplayProgress(wf.currentStage, wf.status, stages)}%
+              </span>
             </div>
 
-            {/* Stage checkpoint markers */}
-            <div className="absolute top-0 left-0 right-0 h-1.5 flex items-center justify-between">
-              {PIPELINE_STAGES.map((stage, idx) => {
-                const currentStageIdx = wf.currentStage ? PIPELINE_STAGES.indexOf(wf.currentStage) : -1;
-                const isCompleted = idx < currentStageIdx;
-                const isCurrent = idx === currentStageIdx;
+            {/* Progress bar with checkpoint markers */}
+            <div className="relative pb-6">
+              {/* Background bar */}
+              <div className="h-1.5 bg-surface-200 dark:bg-surface-700 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-brand-500 transition-all duration-300 ease-out"
+                  style={{ width: `${calculateBarWidth(wf.currentStage, wf.status, stages)}%` }}
+                />
+              </div>
 
-                // Shorten stage names for display
-                const shortName = stage === 'pm_prd' ? 'prd'
-                  : stage === 'solution_architect' ? 'architect'
-                  : stage === 'epic_feature_planner' ? 'epics'
-                  : stage === 'story_decomposition' ? 'stories'
-                  : stage === 'figma_design' ? 'figma'
-                  : stage;
-
-                return (
-                  <div key={stage} className="relative flex flex-col items-center">
-                    {/* Checkpoint dot */}
-                    <div className={`w-2 h-2 rounded-full border-2 transition-all ${
-                      isCompleted
-                        ? 'bg-brand-500 border-brand-500'
-                        : isCurrent
-                        ? 'bg-white dark:bg-surface-900 border-brand-500 ring-2 ring-brand-500 ring-offset-1'
-                        : 'bg-surface-100 dark:bg-surface-800 border-surface-300 dark:border-surface-600'
-                    }`} />
-
-                    {/* Always-visible stage label */}
-                    <div className={`absolute top-3 text-[10px] font-medium whitespace-nowrap transition-colors ${
-                      isCompleted
-                        ? 'text-brand-600 dark:text-brand-400'
-                        : isCurrent
-                        ? 'text-brand-600 dark:text-brand-400'
-                        : 'text-surface-400 dark:text-surface-600'
-                    }`}>
-                      {shortName}
+              {/* Stage checkpoint markers */}
+              <div className="absolute top-0 left-0 right-0 h-1.5 flex items-center justify-between">
+                {stages.map((stage, idx) => {
+                  const isCompleted = idx < currentStageIdx;
+                  const isCurrent = idx === currentStageIdx;
+                  const shortName = stage === 'pm_prd' ? 'prd'
+                    : stage === 'solution_architect' ? 'architect'
+                    : stage === 'epic_feature_planner' ? 'epics'
+                    : stage === 'story_decomposition' ? 'stories'
+                    : stage === 'figma_design' ? 'figma'
+                    : stage === 'api_spec' ? 'api'
+                    : stage;
+                  return (
+                    <div key={stage} className="relative flex flex-col items-center">
+                      <div className={`w-2 h-2 rounded-full border-2 transition-all ${
+                        isCompleted
+                          ? 'bg-brand-500 border-brand-500'
+                          : isCurrent
+                          ? 'bg-white dark:bg-surface-900 border-brand-500 ring-2 ring-brand-500 ring-offset-1'
+                          : 'bg-surface-100 dark:bg-surface-800 border-surface-300 dark:border-surface-600'
+                      }`} />
+                      <div className={`absolute top-3 text-[10px] font-medium whitespace-nowrap transition-colors ${
+                        isCompleted || isCurrent
+                          ? 'text-brand-600 dark:text-brand-400'
+                          : 'text-surface-400 dark:text-surface-600'
+                      }`}>
+                        {shortName}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Row 5: last updated, bottom */}
       {wf?.updatedAt && (

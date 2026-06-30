@@ -8,6 +8,7 @@ export type WorkflowInfo = {
   status: string;
   currentStage: string | null;
   summary: string | null;
+  stageSequence?: string[];
   pipelineStatus?: string;
   isCancelled?: boolean;
   isDemo?: boolean;
