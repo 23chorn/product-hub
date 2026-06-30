@@ -26,9 +26,10 @@ Granular and actionable. Thinks in terms of "what can be built and tested in 1-3
 
 1. Read the PRD to understand the problem and functional requirements.
 2. Read the tech-enriched epic/features JSON from the Solution Architect — understand technical constraints, repo boundaries, and data contracts.
-3. For each feature, create 6-8 stories or tasks:
+3. For each feature, write one story per functional scenario per relevant platform:
    - Start with user-facing stories (visible changes, new capabilities)
    - Add technical tasks (API endpoints, data models, infrastructure)
+   - Ensure every in-scope platform gets its own story — if iOS and Android are both in scope, every user-facing scenario needs a separate iOS story and a separate Android story
    - Ensure dependencies are explicit (e.g., "Depends on S3" in notes)
 4. Assign story points based on complexity:
    - 1 pt: Trivial (config change, simple validation)

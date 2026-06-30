@@ -1,6 +1,7 @@
 ALTER TABLE items ADD COLUMN is_paused INTEGER NOT NULL DEFAULT 0;
+--> statement-breakpoint
 ALTER TABLE items ADD COLUMN paused_at INTEGER;
-
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS initiative_comments (
   id          TEXT    PRIMARY KEY,
   item_id     TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -12,4 +13,5 @@ CREATE TABLE IF NOT EXISTS initiative_comments (
   title       TEXT,
   created_at  INTEGER NOT NULL
 );
+--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS idx_initiative_comments_item_id ON initiative_comments(item_id);
