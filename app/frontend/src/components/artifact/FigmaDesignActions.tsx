@@ -35,24 +35,23 @@ export function FigmaScreenPreviewer({
   const inputClass = 'w-full text-sm rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 px-3 py-2 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-rose-500';
   const sectionLabel = 'text-[11px] font-medium text-surface-500 dark:text-surface-400 uppercase tracking-wide mb-1';
 
-  // Does this artifact have global summary content that warrants its own page?
-  const hasGlobal = (designGaps?.length ?? 0) > 0 || !!navigationFlow || !!notes;
-  // If hasGlobal: page 0 = overview, pages 1..N = screens
-  const screenOffset = hasGlobal ? 1 : 0;
+  // Page 0 is always a Summary when there are screens (lists them briefly, plus nav/notes).
+  const hasSummary = screens.length > 0;
+  const screenOffset = hasSummary ? 1 : 0;
   const totalPages = screens.length + screenOffset;
 
   // Clamp stale index after screens change
   const pageIndex = Math.min(currentIndex, Math.max(0, totalPages - 1));
   if (pageIndex !== currentIndex) setCurrentIndex(pageIndex);
 
-  const isOverview = hasGlobal && pageIndex === 0;
+  const isSummary = hasSummary && pageIndex === 0;
   const screenIdx = pageIndex - screenOffset;
-  const screen = isOverview ? null : screens[screenIdx] ?? null;
+  const screen = isSummary ? null : screens[screenIdx] ?? null;
 
   const navPrevClass = 'px-2.5 py-1 text-xs rounded-md border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors';
 
-  // No screens and no global content — show a minimal fallback link input
-  if (screens.length === 0 && !hasGlobal) {
+  // No screens — show a minimal fallback link input
+  if (screens.length === 0) {
     return (
       <div className="flex flex-col h-full overflow-y-auto px-4 py-4 space-y-4">
         <p className="text-sm text-surface-500 dark:text-surface-400">
@@ -96,8 +95,8 @@ export function FigmaScreenPreviewer({
           ← Prev
         </button>
         <span className="text-xs font-medium text-surface-600 dark:text-surface-300 text-center min-w-0 truncate">
-          {isOverview
-            ? 'Overview'
+          {isSummary
+            ? 'Summary'
             : <>
                 Screen {screenIdx + 1} of {screens.length}
                 <span className="mx-1.5 text-surface-300 dark:text-surface-600">·</span>
@@ -116,22 +115,24 @@ export function FigmaScreenPreviewer({
 
       {/* Page content */}
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
-        {isOverview ? (
+        {isSummary ? (
           <>
-            <h3 className="text-base font-semibold text-surface-900 dark:text-surface-100">Design Overview</h3>
-
-            {designGaps && designGaps.length > 0 && (
-              <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-3 py-2.5">
-                <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-1.5">
-                  Design gaps ({designGaps.length})
-                </p>
-                <ul className="space-y-0.5">
-                  {designGaps.map((gap, i) => (
-                    <li key={i} className="text-xs text-amber-700 dark:text-amber-300">• {gap}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            <div>
+              <p className={sectionLabel}>Screens ({screens.length})</p>
+              <ul className="space-y-2 mt-1">
+                {screens.map((s, i) => (
+                  <li key={s.name} className="flex gap-2 text-sm">
+                    <span className="text-surface-400 flex-shrink-0 tabular-nums">{i + 1}.</span>
+                    <span>
+                      <span className="font-medium text-surface-800 dark:text-surface-100">{s.name}</span>
+                      {s.description && (
+                        <span className="text-surface-500 dark:text-surface-400"> — {s.description}</span>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
 
             {navigationFlow && (
               <div>
@@ -144,6 +145,19 @@ export function FigmaScreenPreviewer({
               <div>
                 <p className={sectionLabel}>Notes</p>
                 <p className="text-sm text-surface-700 dark:text-surface-300 leading-relaxed">{notes}</p>
+              </div>
+            )}
+
+            {designGaps && designGaps.length > 0 && (
+              <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-3 py-2.5">
+                <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-1.5">
+                  Design gaps ({designGaps.length})
+                </p>
+                <ul className="space-y-0.5">
+                  {designGaps.map((gap, i) => (
+                    <li key={i} className="text-xs text-amber-700 dark:text-amber-300">• {gap}</li>
+                  ))}
+                </ul>
               </div>
             )}
           </>
@@ -213,12 +227,12 @@ export function FigmaScreenPreviewer({
         )}
       </div>
 
-      {/* Dot navigation — first dot = overview (if present), rest = screens */}
+      {/* Dot navigation — first dot = summary, rest = screens */}
       <div className="flex gap-1 px-4 py-2.5 border-t border-surface-200 dark:border-surface-700 flex-shrink-0 bg-surface-50 dark:bg-surface-900">
-        {hasGlobal && (
+        {hasSummary && (
           <button
             onClick={() => setCurrentIndex(0)}
-            title="Overview"
+            title="Summary"
             className={`w-5 h-1.5 rounded-full transition-colors flex-shrink-0 ${
               pageIndex === 0 ? 'bg-rose-500' : 'bg-surface-300 dark:bg-surface-600'
             }`}

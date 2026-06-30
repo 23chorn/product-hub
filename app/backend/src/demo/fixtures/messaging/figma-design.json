@@ -8,7 +8,7 @@
       "name": "Chat Tab — Channel List",
       "frame_url": "https://www.figma.com/file/aBcD1234xCubeMsgMock/In-App-Messaging?node-id=501-1",
       "prd_journeys": ["Discover and join a channel", "See unread message activity"],
-      "description": "The primary chat entry point showing all public channels, ordered by recent activity. Unread counts and last message preview help users prioritise.",
+      "description": "Entry point listing all public channels ordered by recent activity, with unread counts and last message preview.",
       "layout_notes": "Existing BottomNavBar with Chat tab active. Channel rows reuse the ListItem/Channel component (unread variant for unseen channels). Pull-to-refresh supported.",
       "interactions": [
         { "trigger": "tap channel row", "target_screen": "Channel Detail", "notes": "Passes channel id and name" },
@@ -19,7 +19,7 @@
       "name": "Channel Detail — Message Thread",
       "frame_url": "https://www.figma.com/file/aBcD1234xCubeMsgMock/In-App-Messaging?node-id=501-2",
       "prd_journeys": ["Send a message in a channel", "Attach a ticker card to a message"],
-      "description": "Real-time message thread for a single channel. Messages appear chronologically with sender avatar and timestamp. Ticker cards are inline with expandable price widget.",
+      "description": "Real-time message thread for a channel, with inline ticker cards and a compose bar for sending messages.",
       "layout_notes": "Fixed header with channel name, member count, back chevron. Compose bar pinned above safe area with a chart-icon button to attach a ticker.",
       "interactions": [
         { "trigger": "tap back", "target_screen": "Chat Tab — Channel List", "notes": "" },
@@ -32,7 +32,7 @@
       "name": "Ticker Search — Attach to Message",
       "frame_url": "https://www.figma.com/file/aBcD1234xCubeMsgMock/In-App-Messaging?node-id=501-3",
       "prd_journeys": ["Attach a ticker card to a message"],
-      "description": "Bottom sheet triggered from the compose bar. User searches by ticker symbol or company name. Tapping a result attaches a TickerCard to the pending message.",
+      "description": "Bottom sheet for searching a ticker by symbol or name and attaching it as a card to the pending message.",
       "layout_notes": "Reuses the existing Sheet pattern and InstrumentSearchResult list item, showing last price, change %, and market status inline.",
       "interactions": [
         { "trigger": "tap result", "target_screen": "Channel Detail — Message Thread", "notes": "Returns to thread with ticker card pre-attached in compose" },
@@ -43,7 +43,7 @@
       "name": "Ticker Card Detail",
       "frame_url": "https://www.figma.com/file/aBcD1234xCubeMsgMock/In-App-Messaging?node-id=501-4",
       "prd_journeys": ["View live ticker data from a message"],
-      "description": "Expanded view of a TickerCard tapped from a message. Shows live price, intraday chart, bid/ask, volume, and a Buy / Sell CTA linking to the existing order flow.",
+      "description": "Expanded ticker card showing live price, intraday chart, and bid/ask, with Buy / Sell CTAs that hand off to the existing order flow.",
       "layout_notes": "Reuses the existing TickerCard/expanded and QuoteChart components as the header. Buy/Sell CTAs hand off to the existing order flow — out of scope here.",
       "interactions": [
         { "trigger": "tap back", "target_screen": "Channel Detail — Message Thread", "notes": "" },
@@ -54,7 +54,7 @@
       "name": "Create Channel",
       "frame_url": "https://www.figma.com/file/aBcD1234xCubeMsgMock/In-App-Messaging?node-id=501-5",
       "prd_journeys": ["Create a new public channel"],
-      "description": "Simple form to create a new public channel. Name (required, unique), optional topic, and a Create button. Inline validation on name uniqueness.",
+      "description": "Form to create a new public channel with a required unique name, optional topic, and inline validation.",
       "layout_notes": "Two stacked inputs — Name (50 char limit) and Topic (optional, 140 char limit) — with the Create button pinned above the keyboard safe area.",
       "interactions": [
         { "trigger": "tap Create", "target_screen": "Channel Detail — Message Thread", "notes": "Navigates to newly created channel on success" },
