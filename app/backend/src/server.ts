@@ -40,6 +40,7 @@ import userRoutes from './routes/user-routes';
 import completedInitiativesRoutes from './routes/completed-initiatives-routes';
 import devTicketsRoutes from './routes/dev-tickets-routes';
 import deploymentRoutes from './routes/deployment-routes';
+import { commentsRoutes } from './routes/comments-routes';
 import { authMiddleware } from './middleware/auth';
 
 const logger = new Logger('SERVER');
@@ -176,6 +177,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/completed-initiatives', completedInitiativesRoutes);
 app.use('/api/dev/initiatives', devTicketsRoutes);
 app.use('/api/deployments', deploymentRoutes);
+app.use('/api', commentsRoutes);
 
 app.get('/api', (req, res) => {
   res.json({

@@ -19,6 +19,7 @@ import { RestartConfirmModal } from './RestartConfirmModal';
 import { BacklogOverviewModal } from '../artifact/BacklogOverviewModal';
 import { PageHeaderTitle } from '../common/PageHeaderTitle';
 import { PageHeaderActions } from '../common/PageHeaderActions';
+import { CommentsPanel } from '../initiative/CommentsPanel';
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -70,6 +71,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   const [showAudit, setShowAudit] = useState(false);
   const [showBacklogOverview, setShowBacklogOverview] = useState(false);
   const [showDescription, setShowDescription] = useState(false);
+  const [showComments, setShowComments] = useState(false);
   const [artifacts, setArtifacts] = useState<Array<{ id: number; type: string; stage: string | null; created_at: number }>>([]);
   // 0-based feature index → phase label (e.g. "MVP", "Phase 1") that feature belongs to.
   const [featurePhaseLabels, setFeaturePhaseLabels] = useState<string[]>([]);
@@ -426,6 +428,16 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
             </svg>
             activity
           </button>
+          <button
+            onClick={() => setShowComments(v => !v)}
+            title="Initiative log — notes and decisions"
+            className={`flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-1 rounded border transition-colors ${showComments ? 'border-brand-400 dark:border-brand-600 bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400' : 'border-surface-300 dark:border-surface-700/50 text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-800'}`}
+          >
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            log
+          </button>
           {isWorkflowActive && (
             <button
               onClick={handleStop}
@@ -701,6 +713,11 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
           );
         })()}
       </div>
+
+      {/* ── Comments panel (third pane, collapsible) ─────────── */}
+      {showComments && selectedItem && (
+        <CommentsPanel itemId={selectedItem.id} />
+      )}
 
       {showAudit && (
         <AuditTrailPanel workflowId={activeWorkflow.id} onClose={() => setShowAudit(false)} />

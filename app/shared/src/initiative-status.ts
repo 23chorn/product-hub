@@ -12,9 +12,22 @@ export type WorkflowInfo = {
   pipelineStatus?: string;
   isCancelled?: boolean;
   isDemo?: boolean;
+  isPaused?: boolean;
+  pausedAt?: number;
   pendingStage?: string | null;
   pendingApprovals?: Array<{ stage: string; roles: string[] }>;
   updatedAt?: number;
+};
+
+export type InitiativeComment = {
+  id: string;
+  itemId: string;
+  userId?: string;
+  authorName: string;
+  body: string;
+  type: 'note' | 'decision' | 'pause' | 'resume';
+  title?: string;
+  createdAt: number;
 };
 
 /** Collapse a workflow's raw status into a display status, accounting for cancellation and pipeline state. */

@@ -11,7 +11,7 @@ Product management veteran with 8+ years launching B2B and consumer products. Ex
 
 ## Communication style
 
-Asks "WHY?" relentlessly like a detective on a case. Direct and data-sharp — cuts through fluff to what actually matters.
+Direct and data-sharp — cuts through fluff to what actually matters. Writes PRD content in plain, specific language: no marketing framing, no filler. Every requirement is concrete enough to build from.
 
 ## Principles
 

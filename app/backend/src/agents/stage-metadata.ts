@@ -425,7 +425,7 @@ export const STAGE_TOOL_DEFINITIONS: Record<string, StageToolDefinition[]> = {
   story_decomposition: [
     {
       name: 'validate_backlog_json',
-      description: 'Validate your backlog JSON structure before returning it. Checks story_id format (F?.S?), as_a/i_want/so_that fields, Given/When/Then acceptance criteria (2–5 per story), technical_acceptance_criteria, platform tags, and story/feature count limits. Call after drafting.',
+      description: 'Validate your backlog JSON structure before returning it. Checks story_id format (F?.S?), as_a/i_want/so_that fields, Given/When/Then acceptance criteria (2–5 per story), technical_acceptance_criteria, platform tag (single stream per story: backend | web | ios | android), PRD traceability, and dependency references. Call after drafting.',
       input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete backlog JSON string to validate' } }, required: ['json'] },
     },
   ],

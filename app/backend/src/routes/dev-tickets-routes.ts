@@ -85,6 +85,24 @@ export function matchesPhase(featurePhase: string | null | undefined, phaseFilte
   return !phaseFilter || !featurePhase || phaseFilter.has(featurePhase.toLowerCase());
 }
 
+/** Parse the epic-level description and businessValue from an epic_features artifact. Used
+ *  as a fallback when the merged backlog artifact is absent (story decomposition hasn't run)
+ *  or when the backlog synthesis template omits businessValue (which it always does). */
+async function loadEpicFeaturesEpic(
+  artifactId: number | null
+): Promise<{ description?: string; businessValue?: string } | null> {
+  if (artifactId == null) return null;
+  const content = await loadArtifactContentById(artifactId);
+  if (!content) return null;
+  try {
+    const stripped = content.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+    const parsed = JSON.parse(stripped);
+    return parsed?.epic ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Overlay an ADO tracking row's id/url/state on top of whatever rich content the backlog
  *  artifact has for the same local key — ADO wins on title (the canonical ticket title),
  *  the artifact contributes everything else (description, acceptance criteria, estimates...). */
@@ -327,9 +345,10 @@ router.get('/:seqNum/manifest', async (req: Request, res: Response) => {
     }
 
     const initiativeContext = await buildInitiativeContext(initiative.id);
-    const { ticketArtifactId } = getDocumentArtifactIds(initiative.id);
+    const { epicFeaturesArtifactId, ticketArtifactId } = getDocumentArtifactIds(initiative.id);
     const backlogContent = ticketArtifactId != null ? await loadArtifactContentById(ticketArtifactId) : null;
     const backlog = backlogContent != null ? tryParseBacklog(backlogContent) : null;
+    const epicFeaturesEpic = await loadEpicFeaturesEpic(epicFeaturesArtifactId);
 
     const epicRow = workItemRows.find(r => r.ado_type === 'epic');
     const epicContent = backlog?.epic;
@@ -338,8 +357,8 @@ router.get('/:seqNum/manifest', async (req: Request, res: Response) => {
       adoId: epicRow.ado_id,
       adoUrl: epicRow.ado_url,
       title: epicRow.title,
-      description: epicContent?.description ?? null,
-      businessValue: epicContent?.businessValue ?? null,
+      description: epicContent?.description ?? epicFeaturesEpic?.description ?? null,
+      businessValue: epicContent?.businessValue ?? epicFeaturesEpic?.businessValue ?? null,
       state: epicRow.state,
       stateBucket: epicRow.state != null ? bucketWorkItemState(epicRow.state) : null,
     } : null;
@@ -596,9 +615,10 @@ router.get('/:seqNum/tickets', async (req: Request, res: Response) => {
       return;
     }
 
-    const { ticketArtifactId, testArtifactIds } = getDocumentArtifactIds(initiative.id);
+    const { epicFeaturesArtifactId, ticketArtifactId, testArtifactIds } = getDocumentArtifactIds(initiative.id);
     const backlogContent = ticketArtifactId != null ? await loadArtifactContentById(ticketArtifactId) : null;
     const backlog = backlogContent != null ? tryParseBacklog(backlogContent) : null;
+    const epicFeaturesEpic = await loadEpicFeaturesEpic(epicFeaturesArtifactId);
 
     const initiativeHeader = { seqNum: initiative.seq_num, id: initiative.id, title: initiative.title };
     const stream = streamFilter ? Array.from(streamFilter) : null;
@@ -630,7 +650,15 @@ router.get('/:seqNum/tickets', async (req: Request, res: Response) => {
 
     const epics = workItemRows
       .filter(r => r.ado_type === 'epic')
-      .map(r => mergeAdoAndContent(r, r.local_key === 'epic' ? backlog?.epic : undefined));
+      .map(r => {
+        const base = r.local_key === 'epic' ? backlog?.epic : undefined;
+        const enriched = base || epicFeaturesEpic ? {
+          ...(base ?? {}),
+          description: base?.description ?? epicFeaturesEpic?.description,
+          businessValue: base?.businessValue ?? epicFeaturesEpic?.businessValue,
+        } : undefined;
+        return mergeAdoAndContent(r, enriched);
+      });
 
     res.json({
       initiative: initiativeHeader,

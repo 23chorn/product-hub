@@ -7,7 +7,7 @@ import { useWorkflowStore } from '../../stores/workflowStore';
 import { useAuthStore, canLaunchWorkflow } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useToast } from '../../hooks/useToast';
-import { TOGGLEABLE_STAGES, SMALL_WORKFLOW_KEYS } from '../../constants/stage-labels';
+import { TOGGLEABLE_STAGES, WORKFLOW_PRESETS } from '../../constants/stage-labels';
 import { InitiativeCard } from './InitiativeCard';
 import { HomeHeader } from './HomeHeader';
 import { PageHeaderActions } from '../common/PageHeaderActions';
@@ -75,6 +75,9 @@ export function HomeScreen() {
   const configEnabledStages = config?.stages?.enabledStages;
   const availableStages = TOGGLEABLE_STAGES.filter(
     s => s.key === 'curator' || !configEnabledStages || configEnabledStages[s.key] !== false
+  );
+  const smallStages = WORKFLOW_PRESETS.small.filter(
+    s => !configEnabledStages || configEnabledStages[s.key] !== false
   );
 
   const setLocalItems = (d: EnrichedItem[]) => { _cachedLocalItems = d; setLocalItemsRaw(d); };
@@ -247,7 +250,7 @@ export function HomeScreen() {
     setLaunchError(null);
     try {
       const selectedStages = launchPreset === 'small'
-        ? SMALL_WORKFLOW_KEYS
+        ? smallStages.map(s => s.key)
         : availableStages.map(s => s.key);
       const goal = launchItem.description
         ? `${launchItem.initiative}\n\n${launchItem.description}`
@@ -298,10 +301,12 @@ export function HomeScreen() {
       return true;
     });
 
-    const c: Record<StatusFilter, number> = { all: filtered.length, active: 0, review: 0, done: 0, stopped: 0, new: 0, mine: 0, archived: 0 };
+    const c: Record<StatusFilter, number> = { all: filtered.length, active: 0, review: 0, done: 0, stopped: 0, new: 0, mine: 0, archived: 0, paused: 0 };
     filtered.forEach(item => {
       if (item.status === 'archived') {
         c.archived++;
+      } else if (item.isPaused) {
+        c.paused++;
       } else {
         const s = item.workflow ? effectiveStatus(item.workflow) : undefined;
         if (s === 'active') c.active++;
@@ -337,6 +342,10 @@ export function HomeScreen() {
       if (statusFilter === 'archived' && !isArchived) return false;
       // All other filters: exclude archived items
       if (statusFilter !== 'archived' && isArchived) return false;
+
+      // Paused filter: only show paused items; other filters exclude paused items
+      if (statusFilter === 'paused' && !item.isPaused) return false;
+      if (statusFilter !== 'paused' && statusFilter !== 'all' && item.isPaused) return false;
 
       // Stopped initiatives never count as needing review/approval, even if a
       // checkpoint was left pending at the moment the workflow was cancelled.
@@ -502,6 +511,7 @@ export function HomeScreen() {
           phase={launchPhase}
           selectedPreset={launchPreset}
           fullStages={availableStages}
+          smallStages={smallStages}
           onSelectPreset={setLaunchPreset}
           error={launchError}
           onConfirm={handleConfirmLaunch}

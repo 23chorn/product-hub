@@ -1,8 +1,15 @@
 import { STAGE_SHORT_LABELS } from '../../constants/stage-labels';
 import { effectiveStatus, type WorkflowInfo } from './types';
 
-/** Small coloured status pill for an initiative's workflow (Running / Review / Done / Stopped). */
-export function StatusBadge({ wf }: { wf?: WorkflowInfo }) {
+/** Small coloured status pill for an initiative's workflow (Running / Review / Paused / Done / Stopped). */
+export function StatusBadge({ wf, isPaused }: { wf?: WorkflowInfo; isPaused?: boolean }) {
+  if (isPaused) {
+    return (
+      <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400">
+        Paused
+      </span>
+    );
+  }
   if (!wf) {
     return (
       <span className="flex-shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400">
@@ -14,10 +21,13 @@ export function StatusBadge({ wf }: { wf?: WorkflowInfo }) {
   const pendingStageLabel = wf.pendingStage
     ? STAGE_SHORT_LABELS[wf.pendingStage] ?? wf.pendingStage.replace(/_/g, ' ')
     : null;
+  const currentStageLabel = wf.currentStage
+    ? STAGE_SHORT_LABELS[wf.currentStage] ?? wf.currentStage.replace(/_/g, ' ')
+    : null;
   const label = eff === 'complete' ? 'Done'
     : eff === 'cancelled' ? 'Stopped'
     : eff === 'paused_at_checkpoint' ? (pendingStageLabel ? `Review · ${pendingStageLabel}` : 'Review')
-    : eff === 'active' ? 'Running'
+    : eff === 'active' ? (currentStageLabel ? `Running · ${currentStageLabel}` : 'Running')
     : eff;
   const color = eff === 'complete'
     ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'

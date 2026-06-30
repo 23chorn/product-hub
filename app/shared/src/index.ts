@@ -13,7 +13,7 @@ export {
   effectiveStatus, resolveDisplayTitle, featureLocalKey, storyLocalKey,
   parseFeatureLocalKey, parseStoryLocalKey,
 } from './initiative-status';
-export type { WorkflowInfo } from './initiative-status';
+export type { WorkflowInfo, InitiativeComment } from './initiative-status';
 export {
   backlogTier, getSprintMeta, getAllStories, getAllFeatures, tryParseBacklog, isBacklogArtifactType,
   TICKET_PLATFORMS, PLATFORM_LABELS, getStoryPlatforms, countTicketsByPlatform,

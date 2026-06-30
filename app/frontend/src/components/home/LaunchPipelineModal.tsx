@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import type { EnrichedItem, LaunchPhase, StageOption, WorkflowPreset } from './types';
-import { WORKFLOW_PRESETS } from '../../constants/stage-labels';
 import { useAuthStore } from '../../stores/authStore';
 import { useToast } from '../../hooks/useToast';
 import { api } from '../../services/api';
@@ -10,6 +9,7 @@ interface LaunchPipelineModalProps {
   phase: LaunchPhase;
   selectedPreset: WorkflowPreset;
   fullStages: StageOption[];
+  smallStages: StageOption[];
   onSelectPreset: (preset: WorkflowPreset) => void;
   error: string | null;
   onConfirm: () => void;
@@ -38,6 +38,7 @@ export function LaunchPipelineModal({
   phase,
   selectedPreset,
   fullStages,
+  smallStages,
   onSelectPreset,
   error,
   onConfirm,
@@ -220,7 +221,7 @@ export function LaunchPipelineModal({
               <p className="text-[10px] text-surface-500 dark:text-surface-400 leading-snug mb-1">
                 PRD → architecture → features → tickets. Skips research.
               </p>
-              <StagePills stages={WORKFLOW_PRESETS.small} />
+              <StagePills stages={smallStages} />
             </button>
               </div>
 

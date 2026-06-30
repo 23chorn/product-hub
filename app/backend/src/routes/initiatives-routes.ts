@@ -27,6 +27,8 @@ interface InitiativeRow {
   metadata: string | null;
   seq_num: number | null;
   status: string;
+  is_paused: number;
+  paused_at: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -73,11 +75,11 @@ function toLocalInitiative(row: InitiativeRow): LocalInitiative {
 
 const stmts = {
   list: db.prepare(
-    `SELECT id, title, description, source, metadata, seq_num, status, created_at, updated_at FROM items
+    `SELECT id, title, description, source, metadata, seq_num, status, is_paused, paused_at, created_at, updated_at FROM items
      WHERE source IN ('local', 'airtable') AND status != 'archived' ORDER BY created_at DESC`
   ),
   listArchived: db.prepare(
-    `SELECT id, title, description, source, metadata, seq_num, status, created_at, updated_at FROM items
+    `SELECT id, title, description, source, metadata, seq_num, status, is_paused, paused_at, created_at, updated_at FROM items
      WHERE source IN ('local', 'airtable') AND status = 'archived' ORDER BY created_at DESC`
   ),
   get: db.prepare(
@@ -182,6 +184,8 @@ router.get('/', (req: Request, res: Response) => {
       return {
         ...toAirtableItem(r),
         source: r.source,
+        isPaused: Boolean(r.is_paused),
+        pausedAt: r.paused_at ?? undefined,
         workflow: wf ? { id: wf.id, status: wf.status, currentStage: wf.current_stage, summary: wf.summary, stageSequence: JSON.parse(wf.stage_sequence ?? '[]') as string[], pipelineStatus, isCancelled, isDemo, pendingStage, pendingApprovals, updatedAt: wf.updated_at } : undefined,
       };
     });

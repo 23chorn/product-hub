@@ -67,6 +67,8 @@ Model config (pricing, token limits, per-agent assignments) is centralised in `u
 ### Database
 Single SQLite file at `db/product-ops.db` via `better-sqlite3` (synchronous). Schema is defined in `db/schema.ts` (Drizzle) — the single source of truth. On startup, `app/backend/src/data/database.ts` runs `migrate()` against `db/migrations/` (tracked in the `__drizzle_migrations` table). To change the schema: edit `db/schema.ts`, then generate a migration with `npm run db:generate` from `app/backend/` (config in `app/backend/drizzle.config.ts`). The rest of the codebase uses the raw `better-sqlite3` instance exported as the default from `database.ts`.
 
+**Always use `npm run db:generate` to create migrations** — never write a `.sql` file by hand without also adding the corresponding entry to `db/migrations/meta/_journal.json`. Drizzle's migrator only runs files listed in the journal; a SQL file without a journal entry is silently ignored and the migration will never apply on any environment. If you do write SQL manually, add an entry with the next `idx`, a `when` timestamp after the last entry, the matching `tag` (filename without `.sql`), and `"breakpoints": true`.
+
 | Table | Purpose |
 |-------|---------|
 | `items` | Work-item registry; all sessions/workflows FK into this |

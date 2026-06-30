@@ -471,8 +471,8 @@ export function validateBacklogJson(input: Record<string, unknown>): string {
     if (!Array.isArray(feature.stories) || feature.stories.length === 0) {
       issues.push(`${p}: stories must be a non-empty array`);
     } else {
-      if (feature.stories.length > 12) {
-        issues.push(`${p}: ${feature.stories.length} stories exceeds the 12-story limit`);
+      if (feature.stories.length > 20) {
+        issues.push(`${p}: ${feature.stories.length} stories — split this feature. 4 functional scenarios × 4 platforms = 16 stories is already a full batch; more than 20 means the feature scope is too wide.`);
       }
       feature.stories.forEach((s: any, i: number) => validateStory(s, `${p}.stories[${i}]`));
     }
@@ -485,9 +485,6 @@ export function validateBacklogJson(input: Record<string, unknown>): string {
     if (!Array.isArray(parsed.features) || parsed.features.length === 0) {
       issues.push('features must be a non-empty array');
     } else {
-      if (parsed.features.length > 6) {
-        issues.push(`${parsed.features.length} features exceeds the 6-feature limit`);
-      }
       parsed.features.forEach((f: any, i: number) => validateFeature(f, `features[${i}]`));
       allStories = parsed.features.flatMap((f: any) => Array.isArray(f.stories) ? f.stories : []);
     }

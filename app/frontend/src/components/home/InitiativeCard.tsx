@@ -33,6 +33,18 @@ function calculateDisplayProgress(currentStage: string | null, status: string, s
   return Math.round((idx / stages.length) * 100);
 }
 
+/** Map a current stage to its display-stage equivalent.
+ *  story_decomposition_F* stages are filtered from the dot bar, so while they're active
+ *  we pin the indicator to backlog_merge (the next visible stage they're heading toward). */
+function normalizeCurrentStage(currentStage: string | null, stages: string[]): string | null {
+  if (!currentStage) return null;
+  if (stages.includes(currentStage)) return currentStage;
+  if (/story_decomposition_F\d/.test(currentStage) && stages.includes('backlog_merge')) {
+    return 'backlog_merge';
+  }
+  return null;
+}
+
 /** Calculate bar width to align with checkpoint dot positions. */
 function calculateBarWidth(currentStage: string | null, status: string, stages: string[]): number {
   if (status === 'complete') return 100;
@@ -221,7 +233,7 @@ export function InitiativeCard({
             Demo
           </span>
         )}
-        <StatusBadge wf={wf} />
+        <StatusBadge wf={wf} isPaused={item.isPaused} />
         {isAdmin && approvalBadges.map((label) => (
           <span
             key={label}
@@ -231,11 +243,11 @@ export function InitiativeCard({
             Needs {label}
           </span>
         ))}
-        {item.productArea && (
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400">
-            {item.productArea}
+        {item.productArea && item.productArea.split(',').map(area => area.trim()).filter(Boolean).map(area => (
+          <span key={area} className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400">
+            {area}
           </span>
-        )}
+        ))}
         {item.strategicTheme && (
           <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400">
             {item.strategicTheme}
@@ -243,13 +255,9 @@ export function InitiativeCard({
         )}
       </div>
 
-      {/* Row 3: description / running-stage line - flexible area */}
-      <div className={`min-h-0 mb-3 ${wf?.currentStage && wf.status === 'active' ? '' : 'flex-1'}`}>
-        {wf?.currentStage && wf.status === 'active' ? (
-          <p className="text-xs text-surface-400 dark:text-surface-500">
-            {`Running ${wf.currentStage.replace(/_/g, ' ')}`}
-          </p>
-        ) : item.description ? (
+      {/* Row 3: description - flexible area */}
+      <div className="flex-1 min-h-0 mb-3">
+        {item.description ? (
           <div>
             <p
               ref={descriptionRef}
@@ -272,13 +280,14 @@ export function InitiativeCard({
       {/* Progress bar with stage checkpoints (only show for active workflows) */}
       {wf && isActive && (() => {
         const stages = displayStages(wf.stageSequence);
-        const currentStageIdx = wf.currentStage ? stages.indexOf(wf.currentStage) : -1;
+        const effectiveStage = normalizeCurrentStage(wf.currentStage, stages);
+        const currentStageIdx = effectiveStage ? stages.indexOf(effectiveStage) : -1;
         if (stages.length === 0) return null;
         return (
           <div className="flex-shrink-0 mb-2">
             <div className="flex items-center justify-end mb-1">
               <span className="text-[10px] font-medium text-surface-500 dark:text-surface-400">
-                {calculateDisplayProgress(wf.currentStage, wf.status, stages)}%
+                {calculateDisplayProgress(effectiveStage, wf.status, stages)}%
               </span>
             </div>
 
@@ -288,7 +297,7 @@ export function InitiativeCard({
               <div className="h-1.5 bg-surface-200 dark:bg-surface-700 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-brand-500 transition-all duration-300 ease-out"
-                  style={{ width: `${calculateBarWidth(wf.currentStage, wf.status, stages)}%` }}
+                  style={{ width: `${calculateBarWidth(effectiveStage, wf.status, stages)}%` }}
                 />
               </div>
 
@@ -301,6 +310,7 @@ export function InitiativeCard({
                     : stage === 'solution_architect' ? 'architect'
                     : stage === 'epic_feature_planner' ? 'epics'
                     : stage === 'story_decomposition' ? 'stories'
+                    : stage === 'backlog_merge' ? 'backlog'
                     : stage === 'figma_design' ? 'figma'
                     : stage === 'api_spec' ? 'api'
                     : stage;

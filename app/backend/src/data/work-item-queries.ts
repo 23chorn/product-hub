@@ -83,6 +83,7 @@ export function getDocumentArtifactIds(itemId: string): {
   prdArtifactId: number | null;
   architectureArtifactId: number | null;
   figmaArtifactId: number | null;
+  epicFeaturesArtifactId: number | null;
   ticketArtifactId: number | null;
   testArtifactIds: number[];
 } {
@@ -116,6 +117,7 @@ export function getDocumentArtifactIds(itemId: string): {
     prdArtifactId: latestOfType(['prd']),
     architectureArtifactId: latestOfType(['architecture']),
     figmaArtifactId: latestOfType(['figma_design']),
+    epicFeaturesArtifactId: latestOfType(['epic_features']),
     ticketArtifactId: latestOfType(['backlog']),
     testArtifactIds: Array.from(latestQaPerFeature.values()).map(r => r.artifact_id),
   };

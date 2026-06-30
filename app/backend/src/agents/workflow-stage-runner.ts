@@ -317,7 +317,15 @@ export async function runAutonomousStage(
     // Helper to add platform scope constraint to item context
     const addPlatformScope = (base: string): string => {
       if (!productAreaScope) return base;
-      const scopeText = `\n\n**Platform Scope:** ${productAreaScope}\n- Design and architect ONLY for the platforms this tag implies (e.g., "Web App" → web platform only; "Mobile App" → iOS + Android only)\n- Do NOT design for platforms outside this scope\n- User stories, architecture decisions, and prototypes must be scoped to these platforms only`;
+      const lower = productAreaScope.toLowerCase();
+      const hasWeb = /web|browser|desktop/.test(lower);
+      const hasMobile = /mobile|ios|android/.test(lower);
+      const platformDesc = hasWeb && hasMobile
+        ? 'both Web and Mobile (iOS + Android)'
+        : hasWeb ? 'Web only — no mobile'
+        : hasMobile ? 'Mobile (iOS + Android) only — no web'
+        : productAreaScope;
+      const scopeText = `\n\n**Platform Scope:** ${productAreaScope} — ${platformDesc}\n- Design and architect ONLY for the platforms listed above\n- Do NOT design for platforms outside this scope\n- User stories, architecture decisions, and prototypes must be scoped to these platforms only`;
       return base + scopeText;
     };
 
