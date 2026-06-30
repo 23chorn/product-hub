@@ -619,35 +619,34 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
 
         {/* Artifacts section (sticky at bottom of right panel) */}
         {(artifacts.length > 0 || showCRButton || (pendingDiffCount ?? 0) > 0) && (() => {
-          // Group by stage, keep only the latest per stage
-          const latestByStage = new Map<string, typeof artifacts[0]>();
+          // Group by artifact.type — unique per stage and collision-safe even when two
+          // stages share the same session mode (e.g. solution_architect + api_spec both
+          // use mode='architecture', but their types are 'architecture' and 'api_spec').
+          const latestByType = new Map<string, typeof artifacts[0]>();
           artifacts.forEach(artifact => {
-            const stage = artifact.stage ?? 'unknown';
-            const existing = latestByStage.get(stage);
+            const key = artifact.type ?? 'unknown';
+            const existing = latestByType.get(key);
             if (!existing || artifact.created_at > existing.created_at) {
-              latestByStage.set(stage, artifact);
+              latestByType.set(key, artifact);
             }
           });
 
           // "Tickets" button is for the Epic/Feature shells only (epic_feature_planner).
-          // artifact.stage = s.mode (session mode), not the workflow stage name:
-          //   epic_feature_planner → mode 'epic_features'
-          //   story_decomposition_F* → mode 'backlog' (handled per-feature below instead)
-          const TICKET_MODES = new Set(['epic_features']);
-          const ticketCandidates = Array.from(latestByStage.values())
-            .filter(a => TICKET_MODES.has(a.stage ?? ''))
+          const TICKET_TYPES = new Set(['epic_features']);
+          const ticketCandidates = Array.from(latestByType.values())
+            .filter(a => TICKET_TYPES.has(a.type ?? ''))
             .sort((a, b) => b.created_at - a.created_at);
           const ticketArtifact = ticketCandidates[0] ?? null;
 
-          const regularArtifacts = Array.from(latestByStage.values())
-            .filter(a => !TICKET_MODES.has(a.stage ?? '') && a.stage !== 'backlog' && a.type !== 'qa_tests');
+          const regularArtifacts = Array.from(latestByType.values())
+            .filter(a => !TICKET_TYPES.has(a.type ?? '') && a.type !== 'backlog' && a.type !== 'qa_tests');
 
           const hasArtifacts = regularArtifacts.length > 0 || !!ticketArtifact || featureButtons.length > 0;
           return (
             <div className="flex-shrink-0 border-t border-surface-200 dark:border-surface-700/60 bg-white dark:bg-[#0d1117] px-2 py-2">
               <div className="flex flex-wrap items-center gap-1.5">
                 {regularArtifacts.map((artifact) => {
-                  const stageLabel = STAGE_SHORT_LABELS[artifact.stage ?? ''] ?? STAGE_LABELS[artifact.stage ?? ''] ?? artifact.type;
+                  const stageLabel = STAGE_SHORT_LABELS[artifact.type ?? ''] ?? STAGE_SHORT_LABELS[artifact.stage ?? ''] ?? STAGE_LABELS[artifact.stage ?? ''] ?? artifact.type;
                   return (
                     <button
                       key={artifact.id}

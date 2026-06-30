@@ -239,7 +239,7 @@ async function cleanupPreviousDemoRuns(): Promise<void> {
 // epic_feature_planner checkpoint is approved, injectFeatureDecompositionStages()
 // (see feature-decomposition.ts) replaces it with the actual story_decomposition_F1..FN
 // stages based on the real feature count from the epic_features artifact.
-const CORE_STAGES = ['analyst', 'pm_prd', 'prototype', 'figma_design', 'solution_architect', 'epic_feature_planner', 'story_decomposition'];
+const CORE_STAGES = ['analyst', 'pm_prd', 'prototype', 'figma_design', 'solution_architect', 'api_spec', 'epic_feature_planner', 'story_decomposition'];
 
 function buildDemoStages(): string[] {
   return [...CORE_STAGES, 'curator'];

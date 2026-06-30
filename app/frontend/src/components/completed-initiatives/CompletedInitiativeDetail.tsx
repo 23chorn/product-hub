@@ -7,7 +7,7 @@ import {
 import { api } from '../../services/api';
 import { useAuthStore } from '../../stores/authStore';
 import { relativeTime } from '../../utils/relative-time';
-import { isDocumentArtifact, convertArtifactToMarkdown } from '../../utils/artifact-to-markdown';
+import { isDocumentArtifact, renderArtifactMarkdown } from '@pap/shared';
 import { BacklogView } from '../artifact/BacklogView';
 import { QATestsView, groupByType, typeMeta } from '../artifact/QATestsView';
 import { MarkdownContent } from '../common/MarkdownContent';
@@ -70,7 +70,7 @@ function PercentBar({ percent }: { percent: number | null }) {
 function DocumentTabContent({ state }: { state: DocState | undefined }) {
   if (state === undefined || state === 'loading') return <p className="text-sm text-surface-400 animate-pulse">Loading...</p>;
   if (state === null) return <p className="text-sm text-surface-400 italic">No document was produced for this stage.</p>;
-  const md = isDocumentArtifact(state.type) ? convertArtifactToMarkdown(state.type, state.content) : null;
+  const md = isDocumentArtifact(state.type) ? renderArtifactMarkdown(state.type, state.content, 'display') : null;
   return (
     <div className="max-w-4xl mx-auto">
       <MarkdownContent>{md ?? state.content}</MarkdownContent>

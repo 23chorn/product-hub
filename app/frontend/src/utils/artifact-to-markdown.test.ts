@@ -1,11 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { convertArtifactToMarkdown, parseOpenQuestions } from './artifact-to-markdown';
-
-describe('convertArtifactToMarkdown', () => {
-  it('returns null for an artifact type with no converter', () => {
-    expect(convertArtifactToMarkdown('not-a-real-type', '{}')).toBeNull();
-  });
-});
+import { parseOpenQuestions } from './artifact-to-markdown';
 
 describe('parseOpenQuestions — JSON PRDs', () => {
   it('returns only questions whose status is open (defaulting missing status to open)', () => {

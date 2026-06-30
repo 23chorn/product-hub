@@ -1,22 +1,9 @@
 /**
- * In-app (display) rendering of structured JSON artifacts to markdown. The converters
- * themselves live in @pap/shared so the backend's wiki/publish rendering can't drift from
- * what the UI shows; this module only pins the 'display' variant and the UI's null-on-
- * missing-converter contract, plus the frontend-only open-questions parser.
+ * Frontend-only open-questions parser for PRD artifacts.
+ * Structured JSON→markdown converters live in @pap/shared so the backend wiki
+ * rendering stays in sync — import renderArtifactMarkdown / isDocumentArtifact
+ * from there directly instead of adding wrappers here.
  */
-import { renderArtifactMarkdown, isDocumentArtifact } from '@pap/shared';
-
-export { isDocumentArtifact };
-
-/**
- * Convert a JSON artifact string to markdown for display.
- * Returns null if the artifactType has no converter (i.e. it was always markdown or a specialized view).
- */
-export function convertArtifactToMarkdown(artifactType: string, content: string): string | null {
-  return renderArtifactMarkdown(artifactType, content, 'display');
-}
-
-// ── Open questions parser ─────────────────────────────────────────────────────
 
 export interface OpenQuestion {
   id: string;

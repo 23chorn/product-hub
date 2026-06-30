@@ -86,8 +86,21 @@ describe('validateAnalystJson', () => {
     expect(r.issues!.some(i => i.includes('inline citations'))).toBe(true);
   });
 
-  it('requires market_size sub-fields', () => {
+  it('requires market_size sub-fields when web search is available', () => {
     const r = run({ ...validAnalyst, market_size: { tam: '$5B' } });
+    expect(r.valid).toBe(false);
+    expect(r.issues!.some(i => i.includes('market_size'))).toBe(true);
+  });
+
+  it('accepts market_size: null when web search is unavailable', () => {
+    const noSearch = { ...validAnalyst, market_size: null, references: [], executive_summary: 'No search available.' };
+    const r = JSON.parse(validateAnalystJson({ json: JSON.stringify(noSearch), web_search_enabled: false }));
+    expect(r.valid).toBe(true);
+  });
+
+  it('rejects a market_size object when web search is unavailable', () => {
+    const noSearch = { ...validAnalyst, market_size: { tam: '$5B', growth_cagr: '10%', key_driver: 'mobile' }, references: [], executive_summary: 'No search.' };
+    const r = JSON.parse(validateAnalystJson({ json: JSON.stringify(noSearch), web_search_enabled: false }));
     expect(r.valid).toBe(false);
     expect(r.issues!.some(i => i.includes('market_size'))).toBe(true);
   });

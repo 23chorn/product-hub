@@ -81,16 +81,26 @@ export function validateAnalystJson(input: Record<string, unknown>): string {
   if (parsed === null) return fail(issues);
 
   const p = parsed;
+  const webSearchEnabled = input.web_search_enabled === true;
+
   req(p, 'title', 'root', issues);
   req(p, 'executive_summary', 'root', issues);
   req(p, 'problem_space', 'root', issues);
   req(p, 'conclusion', 'root', issues);
 
-  // market_size
-  if (!p.market_size || typeof p.market_size !== 'object') {
-    issues.push('root: "market_size" object is required');
+  // market_size — gated on web search availability.
+  // TAM figures without live sources are unreliable; the template instructs the agent
+  // to set market_size to null when no web search tool is available.
+  if (webSearchEnabled) {
+    if (!p.market_size || typeof p.market_size !== 'object') {
+      issues.push('root: "market_size" object is required when web search is available');
+    } else {
+      ['tam', 'growth_cagr', 'key_driver'].forEach(f => req(p.market_size, f, 'market_size', issues));
+    }
   } else {
-    ['tam', 'growth_cagr', 'key_driver'].forEach(f => req(p.market_size, f, 'market_size', issues));
+    if (p.market_size !== null && p.market_size !== undefined) {
+      issues.push('root: "market_size" must be null — no web search was available this session, so TAM/market figures would be invented. Set market_size to null.');
+    }
   }
 
   // target_users
@@ -127,12 +137,8 @@ export function validateAnalystJson(input: Record<string, unknown>): string {
     }
   });
 
-  // references + citation check — gated on whether web search was actually available.
-  // Forcing a reference when there's no way to find or verify one is exactly what
-  // pushes the model to fabricate a source, so when the caller marks
-  // web_search_enabled !== true (Bedrock/Ollama sessions), the rule flips: references
-  // must be EMPTY, and a non-empty array is flagged as fabricated and rejected.
-  const webSearchEnabled = input.web_search_enabled === true;
+  // references + citation check — same web_search gate as market_size above.
+  // When web search is unavailable, references must be empty to prevent fabricated sources.
   let refs: any[] | null;
   if (webSearchEnabled) {
     refs = reqArray(p, 'references', 'root', issues, 1);

@@ -24,16 +24,6 @@
         "choice": "Debezium CDC \u2192 Kafka \u2192 S3 (Parquet)"
       }
     ],
-    "infrastructure": [
-      {
-        "decision": "WebSocket gateway",
-        "choice": "Nginx with stream module (or HAProxy)"
-      },
-      {
-        "decision": "Compute",
-        "choice": "AWS ECS Fargate (existing cluster)"
-      }
-    ]
   },
   "data_model": {
     "entities": [
@@ -150,9 +140,6 @@
       "notes": "Separate from main RDS cluster; Cassandra on EC2 (3-node cluster) not Fargate"
     }
   ],
-  "infrastructure": {
-    "hosting": "Message Service on existing AWS ECS Fargate cluster: 5 tasks \u00d7 1 vCPU / 2GB RAM; auto-scales to 20 at peak. Cassandra: 3-node EC2 cluster (r6g.xlarge) in us-east-1. Kafka: MSK (2 brokers). WS Gateway: 2 Nginx tasks on Fargate."
-  },
   "new_dependencies": [
     {
       "name": "Apache Cassandra",

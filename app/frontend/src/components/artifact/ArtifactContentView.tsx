@@ -10,7 +10,7 @@ import { tryParseQATests } from '@pap/shared';
 import { QATestsView, removeTestCase } from './QATestsView';
 import { TechRefinementView, tryParseTechRefinement } from './TechRefinementView';
 import { PrototypePreview, type PrototypeData } from '../coordinator/PrototypePreview';
-import { convertArtifactToMarkdown, isDocumentArtifact } from '../../utils/artifact-to-markdown';
+import { renderArtifactMarkdown, isDocumentArtifact } from '@pap/shared';
 import { MarkdownContent } from '../common/MarkdownContent';
 import type { WorkflowRow, WorkflowCheckpoint } from '../../stores/workflowStore';
 
@@ -190,7 +190,7 @@ export function renderStructuredArtifact(content: string, ctx: ArtifactViewConte
   }
   // Document artifacts are stored as JSON but rendered as markdown via the converter.
   if (isDocumentArtifact(artifactType)) {
-    const md = convertArtifactToMarkdown(artifactType, content);
+    const md = renderArtifactMarkdown(artifactType, content, 'display');
     if (md !== null) {
       return (
         <MarkdownContent>{md}</MarkdownContent>

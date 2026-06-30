@@ -80,7 +80,6 @@ function analystToMarkdown(d: Record<string, any>): string {
 function prdToMarkdown(d: Record<string, any>): string {
   const lines: string[] = [];
   lines.push(`# ${d.title ?? 'PRD'}\n`);
-  if (d.status) lines.push(`**Status:** ${d.status}\n`);
 
   if (d.problem_statement) lines.push(`## Problem Statement\n\n${d.problem_statement}\n`);
 
@@ -257,6 +256,83 @@ function architectureToMarkdown(d: Record<string, any>, variant: MarkdownVariant
   return lines.join('\n');
 }
 
+function apiSpecToMarkdown(d: Record<string, any>): string {
+  const lines: string[] = [];
+  const info = d.info ?? {};
+  lines.push(`# ${info.title ?? 'API Contract'}\n`);
+  if (info.description) lines.push(`${info.description}\n`);
+  if (info.version) lines.push(`**Version:** ${info.version}\n`);
+
+  if (Array.isArray(d.servers) && d.servers.length) {
+    const urls = d.servers.map((s: any) => s.url ?? '').filter(Boolean).join(', ');
+    if (urls) lines.push(`**Base URL:** \`${urls}\`\n`);
+  }
+
+  if (Array.isArray(d.tags) && d.tags.length) {
+    lines.push(`## Resource Groups\n`);
+    for (const tag of d.tags) {
+      lines.push(`- **${tag.name ?? ''}** — ${tag.description ?? ''}`);
+    }
+    lines.push('');
+  }
+
+  // Collect endpoints from paths, group by first tag
+  if (d.paths && typeof d.paths === 'object') {
+    const byTag: Record<string, Array<{ method: string; path: string; summary: string; description: string; operationId: string }>> = {};
+
+    for (const [path, pathItem] of Object.entries(d.paths as Record<string, any>)) {
+      const methods = ['get', 'post', 'put', 'patch', 'delete'];
+      for (const method of methods) {
+        const op = pathItem[method];
+        if (!op) continue;
+        const tag = (Array.isArray(op.tags) && op.tags[0]) ? op.tags[0] : 'Other';
+        if (!byTag[tag]) byTag[tag] = [];
+        byTag[tag].push({
+          method: method.toUpperCase(),
+          path,
+          summary: op.summary ?? '',
+          description: op.description ?? '',
+          operationId: op.operationId ?? '',
+        });
+      }
+    }
+
+    if (Object.keys(byTag).length) {
+      lines.push(`## Endpoints\n`);
+      for (const [tag, ops] of Object.entries(byTag)) {
+        lines.push(`### ${tag}\n`);
+        lines.push(tableHeader('Method', 'Path', 'Summary', 'FR'));
+        for (const op of ops) {
+          // Extract FR reference from description (e.g. "Satisfies FR-01: ...")
+          const frMatch = op.description.match(/FR-\w+/);
+          const fr = frMatch ? frMatch[0] : '';
+          lines.push(row(op.method, `\`${op.path}\``, op.summary, fr));
+        }
+        lines.push('');
+      }
+    }
+  }
+
+  // Schemas summary
+  const schemas = d.components?.schemas;
+  if (schemas && typeof schemas === 'object') {
+    const schemaNames = Object.keys(schemas);
+    if (schemaNames.length) {
+      lines.push(`## Data Schemas\n`);
+      lines.push(tableHeader('Schema', 'Required fields', 'Description'));
+      for (const name of schemaNames) {
+        const s = schemas[name];
+        const required = Array.isArray(s.required) ? s.required.join(', ') : '';
+        const desc = s.description ?? '';
+        lines.push(row(name, required, desc));
+      }
+      lines.push('');
+    }
+  }
+
+  return lines.join('\n');
+}
+
 function figmaDesignToMarkdown(d: Record<string, any>): string {
   const lines: string[] = [];
   lines.push(`# ${d.title ?? 'Figma Mockup Plan'}\n`);
@@ -312,6 +388,7 @@ const CONVERTERS: Record<string, Converter> = {
   prd: prdToMarkdown,
   architecture: architectureToMarkdown,
   figma_design: figmaDesignToMarkdown,
+  api_spec: apiSpecToMarkdown,
 };
 
 /** Whether an artifactType has a structured JSON→markdown converter. */
