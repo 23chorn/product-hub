@@ -1,9 +1,9 @@
 import https from 'https';
 import Logger from './logger';
 import db from '../data/database';
-import { getUsersByRole, getAdminUsers, hasAnyUsers } from '../data/users';
-import { checkpointArtifactLabel } from '../agents/stage-metadata';
+import { getUserById, getUsersByRole, getAdminUsers } from '../data/users';
 import { normalizeStageForRoles } from '../agents/workflow-db';
+import { checkpointArtifactLabel } from '../agents/stage-metadata';
 import { isDemoWorkflow } from '../demo/demo-mode';
 import { getGlobalPolicy } from '../config/settings-store';
 
@@ -62,26 +62,61 @@ function post(payload: object): void {
   }
 }
 
-function buildMentions(stage: string): string {
-  if (!hasAnyUsers()) return '';
-  try {
-    const stageRoles = db.prepare<[string], { role_name: string }>(
-      'SELECT role_name FROM stage_roles WHERE stage = ?'
-    ).all(normalizeStageForRoles(stage));
+/**
+ * Look up the item_id for a workflow. Returns null when the workflow doesn't exist
+ * (e.g. called without a workflowId, which callers pass as optional).
+ */
+function lookupItemId(workflowId: string): string | null {
+  return (db.prepare<[string], { item_id: string }>(
+    'SELECT item_id FROM workflows WHERE id = ?'
+  ).get(workflowId))?.item_id ?? null;
+}
 
-    const users = stageRoles.length > 0
-      ? stageRoles.flatMap(({ role_name }) => getUsersByRole(role_name))
-      : getAdminUsers();
+/**
+ * Build Slack @-mentions for users who are both assigned to this initiative AND hold
+ * the relevant stage role for the checkpoint. When `stage` is omitted (completion
+ * notifications), all assigned users with a Slack ID are included.
+ * Returns null when the filtered set is empty — caller should skip the notification.
+ */
+function buildAssignedMentions(itemId: string, stage?: string): string | null {
+  try {
+    const assignedRows = db.prepare<[string], { user_id: number }>(
+      'SELECT user_id FROM item_assignments WHERE item_id = ?'
+    ).all(itemId);
+
+    if (assignedRows.length === 0) return null;
+
+    const assignedIds = new Set(assignedRows.map(r => r.user_id));
+
+    // For checkpoint notifications, intersect with stage-role holders.
+    // For completion notifications (no stage), all assigned users are eligible.
+    let candidates: Array<{ id: number; slack_user_id: string | null }>;
+    if (stage) {
+      const stageRoles = db.prepare<[string], { role_name: string }>(
+        'SELECT role_name FROM stage_roles WHERE stage = ?'
+      ).all(normalizeStageForRoles(stage));
+
+      const roleUsers = stageRoles.length > 0
+        ? stageRoles.flatMap(({ role_name }) => getUsersByRole(role_name))
+        : getAdminUsers();
+
+      candidates = roleUsers.filter(u => assignedIds.has(u.id));
+    } else {
+      candidates = assignedRows
+        .map(r => getUserById(r.user_id))
+        .filter((u): u is NonNullable<typeof u> => u !== null);
+    }
 
     const seen = new Set<string>();
-    const mentions = users
-      .filter(u => u.slack_user_id && !seen.has(u.slack_user_id) && seen.add(u.slack_user_id!))
+    const mentions = candidates
+      .filter((u): u is typeof u & { slack_user_id: string } => !!u.slack_user_id)
+      .filter(u => !seen.has(u.slack_user_id) && seen.add(u.slack_user_id))
       .map(u => `<@${u.slack_user_id}>`)
       .join(' ');
 
-    return mentions;
+    return mentions || null;
   } catch {
-    return '';
+    return null;
   }
 }
 
@@ -103,8 +138,19 @@ export function notifyCheckpointPending(
     return;
   }
 
+  // Only notify users assigned to this specific initiative — no assignment = no ping
+  const itemId = workflowId ? lookupItemId(workflowId) : null;
+  if (!itemId) {
+    logger.info('Slack checkpoint notification skipped — no item_id resolved from workflowId');
+    return;
+  }
+  const mentions = buildAssignedMentions(itemId, stage);
+  if (!mentions) {
+    logger.info(`Slack checkpoint notification skipped — no assigned users with the "${stage}" stage role for item ${itemId}`);
+    return;
+  }
+
   const label = checkpointArtifactLabel(stage);
-  const mentions = buildMentions(stage);
   const appUrl = getAppUrl();
 
   // A revision return reads differently from a first-run review so the reviewer
@@ -114,25 +160,20 @@ export function notifyCheckpointPending(
     : `*${label}* ready for review`;
   const emoji = revisionRequestedBy ? ':arrows_counterclockwise:' : ':eyes:';
 
-  const text = mentions
-    ? `${mentions} — ${headline} on "${initiativeTitle}"`
-    : `${headline} — ${initiativeTitle}`;
-
   const reviewUrl = workflowId ? `${appUrl}?workflowId=${workflowId}` : null;
 
-  const blocks: object[] = [
-    {
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: mentions
-          ? `${emoji} ${headline}\n*Initiative:* ${initiativeTitle}\n${mentions}${reviewUrl ? `\n\n<${reviewUrl}|Open Review →>` : ''}`
-          : `${emoji} ${headline}\n*Initiative:* ${initiativeTitle}${reviewUrl ? `\n\n<${reviewUrl}|Open Review →>` : ''}`,
+  post({
+    text: `${mentions} — ${headline} on "${initiativeTitle}"`,
+    blocks: [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `${emoji} ${headline}\n*Initiative:* ${initiativeTitle}\n${mentions}${reviewUrl ? `\n\n<${reviewUrl}|Open Review →>` : ''}`,
+        },
       },
-    },
-  ];
-
-  post({ text, blocks });
+    ],
+  });
 }
 
 export function notifyWorkflowComplete(initiativeTitle: string, workflowId?: string): void {
@@ -142,14 +183,26 @@ export function notifyWorkflowComplete(initiativeTitle: string, workflowId?: str
     return;
   }
 
+  // Only notify users assigned to this specific initiative — no assignment = no ping
+  const itemId = workflowId ? lookupItemId(workflowId) : null;
+  if (!itemId) {
+    logger.info('Slack completion notification skipped — no item_id resolved from workflowId');
+    return;
+  }
+  const mentions = buildAssignedMentions(itemId);
+  if (!mentions) {
+    logger.info(`Slack completion notification skipped — no assigned users with Slack IDs for item ${itemId}`);
+    return;
+  }
+
   post({
-    text: `Workflow complete — ${initiativeTitle}`,
+    text: `${mentions} — Workflow complete: ${initiativeTitle}`,
     blocks: [
       {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `:white_check_mark: *Workflow complete*\n*Initiative:* ${initiativeTitle}`,
+          text: `:white_check_mark: *Workflow complete*\n*Initiative:* ${initiativeTitle}\n${mentions}`,
         },
       },
     ],

@@ -43,6 +43,18 @@ const TABS: Array<{ key: DocTab; label: string }> = [
 
 const PLATFORM_ORDER: TicketPlatform[] = ['backend', 'web', 'ios', 'android'];
 
+/** Tabs that have content for a given detail object. Manage is always visible. */
+function visibleTabsFor(detail: CompletedInitiativeDetailData): Set<DocTab> {
+  const s = new Set<DocTab>(['manage'] as DocTab[]);
+  if (detail.researchArtifactId != null) s.add('research');
+  if (detail.prdArtifactId != null) s.add('prd');
+  if (detail.architectureArtifactId != null) s.add('architecture');
+  if (detail.figmaArtifactId != null) s.add('figma');
+  if (detail.ticketArtifactId != null) s.add('tickets');
+  if (detail.testArtifactIds.length > 0) s.add('tests');
+  return s;
+}
+
 function singleDocArtifactId(detail: CompletedInitiativeDetailData | null, tab: SingleDocTab): number | null {
   if (!detail) return null;
   switch (tab) {
@@ -148,11 +160,15 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
     let stale = false;
     setLoading(true);
     setDocCache({});
-    setTab('tickets');
 
     api.getCompletedInitiative(itemId, archived).then(async (data) => {
       if (stale) return;
       setDetail(data);
+      // Pick the first tab that actually has content for this initiative
+      const visible = visibleTabsFor(data);
+      const firstTab = (['tickets', 'tests', 'research', 'prd', 'architecture', 'figma', 'manage'] as DocTab[])
+        .find(k => visible.has(k)) ?? 'manage';
+      setTab(firstTab);
 
       const [ticketResult, epicFeaturesResult, testResults] = await Promise.all([
         data.ticketArtifactId != null
@@ -254,6 +270,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
 
   const ticketBreakdown = filteredBacklog ? countTicketsByPlatform(getAllStories(filteredBacklog)) : null;
   const testTypeCounts = qa ? groupByType(qa.test_cases).map(([type, cases]) => ({ type, count: cases.length, meta: typeMeta(type) })) : [];
+  const visibleTabs = detail ? TABS.filter(t => visibleTabsFor(detail).has(t.key)) : TABS;
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-surface-50 dark:bg-surface-950">
@@ -320,7 +337,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
 
               <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/50 p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-1">Test Cases</p>
-                <p className="text-2xl font-bold text-surface-900 dark:text-surface-100">{detail?.testCaseCount ?? 0}</p>
+                <p className="text-2xl font-bold text-surface-900 dark:text-surface-100">{qa?.test_cases.length ?? detail?.testCaseCount ?? 0}</p>
                 <div className="flex gap-1.5 flex-wrap mt-2">
                   {testTypeCounts.map(({ type, count, meta }) => (
                     <span key={type} className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${meta.color}`}>
@@ -340,7 +357,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
 
             <div>
               <div className="flex border-b border-surface-200 dark:border-surface-700">
-                {TABS.map(t => (
+                {visibleTabs.map(t => (
                   <button
                     key={t.key}
                     onClick={() => setTab(t.key)}
@@ -357,15 +374,17 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
 
               <div className="pt-4">
                 {tab === 'tickets' && (
-                  filteredBacklog && (filteredBacklog.features?.length ?? 0) > 0 ? (
-                    <BacklogView data={filteredBacklog} stateByLocalKey={stateByLocalKey} epicFeatures={epicFeatures ?? undefined} />
-                  ) : (
-                    <p className="text-sm text-surface-400 italic">No backlog content found for this initiative.</p>
-                  )
+                  <div className="max-w-4xl mx-auto">
+                    {filteredBacklog && (filteredBacklog.features?.length ?? 0) > 0 ? (
+                      <BacklogView data={filteredBacklog} stateByLocalKey={stateByLocalKey} epicFeatures={epicFeatures ?? undefined} />
+                    ) : (
+                      <p className="text-sm text-surface-400 italic">No backlog content found for this initiative.</p>
+                    )}
+                  </div>
                 )}
 
                 {tab === 'tests' && (
-                  <div className="space-y-4">
+                  <div className="max-w-4xl mx-auto space-y-4">
                     {qa && qa.test_cases.length > 0 ? (
                       <QATestsView data={qa} />
                     ) : (

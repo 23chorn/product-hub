@@ -5,6 +5,7 @@ import Logger from '../utils/logger';
 import { requireAdmin } from '../middleware/auth';
 import type { AuthRequest } from '../middleware/auth';
 import type { InitiativeComment } from '@pap/shared';
+import { getUserById, listUsers } from '../data/users';
 
 const logger = new Logger('COMMENTS');
 const router = Router();
@@ -123,6 +124,73 @@ router.post('/initiatives/:id/resume', requireAdmin, (req: AuthRequest, res: Res
   } catch (err: any) {
     logger.error('Failed to resume initiative', err);
     res.status(500).json({ error: err.message || 'Failed to resume initiative' });
+  }
+});
+
+// ── GET /api/initiatives/:id/assignments ─────────────────────────────────────
+
+/** Returns the users currently assigned to receive Slack notifications for this initiative. */
+router.get('/initiatives/:id/assignments', requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const rows = db.prepare<[string], { user_id: number }>(
+      'SELECT user_id FROM item_assignments WHERE item_id = ? ORDER BY created_at ASC'
+    ).all(req.params.id);
+
+    const users = rows
+      .map(r => getUserById(r.user_id))
+      .filter(Boolean)
+      .map(u => ({ id: u!.id, name: u!.name, username: u!.username, slackUserId: u!.slack_user_id }));
+
+    res.json({ assignments: users });
+  } catch (err: any) {
+    logger.error('Failed to list assignments', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/initiatives/:id/assignments ────────────────────────────────────
+
+/** Assign a user to receive Slack notifications for this initiative. Body: { userId: number } */
+router.post('/initiatives/:id/assignments', requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const { userId } = req.body as { userId?: number };
+    if (!userId) return res.status(400).json({ error: 'userId is required' });
+
+    const user = getUserById(userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const item = db.prepare<[string], { id: string }>('SELECT id FROM items WHERE id = ?').get(req.params.id);
+    if (!item) return res.status(404).json({ error: 'Initiative not found' });
+
+    db.prepare(
+      'INSERT OR IGNORE INTO item_assignments (item_id, user_id) VALUES (?, ?)'
+    ).run(req.params.id, userId);
+
+    logger.info(`User ${user.name} (${userId}) assigned to initiative ${req.params.id}`);
+    res.json({ ok: true, userId, userName: user.name });
+  } catch (err: any) {
+    logger.error('Failed to add assignment', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── DELETE /api/initiatives/:id/assignments/:userId ───────────────────────────
+
+/** Remove a user's assignment from an initiative. */
+router.delete('/initiatives/:id/assignments/:userId', requireAdmin, (req: AuthRequest, res: Response) => {
+  try {
+    const userId = Number(req.params.userId);
+    if (isNaN(userId)) return res.status(400).json({ error: 'Invalid userId' });
+
+    db.prepare(
+      'DELETE FROM item_assignments WHERE item_id = ? AND user_id = ?'
+    ).run(req.params.id, userId);
+
+    logger.info(`User ${userId} unassigned from initiative ${req.params.id}`);
+    res.json({ ok: true });
+  } catch (err: any) {
+    logger.error('Failed to remove assignment', err);
+    res.status(500).json({ error: err.message });
   }
 });
 

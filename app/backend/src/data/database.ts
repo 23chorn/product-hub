@@ -62,6 +62,13 @@ db.exec(`CREATE TABLE IF NOT EXISTS initiative_comments (
   created_at  INTEGER NOT NULL
 )`);
 db.exec('CREATE INDEX IF NOT EXISTS idx_initiative_comments_item_id ON initiative_comments(item_id)');
+db.exec(`CREATE TABLE IF NOT EXISTS item_assignments (
+  item_id     TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+  PRIMARY KEY (item_id, user_id)
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_item_assignments_item_id ON item_assignments(item_id)');
 db.pragma('foreign_keys = ON');
 
 // ---------------------------------------------------------------------------
