@@ -48,6 +48,8 @@ migrate(drizzle(db), { migrationsFolder: MIGRATIONS });
 const itemCols = (db.prepare('PRAGMA table_info(items)').all() as { name: string }[]).map(c => c.name);
 if (!itemCols.includes('is_paused')) db.exec('ALTER TABLE items ADD COLUMN is_paused INTEGER NOT NULL DEFAULT 0');
 if (!itemCols.includes('paused_at'))  db.exec('ALTER TABLE items ADD COLUMN paused_at INTEGER');
+const adoMapCols = (db.prepare('PRAGMA table_info(ado_work_item_map)').all() as { name: string }[]).map(c => c.name);
+if (!adoMapCols.includes('parent_local_key')) db.exec('ALTER TABLE ado_work_item_map ADD COLUMN parent_local_key TEXT');
 db.exec(`CREATE TABLE IF NOT EXISTS initiative_comments (
   id          TEXT    PRIMARY KEY,
   item_id     TEXT    NOT NULL REFERENCES items(id) ON DELETE CASCADE,

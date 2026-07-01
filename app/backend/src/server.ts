@@ -39,6 +39,7 @@ import authRoutes from './routes/auth-routes';
 import userRoutes from './routes/user-routes';
 import completedInitiativesRoutes from './routes/completed-initiatives-routes';
 import devTicketsRoutes from './routes/dev-tickets-routes';
+import pipelineRoutes from './routes/pipeline-routes';
 import deploymentRoutes from './routes/deployment-routes';
 import { commentsRoutes } from './routes/comments-routes';
 import { authMiddleware } from './middleware/auth';
@@ -176,6 +177,7 @@ app.use('/api', demoWebhookRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/completed-initiatives', completedInitiativesRoutes);
 app.use('/api/dev/initiatives', devTicketsRoutes);
+app.use('/api/dev/initiatives', pipelineRoutes);
 app.use('/api/deployments', deploymentRoutes);
 app.use('/api', commentsRoutes);
 

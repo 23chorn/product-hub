@@ -79,28 +79,78 @@ export function matchesStream(platforms: TicketPlatform[], streamFilter: Set<Tic
   return !streamFilter || platforms.length === 0 || platforms.some(p => streamFilter.has(p));
 }
 
-/** A feature "matches" an active phase filter if its phase (case-insensitive) is in the set.
- *  Features with no phase assigned are excluded when a filter is active — null phase means
- *  the backlog artifact hasn't supplied phase data yet, not that the feature is unphased. */
-export function matchesPhase(featurePhase: string | null | undefined, phaseFilter: Set<string> | null): boolean {
-  return !phaseFilter || (!!featurePhase && phaseFilter.has(featurePhase.toLowerCase()));
+/** Strip long-form LLM phase descriptions after a dash separator — used as a fallback
+ *  when no canonical epic_features map is available.
+ *  "MVP — Circuit Limit Display & Cache Infrastructure" → "mvp"
+ *  "Phase 1 — Client-Side Validation" → "phase 1" */
+function normPhase(phase: string): string {
+  return phase.split(/\s+[—–-]\s+/)[0].trim().toLowerCase();
 }
 
-/** Parse the epic-level description and businessValue from an epic_features artifact. Used
- *  as a fallback when the merged backlog artifact is absent (story decomposition hasn't run)
- *  or when the backlog synthesis template omits businessValue (which it always does). */
-async function loadEpicFeaturesEpic(
+/** A feature "matches" an active phase filter if its normalised phase label is in the set.
+ *  Features with no phase assigned are excluded when a filter is active. */
+export function matchesPhase(featurePhase: string | null | undefined, phaseFilter: Set<string> | null): boolean {
+  return !phaseFilter || (!!featurePhase && phaseFilter.has(normPhase(featurePhase)));
+}
+
+/**
+ * Build a feature-title → canonical phase label map from a parsed epic_features artifact.
+ * The `phases[].label` field (e.g. "MVP", "Phase 1") is the authoritative phase name;
+ * the backlog artifact's per-feature `.phase` string is often a long LLM description
+ * ("MVP — Circuit Limit Display & Cache Infrastructure") that doesn't match CLI filters.
+ * Matching is case-insensitive on the title key.
+ */
+export function buildTitleToPhaseMap(epicFeaturesContent: string | null): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!epicFeaturesContent) return map;
+  try {
+    const stripped = epicFeaturesContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+    const parsed = JSON.parse(stripped);
+    if (Array.isArray(parsed.phases)) {
+      for (const phase of parsed.phases) {
+        for (const feature of (phase.features ?? []) as Array<{ title?: string }>) {
+          if (feature.title) map.set(feature.title.toLowerCase(), phase.label);
+        }
+      }
+    } else if (Array.isArray(parsed.features)) {
+      // legacy flat format: each feature has its own .phase field
+      for (const feature of parsed.features as Array<{ title?: string; phase?: string }>) {
+        if (feature.title && feature.phase) map.set(feature.title.toLowerCase(), feature.phase);
+      }
+    }
+  } catch {}
+  return map;
+}
+
+/** Resolve a feature's canonical phase label.
+ *  Prefers the epic_features title→phase map; falls back to the raw backlog .phase string. */
+function resolvePhase(
+  featureTitle: string | undefined,
+  rawPhase: string | undefined,
+  titleToPhase: Map<string, string> | null,
+): string | null {
+  if (featureTitle && titleToPhase) {
+    const canonical = titleToPhase.get(featureTitle.toLowerCase());
+    if (canonical) return canonical;
+  }
+  return rawPhase ?? null;
+}
+
+/** Load and parse the epic_features artifact. Returns both the epic-level description/businessValue
+ *  (for the epic card) and the raw content string (so buildTitleToPhaseMap can derive canonical
+ *  phase labels without loading the file a second time). */
+async function loadEpicFeaturesArtifact(
   artifactId: number | null
-): Promise<{ description?: string; businessValue?: string } | null> {
-  if (artifactId == null) return null;
+): Promise<{ epicMeta: { description?: string; businessValue?: string } | null; content: string | null }> {
+  if (artifactId == null) return { epicMeta: null, content: null };
   const content = await loadArtifactContentById(artifactId);
-  if (!content) return null;
+  if (!content) return { epicMeta: null, content: null };
   try {
     const stripped = content.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
     const parsed = JSON.parse(stripped);
-    return parsed?.epic ?? null;
+    return { epicMeta: parsed?.epic ?? null, content };
   } catch {
-    return null;
+    return { epicMeta: null, content };
   }
 }
 
@@ -124,7 +174,7 @@ function mergeAdoAndContent<T extends object>(row: AdoWorkItemRow, content: T | 
  *  back to its array position — same encoding pushFeatureToADO/pushEpicAndFeaturesToADO use
  *  to write it) carries the content. A feature that had stories but lost every one of them
  *  to the stream filter is dropped rather than returned as an empty shell. */
-export function buildFeatures(workItemRows: AdoWorkItemRow[], backlog: BacklogData | null, streamFilter: Set<TicketPlatform> | null, phaseFilter: Set<string> | null = null) {
+export function buildFeatures(workItemRows: AdoWorkItemRow[], backlog: BacklogData | null, streamFilter: Set<TicketPlatform> | null, phaseFilter: Set<string> | null = null, titleToPhase: Map<string, string> | null = null) {
   const featureRows = workItemRows
     .filter(r => r.ado_type === 'feature')
     .sort((a, b) => (parseFeatureLocalKey(a.local_key) ?? 0) - (parseFeatureLocalKey(b.local_key) ?? 0));
@@ -143,9 +193,10 @@ export function buildFeatures(workItemRows: AdoWorkItemRow[], backlog: BacklogDa
   for (const featureRow of featureRows) {
     const featureIndex = parseFeatureLocalKey(featureRow.local_key);
     const featureContent = featureIndex != null ? backlog?.features?.[featureIndex] : undefined;
+    const phase = resolvePhase(featureContent?.title, featureContent?.phase, titleToPhase);
 
     // Skip feature if it doesn't match phase filter
-    if (!matchesPhase(featureContent?.phase, phaseFilter)) continue;
+    if (!matchesPhase(phase, phaseFilter)) continue;
 
     const storiesForFeature = storyRows.filter(r => parseStoryLocalKey(r.local_key)?.featureIndex === featureIndex);
 
@@ -360,7 +411,8 @@ router.get('/:seqNum/manifest', async (req: Request, res: Response) => {
     const { epicFeaturesArtifactId, ticketArtifactId } = getDocumentArtifactIds(initiative.id);
     const backlogContent = ticketArtifactId != null ? await loadArtifactContentById(ticketArtifactId) : null;
     const backlog = backlogContent != null ? tryParseBacklog(backlogContent) : null;
-    const epicFeaturesEpic = await loadEpicFeaturesEpic(epicFeaturesArtifactId);
+    const { epicMeta: epicFeaturesEpic, content: epicFeaturesContent } = await loadEpicFeaturesArtifact(epicFeaturesArtifactId);
+    const titleToPhase = buildTitleToPhaseMap(epicFeaturesContent);
 
     const epicRow = workItemRows.find(r => r.ado_type === 'epic');
     const epicContent = backlog?.epic;
@@ -405,7 +457,7 @@ router.get('/:seqNum/manifest', async (req: Request, res: Response) => {
         adoUrl: featureRow.ado_url,
         title: featureRow.title,
         description: featureContent?.description ?? null,
-        phase: featureContent?.phase ?? null,
+        phase: resolvePhase(featureContent?.title, featureContent?.phase, titleToPhase),
         storyCount: storiesForFeature.length,
         totalPoints,
         state: featureRow.state,
@@ -437,7 +489,7 @@ router.get('/:seqNum/manifest', async (req: Request, res: Response) => {
           title: storyRow.title,
           featureLocalKey: featureRow?.local_key ?? null,
           featureTitle: featureContent?.title ?? null,
-          phase: featureContent?.phase ?? null,
+          phase: resolvePhase(featureContent?.title, featureContent?.phase, titleToPhase),
           estimatedPoints: storyContent?.estimated_points ?? storyContent?.effort ?? null,
           platform: platforms,
           dependsOn,
@@ -641,7 +693,8 @@ router.get('/:seqNum/tickets', async (req: Request, res: Response) => {
     const { epicFeaturesArtifactId, ticketArtifactId, testArtifactIds } = getDocumentArtifactIds(initiative.id);
     const backlogContent = ticketArtifactId != null ? await loadArtifactContentById(ticketArtifactId) : null;
     const backlog = backlogContent != null ? tryParseBacklog(backlogContent) : null;
-    const epicFeaturesEpic = await loadEpicFeaturesEpic(epicFeaturesArtifactId);
+    const { epicMeta: epicFeaturesEpic, content: epicFeaturesContent } = await loadEpicFeaturesArtifact(epicFeaturesArtifactId);
+    const titleToPhase = buildTitleToPhaseMap(epicFeaturesContent);
 
     const initiativeHeader = { seqNum: initiative.seq_num, id: initiative.id, title: initiative.title };
     const stream = streamFilter ? Array.from(streamFilter) : null;
@@ -689,7 +742,7 @@ router.get('/:seqNum/tickets', async (req: Request, res: Response) => {
       stream,
       ...(phaseFilter ? { phase: Array.from(phaseFilter) } : {}),
       epics,
-      features: buildFeatures(workItemRows, backlog, streamFilter, phaseFilter),
+      features: buildFeatures(workItemRows, backlog, streamFilter, phaseFilter, titleToPhase),
     });
   } catch (error: any) {
     logger.error(`Failed to export tickets for initiative #${seqNum}`, error);

@@ -39,7 +39,7 @@ export function CompletedInitiativesPage() {
       <CompletedInitiativeDetail
         itemId={selectedItemId}
         archived={view === 'archived'}
-        onBack={() => setSelectedItemId(null)}
+        onBack={(didRefresh) => { setSelectedItemId(null); if (didRefresh) loadItems(view); }}
         onArchiveChange={() => { setSelectedItemId(null); loadItems(view); }}
       />
     );

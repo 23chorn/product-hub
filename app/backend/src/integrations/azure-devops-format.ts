@@ -282,9 +282,10 @@ export function buildTestStepsXml(tc: TestCaseInput): string {
 // ── Work item state bucketing (Completed Initiatives page) ───────────────────
 
 const DEFAULT_STATE_BUCKETS: Record<string, WorkItemStateBucket> = {
-  'New': 'not_started', 'To Do': 'not_started', 'Approved': 'not_started',
-  'Active': 'in_progress', 'Committed': 'in_progress', 'In Progress': 'in_progress', 'Resolved': 'in_progress',
-  'Closed': 'done', 'Done': 'done',
+  // xCube workflow
+  'New': 'not_started', 'Ready for Dev': 'not_started',
+  'In Dev': 'in_progress', 'Ready for QA': 'in_progress', 'In Testing': 'in_progress',
+  'Done': 'done',
   'Removed': 'removed',
 };
 
@@ -306,9 +307,10 @@ export function bucketWorkItemState(state: string): WorkItemStateBucket {
 }
 
 const DEFAULT_STATE_PERCENTS: Record<string, number> = {
-  'New': 0, 'To Do': 0, 'Approved': 0,
-  'Active': 25, 'Committed': 25, 'In Progress': 50, 'Resolved': 75,
-  'Closed': 100, 'Done': 100,
+  // xCube workflow: New → Ready for Dev → In Dev → Ready for QA → In Testing → Done
+  'New': 0, 'Ready for Dev': 10,
+  'In Dev': 33, 'Ready for QA': 60, 'In Testing': 80,
+  'Done': 100,
   'Removed': 100,
 };
 

@@ -130,11 +130,15 @@ export async function pushBacklogToAdo(workflowId: string, itemId: string): Prom
       const mapByKey = new Map(existingMappings.map((m: any) => [m.local_key, m]));
       const updateResult = await client.updateBacklog(backlog, mapByKey);
       const insertMapping = db.prepare(`
-        INSERT OR REPLACE INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, title, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, parent_local_key, title, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       for (const m of updateResult.newMappings) {
-        insertMapping.run(workflowId, artifactId, m.ado_id, m.ado_type, m.ado_url, m.local_key, m.title, now);
+        // features -> 'epic'; stories -> parent feature key (e.g. 'F1.S3' -> 'F1'); epics -> null
+        const parentLocalKey = m.ado_type === 'feature' ? 'epic'
+          : m.ado_type === 'story' ? m.local_key.split('.')[0]
+          : null;
+        insertMapping.run(workflowId, artifactId, m.ado_id, m.ado_type, m.ado_url, m.local_key, parentLocalKey, m.title, now);
       }
       topId = updateResult.epicId;
       topUrl = client.getEpicUrl(topId);
@@ -146,19 +150,19 @@ export async function pushBacklogToAdo(workflowId: string, itemId: string): Prom
       storyCount = createResult.storyIds.length;
 
       const insertMapping = db.prepare(`
-        INSERT OR REPLACE INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, title, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, parent_local_key, title, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
-      insertMapping.run(workflowId, artifactId, topId, 'epic', topUrl, 'epic', backlog.epic.title, now);
+      insertMapping.run(workflowId, artifactId, topId, 'epic', topUrl, 'epic', null, backlog.epic.title, now);
       let featureIdx = 0, storyIdx = 0;
       for (let fi = 0; fi < backlog.features.length; fi++) {
         const featureKey = featureLocalKey(fi);
         const featureAdoId = createResult.featureIds[featureIdx++];
-        insertMapping.run(workflowId, artifactId, featureAdoId, 'feature', client.getEpicUrl(featureAdoId), featureKey, backlog.features[fi].title, now);
+        insertMapping.run(workflowId, artifactId, featureAdoId, 'feature', client.getEpicUrl(featureAdoId), featureKey, 'epic', backlog.features[fi].title, now);
         for (let si = 0; si < backlog.features[fi].stories.length; si++) {
           const storyKey = storyLocalKey(featureKey, si);
           const storyAdoId = createResult.storyIds[storyIdx++];
-          insertMapping.run(workflowId, artifactId, storyAdoId, 'story', client.getEpicUrl(storyAdoId), storyKey, backlog.features[fi].stories[si].title, now);
+          insertMapping.run(workflowId, artifactId, storyAdoId, 'story', client.getEpicUrl(storyAdoId), storyKey, featureKey, backlog.features[fi].stories[si].title, now);
         }
       }
     }

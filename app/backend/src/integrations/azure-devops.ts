@@ -480,7 +480,7 @@ export class AzureDevOpsClient {
    */
   async updateWorkItem(
     id: number,
-    updates: { title?: string; description?: string; effort?: number; acceptanceCriteria?: string; aiEstimateDevHours?: number; aiEstimateQaHours?: number; tags?: string }
+    updates: { title?: string; description?: string; effort?: number; acceptanceCriteria?: string; aiEstimateDevHours?: number; aiEstimateQaHours?: number; tags?: string; state?: string }
   ): Promise<WorkItem> {
     logger.info(`Updating work item #${id}`);
 
@@ -506,6 +506,9 @@ export class AzureDevOpsClient {
     }
     if (updates.tags !== undefined) {
       operations.push({ op: 'replace', path: '/fields/System.Tags', value: updates.tags });
+    }
+    if (updates.state !== undefined) {
+      operations.push({ op: 'replace', path: '/fields/System.State', value: updates.state });
     }
 
     if (operations.length === 0) {
@@ -693,6 +696,25 @@ export class AzureDevOpsClient {
   }
 
   /**
+   * Fetch a work item and the IDs of its direct children (Hierarchy-Forward relations).
+   * Used by the ADO sync endpoint to walk epic → features → stories.
+   */
+  async getWorkItemWithChildren(id: number): Promise<{ item: WorkItem; childIds: number[] }> {
+    try {
+      const response = await this.client.get(`/wit/workitems/${id}?$expand=relations`);
+      const item = response.data as WorkItem & { relations?: Array<{ rel: string; url: string }> };
+      const childIds = (item.relations ?? [])
+        .filter(r => r.rel === 'System.LinkTypes.Hierarchy-Forward')
+        .map(r => { const m = /\/(\d+)$/.exec(r.url); return m ? parseInt(m[1], 10) : null; })
+        .filter((cid): cid is number => cid !== null);
+      return { item, childIds };
+    } catch (error: any) {
+      logger.error(`Failed to get work item ${id} with children`, error);
+      throw new Error(`Azure DevOps API error: ${adoErrorMessage(error)}`);
+    }
+  }
+
+  /**
    * Batch-fetch work items by id (ADO caps a single batch at 200 ids — chunk and
    * concatenate). Used by the Completed Initiatives "Refresh" action to pull current
    * `System.State` for every work item on an initiative in as few round trips as possible.
@@ -704,20 +726,26 @@ export class AzureDevOpsClient {
     for (let i = 0; i < ids.length; i += 200) chunks.push(ids.slice(i, i + 200));
 
     const results: WorkItem[] = [];
-    try {
-      for (const chunk of chunks) {
+    for (const chunk of chunks) {
+      try {
+        // errorPolicy:'Omit' tells ADO to skip deleted/inaccessible items instead of 404-ing the whole batch
         const response = await this.client.post(
           '/wit/workitemsbatch',
-          { ids: chunk, ...(fields ? { fields } : {}) },
+          { ids: chunk, errorPolicy: 'Omit', ...(fields ? { fields } : {}) },
           { headers: { 'Content-Type': 'application/json' } }
         );
         results.push(...response.data.value);
+      } catch (error: any) {
+        // Batch rejected despite errorPolicy (older ADO versions may not support it).
+        // Fall back to individual fetches — skip any that are deleted or inaccessible.
+        logger.warn(`Batch fetch failed for ${chunk.length} item(s) — falling back to individual fetches: ${adoErrorMessage(error)}`);
+        const settled = await Promise.allSettled(chunk.map(id => this.getWorkItem(id)));
+        for (const r of settled) {
+          if (r.status === 'fulfilled') results.push(r.value);
+        }
       }
-      return results;
-    } catch (error: any) {
-      logger.error('Failed to batch-fetch work items', error);
-      throw new Error(`Azure DevOps API error: ${adoErrorMessage(error)}`);
     }
+    return results;
   }
 
   /**

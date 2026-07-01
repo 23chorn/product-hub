@@ -7,6 +7,7 @@ import Logger from '../utils/logger';
 const logger = new Logger('AUTH');
 const JWT_SECRET = process.env.JWT_SECRET || 'pap-local-dev-secret-change-in-production';
 const COOKIE_NAME = 'pap_token';
+const PIPELINE_API_KEY = process.env.PIPELINE_API_KEY?.trim() || null;
 // Browsers drop `secure` cookies on plain HTTP, so this can't just follow NODE_ENV —
 // an internal-network prod deployment without TLS still needs the cookie to be sent.
 const COOKIE_SECURE = process.env.COOKIE_SECURE === 'true';
@@ -45,6 +46,16 @@ export function authMiddleware(req: AuthRequest, res: Response, next: NextFuncti
     req.isAuthenticated = true;
     req.user = undefined; // admin-level access without a real user
     return next();
+  }
+
+  // Pipeline CLI bearer token — set PIPELINE_API_KEY in .env to enable
+  if (PIPELINE_API_KEY) {
+    const auth = req.headers['authorization'];
+    if (auth === `Bearer ${PIPELINE_API_KEY}`) {
+      req.isAuthenticated = true;
+      req.user = undefined;
+      return next();
+    }
   }
 
   const token = req.cookies?.[COOKIE_NAME];

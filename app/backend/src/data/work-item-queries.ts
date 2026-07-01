@@ -13,6 +13,7 @@ export interface AdoWorkItemRow {
   ado_type: 'epic' | 'feature' | 'story';
   ado_url: string | null;
   local_key: string;
+  parent_local_key: string | null;
   title: string;
   state: string | null;
   state_synced_at: number | null;
@@ -33,7 +34,7 @@ export function getWorkItemRowsByItem(itemIds: string[]): Map<string, AdoWorkIte
   const map = new Map<string, AdoWorkItemRow[]>();
   if (itemIds.length === 0) return map;
   const rows = db.prepare(`
-    SELECT w.item_id as itemId, m.ado_id, m.ado_type, m.ado_url, m.local_key, m.title, m.state, m.state_synced_at, m.artifact_id, m.created_at
+    SELECT w.item_id as itemId, m.ado_id, m.ado_type, m.ado_url, m.local_key, m.parent_local_key, m.title, m.state, m.state_synced_at, m.artifact_id, m.created_at
     FROM ado_work_item_map m
     JOIN workflows w ON w.id = m.workflow_id
     WHERE w.item_id IN (${itemIds.map(() => '?').join(',')})

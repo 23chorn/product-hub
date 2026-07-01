@@ -9,21 +9,24 @@ import { useAuthStore } from '../../stores/authStore';
 import { relativeTime } from '../../utils/relative-time';
 import { isDocumentArtifact, renderArtifactMarkdown } from '@pap/shared';
 import { BacklogView } from '../artifact/BacklogView';
+import { tryParseEpicFeatures, type EpicFeaturesData } from '../artifact/EpicFeaturesView';
 import { QATestsView, groupByType, typeMeta } from '../artifact/QATestsView';
 import { MarkdownContent } from '../common/MarkdownContent';
 import { ArchiveConfirmModal } from '../common/ArchiveConfirmModal';
+import { WorkItemManagePanel } from './WorkItemManagePanel';
 
 interface Props {
   itemId: string;
   /** True when reviewing this item from the admin-only Archived Initiatives list. */
   archived?: boolean;
-  onBack: () => void;
+  /** Called when navigating back. Receives true if at least one refresh happened (so parent can reload its list). */
+  onBack: (didRefresh: boolean) => void;
   /** Called after a successful archive/unarchive — parent should navigate back and refresh its list. */
   onArchiveChange?: () => void;
 }
 
 type SingleDocTab = 'research' | 'prd' | 'architecture' | 'figma';
-type DocTab = SingleDocTab | 'tickets' | 'tests';
+type DocTab = SingleDocTab | 'tickets' | 'tests' | 'manage';
 type DocState = { content: string; type: string } | null | 'loading';
 
 const SINGLE_DOC_TABS: SingleDocTab[] = ['research', 'prd', 'architecture', 'figma'];
@@ -35,6 +38,7 @@ const TABS: Array<{ key: DocTab; label: string }> = [
   { key: 'figma', label: 'Figma' },
   { key: 'tickets', label: 'Tickets' },
   { key: 'tests', label: 'Test Cases' },
+  { key: 'manage', label: 'Manage' },
 ];
 
 const PLATFORM_ORDER: TicketPlatform[] = ['backend', 'web', 'ios', 'android'];
@@ -130,9 +134,11 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
 
   const [detail, setDetail] = useState<CompletedInitiativeDetailData | null>(null);
   const [backlog, setBacklog] = useState<BacklogData | null>(null);
+  const [epicFeatures, setEpicFeatures] = useState<EpicFeaturesData | null>(null);
   const [qa, setQa] = useState<QATestSuite | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [everRefreshed, setEverRefreshed] = useState(false);
   const [tab, setTab] = useState<DocTab>('tickets');
   const [docCache, setDocCache] = useState<Partial<Record<SingleDocTab, DocState>>>({});
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
@@ -148,9 +154,12 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
       if (stale) return;
       setDetail(data);
 
-      const [ticketResult, testResults] = await Promise.all([
+      const [ticketResult, epicFeaturesResult, testResults] = await Promise.all([
         data.ticketArtifactId != null
           ? api.getArtifactContent(data.ticketArtifactId).then(({ content }) => tryParseBacklog(content)).catch(() => null)
+          : Promise.resolve(null),
+        data.epicFeaturesArtifactId != null
+          ? api.getArtifactContent(data.epicFeaturesArtifactId).then(({ content }) => tryParseEpicFeatures(content)).catch(() => null)
           : Promise.resolve(null),
         Promise.all(data.testArtifactIds.map((id, num) =>
           api.getArtifactContent(id).then(({ content }) => ({ num, data: tryParseQATests(content) })).catch(() => null)
@@ -158,6 +167,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
       ]);
       if (stale) return;
       setBacklog(ticketResult);
+      setEpicFeatures(epicFeaturesResult);
       setQa(mergeQaTests(testResults.filter((p): p is { num: number; data: QATestSuite } => !!p?.data)));
     }).finally(() => { if (!stale) setLoading(false); });
 
@@ -181,6 +191,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
     try {
       const updated = await api.refreshCompletedInitiative(itemId, archived);
       setDetail(updated);
+      setEverRefreshed(true);
     } finally {
       setRefreshing(false);
     }
@@ -198,13 +209,50 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
     }
   };
 
+  // Build set of active feature indices (0-based) from the DB layer (ado_work_item_map).
+  // The artifact may have more features than what's currently tracked — deleted features
+  // should not appear in the Tickets tab. F1 = index 0, F5 = index 4, etc.
+  const activeFeatureIndices = new Set<number>(
+    (detail?.workItems ?? [])
+      .filter(w => w.adoType === 'feature')
+      .map(w => { const m = /^F(\d+)$/.exec(w.localKey); return m ? parseInt(m[1], 10) - 1 : -1; })
+      .filter(i => i >= 0)
+  );
+
+  // Build the filtered backlog: only include features still present in the DB.
+  // If all features are present (nothing deleted), skip rebuilding.
+  const artifactFeatureCount = backlog?.features?.length ?? 0;
+  const filteredBacklog: BacklogData | null = backlog && backlog.features && activeFeatureIndices.size < artifactFeatureCount
+    ? { ...backlog, features: backlog.features.filter((_, i) => activeFeatureIndices.has(i)) }
+    : backlog;
+
+  // Remap stateByLocalKey to match the new 0-based indices in filteredBacklog.
+  // e.g. if F5 becomes the 3rd feature after filtering, its stories need key 'F3.Sx' not 'F5.Sx'.
+  const indexRemap = new Map<number, number>();
+  let remapIdx = 0;
+  for (let i = 0; i < artifactFeatureCount; i++) {
+    if (activeFeatureIndices.has(i)) indexRemap.set(i, remapIdx++);
+  }
   const stateByLocalKey = new Map<string, WorkItemStateBucket>(
     (detail?.workItems ?? [])
       .filter(w => w.stateBucket != null)
-      .map(w => [w.localKey, w.stateBucket as WorkItemStateBucket])
+      .map(w => {
+        const fm = /^F(\d+)$/.exec(w.localKey);
+        if (fm) {
+          const ni = indexRemap.get(parseInt(fm[1], 10) - 1);
+          return ni != null ? [`F${ni + 1}`, w.stateBucket as WorkItemStateBucket] : null;
+        }
+        const sm = /^F(\d+)(\.S\d+)$/.exec(w.localKey);
+        if (sm) {
+          const ni = indexRemap.get(parseInt(sm[1], 10) - 1);
+          return ni != null ? [`F${ni + 1}${sm[2]}`, w.stateBucket as WorkItemStateBucket] : null;
+        }
+        return [w.localKey, w.stateBucket as WorkItemStateBucket];
+      })
+      .filter(Boolean) as [string, WorkItemStateBucket][]
   );
 
-  const ticketBreakdown = backlog ? countTicketsByPlatform(getAllStories(backlog)) : null;
+  const ticketBreakdown = filteredBacklog ? countTicketsByPlatform(getAllStories(filteredBacklog)) : null;
   const testTypeCounts = qa ? groupByType(qa.test_cases).map(([type, cases]) => ({ type, count: cases.length, meta: typeMeta(type) })) : [];
 
   return (
@@ -212,7 +260,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
       <div className="px-6 py-3 border-b border-surface-200 dark:border-surface-700 flex items-center justify-between gap-3 flex-shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           <button
-            onClick={onBack}
+            onClick={() => onBack(everRefreshed)}
             className="flex items-center gap-1 text-sm text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200 transition-colors flex-shrink-0"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -309,8 +357,8 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
 
               <div className="pt-4">
                 {tab === 'tickets' && (
-                  backlog && (backlog.features?.length ?? 0) > 0 ? (
-                    <BacklogView data={backlog} stateByLocalKey={stateByLocalKey} />
+                  filteredBacklog && (filteredBacklog.features?.length ?? 0) > 0 ? (
+                    <BacklogView data={filteredBacklog} stateByLocalKey={stateByLocalKey} epicFeatures={epicFeatures ?? undefined} />
                   ) : (
                     <p className="text-sm text-surface-400 italic">No backlog content found for this initiative.</p>
                   )
@@ -344,6 +392,14 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
 
                 {tab === 'figma' && <FigmaTabContent state={docCache.figma} />}
                 {(tab === 'research' || tab === 'prd' || tab === 'architecture') && <DocumentTabContent state={docCache[tab]} />}
+                {tab === 'manage' && detail && (
+                  <WorkItemManagePanel
+                    items={detail.workItems}
+                    itemId={itemId}
+                    archived={archived}
+                    onUpdate={updated => { setDetail(updated); setEverRefreshed(true); }}
+                  />
+                )}
               </div>
             </div>
           </>

@@ -1,8 +1,8 @@
 /**
- * completed-initiatives-routes — read-only review of ADO ticket state for initiatives
- * whose pipeline has finished. "Completed" = effectiveStatus(latestWorkflow) === 'complete'
- * (same predicate as the Home page's "Done" filter) AND the item has been pushed to ADO
- * at least once. List and drill-down are 100% cached; only POST /:itemId/refresh calls ADO.
+ * completed-initiatives-routes — review of ADO ticket state for initiatives whose pipeline
+ * has finished. "Completed" = effectiveStatus(latestWorkflow) === 'complete' (same predicate
+ * as the Home page's "Done" filter) AND the item has been pushed to ADO at least once.
+ * List and drill-down are 100% cached; POST /:itemId/refresh, PATCH/DELETE work-items call ADO.
  */
 import { Router, Request, Response } from 'express';
 import db from '../data/database';
@@ -16,8 +16,10 @@ import type {
   CompletedInitiativeDetail,
   CompletedInitiativeWorkItemRow,
 } from '@pap/shared';
-import { bucketWorkItemState, workItemStatePercent } from '../integrations/azure-devops-format';
+import { bucketWorkItemState, workItemStatePercent, parseStoryRefs } from '../integrations/azure-devops-format';
 import { refreshItemAdoState } from '../integrations/ado-state-sync';
+import { getAzureDevOpsClient } from '../integrations/azure-devops';
+import { loadArtifactContentById } from '../agents/artifact-helpers';
 import {
   getWorkItemRowsByItem, getTestPlanRowsByItem, getDocumentArtifactIds,
   type AdoWorkItemRow, type QaTestPlanRow,
@@ -200,6 +202,7 @@ function buildSummary(
 function toWorkItemRow(row: AdoWorkItemRow): CompletedInitiativeWorkItemRow {
   return {
     localKey: row.local_key,
+    parentLocalKey: row.parent_local_key ?? null,
     adoId: row.ado_id,
     adoType: row.ado_type,
     adoUrl: row.ado_url,
@@ -252,6 +255,69 @@ function listCompletedSummaries(archived: boolean): CompletedInitiativeSummary[]
 
 const setItemStatus = db.prepare(`UPDATE items SET status = ?, updated_at = ? WHERE id = ?`);
 const getShippedAt = db.prepare(`SELECT shipped_at FROM items WHERE id = ?`);
+
+/**
+ * Delete ADO test case work items whose story_ref links them to any of the given story
+ * local keys, then remove them from the qa_test_plan_map tracking row.
+ * Non-throwing — caller should wrap in try/catch if failure must be non-fatal.
+ */
+async function cascadeDeleteTestCases(
+  workflowId: string,
+  itemId: string,
+  affectedStoryKeys: Set<string>,
+): Promise<void> {
+  if (affectedStoryKeys.size === 0) return;
+
+  const planRow = db.prepare<[string], { plan_id: number; test_case_ids: string; test_case_count: number }>(
+    `SELECT plan_id, test_case_ids, test_case_count FROM qa_test_plan_map WHERE workflow_id = ?`
+  ).get(workflowId);
+  if (!planRow) return;
+
+  const testCaseIds: Record<string, number> = JSON.parse(planRow.test_case_ids ?? '{}');
+  if (Object.keys(testCaseIds).length === 0) return;
+
+  // Find qa_tests artifact IDs for this item via approved QA checkpoints
+  const qaArtifactIds = (db.prepare(`
+    SELECT DISTINCT c.artifact_id
+    FROM checkpoints c
+    JOIN workflows w ON w.id = c.workflow_id
+    WHERE w.item_id = ? AND c.status = 'approved' AND c.artifact_id IS NOT NULL
+      AND c.stage LIKE 'story_decomposition_%_qa'
+  `).all(itemId) as { artifact_id: number }[]).map(r => r.artifact_id);
+
+  // Collect local test case IDs whose story_ref mentions an affected story
+  const toDeleteLocalIds = new Set<string>();
+  for (const artifactId of qaArtifactIds) {
+    const content = await loadArtifactContentById(artifactId);
+    if (!content) continue;
+    const cleaned = content.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+    let qa: any;
+    try { qa = JSON.parse(cleaned); } catch { continue; }
+    for (const tc of (qa.test_cases ?? qa.testCases ?? []) as any[]) {
+      if (!tc.id) continue;
+      const storyRef = tc.story_ref ?? tc.linkedStory ?? null;
+      if (!storyRef) continue;
+      if (parseStoryRefs(storyRef).some(r => affectedStoryKeys.has(r))) {
+        toDeleteLocalIds.add(String(tc.id));
+      }
+    }
+  }
+
+  if (toDeleteLocalIds.size === 0) return;
+
+  const adoIds = [...toDeleteLocalIds]
+    .map(lid => testCaseIds[lid])
+    .filter((id): id is number => id !== undefined);
+  if (adoIds.length === 0) return;
+
+  await getAzureDevOpsClient().deleteWorkItems(adoIds);
+
+  for (const lid of toDeleteLocalIds) delete testCaseIds[lid];
+  db.prepare(`UPDATE qa_test_plan_map SET test_case_ids = ?, test_case_count = ? WHERE plan_id = ?`)
+    .run(JSON.stringify(testCaseIds), Math.max(0, planRow.test_case_count - adoIds.length), planRow.plan_id);
+
+  logger.info(`Cascade deleted ${adoIds.length} test case(s) linked to ${affectedStoryKeys.size} deleted story/stories in workflow ${workflowId}`);
+}
 
 /**
  * GET /api/completed-initiatives
@@ -308,6 +374,134 @@ router.post('/:itemId/refresh', async (req: Request, res: Response) => {
   } catch (error: any) {
     logger.error('Failed to refresh ADO state', error);
     res.status(500).json({ error: error.message || 'Failed to refresh ADO state' });
+  }
+});
+
+/**
+ * PATCH /api/completed-initiatives/:itemId/work-items/:adoId
+ * Update a single work item's title and/or description in ADO and keep the local
+ * ado_work_item_map title in sync. Accepts plain text for description — ADO stores it as-is.
+ *
+ * Body: { title?: string; description?: string }
+ * Returns: CompletedInitiativeDetail (updated)
+ */
+router.patch('/:itemId/work-items/:adoId', async (req: Request, res: Response) => {
+  try {
+    const archived = req.query.archived === 'true';
+    const item = getCompletedItemOrUndefined(req.params.itemId, archived);
+    if (!item) return res.status(404).json({ error: 'Completed initiative not found' });
+
+    const adoId = parseInt(req.params.adoId, 10);
+    if (!Number.isFinite(adoId)) return res.status(400).json({ error: 'Invalid ADO ID' });
+
+    const row = db.prepare<[string, number], { id: number }>(
+      `SELECT m.id FROM ado_work_item_map m
+       JOIN workflows w ON w.id = m.workflow_id
+       WHERE w.item_id = ? AND m.ado_id = ?`
+    ).get(item.id, adoId);
+    if (!row) return res.status(404).json({ error: `Work item ${adoId} not found for this initiative` });
+
+    const { title, description } = req.body as { title?: unknown; description?: unknown };
+    const updates: { title?: string; description?: string } = {};
+    if (typeof title === 'string' && title.trim()) updates.title = title.trim();
+    if (typeof description === 'string' && description.trim()) updates.description = description.trim();
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'Provide at least one of: title, description' });
+    }
+
+    const ado = getAzureDevOpsClient();
+    await ado.updateWorkItem(adoId, updates);
+
+    if (updates.title) {
+      db.prepare(`UPDATE ado_work_item_map SET title = ? WHERE id = ?`).run(updates.title, row.id);
+    }
+
+    logger.info(`Updated ADO #${adoId} for initiative ${item.id}: ${Object.keys(updates).join(', ')}`);
+    res.json(buildDetail(item));
+  } catch (error: any) {
+    logger.error('Failed to update work item', error);
+    res.status(500).json({ error: error.message || 'Failed to update work item' });
+  }
+});
+
+/**
+ * DELETE /api/completed-initiatives/:itemId/work-items/:adoId
+ * Permanently delete a work item from ADO (destroy=true, bypasses recycle bin) and remove
+ * its local ado_work_item_map row. When deleting a feature, also removes its child story
+ * rows from the local DB (ADO children are not automatically deleted — handle in ADO directly
+ * if the stories also need to be removed).
+ *
+ * Returns: CompletedInitiativeDetail (updated, without the deleted row)
+ */
+router.delete('/:itemId/work-items/:adoId', async (req: Request, res: Response) => {
+  try {
+    const archived = req.query.archived === 'true';
+    const item = getCompletedItemOrUndefined(req.params.itemId, archived);
+    if (!item) return res.status(404).json({ error: 'Completed initiative not found' });
+
+    const adoId = parseInt(req.params.adoId, 10);
+    if (!Number.isFinite(adoId)) return res.status(400).json({ error: 'Invalid ADO ID' });
+
+    const row = db.prepare<[string, number], { id: number; local_key: string; ado_type: string; workflow_id: string }>(
+      `SELECT m.id, m.local_key, m.ado_type, m.workflow_id
+       FROM ado_work_item_map m
+       JOIN workflows w ON w.id = m.workflow_id
+       WHERE w.item_id = ? AND m.ado_id = ?`
+    ).get(item.id, adoId);
+    if (!row) return res.status(404).json({ error: `Work item ${adoId} not found for this initiative` });
+
+    // Collect affected story local keys before any deletes (needed for test case cascade)
+    const affectedStoryKeys = new Set<string>();
+    if (row.ado_type === 'story') {
+      affectedStoryKeys.add(row.local_key);
+    } else if (row.ado_type === 'feature') {
+      for (const s of db.prepare<[string, string], { local_key: string }>(
+        `SELECT local_key FROM ado_work_item_map WHERE workflow_id = ? AND parent_local_key = ?`
+      ).all(row.workflow_id, row.local_key)) affectedStoryKeys.add(s.local_key);
+    } else if (row.ado_type === 'epic') {
+      for (const f of db.prepare<[string, string], { local_key: string }>(
+        `SELECT local_key FROM ado_work_item_map WHERE workflow_id = ? AND parent_local_key = ?`
+      ).all(row.workflow_id, row.local_key)) {
+        for (const s of db.prepare<[string, string], { local_key: string }>(
+          `SELECT local_key FROM ado_work_item_map WHERE workflow_id = ? AND parent_local_key = ?`
+        ).all(row.workflow_id, f.local_key)) affectedStoryKeys.add(s.local_key);
+      }
+    }
+
+    const ado = getAzureDevOpsClient();
+    await ado.deleteWorkItem(adoId);
+
+    // Cascade: delete ADO test cases linked to the deleted stories
+    try {
+      await cascadeDeleteTestCases(row.workflow_id, item.id, affectedStoryKeys);
+    } catch (err: any) {
+      logger.warn(`Test case cascade delete failed (non-fatal): ${err.message}`);
+    }
+
+    db.transaction(() => {
+      db.prepare(`DELETE FROM ado_work_item_map WHERE id = ?`).run(row.id);
+      if (row.ado_type === 'feature') {
+        db.prepare(`DELETE FROM ado_work_item_map WHERE workflow_id = ? AND parent_local_key = ?`)
+          .run(row.workflow_id, row.local_key);
+      }
+      if (row.ado_type === 'epic') {
+        const childFeatures = db.prepare<[string, string], { local_key: string }>(
+          `SELECT local_key FROM ado_work_item_map WHERE workflow_id = ? AND parent_local_key = ?`
+        ).all(row.workflow_id, row.local_key);
+        for (const f of childFeatures) {
+          db.prepare(`DELETE FROM ado_work_item_map WHERE workflow_id = ? AND parent_local_key = ?`)
+            .run(row.workflow_id, f.local_key);
+        }
+        db.prepare(`DELETE FROM ado_work_item_map WHERE workflow_id = ? AND parent_local_key = ?`)
+          .run(row.workflow_id, row.local_key);
+      }
+    })();
+
+    logger.info(`Deleted ${row.ado_type} ADO #${adoId} (${row.local_key}) from initiative ${item.id}`);
+    res.json(buildDetail(item));
+  } catch (error: any) {
+    logger.error('Failed to delete work item', error);
+    res.status(500).json({ error: error.message || 'Failed to delete work item' });
   }
 });
 

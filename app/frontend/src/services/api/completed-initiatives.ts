@@ -24,6 +24,29 @@ export const completedInitiativesApi = {
     return response.data;
   },
 
+  /** Update a work item's title and/or description in ADO and sync the local title. */
+  async updateAdoWorkItem(
+    itemId: string, adoId: number,
+    updates: { title?: string; description?: string },
+    archived = false
+  ): Promise<CompletedInitiativeDetail> {
+    const response = await axios.patch(
+      `${API_BASE_URL}/api/completed-initiatives/${itemId}/work-items/${adoId}`,
+      updates,
+      { params: archived ? { archived: true } : undefined }
+    );
+    return response.data;
+  },
+
+  /** Permanently delete a work item from ADO and remove it from the local tracking table. */
+  async deleteAdoWorkItem(itemId: string, adoId: number, archived = false): Promise<CompletedInitiativeDetail> {
+    const response = await axios.delete(
+      `${API_BASE_URL}/api/completed-initiatives/${itemId}/work-items/${adoId}`,
+      { params: archived ? { archived: true } : undefined }
+    );
+    return response.data;
+  },
+
   /** Admin-only — hides a completed initiative from the default Progress Tracker list. */
   async archiveCompletedInitiative(itemId: string): Promise<{ ok: true }> {
     const response = await axios.post(`${API_BASE_URL}/api/completed-initiatives/${itemId}/archive`);

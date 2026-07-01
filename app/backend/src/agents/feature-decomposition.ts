@@ -665,9 +665,9 @@ export async function pushEpicAndFeaturesToADO(
         featureIds.push(feature.id!);
         const featureUrl = `https://dev.azure.com/${client['organization']}/${client['project']}/_workitems/edit/${feature.id}`;
         db.prepare(`
-          INSERT INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, title, created_at)
-          VALUES (?, NULL, ?, 'feature', ?, ?, ?, ?)
-        `).run(workflowId, feature.id, featureUrl, featureKey, featureTitle, now);
+          INSERT INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, parent_local_key, title, created_at)
+          VALUES (?, NULL, ?, 'feature', ?, ?, ?, ?, ?)
+        `).run(workflowId, feature.id, featureUrl, featureKey, phaseKey, featureTitle, now);
         logger.info(`[EPIC PUSH] Created feature #${feature.id} (${featureKey}): ${featureTitle}`);
         globalFeatureIdx++;
       }
@@ -709,8 +709,8 @@ export async function pushEpicAndFeaturesToADO(
       featureIds.push(feature.id!);
       const featureUrl = `https://dev.azure.com/${client['organization']}/${client['project']}/_workitems/edit/${feature.id}`;
       db.prepare(`
-        INSERT INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, title, created_at)
-        VALUES (?, NULL, ?, 'feature', ?, ?, ?, ?)
+        INSERT INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, parent_local_key, title, created_at)
+        VALUES (?, NULL, ?, 'feature', ?, ?, 'epic', ?, ?)
       `).run(workflowId, feature.id, featureUrl, featureKey, featureTitle, now);
       logger.info(`[EPIC PUSH] Created feature #${feature.id}: ${featureTitle}`);
     }
@@ -900,9 +900,9 @@ export async function pushFeatureToADO(
     const story = targetFeature.stories[i];
     const storyKey = storyLocalKey(featureKey, i);
     db.prepare(`
-      INSERT INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, title, created_at)
-      VALUES (?, NULL, ?, 'story', ?, ?, ?, ?)
-    `).run(workflowId, storyId, storyUrl, storyKey, `[${storyKey}] ${story.title}`, now);
+      INSERT INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, parent_local_key, title, created_at)
+      VALUES (?, NULL, ?, 'story', ?, ?, ?, ?, ?)
+    `).run(workflowId, storyId, storyUrl, storyKey, featureKey, `[${storyKey}] ${story.title}`, now);
   }
 
   logger.info(`[STORY PUSH] Added ${storyIds.length} stories to feature #${featureId}`);

@@ -551,6 +551,8 @@ export interface CompletedInitiativeSummary {
 
 export interface CompletedInitiativeWorkItemRow {
   localKey: string;
+  /** For features: the local_key of the parent epic (e.g. 'epic_mvp'). Null for old records. */
+  parentLocalKey: string | null;
   adoId: number;
   adoType: 'epic' | 'feature' | 'story';
   adoUrl: string | null;
@@ -586,6 +588,8 @@ export interface CompletedInitiativeDetail extends CompletedInitiativeSummary {
   /** The merged final backlog artifact (backlog_merge output) — already combines every
    *  feature, so the detail page can read it directly with no per-feature merge. */
   ticketArtifactId: number | null;
+  /** Latest epic_features artifact id — used to canonicalise feature→phase grouping in BacklogView. */
+  epicFeaturesArtifactId: number | null;
   /** One qa_tests artifact id per feature (latest approved story_decomposition_F<n>_qa
    *  checkpoint) — qa_tests has no per-feature-suffixed type, so these must be merged
    *  client-side the same way the per-feature backlog/QA Stories+Tests view already does. */
