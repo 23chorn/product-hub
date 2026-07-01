@@ -17,7 +17,7 @@ interface Settings {
   sprint: { velocity: number; capacityFactor: number; aiAssistedEnabled: boolean };
   pipeline: { enabledStages: Record<string, boolean>; figmaBypassMode: boolean };
   qualityGates: { requireCriticReview: boolean; autoApproveCritic: boolean };
-  integrations: { slackWebhookUrl: string | null };
+  integrations: { slackWebhookUrl: string | null; slackNotificationsEnabled: boolean };
   demo: { enabled: boolean };
 }
 
@@ -271,6 +271,23 @@ export function SettingsPanel() {
                     <Toggle
                       checked={draft.demo.enabled}
                       onChange={v => patch('demo', { enabled: v })}
+                    />
+                  </FieldRow>
+                </div>
+              </div>
+            )}
+
+            {canAccessAdminTabs && !loading && draft && draft.integrations.slackWebhookUrl && (
+              <div className="mt-5">
+                <SectionHeader
+                  title="Slack notifications"
+                  description="Controls whether the app posts checkpoint and completion notifications to the configured Slack webhook."
+                />
+                <div className="rounded-lg border border-surface-200 dark:border-surface-700 overflow-hidden">
+                  <FieldRow label="Notifications enabled" hint="When off, no messages are sent to Slack regardless of checkpoint or workflow events.">
+                    <Toggle
+                      checked={draft.integrations.slackNotificationsEnabled}
+                      onChange={v => patch('integrations', { slackNotificationsEnabled: v })}
                     />
                   </FieldRow>
                 </div>

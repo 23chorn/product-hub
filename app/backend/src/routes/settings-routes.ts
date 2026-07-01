@@ -44,6 +44,8 @@ router.get('/', (_req: Request, res: Response) => {
         // Slack webhook is env-only (SLACK_WEBHOOK_URL) — not settable from the UI/API,
         // so ops can rotate it without a DB write reaching out-of-date across environments.
         slackWebhookUrl: process.env.SLACK_WEBHOOK_URL ?? null,
+        // Default true — policy absence means enabled, only explicit 'false' disables.
+        slackNotificationsEnabled: getGlobalPolicy('slack_notifications_enabled') !== 'false',
       },
       demo: {
         enabled: getGlobalPolicy('demo_mode_enabled') === 'true',
@@ -59,16 +61,21 @@ router.get('/', (_req: Request, res: Response) => {
 
 router.put('/', (req: AuthRequest, res: Response) => {
   try {
-    const { user, sprint, pipeline, qualityGates, demo } = req.body as {
+    const { user, sprint, pipeline, qualityGates, demo, integrations } = req.body as {
       user?: { name?: string; projectName?: string; skillLevel?: string; communicationLanguage?: string };
       sprint?: { velocity?: number; capacityFactor?: number; aiAssistedEnabled?: boolean };
       pipeline?: { enabledStages?: Record<string, boolean>; figmaBypassMode?: boolean };
       qualityGates?: { requireCriticReview?: boolean; autoApproveCritic?: boolean };
       demo?: { enabled?: boolean };
+      integrations?: { slackNotificationsEnabled?: boolean };
     };
 
     if (pipeline?.figmaBypassMode !== undefined && hasAnyUsers() && !req.user?.is_admin) {
       return res.status(403).json({ error: 'Admin access required to change Figma bypass mode' });
+    }
+
+    if (integrations?.slackNotificationsEnabled !== undefined && hasAnyUsers() && !req.user?.is_admin) {
+      return res.status(403).json({ error: 'Admin access required to change Slack notification settings' });
     }
 
     if (user) {
@@ -103,6 +110,10 @@ router.put('/', (req: AuthRequest, res: Response) => {
 
     if (demo?.enabled !== undefined) {
       setGlobalPolicy('demo_mode_enabled', String(demo.enabled));
+    }
+
+    if (integrations?.slackNotificationsEnabled !== undefined) {
+      setGlobalPolicy('slack_notifications_enabled', String(integrations.slackNotificationsEnabled));
     }
 
     logger.info('Settings updated');

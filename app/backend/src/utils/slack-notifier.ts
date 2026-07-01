@@ -5,6 +5,7 @@ import { getUsersByRole, getAdminUsers, hasAnyUsers } from '../data/users';
 import { checkpointArtifactLabel } from '../agents/stage-metadata';
 import { normalizeStageForRoles } from '../agents/workflow-db';
 import { isDemoWorkflow } from '../demo/demo-mode';
+import { getGlobalPolicy } from '../config/settings-store';
 
 const logger = new Logger('SLACK');
 
@@ -13,6 +14,11 @@ function getWebhookUrl(): string | null {
 }
 
 function post(payload: object): void {
+  if (getGlobalPolicy('slack_notifications_enabled') === 'false') {
+    logger.info('Slack notifications disabled globally — notification skipped');
+    return;
+  }
+
   const webhookUrl = getWebhookUrl();
   if (!webhookUrl) {
     logger.warn('No Slack webhook URL configured (SLACK_WEBHOOK_URL env var) — notification skipped');
