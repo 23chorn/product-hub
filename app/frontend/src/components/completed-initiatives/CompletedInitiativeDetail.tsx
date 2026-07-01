@@ -147,6 +147,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
   const [detail, setDetail] = useState<CompletedInitiativeDetailData | null>(null);
   const [backlog, setBacklog] = useState<BacklogData | null>(null);
   const [epicFeatures, setEpicFeatures] = useState<EpicFeaturesData | null>(null);
+  const [selectedPhase, setSelectedPhase] = useState<string | null>(null);
   const [qa, setQa] = useState<QATestSuite | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -160,6 +161,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
     let stale = false;
     setLoading(true);
     setDocCache({});
+    setSelectedPhase(null);
 
     api.getCompletedInitiative(itemId, archived).then(async (data) => {
       if (stale) return;
@@ -268,8 +270,69 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
       .filter(Boolean) as [string, WorkItemStateBucket][]
   );
 
-  const ticketBreakdown = filteredBacklog ? countTicketsByPlatform(getAllStories(filteredBacklog)) : null;
-  const testTypeCounts = qa ? groupByType(qa.test_cases).map(([type, cases]) => ({ type, count: cases.length, meta: typeMeta(type) })) : [];
+  // ── Phase selector data ──────────────────────────────────────────────────────
+  // Ordered phase list: use epicFeatures canonical order, fall back to backlog order.
+  const phaseLabels: string[] = (() => {
+    if (epicFeatures?.phases?.length) return epicFeatures.phases.map(p => p.label);
+    const seen = new Set<string>();
+    const labels: string[] = [];
+    for (const f of filteredBacklog?.features ?? []) {
+      if (f.phase && !seen.has(f.phase)) { seen.add(f.phase); labels.push(f.phase); }
+    }
+    return labels;
+  })();
+
+  // Map each position in filteredBacklog.features → original feature key ("F1", "F3", …)
+  // needed to match QA story_refs (always use original numbering, e.g. "F3.S2").
+  const sortedActiveIndices = [...activeFeatureIndices].sort((a, b) => a - b);
+  const filteredFeatureKeys = (filteredBacklog?.features ?? []).map((_, j) =>
+    sortedActiveIndices[j] != null ? `F${sortedActiveIndices[j] + 1}` : `F${j + 1}`
+  );
+
+  // Feature keys belonging to the selected phase.
+  const phaseFeatureKeys = new Set<string>(
+    selectedPhase == null
+      ? filteredFeatureKeys
+      : (filteredBacklog?.features ?? []).flatMap((f, j) =>
+          f.phase === selectedPhase ? [filteredFeatureKeys[j]] : []
+        )
+  );
+
+  // Phase-scoped backlog (filter features to selected phase).
+  const phaseBacklog: BacklogData | null = filteredBacklog && selectedPhase != null
+    ? { ...filteredBacklog, features: (filteredBacklog.features ?? []).filter(f => f.phase === selectedPhase) }
+    : filteredBacklog;
+
+  // Phase-scoped ticket breakdown.
+  const phaseTicketBreakdown = phaseBacklog ? countTicketsByPlatform(getAllStories(phaseBacklog)) : null;
+
+  // Phase-scoped QA tests (filter by story_ref prefix matching phase feature keys).
+  const phaseQa = qa && selectedPhase != null
+    ? { ...qa, test_cases: qa.test_cases.filter(tc => {
+        const prefix = typeof tc.story_ref === 'string' ? tc.story_ref.split('.')[0] : null;
+        return prefix != null && phaseFeatureKeys.has(prefix);
+      }) }
+    : qa;
+
+  // Phase-scoped test type breakdown.
+  const phaseTestTypeCounts = phaseQa
+    ? groupByType(phaseQa.test_cases).map(([type, cases]) => ({ type, count: cases.length, meta: typeMeta(type) }))
+    : [];
+
+  // Phase-scoped % complete (count done / non-removed work items in the phase).
+  const phasePercentComplete: number | null = (() => {
+    if (selectedPhase == null) return detail?.percentComplete ?? null;
+    const items = (detail?.workItems ?? []).filter(w => {
+      const prefix = w.localKey.includes('.') ? w.localKey.split('.')[0] : w.localKey;
+      return phaseFeatureKeys.has(prefix) && w.stateBucket != null && w.stateBucket !== 'removed';
+    });
+    if (items.length === 0) return null;
+    return Math.round(items.filter(w => w.stateBucket === 'done').length / items.length * 100);
+  })();
+
+  // ── Existing derived values ───────────────────────────────────────────────────
+  const ticketBreakdown = phaseTicketBreakdown;
+  const testTypeCounts = phaseTestTypeCounts;
   const visibleTabs = detail ? TABS.filter(t => visibleTabsFor(detail).has(t.key)) : TABS;
 
   return (
@@ -322,6 +385,34 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
           <p className="text-sm text-surface-400 animate-pulse">Loading...</p>
         ) : (
           <>
+            {phaseLabels.length > 1 && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  onClick={() => setSelectedPhase(null)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                    selectedPhase == null
+                      ? 'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300'
+                      : 'text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-800'
+                  }`}
+                >
+                  All phases
+                </button>
+                {phaseLabels.map(label => (
+                  <button
+                    key={label}
+                    onClick={() => setSelectedPhase(label)}
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                      selectedPhase === label
+                        ? 'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300'
+                        : 'text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-800'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/50 p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-1">Total Tickets</p>
@@ -348,7 +439,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
               </div>
 
               <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/50 p-4 flex flex-col justify-center">
-                <PercentBar percent={detail?.percentComplete ?? null} />
+                <PercentBar percent={phasePercentComplete} />
                 <p className={`text-[10px] mt-2 ${detail?.lastRefreshedAt == null ? 'text-amber-600 dark:text-amber-400' : 'text-surface-400 dark:text-surface-500'}`}>
                   {detail?.lastRefreshedAt == null ? 'Needs refresh' : `Refreshed ${relativeTime(detail.lastRefreshedAt)}`}
                 </p>
