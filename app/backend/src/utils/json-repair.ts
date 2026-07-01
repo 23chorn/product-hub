@@ -10,45 +10,61 @@ export function stripJsonFence(raw: string): string {
   return jsonStart > 0 ? cleaned.slice(jsonStart) : cleaned;
 }
 
+// Valid JSON escape characters after the leading backslash.
+const VALID_JSON_ESCAPES = new Set(['"', '\\', '/', 'b', 'f', 'n', 'r', 't', 'u']);
+
 /**
- * Sanitize literal newlines in JSON string values by replacing them with spaces.
- * Handles cases where the model outputs unescaped line breaks in string fields,
- * which breaks JSON.parse. Preserves \\n escape sequences (which are valid JSON).
+ * Sanitize string values in JSON output from LLMs:
+ *  - Replaces literal (unescaped) newlines/carriage-returns inside strings with spaces.
+ *  - Removes backslashes before characters that are not valid JSON escape sequences
+ *    (e.g. \p, \s from Windows paths or markdown), which cause "Bad escaped character".
+ * Valid sequences (\", \\, \/, \b, \f, \n, \r, \t, \uXXXX) are preserved unchanged.
  */
-function sanitizeJsonNewlines(raw: string): string {
+function sanitizeJsonStringValues(raw: string): string {
   let result = '';
   let inString = false;
-  let escaped = false;
+  let i = 0;
 
-  for (let i = 0; i < raw.length; i++) {
+  while (i < raw.length) {
     const ch = raw[i];
 
-    if (escaped) {
-      // Preserve escape sequences like \n, \", etc.
+    if (!inString) {
       result += ch;
-      escaped = false;
+      if (ch === '"') inString = true;
+      i++;
       continue;
     }
 
     if (ch === '\\') {
-      result += ch;
-      escaped = true;
+      const next = i + 1 < raw.length ? raw[i + 1] : '';
+      if (VALID_JSON_ESCAPES.has(next)) {
+        // Valid escape sequence — keep as-is
+        result += ch + next;
+        i += 2;
+      } else {
+        // Invalid escape (e.g. \p, \s) — drop the backslash, preserve the character
+        result += next;
+        i += 2;
+      }
       continue;
     }
 
     if (ch === '"') {
-      inString = !inString;
+      inString = false;
       result += ch;
+      i++;
       continue;
     }
 
     // Replace literal newlines inside strings with spaces
-    if (inString && (ch === '\n' || ch === '\r')) {
+    if (ch === '\n' || ch === '\r') {
       result += ' ';
+      i++;
       continue;
     }
 
     result += ch;
+    i++;
   }
 
   return result;
@@ -62,7 +78,7 @@ function sanitizeJsonNewlines(raw: string): string {
 export function parseJsonLoose(raw: string): any | null {
   try {
     const cleaned = stripJsonFence(raw);
-    const sanitized = sanitizeJsonNewlines(cleaned);
+    const sanitized = sanitizeJsonStringValues(cleaned);
     return JSON.parse(sanitized);
   } catch {
     return null;
@@ -110,6 +126,7 @@ export function extractFirstJsonObject(s: string): string | null {
 export function repairTruncatedJson(raw: string): string {
   let s = raw.trim();
   s = s.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+  s = sanitizeJsonStringValues(s);
   try { JSON.parse(s); return s; } catch { /* needs repair */ }
 
   let inString = false;

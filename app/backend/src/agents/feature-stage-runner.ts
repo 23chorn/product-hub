@@ -164,13 +164,17 @@ export async function runMultiAgentFeatureStage(
     const strippedBacklog = stripJsonFence(result.backlog);
     // The synthesis call can hit its maxTokens ceiling on a dense feature, leaving the
     // tail of the JSON mid-string — repair before parsing instead of crashing the stage.
-    const newFeature = JSON.parse(repairTruncatedJson(strippedBacklog));
-
-    // Save this feature in isolation (not accumulated).
-    // Each feature stage gets its own artifact: backlog_F1, backlog_F2, backlog_F3
-    // This prevents exponential token growth — F9 doesn't need to re-output F1-F8!
+    let newFeature: any;
     const { saveLocalArtifact } = await import('./artifact-helpers');
     const featureNum = featureIndex + 1;
+    try {
+      newFeature = JSON.parse(repairTruncatedJson(strippedBacklog));
+    } catch (parseErr: any) {
+      // Save the raw LLM output so the artifact is visible for inspection even though
+      // the stage fails — without this the file is never written and there's nothing to debug.
+      await saveLocalArtifact(sessionId, `backlog_F${featureNum}`, strippedBacklog, itemId);
+      throw parseErr;
+    }
     const featureArtifactType = `backlog_F${featureNum}`;
     const featureArtifactContent = JSON.stringify(newFeature, null, 2);
     const artifactId = await saveLocalArtifact(sessionId, featureArtifactType, featureArtifactContent, itemId);
