@@ -88,7 +88,7 @@ function StoryCard({ story, index }: { story: QuickStory; index: number }) {
   );
 }
 
-function FRSection({ fr, frIndex }: { fr: QuickFR; frIndex: number }) {
+function FRSection({ fr }: { fr: QuickFR; frIndex?: number }) {
   const totalPoints = fr.stories.reduce((sum, s) => sum + s.storyPoints, 0);
 
   return (

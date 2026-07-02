@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { API_BASE_URL, apiError, readSSEStream } from './base';
+import { API_BASE_URL, apiError } from './base';
 
 export interface QuickStory {
   title: string;
