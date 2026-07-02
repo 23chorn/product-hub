@@ -341,7 +341,7 @@ function App() {
           <PageHeader />
           {/* When an initiative is open, the pipeline view portals its own back
               button/name/status into the title slot instead of this description. */}
-          {!(activePage === 'home' && activeWorkflow) && (
+          {!(activePage === 'home' && activeWorkflow) && activePage !== 'completed' && (
             <PageHeaderTitle>
               <p className="text-xs text-surface-500 dark:text-surface-400 truncate">{PAGE_DESCRIPTIONS[activePage]}</p>
             </PageHeaderTitle>

@@ -144,7 +144,11 @@ export function removeFeatureFromPhase(data: EpicFeaturesData, phaseIndex: numbe
 
 // ── Sub-components ───────────────────────────────────────────────────────────
 
-export function PrdRefTags({ prdRef }: { prdRef: PrdRef }) {
+export function PrdRefTags({ prdRef, frMap, nfrMap }: {
+  prdRef: PrdRef;
+  frMap?: Record<string, string>;
+  nfrMap?: Record<string, string>;
+}) {
   const frs = prdRef.functionalRequirements ?? [];
   const nfrs = prdRef.nonFunctionalRequirements ?? [];
   const journeys = prdRef.userJourneys ?? [];
@@ -152,10 +156,10 @@ export function PrdRefTags({ prdRef }: { prdRef: PrdRef }) {
   return (
     <div className="mt-3 flex flex-wrap gap-1.5">
       {frs.map(fr => (
-        <span key={fr} className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400">{fr}</span>
+        <span key={fr} title={frMap?.[fr]} className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 ${frMap?.[fr] ? 'cursor-help' : ''}`}>{fr}</span>
       ))}
       {nfrs.map(nfr => (
-        <span key={nfr} className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400">{nfr}</span>
+        <span key={nfr} title={nfrMap?.[nfr]} className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 ${nfrMap?.[nfr] ? 'cursor-help' : ''}`}>{nfr}</span>
       ))}
       {journeys.map(j => (
         <span key={j} className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300">{j}</span>

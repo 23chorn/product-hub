@@ -5,6 +5,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { relativeTime } from '../../utils/relative-time';
 import { WORK_ITEM_STATE_BUCKETS, WORK_ITEM_STATE_BUCKET_LABELS, WORK_ITEM_STATE_BUCKET_COLORS } from '../../utils/work-item-state-bucket';
 import { CompletedInitiativeDetail } from './CompletedInitiativeDetail';
+import { PageHeaderTitle } from '../common/PageHeaderTitle';
 
 type View = 'active' | 'archived';
 
@@ -47,6 +48,9 @@ export function CompletedInitiativesPage() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-surface-50 dark:bg-surface-950">
+      <PageHeaderTitle>
+        <p className="text-xs text-surface-500 dark:text-surface-400 truncate">Track ADO progress across completed initiatives</p>
+      </PageHeaderTitle>
       <div className="flex-1 overflow-y-auto px-6 py-4">
         {isAdmin && (
           <div className="flex items-center gap-1 mb-4">

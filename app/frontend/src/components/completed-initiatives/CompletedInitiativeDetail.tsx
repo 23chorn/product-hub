@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { CompletedInitiativeDetail as CompletedInitiativeDetailData, WorkItemStateBucket } from '@pap/shared';
 import {
-  tryParseBacklog, getAllStories, getStoryPlatforms, countTicketsByPlatform, PLATFORM_LABELS, tryParseQATests, mergeQaTests,
+  tryParseBacklog, getAllStories, countTicketsByPlatform, PLATFORM_LABELS, tryParseQATests, mergeQaTests,
   type BacklogData, type TicketPlatform, type QATestSuite,
 } from '@pap/shared';
 import { api } from '../../services/api';
@@ -10,6 +10,8 @@ import { relativeTime } from '../../utils/relative-time';
 import { isDocumentArtifact, renderArtifactMarkdown } from '@pap/shared';
 import { BacklogView } from '../artifact/BacklogView';
 import { tryParseEpicFeatures, type EpicFeaturesData } from '../artifact/EpicFeaturesView';
+import { PageHeaderTitle } from '../common/PageHeaderTitle';
+import { PageHeaderActions } from '../common/PageHeaderActions';
 import { QATestsView, groupByType, typeMeta } from '../artifact/QATestsView';
 import { MarkdownContent } from '../common/MarkdownContent';
 import { ArchiveConfirmModal } from '../common/ArchiveConfirmModal';
@@ -154,7 +156,9 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
   const [everRefreshed, setEverRefreshed] = useState(false);
   const [tab, setTab] = useState<DocTab>('tickets');
   const [docCache, setDocCache] = useState<Partial<Record<SingleDocTab, DocState>>>({});
-  const [showBreakdown, setShowBreakdown] = useState(false);
+  const [frMap, setFrMap] = useState<Record<string, string>>({});
+  const [nfrMap, setNfrMap] = useState<Record<string, string>>({});
+  const [testCountByArtifactId, setTestCountByArtifactId] = useState<Map<number, number>>(new Map());
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
   const [archiving, setArchiving] = useState(false);
 
@@ -173,7 +177,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
         .find(k => visible.has(k)) ?? 'manage';
       setTab(firstTab);
 
-      const [ticketResult, epicFeaturesResult, testResults] = await Promise.all([
+      const [ticketResult, epicFeaturesResult, testResults, prdContent] = await Promise.all([
         data.ticketArtifactId != null
           ? api.getArtifactContent(data.ticketArtifactId).then(({ content }) => tryParseBacklog(content)).catch(() => null)
           : Promise.resolve(null),
@@ -183,11 +187,30 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
         Promise.all(data.testArtifactIds.map((id, num) =>
           api.getArtifactContent(id).then(({ content }) => ({ num, data: tryParseQATests(content) })).catch(() => null)
         )),
+        data.prdArtifactId != null
+          ? api.getArtifactContent(data.prdArtifactId).then(({ content }) => content).catch(() => null)
+          : Promise.resolve(null),
       ]);
       if (stale) return;
       setBacklog(ticketResult);
       setEpicFeatures(epicFeaturesResult);
-      setQa(mergeQaTests(testResults.filter((p): p is { num: number; data: QATestSuite } => !!p?.data)));
+      const validTests = testResults.filter((p): p is { num: number; data: QATestSuite } => !!p?.data);
+      setQa(mergeQaTests(validTests));
+      const countMap = new Map<number, number>();
+      for (const r of validTests) countMap.set(data.testArtifactIds[r.num], r.data.test_cases.length);
+      setTestCountByArtifactId(countMap);
+      if (prdContent) {
+        try {
+          const stripped = prdContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+          const prd = JSON.parse(stripped);
+          const frs: Record<string, string> = {};
+          for (const fr of prd.functional_requirements ?? []) { if (fr.id && fr.requirement) frs[fr.id] = fr.requirement; }
+          const nfrs: Record<string, string> = {};
+          for (const nfr of prd.non_functional_requirements ?? []) { if (nfr.id && nfr.requirement) nfrs[nfr.id] = `[${nfr.category ?? nfr.priority ?? ''}] ${nfr.requirement}`.trim(); }
+          setFrMap(frs);
+          setNfrMap(nfrs);
+        } catch { /* non-JSON or missing fields — tooltips just won't show */ }
+      }
     }).finally(() => { if (!stale) setLoading(false); });
 
     return () => { stale = true; };
@@ -352,25 +375,6 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
     return Math.round(items.reduce((sum, w) => sum + (w.statePercent ?? 0), 0) / items.length);
   })();
 
-  // Per-stream % complete — cross-references backlog story platform tags with
-  // statePercent from workItems. Only streams that have stories in scope are included.
-  const streamPercentComplete: Array<{ platform: TicketPlatform; percent: number | null }> = (() => {
-    if (!phaseBacklog) return [];
-    const stories = getAllStories(phaseBacklog);
-    const statePercentByKey = new Map(
-      (detail?.workItems ?? [])
-        .filter(w => w.stateBucket !== 'removed')
-        .map(w => [w.localKey, w.statePercent] as [string, number | null])
-    );
-    return PLATFORM_ORDER.map(platform => {
-      const ps = stories.filter(s => getStoryPlatforms(s).includes(platform));
-      if (ps.length === 0) return null;
-      const synced = ps.map(s => s.story_id ? statePercentByKey.get(s.story_id) : undefined).filter((p): p is number => p != null);
-      if (synced.length === 0) return { platform, percent: null };
-      return { platform, percent: Math.round(synced.reduce((a, b) => a + b, 0) / synced.length) };
-    }).filter(Boolean) as Array<{ platform: TicketPlatform; percent: number | null }>;
-  })();
-
   // ── Existing derived values ───────────────────────────────────────────────────
   const ticketBreakdown = phaseTicketBreakdown;
   const testTypeCounts = phaseTestTypeCounts;
@@ -378,48 +382,46 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-surface-50 dark:bg-surface-950">
-      <div className="px-6 py-3 border-b border-surface-200 dark:border-surface-700 flex items-center justify-between gap-3 flex-shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
+      <PageHeaderTitle>
+        <button
+          onClick={() => onBack(everRefreshed)}
+          className="flex items-center gap-1 text-sm text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200 transition-colors flex-shrink-0"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Progress Tracker
+        </button>
+        <span className="text-surface-300 dark:text-surface-600">/</span>
+        <span className="text-sm font-semibold text-surface-900 dark:text-surface-100 truncate">{detail?.title ?? 'Loading...'}</span>
+      </PageHeaderTitle>
+      <PageHeaderActions>
+        {detail && detail.workItems.filter(w => w.adoType === 'epic' && w.adoUrl).map((e, i, arr) => (
+          <a key={e.adoId} href={e.adoUrl!} target="_blank" rel="noreferrer" className="text-xs text-brand-600 dark:text-brand-400 hover:underline">
+            {arr.length === 1 ? 'View Epic ↗' : `Epic ${i + 1} ↗`}
+          </a>
+        ))}
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing || loading}
+          className="px-2.5 py-1 text-xs font-medium rounded-md border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-700/70 transition-colors disabled:opacity-50"
+        >
+          {refreshing ? 'Refreshing...' : 'Refresh'}
+        </button>
+        {isAdmin && (
           <button
-            onClick={() => onBack(everRefreshed)}
-            className="flex items-center gap-1 text-sm text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200 transition-colors flex-shrink-0"
+            onClick={() => setShowArchiveConfirm(true)}
+            disabled={loading}
+            className={`px-2.5 py-1 text-xs font-medium rounded-md border transition-colors disabled:opacity-50 ${
+              archived
+                ? 'border-green-300 dark:border-green-700 text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20'
+                : 'border-red-300 dark:border-red-700 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
+            }`}
           >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Progress Tracker
+            {archived ? 'Unarchive' : 'Archive'}
           </button>
-          <span className="text-surface-300 dark:text-surface-600">/</span>
-          <h2 className="text-sm font-semibold text-surface-900 dark:text-surface-100 truncate">{detail?.title ?? 'Loading...'}</h2>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {detail && detail.workItems.filter(w => w.adoType === 'epic' && w.adoUrl).map((e, i, arr) => (
-            <a key={e.adoId} href={e.adoUrl!} target="_blank" rel="noreferrer" className="text-xs text-brand-600 dark:text-brand-400 hover:underline">
-              {arr.length === 1 ? 'View Epic ↗' : `Epic ${i + 1} ↗`}
-            </a>
-          ))}
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing || loading}
-            className="px-2.5 py-1 text-xs font-medium rounded-md border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-700/70 transition-colors disabled:opacity-50"
-          >
-            {refreshing ? 'Refreshing...' : 'Refresh'}
-          </button>
-          {isAdmin && (
-            <button
-              onClick={() => setShowArchiveConfirm(true)}
-              disabled={loading}
-              className={`px-2.5 py-1 text-xs font-medium rounded-md border transition-colors disabled:opacity-50 ${
-                archived
-                  ? 'border-green-300 dark:border-green-700 text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20'
-                  : 'border-red-300 dark:border-red-700 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
-              }`}
-            >
-              {archived ? 'Unarchive' : 'Archive'}
-            </button>
-          )}
-        </div>
-      </div>
+        )}
+      </PageHeaderActions>
 
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
         {loading ? (
@@ -487,46 +489,6 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
               </div>
             </div>
 
-            {streamPercentComplete.length > 0 && (
-              <div>
-                <button
-                  onClick={() => setShowBreakdown(v => !v)}
-                  className="flex items-center gap-1.5 text-xs text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200 transition-colors"
-                >
-                  <svg
-                    className={`w-3.5 h-3.5 transition-transform ${showBreakdown ? 'rotate-180' : ''}`}
-                    fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                  {showBreakdown ? 'Hide breakdown' : 'Show breakdown'}
-                </button>
-
-                {showBreakdown && (
-                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900/40 p-4 sm:col-span-1">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-3">By Stream</p>
-                      <div className="space-y-3">
-                        {streamPercentComplete.map(({ platform, percent }) => (
-                          <div key={platform}>
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-xs text-surface-600 dark:text-surface-300 capitalize">{PLATFORM_LABELS[platform]}</span>
-                              <span className="text-xs font-semibold tabular-nums text-surface-700 dark:text-surface-200">
-                                {percent != null ? `${percent}%` : '—'}
-                              </span>
-                            </div>
-                            <div className="h-1.5 rounded-full bg-surface-200 dark:bg-surface-700 overflow-hidden">
-                              <div className="h-full bg-brand-400 transition-all" style={{ width: `${percent ?? 0}%` }} />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
             <div>
               <div className="flex border-b border-surface-200 dark:border-surface-700">
                 {visibleTabs.map(t => (
@@ -547,8 +509,8 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
               <div className="pt-4">
                 {tab === 'tickets' && (
                   <div className="max-w-4xl mx-auto">
-                    {filteredBacklog && (filteredBacklog.features?.length ?? 0) > 0 ? (
-                      <BacklogView data={filteredBacklog} stateByLocalKey={stateByLocalKey} epicFeatures={epicFeatures ?? undefined} />
+                    {phaseBacklog && (phaseBacklog.features?.length ?? 0) > 0 ? (
+                      <BacklogView data={phaseBacklog} stateByLocalKey={stateByLocalKey} epicFeatures={epicFeatures ?? undefined} frMap={frMap} nfrMap={nfrMap} />
                     ) : (
                       <p className="text-sm text-surface-400 italic">No backlog content found for this initiative.</p>
                     )}
@@ -557,8 +519,8 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
 
                 {tab === 'tests' && (
                   <div className="max-w-4xl mx-auto space-y-4">
-                    {qa && qa.test_cases.length > 0 ? (
-                      <QATestsView data={qa} />
+                    {phaseQa && phaseQa.test_cases.length > 0 ? (
+                      <QATestsView data={phaseQa} />
                     ) : (
                       <p className="text-sm text-surface-400 italic">No test case content found for this initiative.</p>
                     )}
@@ -573,7 +535,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
                             rel="noreferrer"
                             className="block text-xs text-brand-600 dark:text-brand-400 hover:underline"
                           >
-                            Plan #{plan.planId}{plan.testCaseCount != null ? ` · ${plan.testCaseCount} test cases` : ''} ↗
+                            Plan #{plan.planId}{(() => { const c = plan.artifactId != null ? (testCountByArtifactId.get(plan.artifactId) ?? plan.testCaseCount) : plan.testCaseCount; return c != null ? ` · ${c} test cases` : ''; })()} ↗
                           </a>
                         ))}
                       </div>

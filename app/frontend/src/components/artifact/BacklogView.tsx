@@ -147,6 +147,9 @@ interface BacklogViewProps {
   initiativeTitle?: string;
   stateByLocalKey?: Map<string, WorkItemStateBucket>;
   epicFeatures?: EpicFeaturesData | null;
+  /** Optional FR/NFR id→text maps sourced from the PRD artifact — shown as tooltips on prdRef badges. */
+  frMap?: Record<string, string>;
+  nfrMap?: Record<string, string>;
   // Only ever passed for the live single-feature checkpoint review (isFeaturePreview
   // artifacts) — never wire these into the merged multi-feature overview's renderFeatureRow
   // path, since removeStoryFromBacklog/removeTestCaseFromStory only operate on the single
@@ -155,7 +158,7 @@ interface BacklogViewProps {
   onDeleteTestCase?: (storyIndex: number, testCaseIndex: number) => void;
 }
 
-export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLocalKey, epicFeatures, onDeleteStory, onDeleteTestCase }: BacklogViewProps) {
+export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLocalKey, epicFeatures, frMap, nfrMap, onDeleteStory, onDeleteTestCase }: BacklogViewProps) {
   const [expandedStories, setExpandedStories] = useState<Set<string>>(new Set());
   // Epics and features both default collapsed so a multi-feature overview doesn't dump every
   // story on screen at once — drill in per epic, then per feature.
@@ -460,7 +463,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
                     </ul>
                   </div>
                 )}
-                {epicMatch?.prdRef && <PrdRefTags prdRef={epicMatch.prdRef} />}
+                {epicMatch?.prdRef && <PrdRefTags prdRef={epicMatch.prdRef} frMap={frMap} nfrMap={nfrMap} />}
               </div>
             )}
             <div className="divide-y divide-surface-100 dark:divide-surface-700 border-t border-surface-200 dark:border-surface-700">
