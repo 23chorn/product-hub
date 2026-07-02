@@ -334,12 +334,12 @@ export function SettingsPanel() {
             <div className="mt-5">
               <SectionHeader
                 title="Figma design"
-                description="Controls how the figma_design stage (Luma) handles Figma itself."
+                description="Controls how the figma_design stage (Bora) handles Figma itself."
               />
               <div className="rounded-lg border border-surface-200 dark:border-surface-700 overflow-hidden">
                 <FieldRow
                   label="Figma bypass mode"
-                  hint="Luma still generates the screens, design-token, and gap-analysis overview, but skips creating or writing to a Figma file — the reviewer pastes their own Figma link at the checkpoint instead."
+                  hint="Bora still generates the screens, design-token, and gap-analysis overview, but skips creating or writing to a Figma file — the reviewer pastes their own Figma link at the checkpoint instead."
                 >
                   <Toggle
                     checked={draft.pipeline.figmaBypassMode}

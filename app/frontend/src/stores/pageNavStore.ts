@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type PageKey = 'home' | 'completed' | 'discovery' | 'knowledge';
+export type PageKey = 'home' | 'completed' | 'discovery' | 'knowledge' | 'quickFeature';
 
 interface PageNavState {
   activePage: PageKey;

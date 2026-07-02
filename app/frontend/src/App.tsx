@@ -10,6 +10,7 @@ import { DiscoveryScreen } from './components/discovery/DiscoveryScreen';
 import { SettingsPanel } from './components/settings/SettingsPanel';
 import { QuickTicketPanel } from './components/ticket/QuickTicketPanel';
 import { CompletedInitiativesPage } from './components/completed-initiatives/CompletedInitiativesPage';
+import { QuickFeaturePanel } from './components/quick-feature/QuickFeaturePanel';
 import { PageHeader } from './components/common/PageHeader';
 import { PageHeaderTitle } from './components/common/PageHeaderTitle';
 import { LoginPage } from './pages/LoginPage';
@@ -31,6 +32,7 @@ const NAV_TABS: Array<{ key: PageKey; label: string; visible?: (ctx: NavTabVisib
   { key: 'completed', label: 'Progress Tracker', visible: ({ navTabs }) => navTabs?.progressTracker ?? true },
   { key: 'discovery', label: 'Discovery', visible: ({ canLaunch, navTabs }) => canLaunch && (navTabs?.discovery ?? false) },
   { key: 'knowledge', label: 'Knowledge Studio', visible: ({ navTabs }) => navTabs?.knowledgeStudio ?? true },
+  { key: 'quickFeature', label: 'Quick Feature', visible: ({ canLaunch, navTabs }) => canLaunch && (navTabs?.quickFeature ?? false) },
 ];
 
 // Description shown in the shared PageHeader's title slot for whichever tab is active
@@ -40,6 +42,7 @@ const PAGE_DESCRIPTIONS: Record<PageKey, string> = {
   completed: 'Azure DevOps ticket state for initiatives whose pipeline has finished.',
   discovery: 'Surface opportunities from interviews, reviews, and competitor notes.',
   knowledge: 'Manage project context, behaviour docs, agent personas, output templates, and repo documentation review.',
+  quickFeature: 'Describe a small feature and get sprint-ready stories with acceptance criteria, ready to push to ADO.',
 };
 
 function DemoToast({ title, onDismiss }: { title: string; onDismiss: () => void }) {
@@ -346,7 +349,7 @@ function App() {
               <p className="text-xs text-surface-500 dark:text-surface-400 truncate">{PAGE_DESCRIPTIONS[activePage]}</p>
             </PageHeaderTitle>
           )}
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 overflow-hidden flex flex-col">
             {activePage === 'home' && activeWorkflow
               ? <CoordinatorChat />
               : activePage === 'completed'
@@ -355,7 +358,9 @@ function App() {
                   ? <DiscoveryScreen />
                   : activePage === 'knowledge'
                     ? <SkillManagerPanel />
-                    : <HomeScreen />}
+                    : activePage === 'quickFeature'
+                      ? <QuickFeaturePanel />
+                      : <HomeScreen />}
           </div>
         </main>
 

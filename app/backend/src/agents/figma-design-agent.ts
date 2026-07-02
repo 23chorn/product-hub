@@ -26,7 +26,7 @@ export function extractFigmaNodeId(url: string): string | null {
  * get_figma_data returns the full subtree — so one URL covers all states.
  *
  * Returns empty string if MCP is unconfigured, the URL lacks a node-id, or the
- * call fails — callers fall back to Luma's text brief in that case.
+ * call fails — callers fall back to Bora's text brief in that case.
  */
 export async function loadFigmaFrameData(frameUrl: string): Promise<string> {
   const fileKey = extractFigmaFileKey(frameUrl);

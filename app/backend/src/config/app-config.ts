@@ -70,6 +70,7 @@ function buildConfigFromEnv(): AppConfig {
     // Still gated to Product/Admin users via canLaunchWorkflow regardless of this flag.
     discovery: resolveNavTabFlag('ENABLE_DISCOVERY_TAB', nodeEnv),
     knowledgeStudio: resolveNavTabFlag('ENABLE_KNOWLEDGE_STUDIO_TAB', nodeEnv),
+    quickFeature: resolveNavTabFlag('ENABLE_QUICK_FEATURE_TAB', nodeEnv),
   };
 
   // ── Stage config from the settings store (policies table) ─────────────────

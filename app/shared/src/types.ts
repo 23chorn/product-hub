@@ -398,6 +398,7 @@ export interface AppConfig {
       progressTracker: boolean;
       discovery: boolean;
       knowledgeStudio: boolean;
+      quickFeature: boolean;
     };
   };
   integrations: {

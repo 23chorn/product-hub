@@ -1,4 +1,4 @@
-## Artifact Stage: Figma Design Plan (Luma)
+## Artifact Stage: Figma Design Plan (Bora)
 
 This is a brief for a human designer, not a pixel-precise spec. Structural validation (field presence, screen count, navigation flow, figma_write_status) has already been performed. Do not re-raise those checks, and do not ask for more design-token detail than the brief is meant to carry.
 

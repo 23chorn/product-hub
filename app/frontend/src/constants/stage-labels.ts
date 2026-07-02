@@ -81,7 +81,7 @@ export const TOGGLEABLE_STAGES: Array<{ key: string; label: string; short: strin
   { key: 'analyst',              label: stagePersonaLabel('analyst')!,             short: 'Sage · Analyst' },
   { key: 'pm_prd',               label: stagePersonaLabel('pm_prd')!,              short: 'Rex · PM' },
   { key: 'prototype',            label: stagePersonaLabel('prototype')!,           short: 'Nova · Prototype' },
-  { key: 'figma_design',         label: stagePersonaLabel('figma_design')!,        short: 'Luma · Figma' },
+  { key: 'figma_design',         label: stagePersonaLabel('figma_design')!,        short: 'Bora · Figma' },
   { key: 'solution_architect',   label: stagePersonaLabel('solution_architect')!,  short: 'Atlas · Architect' },
   { key: 'api_spec',             label: stagePersonaLabel('api_spec')!,            short: 'Kira · API' },
   { key: 'epic_feature_planner', label: 'Epic & Features — Apex',       short: 'Apex · Features' },

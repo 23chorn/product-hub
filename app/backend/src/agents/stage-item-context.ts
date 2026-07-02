@@ -174,8 +174,8 @@ export const ITEM_CONTEXT_BUILDERS: Record<string, (params: ItemContextParams) =
     if (prdContent) parts.push(`**PRD (source of functional requirements — every endpoint must satisfy a named FR from this document; cite the FR-ID in the endpoint description):**\n\n${prdContent}`);
     if (epicContent) parts.push(`**Epic & Features (scope of this initiative — only endpoints needed for these features belong in the contract):**\n\n${epicContent}`);
 
-    // Load Figma screen data: parse Luma's frame_url per screen and fetch each frame
-    // via MCP for actual component/field detail. Falls back to Luma's brief if frame
+    // Load Figma screen data: parse Bora's frame_url per screen and fetch each frame
+    // via MCP for actual component/field detail. Falls back to Bora's brief if frame
     // URLs aren't populated yet (designer hasn't built screens).
     if (figmaBriefContent) {
       let fetchedFrames = false;
@@ -201,7 +201,7 @@ export const ITEM_CONTEXT_BUILDERS: Record<string, (params: ItemContextParams) =
       } catch { /* JSON parse failed — fall through to brief */ }
 
       if (!fetchedFrames) {
-        // Designer hasn't built the frames yet — use Luma's text brief as a fallback
+        // Designer hasn't built the frames yet — use Bora's text brief as a fallback
         parts.push(`**Figma Design Brief (frame URLs not yet populated — use screen descriptions to infer response shapes):**\n\n${figmaBriefContent}`);
       }
     }

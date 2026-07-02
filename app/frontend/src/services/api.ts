@@ -18,6 +18,7 @@ import { discoveryApi } from './api/discovery';
 import { kbApi } from './api/kb';
 import { swaggerApi } from './api/swagger';
 import { completedInitiativesApi } from './api/completed-initiatives';
+import { quickFeatureApi } from './api/quickFeature';
 
 export type { AgentFile, AgentFileContent } from './api/types';
 
@@ -36,4 +37,5 @@ export const api = {
   ...kbApi,
   ...swaggerApi,
   ...completedInitiativesApi,
+  ...quickFeatureApi,
 };

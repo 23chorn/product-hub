@@ -155,7 +155,7 @@ If a context/tech-stack.md file was provided, align all choices with the existin
   },
 
   figma_design: {
-    label: 'Figma Mockups (Luma)',
+    label: 'Figma Mockups (Bora)',
     format: `Produce a concise JSON design brief a human designer can act on directly — not a full design spec.
 
 Key requirements:
@@ -255,7 +255,7 @@ export function stageProgressWorking(stage: string): string {
     epic_feature_planner: 'Apex',
     solution_architect: 'Atlas',
     prototype: 'Nova',
-    figma_design: 'Luma',
+    figma_design: 'Bora',
     api_spec: 'Kira',
   };
   const name = actor[stage];
@@ -274,7 +274,7 @@ const STAGE_STARTED_NARRATION: Record<string, string> = {
   epic_feature_planner: 'Apex is writing the epic and feature breakdown from the PRD.',
   solution_architect:   'Atlas is writing the architecture sections, API surface, and data model.',
   prototype:            'Nova is generating the prototype wireframe and file map from the workflow artifacts.',
-  figma_design:         'Luma is generating the Figma mockup plan from the workflow artifacts.',
+  figma_design:         'Bora is generating the Figma mockup plan from the workflow artifacts.',
   api_spec:             'Kira is writing the API Contract from the approved architecture data model and PRD functional requirements.',
 };
 

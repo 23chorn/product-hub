@@ -118,7 +118,7 @@ export function ArtifactViewer() {
   const isWikiDocument = ['analyst', 'research', 'prd', 'architecture'].includes(artifactType);
   const showWikiSyncButton = isWikiDocument && workItemsEnabled && workflowComplete;
 
-  const isFigmaDesign = pendingCheckpoint?.stage === 'figma_design';
+  const isFigmaDesign = artifactType === 'figma_design' || pendingCheckpoint?.stage === 'figma_design';
   const figmaDesign = isFigmaDesign ? parseFigmaDesignContent(content) : null;
 
   const emitMessage = (content: string) =>

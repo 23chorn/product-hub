@@ -144,6 +144,11 @@ export function removeFeatureFromPhase(data: EpicFeaturesData, phaseIndex: numbe
 
 // ── Sub-components ───────────────────────────────────────────────────────────
 
+// Strip dashes and leading zeros from numeric suffix so "FR-01"/"FR-1" → "FR1" to match PRD id format.
+function normalizePrdId(id: string): string {
+  return id.replace(/-0*(\d+)$/, '$1');
+}
+
 export function PrdRefTags({ prdRef, frMap, nfrMap }: {
   prdRef: PrdRef;
   frMap?: Record<string, string>;
@@ -155,15 +160,22 @@ export function PrdRefTags({ prdRef, frMap, nfrMap }: {
   if (frs.length === 0 && nfrs.length === 0 && journeys.length === 0) return null;
   return (
     <div className="mt-3 flex flex-wrap gap-1.5">
-      {frs.map(fr => (
-        <span key={fr} title={frMap?.[fr]} className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 ${frMap?.[fr] ? 'cursor-help' : ''}`}>{fr}</span>
-      ))}
-      {nfrs.map(nfr => (
-        <span key={nfr} title={nfrMap?.[nfr]} className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 ${nfrMap?.[nfr] ? 'cursor-help' : ''}`}>{nfr}</span>
-      ))}
-      {journeys.map(j => (
-        <span key={j} className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300">{j}</span>
-      ))}
+      {frs.map(fr => {
+        const key = normalizePrdId(fr);
+        const tip = frMap?.[key];
+        return <span key={fr} title={tip} className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 ${tip ? 'cursor-help' : ''}`}>{key}</span>;
+      })}
+      {nfrs.map(nfr => {
+        const key = normalizePrdId(nfr);
+        const tip = nfrMap?.[key];
+        return <span key={nfr} title={tip} className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 ${tip ? 'cursor-help' : ''}`}>{key}</span>;
+      })}
+      {journeys.map(j => {
+        const colonIdx = j.indexOf(': ');
+        const jId = colonIdx !== -1 ? j.slice(0, colonIdx) : j;
+        const tip = colonIdx !== -1 ? j.slice(colonIdx + 2) : undefined;
+        return <span key={j} title={tip} className={`text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 ${tip ? 'cursor-help' : ''}`}>{jId}</span>;
+      })}
     </div>
   );
 }

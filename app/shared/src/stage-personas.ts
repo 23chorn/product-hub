@@ -17,7 +17,7 @@ export const STAGE_PERSONAS: Record<string, StagePersonaInfo> = {
   story_decomposition:   { role: 'Shard - Product Owner',        persona: 'Vera, Finn, Remi & Cole' },
   qa_engineer:           { role: 'QA Engineer',                   persona: 'Vera' },
   prototype:             { role: 'Prototype',                     persona: 'Nova' },
-  figma_design:          { role: 'Figma Design',                  persona: 'Luma' },
+  figma_design:          { role: 'Figma Design',                  persona: 'Bora' },
   api_spec:              { role: 'API Contract',                  persona: 'Kira' },
   critic:                { role: 'Critic',                        persona: 'Flint' },
   curator:               { role: 'Curator',                       persona: 'Ivy' },
