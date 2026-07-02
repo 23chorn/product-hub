@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { CompletedInitiativeDetail as CompletedInitiativeDetailData, WorkItemStateBucket } from '@pap/shared';
 import {
-  tryParseBacklog, getAllStories, countTicketsByPlatform, PLATFORM_LABELS, tryParseQATests, mergeQaTests,
+  tryParseBacklog, getAllStories, getStoryPlatforms, countTicketsByPlatform, PLATFORM_LABELS, tryParseQATests, mergeQaTests,
   type BacklogData, type TicketPlatform, type QATestSuite,
 } from '@pap/shared';
 import { api } from '../../services/api';
@@ -154,6 +154,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
   const [everRefreshed, setEverRefreshed] = useState(false);
   const [tab, setTab] = useState<DocTab>('tickets');
   const [docCache, setDocCache] = useState<Partial<Record<SingleDocTab, DocState>>>({});
+  const [showBreakdown, setShowBreakdown] = useState(false);
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
   const [archiving, setArchiving] = useState(false);
 
@@ -351,6 +352,25 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
     return Math.round(items.reduce((sum, w) => sum + (w.statePercent ?? 0), 0) / items.length);
   })();
 
+  // Per-stream % complete — cross-references backlog story platform tags with
+  // statePercent from workItems. Only streams that have stories in scope are included.
+  const streamPercentComplete: Array<{ platform: TicketPlatform; percent: number | null }> = (() => {
+    if (!phaseBacklog) return [];
+    const stories = getAllStories(phaseBacklog);
+    const statePercentByKey = new Map(
+      (detail?.workItems ?? [])
+        .filter(w => w.stateBucket !== 'removed')
+        .map(w => [w.localKey, w.statePercent] as [string, number | null])
+    );
+    return PLATFORM_ORDER.map(platform => {
+      const ps = stories.filter(s => getStoryPlatforms(s).includes(platform));
+      if (ps.length === 0) return null;
+      const synced = ps.map(s => s.story_id ? statePercentByKey.get(s.story_id) : undefined).filter((p): p is number => p != null);
+      if (synced.length === 0) return { platform, percent: null };
+      return { platform, percent: Math.round(synced.reduce((a, b) => a + b, 0) / synced.length) };
+    }).filter(Boolean) as Array<{ platform: TicketPlatform; percent: number | null }>;
+  })();
+
   // ── Existing derived values ───────────────────────────────────────────────────
   const ticketBreakdown = phaseTicketBreakdown;
   const testTypeCounts = phaseTestTypeCounts;
@@ -466,6 +486,46 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
                 </p>
               </div>
             </div>
+
+            {streamPercentComplete.length > 0 && (
+              <div>
+                <button
+                  onClick={() => setShowBreakdown(v => !v)}
+                  className="flex items-center gap-1.5 text-xs text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200 transition-colors"
+                >
+                  <svg
+                    className={`w-3.5 h-3.5 transition-transform ${showBreakdown ? 'rotate-180' : ''}`}
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                  {showBreakdown ? 'Hide breakdown' : 'Show breakdown'}
+                </button>
+
+                {showBreakdown && (
+                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900/40 p-4 sm:col-span-1">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-3">By Stream</p>
+                      <div className="space-y-3">
+                        {streamPercentComplete.map(({ platform, percent }) => (
+                          <div key={platform}>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-xs text-surface-600 dark:text-surface-300 capitalize">{PLATFORM_LABELS[platform]}</span>
+                              <span className="text-xs font-semibold tabular-nums text-surface-700 dark:text-surface-200">
+                                {percent != null ? `${percent}%` : '—'}
+                              </span>
+                            </div>
+                            <div className="h-1.5 rounded-full bg-surface-200 dark:bg-surface-700 overflow-hidden">
+                              <div className="h-full bg-brand-400 transition-all" style={{ width: `${percent ?? 0}%` }} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div>
               <div className="flex border-b border-surface-200 dark:border-surface-700">

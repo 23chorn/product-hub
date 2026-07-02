@@ -91,17 +91,6 @@ export function CompletedInitiativesPage() {
                     )}
                     <h3 className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{item.title}</h3>
                   </div>
-                  {item.epicAdoUrl && (
-                    <a
-                      href={item.epicAdoUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={e => e.stopPropagation()}
-                      className="flex-shrink-0 text-[10px] text-brand-600 dark:text-brand-400 hover:underline"
-                    >
-                      Epic ↗
-                    </a>
-                  )}
                 </div>
 
                 <div className="flex gap-1.5 flex-wrap mt-2">
