@@ -16,6 +16,8 @@ import { QATestsView, groupByType, typeMeta } from '../artifact/QATestsView';
 import { MarkdownContent } from '../common/MarkdownContent';
 import { ArchiveConfirmModal } from '../common/ArchiveConfirmModal';
 import { WorkItemManagePanel } from './WorkItemManagePanel';
+import { FigmaScreenPreviewer } from '../artifact/FigmaDesignActions';
+import { parseFigmaDesignContent } from '../../utils/figma-design';
 
 interface Props {
   itemId: string;
@@ -100,30 +102,18 @@ function FigmaTabContent({ state }: { state: DocState | undefined }) {
   if (state === undefined || state === 'loading') return <p className="text-sm text-surface-400 animate-pulse">Loading...</p>;
   if (state === null) return <p className="text-sm text-surface-400 italic">No Figma design was produced for this initiative.</p>;
 
-  let figmaUrl: string | null = null;
-  try {
-    const cleaned = state.content.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-    figmaUrl = JSON.parse(cleaned).figma_file_url ?? null;
-  } catch { /* non-JSON artifact */ }
-
-  if (!figmaUrl) return <p className="text-sm text-surface-400 italic">No Figma link found in this artifact.</p>;
+  const figmaDesign = parseFigmaDesignContent(state.content);
+  const links = Object.fromEntries(figmaDesign.screens.map(s => [s.name, s.frame_url ?? '']));
 
   return (
-    <a
-      href={figmaUrl}
-      target="_blank"
-      rel="noreferrer"
-      className="inline-flex items-center gap-2 px-4 py-2 bg-[#1E1E1E] hover:bg-[#333] text-white text-sm font-medium rounded-lg transition-colors"
-    >
-      <svg width="14" height="14" viewBox="0 0 38 57" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M19 28.5A9.5 9.5 0 1 1 28.5 19 9.5 9.5 0 0 1 19 28.5Z" fill="#1ABCFE"/>
-        <path d="M0 47.5A9.5 9.5 0 0 1 9.5 38H19V47.5A9.5 9.5 0 0 1 0 47.5Z" fill="#0ACF83"/>
-        <path d="M19 0V19H28.5A9.5 9.5 0 0 0 19 0Z" fill="#FF7262"/>
-        <path d="M0 9.5A9.5 9.5 0 0 0 9.5 19H19V0H9.5A9.5 9.5 0 0 0 0 9.5Z" fill="#F24E1E"/>
-        <path d="M0 28.5A9.5 9.5 0 0 0 9.5 38H19V19H9.5A9.5 9.5 0 0 0 0 28.5Z" fill="#FF7262"/>
-      </svg>
-      Open in Figma ↗
-    </a>
+    <div className="max-w-4xl mx-auto h-[560px] border border-surface-200 dark:border-surface-700 rounded-lg overflow-hidden">
+      <FigmaScreenPreviewer
+        figmaDesign={figmaDesign}
+        links={links}
+        onLinkChange={() => {}}
+        readonly
+      />
+    </div>
   );
 }
 
