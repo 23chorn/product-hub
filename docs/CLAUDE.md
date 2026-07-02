@@ -42,16 +42,26 @@ See `docs/setup/windows-server-deployment.md` for a from-scratch internal-networ
 ### Monorepo layout
 ```
 app/
-  backend/   Express + TypeScript (port 3001)
-  frontend/  React 18 + Vite + Tailwind (port 5173)
-  shared/    Compiled TypeScript types — consumed by both via `@pap/shared`
+  backend/         Express + TypeScript (port 3001)
+  frontend/        React 18 + Vite + Tailwind (port 5173)
+  shared/          Compiled TypeScript types — consumed by both via `@pap/shared`
 agents/
-  personas/  Agent persona .md files
-  templates/ Output templates (research, prd, backlog, architecture, prototype)
-context/     Project context files loaded into every agent system prompt
-  behaviour/ xCube Docs from Azure Wiki — current implementation reference for PRD and story phases
-db/          SQLite database (product-ops.db, gitignored) + schema.ts (Drizzle schema) + migrations/
+  personas/        Agent persona .md files
+  templates/       Output templates (research, prd, backlog, architecture, prototype)
+context/           Project context files loaded into every agent system prompt
+  behaviour/       xCube Docs from Azure Wiki — current implementation reference for PRD and story phases
+db/                SQLite database (product-ops.db, gitignored) + schema.ts (Drizzle schema) + migrations/
+packages/
+  pipeline/        @xcube/pipeline — developer CLI: pulls initiative context from Product Hub,
+                   writes PIPELINE_CONTEXT.md + PIPELINE_PLAN.md, updates ADO states, launches Claude Code
 ```
+
+`packages/pipeline` is a **standalone npm package** (not a workspace in the root `package.json`). It has its own `tsconfig.json`, `package.json`, and `dist/` output. Build it separately:
+```bash
+cd packages/pipeline && npm run build   # tsc → dist/
+cd packages/pipeline && npm run dev     # ts-node for local dev
+```
+The pipeline CLI is distributed as `@xcube/pipeline` and consumed by developers in their implementation repos — it calls back to the Product Hub API (`/api/dev/initiatives/*`) to pull ticket context.
 
 Frontend proxies `/api/*` to the backend via Vite config. The shared package must be built (`npm run build` in `app/shared`) before type changes are visible to the backend.
 

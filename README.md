@@ -37,7 +37,7 @@ You talk to one agent: the **Coordinator** (Chief of Staff). It confirms the bri
 | Integrations | Airtable (roadmap items), Azure DevOps (work items + wiki), Figma, Slack |
 
 ```
-product-agent/
+product-hub/
 ├── app/
 │   ├── backend/       Express API, agents, workflow engine
 │   │   └── src/demo/  Demo mode fixtures and webhook simulation
@@ -53,10 +53,15 @@ product-agent/
 │   ├── schema.ts       Canonical Drizzle schema (tracked)
 │   ├── migrations/     Versioned SQL migrations, applied automatically on startup
 │   └── product-ops.db  Runtime database (gitignored)
+├── packages/
+│   └── pipeline/      @xcube/pipeline — developer CLI: pulls initiative tickets, writes context
+│                      files, updates ADO states, and launches Claude Code for implementation
 ├── data/              Artifact exports (gitignored)
 ├── docs/              Deployment, developer, integration, and setup guides
 └── scripts/           Setup and utility scripts
 ```
+
+For the end-to-end flow from product goal to shipped implementation, see [`docs/PROCESS.md`](docs/PROCESS.md).
 
 ## Quick Start
 
@@ -344,6 +349,27 @@ The `context/` directory contains markdown files injected into agent system prom
 Context files can be edited from the UI (**Knowledge Studio** button in the header) or on disk. Changes take effect immediately — no restart needed.
 
 **Behaviour docs** (`context/behaviour/`) are a separate corpus: `.feature` files describing how existing functionality behaves today, plus a `feature-map.json` search index. Unlike the files above, they're only injected into the PRD stage, and only the documents whose keywords match the initiative — not the whole corpus. Also editable from Knowledge Studio.
+
+## Developer Pipeline CLI (`@xcube/pipeline`)
+
+Once Product Hub has pushed tickets to Azure DevOps, developers use the `pipeline` CLI to pull their stream's tickets and start implementing:
+
+```bash
+# Install globally
+npm install -g @xcube/pipeline
+
+# Or run directly
+npx @xcube/pipeline run --init=21 --phase=mvp --stream=backend
+```
+
+The CLI:
+1. Fetches the initiative manifest filtered to your platform and phase
+2. Pulls full ticket details (acceptance criteria, technical ACs, FRs/NFRs)
+3. Writes `PIPELINE_CONTEXT.md` and `PIPELINE_PLAN.md` into your workspace
+4. Moves tickets from "New" → "In Dev" in Azure DevOps
+5. Launches Claude Code seeded with the context files
+
+See [`packages/pipeline/README.md`](packages/pipeline/README.md) for configuration and full usage.
 
 ## Development
 

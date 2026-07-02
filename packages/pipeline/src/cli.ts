@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import * as path from 'path';
 import * as dotenv from 'dotenv';
+import * as path from 'path';
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { fetchManifest, fetchPayload, updateTicketState } from './api';
@@ -8,7 +8,8 @@ import { writeContextFiles } from './writer';
 import { launchInteractive, launchHeadless, buildHeadlessPrompt } from './runner';
 import type { PayloadTicket, RunOptions } from './types';
 
-dotenv.config({ path: path.join(__dirname, '..', '.env') });
+// Load .env from the pipeline package directory so config lives alongside the CLI.
+dotenv.config({ path: path.join(__dirname, '../.env') });
 
 const ENV_API_KEY = process.env.PIPELINE_API_KEY?.trim() || undefined;
 
@@ -41,7 +42,7 @@ async function run(opts: RunOptions): Promise<void> {
 
   if (!key) {
     console.log('');
-    console.log(chalk.yellow('Warning: no API key set. Set PIPELINE_API_KEY in packages/pipeline/.env'));
+    console.log(chalk.yellow('Warning: no API key set. Set PIPELINE_API_KEY in your .env file or as an environment variable.'));
     console.log(chalk.yellow('Generate one: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'));
     console.log(chalk.yellow('Add it to product-hub .env as PIPELINE_API_KEY=<key> and restart the server.'));
     console.log('');

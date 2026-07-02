@@ -69,6 +69,8 @@ These are the shape every future change should follow:
 - `cd app/backend && npx tsc --noEmit` must pass (rebuild `app/shared` first if you
   touched its types — see docs/CLAUDE.md).
 - `npm test` (from `app/backend/`) must pass.
+- If you touched `packages/pipeline/`, run `cd packages/pipeline && npm run build`
+  to confirm it compiles — it has its own tsconfig separate from the app workspaces.
 - Re-read your diff: did you leave a dead import, a second copy of something, or a
   block that should have been a call to a shared helper? Fix it before handing off.
 - **Don't start the dev server or drive a browser to verify UI/frontend changes.**

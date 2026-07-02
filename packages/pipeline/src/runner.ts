@@ -6,12 +6,16 @@ export function launchInteractive(workspace: string, initTitle: string, ticketCo
   // Injected via --append-system-prompt so it lands before any user message and
   // doesn't get confused with a memory-recall request.
   const systemContext = [
-    `You are implementing a pipeline task: ${ticketCount} tickets for "${initTitle}".`,
-    `PIPELINE_CONTEXT.md in this directory contains the full ticket details.`,
-    `PIPELINE_PLAN.md is your progress tracker — as you finish each ticket, change its checkbox from [ ] to [x] and update the "Status:" line at the top.`,
-    `Do not check memory or do any project survey first. Your only job is to implement the tickets in the order listed in PIPELINE_PLAN.md.`,
+    `You are implementing ${ticketCount} tickets for initiative "${initTitle}".`,
+    `PIPELINE_CONTEXT.md contains the full ticket details (acceptance criteria, technical notes, functional requirements).`,
+    `PIPELINE_PLAN.md is the implementation checklist — it is already ordered by dependency, so it IS the plan.`,
+    `Rules you must follow:`,
+    `(1) Go straight into coding. Do NOT make a new plan, survey the project, describe your approach, or ask clarifying questions before writing code.`,
+    `(2) Work through tickets in the exact order listed in PIPELINE_PLAN.md.`,
+    `(3) After each ticket is complete: edit PIPELINE_PLAN.md — change the checkbox from [ ] to [x] and increment the "Status: N / ${ticketCount} complete" count at the top before moving to the next ticket.`,
+    `(4) Build the project and run any relevant tests after each ticket before marking it done. Use whatever build/test tooling is appropriate for this codebase (dotnet build, gradle, xcodebuild, npm, etc.).`,
   ].join(' ');
-  const firstMessage = `Open PIPELINE_CONTEXT.md and PIPELINE_PLAN.md, then start implementing the tickets in the listed order.`;
+  const firstMessage = `Read the first unchecked ticket from PIPELINE_PLAN.md, look up its full details in PIPELINE_CONTEXT.md, then implement it now.`;
 
   console.log('');
   console.log(`Launching Claude Code in ${workspace}`);
@@ -74,20 +78,18 @@ export function buildHeadlessPrompt(
 ): string {
   const relContext = path.basename(contextPath);
   const relPlan = path.basename(planPath);
+  const total = implementationOrder.length;
   return [
-    `You are implementing Initiative #${initSeqNum}: "${initTitle}".`,
+    `You are implementing ${total} tickets for Initiative #${initSeqNum}: "${initTitle}".`,
     '',
-    `Full context is in ${relContext}. Your implementation checklist is in ${relPlan}.`,
+    `Full ticket details are in ${relContext}. Your checklist is in ${relPlan} — it is already ordered by dependency, so it IS the plan.`,
     '',
-    'Work through the tickets in the implementation order listed in PIPELINE_PLAN.md.',
-    'For each ticket:',
-    '1. Read the acceptance criteria from PIPELINE_CONTEXT.md',
-    '2. Implement the changes',
-    '3. Run typecheck and tests',
-    '4. Mark the ticket done in PIPELINE_PLAN.md',
+    'Rules:',
+    '(1) Go straight into coding. Do NOT make a new plan or describe your approach before writing code.',
+    '(2) Work through tickets in the order listed in PIPELINE_PLAN.md.',
+    `(3) After each ticket: change its checkbox from [ ] to [x] and update the "Status: N / ${total} complete" line in PIPELINE_PLAN.md before moving on.`,
+    '(4) Build the project and run any relevant tests after each ticket before marking it done. Use whatever build/test tooling is appropriate for this codebase (dotnet build, gradle, xcodebuild, npm, etc.).',
     '',
-    `Implementation order: ${implementationOrder.slice(0, 5).join(', ')}${implementationOrder.length > 5 ? ` ... (${implementationOrder.length} total)` : ''}`,
-    '',
-    'Start with the first ticket now.',
+    `First ticket: ${implementationOrder[0]}. Read its details from ${relContext} and implement it now.`,
   ].join('\n');
 }

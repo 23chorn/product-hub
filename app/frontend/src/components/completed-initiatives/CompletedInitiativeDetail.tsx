@@ -290,17 +290,35 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
   );
 
   // Feature keys belonging to the selected phase.
-  const phaseFeatureKeys = new Set<string>(
-    selectedPhase == null
-      ? filteredFeatureKeys
-      : (filteredBacklog?.features ?? []).flatMap((f, j) =>
-          f.phase === selectedPhase ? [filteredFeatureKeys[j]] : []
-        )
-  );
+  // Source of truth: epicFeatures phase structure — each phase owns N consecutive features
+  // by position, giving original F-keys without relying on the backlog's phase field.
+  // Fall back to the backlog's own phase field when epicFeatures is absent.
+  const phaseFeatureKeys = new Set<string>((() => {
+    if (selectedPhase == null) return filteredFeatureKeys;
+    if (epicFeatures?.phases?.length) {
+      const keys: string[] = [];
+      let epicIdx = 0;
+      for (const phase of epicFeatures.phases) {
+        const count = phase.features?.length ?? 0;
+        if (phase.label === selectedPhase) {
+          for (let i = epicIdx; i < epicIdx + count; i++) {
+            if (activeFeatureIndices.size === 0 || activeFeatureIndices.has(i)) {
+              keys.push(`F${i + 1}`);
+            }
+          }
+        }
+        epicIdx += count;
+      }
+      return keys;
+    }
+    return (filteredBacklog?.features ?? []).flatMap((f, j) =>
+      f.phase === selectedPhase ? [filteredFeatureKeys[j]] : []
+    );
+  })());
 
-  // Phase-scoped backlog (filter features to selected phase).
+  // Phase-scoped backlog (filter by feature key position, not by the backlog's phase field).
   const phaseBacklog: BacklogData | null = filteredBacklog && selectedPhase != null
-    ? { ...filteredBacklog, features: (filteredBacklog.features ?? []).filter(f => f.phase === selectedPhase) }
+    ? { ...filteredBacklog, features: (filteredBacklog.features ?? []).filter((_, j) => phaseFeatureKeys.has(filteredFeatureKeys[j])) }
     : filteredBacklog;
 
   // Phase-scoped ticket breakdown.
@@ -428,7 +446,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
 
               <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/50 p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-1">Test Cases</p>
-                <p className="text-2xl font-bold text-surface-900 dark:text-surface-100">{qa?.test_cases.length ?? detail?.testCaseCount ?? 0}</p>
+                <p className="text-2xl font-bold text-surface-900 dark:text-surface-100">{phaseQa?.test_cases.length ?? detail?.testCaseCount ?? 0}</p>
                 <div className="flex gap-1.5 flex-wrap mt-2">
                   {testTypeCounts.map(({ type, count, meta }) => (
                     <span key={type} className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${meta.color}`}>

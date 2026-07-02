@@ -1,13 +1,18 @@
 {
   "name": "@xcube/pipeline",
   "version": "1.0.0",
-  "private": true,
   "description": "Developer onboarding CLI — pulls initiative context and launches Claude Code for implementation",
   "bin": {
     "pipeline": "./dist/cli.js"
   },
+  "files": [
+    "dist",
+    ".env.example",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
+    "prepare": "npm run build",
     "dev": "npx ts-node src/cli.ts"
   },
   "dependencies": {
