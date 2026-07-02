@@ -24,10 +24,12 @@ export function FigmaScreenPreviewer({
   figmaDesign,
   links,
   onLinkChange,
+  readonly = false,
 }: {
   figmaDesign: ParsedFigmaDesign;
   links: Record<string, string>;
   onLinkChange: (key: string, value: string) => void;
+  readonly?: boolean;
 }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const { screens, figmaFileUrl, designGaps, navigationFlow, notes } = figmaDesign;
@@ -68,16 +70,32 @@ export function FigmaScreenPreviewer({
           </a>
         )}
         <div>
-          <label className="block text-[11px] font-medium text-surface-500 dark:text-surface-400 mb-1">
-            Figma Frame Link (optional)
-          </label>
-          <input
-            type="text"
-            value={links[FALLBACK_KEY] ?? ''}
-            onChange={e => onLinkChange(FALLBACK_KEY, e.target.value)}
-            placeholder="https://www.figma.com/design/... (leave blank if not created)"
-            className={inputClass}
-          />
+          {readonly ? (
+            links[FALLBACK_KEY]?.trim() ? (
+              <a
+                href={links[FALLBACK_KEY]}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-3 py-2 bg-[#1E1E1E] hover:bg-[#2C2C2C] text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                <FigmaLogo size={14} />
+                View in Figma
+              </a>
+            ) : null
+          ) : (
+            <>
+              <label className="block text-[11px] font-medium text-surface-500 dark:text-surface-400 mb-1">
+                Figma Frame Link (optional)
+              </label>
+              <input
+                type="text"
+                value={links[FALLBACK_KEY] ?? ''}
+                onChange={e => onLinkChange(FALLBACK_KEY, e.target.value)}
+                placeholder="https://www.figma.com/design/... (leave blank if not created)"
+                className={inputClass}
+              />
+            </>
+          )}
         </div>
       </div>
     );
@@ -212,16 +230,32 @@ export function FigmaScreenPreviewer({
             )}
 
             <div className="pt-1">
-              <label className="block text-[11px] font-medium text-surface-500 dark:text-surface-400 mb-1">
-                Figma Frame Link (optional)
-              </label>
-              <input
-                type="text"
-                value={links[screen.name] ?? ''}
-                onChange={e => onLinkChange(screen.name, e.target.value)}
-                placeholder="https://www.figma.com/design/... (leave blank if not created)"
-                className={inputClass}
-              />
+              {readonly ? (
+                links[screen.name]?.trim() ? (
+                  <a
+                    href={links[screen.name]}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-3 py-2 bg-[#1E1E1E] hover:bg-[#2C2C2C] text-white text-sm font-medium rounded-lg transition-colors"
+                  >
+                    <FigmaLogo size={14} />
+                    View in Figma
+                  </a>
+                ) : null
+              ) : (
+                <>
+                  <label className="block text-[11px] font-medium text-surface-500 dark:text-surface-400 mb-1">
+                    Figma Frame Link (optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={links[screen.name] ?? ''}
+                    onChange={e => onLinkChange(screen.name, e.target.value)}
+                    placeholder="https://www.figma.com/design/... (leave blank if not created)"
+                    className={inputClass}
+                  />
+                </>
+              )}
             </div>
           </>
         )}

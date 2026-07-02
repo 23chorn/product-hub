@@ -506,6 +506,7 @@ export function ArtifactViewer() {
                         figmaDesign={figmaDesign}
                         links={figmaLinks}
                         onLinkChange={setFigmaLink}
+                        readonly={pendingCheckpoint?.stage !== 'figma_design'}
                       />
                     ) : content ? renderStructuredArtifact(content, {
                       artifactType,

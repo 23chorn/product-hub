@@ -8,6 +8,7 @@ export interface QuickStory {
   benefit: string;
   acceptanceCriteria: string[];
   storyPoints: number;
+  platform: string;
 }
 
 export interface QuickFR {
@@ -22,24 +23,36 @@ export interface QuickFeatureResult {
 }
 
 export interface QuickFeaturePushResult {
+  id: number;
   featureId: number;
   featureUrl: string;
   stories: Array<{ id: number; url: string; title: string }>;
 }
 
+export interface QuickFeatureHistoryEntry {
+  id: number;
+  title: string;
+  description: string;
+  result: QuickFeatureResult;
+  adoFeatureId: number | null;
+  adoFeatureUrl: string | null;
+  adoStories: Array<{ id: number; url: string; title: string }>;
+  pushedAt: number;
+}
+
 export const quickFeatureApi = {
   async generateQuickFeature(
     title: string,
-    description: string | undefined,
+    description: string,
     onChunk: (content: string) => void,
     onResult: (result: QuickFeatureResult | null) => void,
     onError: (error: string) => void,
-    model?: string
+    options?: { model?: string; enabledStreams?: string[]; previousResult?: QuickFeatureResult; revisionFeedback?: string }
   ): Promise<void> {
     const response = await fetch(`${API_BASE_URL}/api/quick-feature/generate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, description, model }),
+      body: JSON.stringify({ title, description, ...options }),
       credentials: 'include',
     });
 
@@ -74,8 +87,17 @@ export const quickFeatureApi = {
     }
   },
 
-  async pushQuickFeature(result: QuickFeatureResult): Promise<QuickFeaturePushResult> {
-    const response = await axios.post(`${API_BASE_URL}/api/quick-feature/push`, { result });
+  async pushQuickFeature(
+    title: string,
+    description: string,
+    result: QuickFeatureResult
+  ): Promise<QuickFeaturePushResult> {
+    const response = await axios.post(`${API_BASE_URL}/api/quick-feature/push`, { title, description, result });
     return response.data;
+  },
+
+  async getQuickFeatureHistory(): Promise<QuickFeatureHistoryEntry[]> {
+    const response = await axios.get(`${API_BASE_URL}/api/quick-feature/history`);
+    return response.data.history;
   },
 };
