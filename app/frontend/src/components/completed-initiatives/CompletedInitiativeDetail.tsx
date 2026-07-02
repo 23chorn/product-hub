@@ -337,15 +337,18 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
     ? groupByType(phaseQa.test_cases).map(([type, cases]) => ({ type, count: cases.length, meta: typeMeta(type) }))
     : [];
 
-  // Phase-scoped % complete (count done / non-removed work items in the phase).
+  // Phase-scoped % complete — mirrors server logic: average statePercent across stories
+  // (falling back to features if no stories), excluding removed items without a synced state.
   const phasePercentComplete: number | null = (() => {
     if (selectedPhase == null) return detail?.percentComplete ?? null;
-    const items = (detail?.workItems ?? []).filter(w => {
+    const phaseItems = (detail?.workItems ?? []).filter(w => {
       const prefix = w.localKey.includes('.') ? w.localKey.split('.')[0] : w.localKey;
-      return phaseFeatureKeys.has(prefix) && w.stateBucket != null && w.stateBucket !== 'removed';
+      return phaseFeatureKeys.has(prefix) && w.statePercent != null && w.stateBucket !== 'removed';
     });
+    const stories = phaseItems.filter(w => w.localKey.includes('.'));
+    const items = stories.length > 0 ? stories : phaseItems.filter(w => /^F\d+$/.test(w.localKey));
     if (items.length === 0) return null;
-    return Math.round(items.filter(w => w.stateBucket === 'done').length / items.length * 100);
+    return Math.round(items.reduce((sum, w) => sum + (w.statePercent ?? 0), 0) / items.length);
   })();
 
   // ── Existing derived values ───────────────────────────────────────────────────
@@ -370,11 +373,11 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
           <h2 className="text-sm font-semibold text-surface-900 dark:text-surface-100 truncate">{detail?.title ?? 'Loading...'}</h2>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          {detail?.epicAdoUrl && (
-            <a href={detail.epicAdoUrl} target="_blank" rel="noreferrer" className="text-xs text-brand-600 dark:text-brand-400 hover:underline">
-              View Epic ↗
+          {detail && detail.workItems.filter(w => w.adoType === 'epic' && w.adoUrl).map((e, i, arr) => (
+            <a key={e.adoId} href={e.adoUrl!} target="_blank" rel="noreferrer" className="text-xs text-brand-600 dark:text-brand-400 hover:underline">
+              {arr.length === 1 ? 'View Epic ↗' : `Epic ${i + 1} ↗`}
             </a>
-          )}
+          ))}
           <button
             onClick={handleRefresh}
             disabled={refreshing || loading}
