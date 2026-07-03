@@ -84,6 +84,7 @@ function App() {
   const [allUsers, setAllUsers] = useState<import('./stores/authStore').CurrentUser[]>([]);
   const [showUserSwitcher, setShowUserSwitcher] = useState(false);
   const switcherBtnRef = useRef<HTMLButtonElement>(null);
+  const [deepLinkCompletedItem, setDeepLinkCompletedItem] = useState<{ itemId: string; archived: boolean } | null>(null);
 
   // Bootstrap auth on mount
   useEffect(() => {
@@ -124,10 +125,20 @@ function App() {
     const urlParams = new URLSearchParams(window.location.search);
     const deepLinkWorkflowId = urlParams.get('workflowId');
     const deepLinkArtifactId = urlParams.get('artifactId');
+    // Share button on the Progress Tracker detail page produces ?completedItemId=...
+    const deepLinkCompletedItemId = urlParams.get('completedItemId');
+
+    if (deepLinkWorkflowId || deepLinkCompletedItemId) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.hash);
+    }
 
     if (deepLinkWorkflowId) {
-      window.history.replaceState(null, '', window.location.pathname + window.location.hash);
       setActivePage('home');
+    }
+
+    if (deepLinkCompletedItemId) {
+      setActivePage('completed');
+      setDeepLinkCompletedItem({ itemId: deepLinkCompletedItemId, archived: urlParams.get('archived') === 'true' });
     }
 
     const targetWorkflowId = deepLinkWorkflowId || localStorage.getItem('activeWorkflowId');
@@ -372,7 +383,7 @@ function App() {
             {activePage === 'home' && activeWorkflow
               ? <CoordinatorChat />
               : activePage === 'completed'
-                ? <CompletedInitiativesPage />
+                ? <CompletedInitiativesPage initialSelection={deepLinkCompletedItem} onInitialSelectionConsumed={() => setDeepLinkCompletedItem(null)} />
                 : activePage === 'discovery'
                   ? <DiscoveryScreen />
                   : activePage === 'knowledge'

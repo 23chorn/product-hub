@@ -19,6 +19,7 @@ import { WorkItemManagePanel } from './WorkItemManagePanel';
 import { FigmaScreenPreviewer } from '../artifact/FigmaDesignActions';
 import { parseFigmaDesignContent } from '../../utils/figma-design';
 import { buildPrdMaps } from '../../utils/artifact-to-markdown';
+import { copyToClipboard } from '../../utils/markdown';
 
 const PIPELINE_STREAMS = ['backend', 'web', 'ios', 'android'] as const;
 type PipelineStream = typeof PIPELINE_STREAMS[number];
@@ -297,10 +298,10 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
   const [docCache, setDocCache] = useState<Partial<Record<SingleDocTab, DocState>>>({});
   const [frMap, setFrMap] = useState<Record<string, string>>({});
   const [nfrMap, setNfrMap] = useState<Record<string, string>>({});
-  const [testCountByArtifactId, setTestCountByArtifactId] = useState<Map<number, number>>(new Map());
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   useEffect(() => {
     let stale = false;
@@ -340,9 +341,6 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
       setEpicFeatures(epicFeaturesResult);
       const validTests = testResults.filter((p): p is { num: number; data: QATestSuite } => !!p?.data);
       setQa(mergeQaTests(validTests));
-      const countMap = new Map<number, number>();
-      for (const r of validTests) countMap.set(data.testArtifactIds[r.num], r.data.test_cases.length);
-      setTestCountByArtifactId(countMap);
       if (prdContent) {
         const { frMap: frs, nfrMap: nfrs } = buildPrdMaps(prdContent);
         setFrMap(frs);
@@ -378,6 +376,13 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
     } finally {
       setRefreshing(false);
     }
+  };
+
+  const handleShare = () => {
+    const url = `${window.location.origin}${window.location.pathname}?completedItemId=${itemId}${archived ? '&archived=true' : ''}`;
+    copyToClipboard(url);
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2000);
   };
 
   const handleArchiveToggle = async () => {
@@ -558,6 +563,32 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
           </button>
         )}
         <button
+          onClick={handleShare}
+          disabled={loading}
+          title="Copy a shareable link to this initiative"
+          className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md border transition-colors disabled:opacity-50 ${
+            linkCopied
+              ? 'border-green-300 dark:border-green-700 text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20'
+              : 'border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-700/70'
+          }`}
+        >
+          {linkCopied ? (
+            <>
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              Link copied!
+            </>
+          ) : (
+            <>
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+              </svg>
+              Share
+            </>
+          )}
+        </button>
+        <button
           onClick={handleRefresh}
           disabled={refreshing || loading}
           className="px-2.5 py-1 text-xs font-medium rounded-md border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-700/70 transition-colors disabled:opacity-50"
@@ -691,7 +722,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
                             rel="noreferrer"
                             className="block text-xs text-brand-600 dark:text-brand-400 hover:underline"
                           >
-                            Plan #{plan.planId}{(() => { const c = plan.artifactId != null ? (testCountByArtifactId.get(plan.artifactId) ?? plan.testCaseCount) : plan.testCaseCount; return c != null ? ` · ${c} test cases` : ''; })()} ↗
+                            Plan #{plan.planId} ↗
                           </a>
                         ))}
                       </div>

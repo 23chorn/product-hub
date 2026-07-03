@@ -10,6 +10,14 @@ import { formatAssignedLabel } from '../../utils/assigned-users';
 
 type View = 'active' | 'archived';
 
+interface Props {
+  /** Set when a shared link (?completedItemId=...) opened this page directly on one initiative. */
+  initialSelection?: { itemId: string; archived: boolean } | null;
+  /** Called once the initial selection has been applied, so the parent can clear it —
+   *  otherwise navigating back here after "Back" would reopen the same shared item. */
+  onInitialSelectionConsumed?: () => void;
+}
+
 /**
  * Top-level page (not an overlay) listing every completed, ADO-pushed initiative with
  * rollup counts and ADO state buckets. Replaces the old Stats dashboard's slot in App.tsx.
@@ -19,14 +27,20 @@ type View = 'active' | 'archived';
  * Admins additionally get an "Archived" toggle to review and unarchive initiatives that
  * were manually archived off the default ("active") list below.
  */
-export function CompletedInitiativesPage() {
+export function CompletedInitiativesPage({ initialSelection, onInitialSelectionConsumed }: Props) {
   const { user, noAuth } = useAuthStore();
   const isAdmin = noAuth || !!user?.is_admin;
 
-  const [view, setView] = useState<View>('active');
+  const [view, setView] = useState<View>(initialSelection?.archived ? 'archived' : 'active');
   const [items, setItems] = useState<CompletedInitiativeSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(initialSelection?.itemId ?? null);
+
+  useEffect(() => {
+    if (initialSelection) onInitialSelectionConsumed?.();
+    // Only consume once on mount — the initiative itself is opened via selectedItemId's initializer above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const loadItems = (v: View) => {
     setLoading(true);
