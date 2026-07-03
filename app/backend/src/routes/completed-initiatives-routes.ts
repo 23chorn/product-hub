@@ -20,7 +20,7 @@ import type {
 import { bucketWorkItemState, workItemStatePercent, parseStoryRefs } from '../integrations/azure-devops-format';
 import { refreshItemAdoState } from '../integrations/ado-state-sync';
 import { getAzureDevOpsClient } from '../integrations/azure-devops';
-import { loadArtifactContentById, saveLocalArtifact, updateArtifactContent } from '../agents/artifact-helpers';
+import { loadArtifactContentById, updateArtifactContent } from '../agents/artifact-helpers';
 import {
   getWorkItemRowsByItem, getTestPlanRowsByItem, getDocumentArtifactIds,
   type AdoWorkItemRow,
@@ -330,18 +330,22 @@ async function cascadeDeleteTestCases(
 
   if (toDeleteLocalIds.size === 0) return;
 
-  const adoIds = [...toDeleteLocalIds]
-    .map(lid => testCaseIds[lid])
-    .filter((id): id is number => id !== undefined);
-  if (adoIds.length === 0) return;
+  const localIdByAdoId = new Map<number, string>();
+  for (const lid of toDeleteLocalIds) {
+    const adoId = testCaseIds[lid];
+    if (adoId !== undefined) localIdByAdoId.set(adoId, lid);
+  }
+  if (localIdByAdoId.size === 0) return;
 
-  await getAzureDevOpsClient().deleteWorkItems(adoIds);
+  // Only clear the ids ADO actually confirmed deleted — a failed delete must keep its
+  // mapping so it isn't silently treated as gone while still sitting in the ADO plan.
+  const deletedAdoIds = await getAzureDevOpsClient().deleteWorkItems([...localIdByAdoId.keys()]);
+  for (const adoId of deletedAdoIds) delete testCaseIds[localIdByAdoId.get(adoId)!];
 
-  for (const lid of toDeleteLocalIds) delete testCaseIds[lid];
   db.prepare(`UPDATE qa_test_plan_map SET test_case_ids = ?, test_case_count = ? WHERE plan_id = ?`)
-    .run(JSON.stringify(testCaseIds), Math.max(0, planRow.test_case_count - adoIds.length), planRow.plan_id);
+    .run(JSON.stringify(testCaseIds), Math.max(0, planRow.test_case_count - deletedAdoIds.length), planRow.plan_id);
 
-  logger.info(`Cascade deleted ${adoIds.length} test case(s) linked to ${affectedStoryKeys.size} deleted story/stories in workflow ${workflowId}`);
+  logger.info(`Cascade deleted ${deletedAdoIds.length}/${localIdByAdoId.size} test case(s) linked to ${affectedStoryKeys.size} deleted story/stories in workflow ${workflowId}`);
 }
 
 /**
@@ -562,73 +566,6 @@ async function loadQaArtifacts(itemId: string): Promise<QaArtifact[]> {
   return results;
 }
 
-/** Next numeric suffix to use when minting a new TC-M-NNN id, unique across every suite. */
-function nextManualTcId(testCases: Array<{ id?: string }>): string {
-  let max = 0;
-  for (const tc of testCases) {
-    const m = tc.id?.match(/(\d+)$/);
-    if (m) max = Math.max(max, parseInt(m[1], 10));
-  }
-  return `TC-M-${String(max + 1).padStart(3, '0')}`;
-}
-
-/** Find the most recent session for an item (used as the parent for manually-saved artifacts). */
-function latestSessionForItem(itemId: string): string | null {
-  const row = db.prepare<[string], { id: string }>(
-    `SELECT id FROM sessions WHERE item_id = ? ORDER BY created_at DESC LIMIT 1`
-  ).get(itemId);
-  return row?.id ?? null;
-}
-
-/**
- * POST /api/completed-initiatives/:itemId/test-cases
- * Add a manually authored test case to the newest QA suite artifact (epic-level, or the
- * newest per-feature one on legacy items). Bootstraps a fresh artifact only if the
- * initiative has no QA suite at all yet.
- * Body: { title, type, priority, description? }
- * Returns: CompletedInitiativeDetail
- */
-router.post('/:itemId/test-cases', async (req: Request, res: Response) => {
-  try {
-    const archived = req.query.archived === 'true';
-    const item = getCompletedItemOrUndefined(req.params.itemId, archived);
-    if (!item) return res.status(404).json({ error: 'Completed initiative not found' });
-
-    const { title, type, priority, description } = req.body;
-    if (!title?.trim()) return res.status(400).json({ error: 'title is required' });
-    if (!type?.trim()) return res.status(400).json({ error: 'type is required' });
-    if (!priority?.trim()) return res.status(400).json({ error: 'priority is required' });
-
-    const qaArtifacts = await loadQaArtifacts(item.id);
-    const newCase: Record<string, unknown> = {
-      id: nextManualTcId(qaArtifacts.flatMap(a => a.suite.test_cases)),
-      title: title.trim(),
-      type: type.trim(),
-      priority: priority.trim(),
-      tags: ['@regression'],
-    };
-    if (description?.trim()) newCase.description = description.trim();
-
-    if (qaArtifacts.length > 0) {
-      const target = qaArtifacts[0]; // newest
-      target.suite.test_cases = [...target.suite.test_cases, newCase];
-      if (target.suite.testCases) delete target.suite.testCases;
-      await updateArtifactContent(target.artifactId, JSON.stringify(target.suite, null, 2));
-    } else {
-      const sessionId = latestSessionForItem(item.id);
-      if (!sessionId) return res.status(500).json({ error: 'No session found for this initiative — run the pipeline first' });
-      const suite = { suite: 'QA Test Suite', version: '1.0', test_cases: [newCase] };
-      await saveLocalArtifact(sessionId, 'qa_tests', JSON.stringify(suite, null, 2), item.id);
-    }
-
-    logger.info(`Added manual test case ${newCase.id} to qa_tests for initiative ${item.id}`);
-    res.json(await buildDetail(item));
-  } catch (error: any) {
-    logger.error('Failed to add test case', error);
-    res.status(500).json({ error: error.message || 'Failed to add test case' });
-  }
-});
-
 /**
  * Delete the ADO test case work item mapped to a single local test-case id, then drop it
  * from every qa_test_plan_map row for this item. Searches all of the item's plan rows
@@ -660,9 +597,11 @@ async function deleteAdoTestCase(itemId: string, tcId: string): Promise<void> {
 
 /**
  * DELETE /api/completed-initiatives/:itemId/test-cases/:tcId
- * Remove a test case by id — searches every QA suite artifact for this item (epic-level
- * and/or legacy per-feature) rather than assuming it lives in "the latest qa_tests artifact".
- * Also deletes the mapped ADO test case work item so Azure DevOps stays in sync.
+ * Deletes the mapped ADO test case work item first — if that fails (and it wasn't already
+ * gone), the local artifact is left untouched so Product Hub and ADO never disagree about
+ * whether the test case still exists. Only once ADO confirms it's gone (or there was no ADO
+ * mapping to begin with, e.g. a case never pushed) does it remove the case from every QA suite
+ * artifact for this item (epic-level and/or legacy per-feature).
  * Returns: CompletedInitiativeDetail
  */
 router.delete('/:itemId/test-cases/:tcId', async (req: Request, res: Response) => {
@@ -672,8 +611,15 @@ router.delete('/:itemId/test-cases/:tcId', async (req: Request, res: Response) =
     if (!item) return res.status(404).json({ error: 'Completed initiative not found' });
 
     const tcId = req.params.tcId;
-    const qaArtifacts = await loadQaArtifacts(item.id);
 
+    try {
+      await deleteAdoTestCase(item.id, tcId);
+    } catch (err: any) {
+      logger.error(`ADO test case delete failed for ${tcId}: ${err.message}`);
+      return res.status(502).json({ error: `Could not delete the test case in Azure DevOps: ${err.message}` });
+    }
+
+    const qaArtifacts = await loadQaArtifacts(item.id);
     let found = false;
     for (const { artifactId, suite } of qaArtifacts) {
       const before = suite.test_cases.length;
@@ -685,12 +631,6 @@ router.delete('/:itemId/test-cases/:tcId', async (req: Request, res: Response) =
       break;
     }
     if (!found) return res.status(404).json({ error: `Test case ${tcId} not found` });
-
-    try {
-      await deleteAdoTestCase(item.id, tcId);
-    } catch (err: any) {
-      logger.warn(`ADO test case delete failed (non-fatal): ${err.message}`);
-    }
 
     logger.info(`Deleted test case ${tcId} from qa_tests for initiative ${item.id}`);
     res.json(await buildDetail(item));

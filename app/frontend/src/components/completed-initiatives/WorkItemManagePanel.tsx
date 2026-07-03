@@ -446,9 +446,6 @@ function EpicSection({
   );
 }
 
-const TC_TYPES = ['happy_path', 'negative', 'edge', 'boundary', 'security', 'performance'] as const;
-const TC_PRIORITIES = ['critical', 'high', 'medium', 'low'] as const;
-
 const TC_TYPE_COLOR: Record<string, string> = {
   happy_path:  'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',
   negative:    'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400',
@@ -612,34 +609,11 @@ function TestCasesSection({
   onUpdate: (updated: CompletedInitiativeDetail) => void;
 }) {
   const [cases, setCases] = useState<TestCase[]>(initialCases);
-  const [showAdd, setShowAdd] = useState(false);
-  const [addTitle, setAddTitle] = useState('');
-  const [addType, setAddType] = useState<string>('happy_path');
-  const [addPriority, setAddPriority] = useState<string>('medium');
-  const [addDesc, setAddDesc] = useState('');
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const groups = buildTcGroups(cases);
-
-  const handleAdd = async () => {
-    if (!addTitle.trim()) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const updated = await api.addTestCase(itemId, { title: addTitle.trim(), type: addType, priority: addPriority, description: addDesc.trim() || undefined }, archived);
-      onUpdate(updated);
-      const newCase: TestCase = { id: '', title: addTitle.trim(), type: addType, priority: addPriority, ...(addDesc.trim() ? { description: addDesc.trim() } : {}) };
-      setCases(prev => [...prev, newCase]);
-      setAddTitle(''); setAddDesc(''); setAddType('happy_path'); setAddPriority('medium');
-      setShowAdd(false);
-    } catch (err: any) {
-      setError(err?.response?.data?.error ?? err.message ?? 'Failed to add test case');
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const handleDelete = async (tcId: string) => {
     setSaving(true);
@@ -662,82 +636,9 @@ function TestCasesSection({
         <h3 className="text-[10px] font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400">
           Test Cases ({cases.length})
         </h3>
-        <button
-          onClick={() => { setShowAdd(v => !v); setError(null); }}
-          className="flex items-center gap-1 text-[10px] px-2 py-1 rounded border border-dashed border-surface-300 dark:border-surface-600 text-surface-500 dark:text-surface-400 hover:border-brand-400 hover:text-brand-600 dark:hover:text-brand-400 transition-colors"
-        >
-          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Add test case
-        </button>
       </div>
 
-      {showAdd && (
-        <div className="mb-3 rounded-lg border border-brand-200 dark:border-brand-800/50 bg-brand-50/50 dark:bg-brand-900/10 p-3 space-y-2">
-          <div>
-            <label className="block text-[10px] font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-1">Title *</label>
-            <input
-              type="text"
-              value={addTitle}
-              onChange={e => setAddTitle(e.target.value)}
-              placeholder="What is being verified…"
-              className="w-full text-xs px-2 py-1.5 rounded border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 placeholder:text-surface-400 focus:outline-none focus:border-brand-400"
-            />
-          </div>
-          <div className="flex gap-2">
-            <div className="flex-1">
-              <label className="block text-[10px] font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-1">Type</label>
-              <select
-                value={addType}
-                onChange={e => setAddType(e.target.value)}
-                className="w-full text-xs px-2 py-1.5 rounded border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-700 dark:text-surface-300 focus:outline-none focus:border-brand-400"
-              >
-                {TC_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
-              </select>
-            </div>
-            <div className="flex-1">
-              <label className="block text-[10px] font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-1">Priority</label>
-              <select
-                value={addPriority}
-                onChange={e => setAddPriority(e.target.value)}
-                className="w-full text-xs px-2 py-1.5 rounded border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-700 dark:text-surface-300 focus:outline-none focus:border-brand-400"
-              >
-                {TC_PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
-          </div>
-          <div>
-            <label className="block text-[10px] font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-1">Description <span className="font-normal normal-case">(optional)</span></label>
-            <textarea
-              value={addDesc}
-              onChange={e => setAddDesc(e.target.value)}
-              placeholder="Why this scenario matters…"
-              rows={2}
-              className="w-full text-xs px-2 py-1.5 rounded border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 placeholder:text-surface-400 resize-none focus:outline-none focus:border-brand-400"
-            />
-          </div>
-          {error && <p className="text-[10px] text-red-600 dark:text-red-400">{error}</p>}
-          <div className="flex gap-1.5">
-            <button
-              onClick={handleAdd}
-              disabled={saving || !addTitle.trim()}
-              className="text-[10px] px-2.5 py-1 rounded bg-brand-500 text-white hover:bg-brand-600 disabled:opacity-40 transition-colors"
-            >
-              {saving ? 'Adding…' : 'Add'}
-            </button>
-            <button
-              onClick={() => { setShowAdd(false); setError(null); }}
-              disabled={saving}
-              className="text-[10px] px-2.5 py-1 rounded border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {cases.length === 0 && !showAdd && (
+      {cases.length === 0 && (
         <p className="text-xs text-surface-400 italic">No test cases yet.</p>
       )}
 
@@ -755,7 +656,7 @@ function TestCasesSection({
         ))}
       </div>
 
-      {error && !showAdd && <p className="mt-2 text-[10px] text-red-600 dark:text-red-400">{error}</p>}
+      {error && <p className="mt-2 text-[10px] text-red-600 dark:text-red-400">{error}</p>}
     </div>
   );
 }

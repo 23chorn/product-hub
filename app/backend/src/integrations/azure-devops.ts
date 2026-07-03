@@ -974,26 +974,35 @@ export class AzureDevOpsClient {
 
   /**
    * Permanently delete a work item (bypasses recycle bin).
-   * Silently swallows 404 (already deleted).
+   * A 404 (already deleted) is treated as success — the desired end state is already true.
+   * Any other failure (permissions, etc.) throws so the caller's local state is never
+   * updated to say "deleted" when ADO still has the item.
    */
   async deleteWorkItem(id: number): Promise<void> {
     try {
       await this.client.delete(`/wit/workitems/${id}`, { params: { destroy: true, 'api-version': '7.1' } });
       logger.info(`Deleted work item #${id}`);
     } catch (err: any) {
-      if (err.response?.status !== 404) {
-        logger.warn(`Failed to delete work item #${id}: ${err.response?.status} ${err.message}`);
-      }
+      if (err.response?.status === 404) return;
+      logger.warn(`Failed to delete work item #${id}: ${err.response?.status} ${err.message}`);
+      throw err;
     }
   }
 
   /**
    * Delete multiple work items in series (ADO has no batch delete endpoint).
+   * Best-effort — a single failure doesn't stop the rest. Returns the ids that were
+   * actually confirmed deleted so the caller only clears local state for those.
    */
-  async deleteWorkItems(ids: number[]): Promise<void> {
+  async deleteWorkItems(ids: number[]): Promise<number[]> {
+    const deleted: number[] = [];
     for (const id of ids) {
-      await this.deleteWorkItem(id);
+      try {
+        await this.deleteWorkItem(id);
+        deleted.push(id);
+      } catch { /* already logged in deleteWorkItem; continue with the rest */ }
     }
+    return deleted;
   }
 
   /** Delete an ADO Test Plan (and all its suites + test cases). Delegates to ./azure-devops-test-plans. */
