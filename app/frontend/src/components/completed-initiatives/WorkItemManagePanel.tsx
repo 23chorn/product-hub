@@ -561,6 +561,9 @@ function TcGroupSection({
                   {tc.priority}
                 </span>
               )}
+              {tc.layer === 'technical' && (
+                <span className="flex-shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400">API</span>
+              )}
               {tc.id && (
                 <span className="flex-shrink-0 text-[10px] font-mono text-surface-400 dark:text-surface-500">{tc.id}</span>
               )}
@@ -648,6 +651,7 @@ function TestCasesSection({
       setDeleteId(null);
     } catch (err: any) {
       setError(err?.response?.data?.error ?? err.message ?? 'Failed to delete test case');
+    } finally {
       setSaving(false);
     }
   };

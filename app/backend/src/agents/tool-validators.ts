@@ -639,9 +639,12 @@ export function validateEpicFeaturesJson(input: Record<string, unknown>): string
 
 // ── validate_qa_tests_json ────────────────────────────────────────────────────
 
-const TC_ID_RE = /^TC-F\d+-\d{3}$/;
+// TC-E-NNN (epic-level user-facing), TC-API-NNN (epic-level technical/endpoint), or the
+// legacy per-feature TC-F<n>-NNN format from the retired qa_engineer_F* stage.
+const TC_ID_RE = /^TC-(E|API|F\d+)-\d{3}$/;
 const VALID_TEST_TYPES = new Set(['happy_path', 'negative', 'edge', 'boundary', 'security', 'performance']);
 const VALID_PRIORITIES = new Set(['critical', 'high', 'medium', 'low']);
+const VALID_LAYERS = new Set(['technical', 'user_facing']);
 const VAGUE_THEN = /\bshould work\s*(correctly)?\b|\bshould function\b|\bshould be fine\b|\bshould succeed\b/i;
 const VALID_TAGS = new Set(['@smoke', '@regression', '@negative', '@edge', '@security', '@performance']);
 
@@ -700,6 +703,16 @@ export function validateQaTestsJson(input: Record<string, unknown>): string {
       issues.push(`${lp}: invalid priority "${tc.priority}" — must be critical, high, medium, or low`);
     } else if (tc.priority === 'critical') {
       criticalIds.push(tc.id ?? lp);
+    }
+
+    // layer — optional (absent means legacy/user_facing), but if present must be valid,
+    // and a technical case must carry a real endpoint reference to trace it to the contract.
+    if (tc.layer !== undefined) {
+      if (!VALID_LAYERS.has(tc.layer)) {
+        issues.push(`${lp}: invalid layer "${tc.layer}" — must be technical or user_facing`);
+      } else if (tc.layer === 'technical' && (!tc.endpoint || typeof tc.endpoint !== 'object' || !tc.endpoint.method || !tc.endpoint.path)) {
+        issues.push(`${lp}: layer "technical" requires an "endpoint" object with "method" and "path"`);
+      }
     }
 
     // scenario — Given/When/Then must all be non-empty arrays

@@ -9,6 +9,11 @@ export interface QAScenario {
   then: string[];
 }
 
+export interface TestCaseEndpoint {
+  method: string;
+  path: string;
+}
+
 export interface TestCase {
   id: string;
   title: string;
@@ -16,6 +21,11 @@ export interface TestCase {
   type: string;
   priority: string;
   category?: string;
+  /** Which surface this case exercises: a direct API/contract check, or a UI-driven user flow.
+   *  Absent on older artifacts predating this field — treat as 'user_facing'. */
+  layer?: 'technical' | 'user_facing';
+  /** Endpoint this case targets — only present for layer: 'technical' cases. */
+  endpoint?: TestCaseEndpoint;
   prd_ref?: string;
   story_ref?: string;
   linkedStory?: string;

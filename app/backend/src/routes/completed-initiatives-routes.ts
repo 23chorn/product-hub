@@ -630,9 +630,39 @@ router.post('/:itemId/test-cases', async (req: Request, res: Response) => {
 });
 
 /**
+ * Delete the ADO test case work item mapped to a single local test-case id, then drop it
+ * from every qa_test_plan_map row for this item. Searches all of the item's plan rows
+ * (not just the newest) since legacy items can have more than one. Non-throwing —
+ * caller treats ADO sync as best-effort so a failure never blocks the local delete.
+ */
+async function deleteAdoTestCase(itemId: string, tcId: string): Promise<void> {
+  const planRows = db.prepare<[string], { plan_id: number; test_case_ids: string; test_case_count: number }>(`
+    SELECT q.plan_id, q.test_case_ids, q.test_case_count
+    FROM qa_test_plan_map q
+    JOIN workflows w ON w.id = q.workflow_id
+    WHERE w.item_id = ?
+  `).all(itemId);
+
+  for (const planRow of planRows) {
+    const testCaseIds: Record<string, number> = JSON.parse(planRow.test_case_ids ?? '{}');
+    const adoId = testCaseIds[tcId];
+    if (adoId === undefined) continue;
+
+    await getAzureDevOpsClient().deleteWorkItem(adoId);
+
+    delete testCaseIds[tcId];
+    db.prepare(`UPDATE qa_test_plan_map SET test_case_ids = ?, test_case_count = ? WHERE plan_id = ?`)
+      .run(JSON.stringify(testCaseIds), Math.max(0, planRow.test_case_count - 1), planRow.plan_id);
+    logger.info(`Deleted ADO test case work item #${adoId} for local test case ${tcId}`);
+    return;
+  }
+}
+
+/**
  * DELETE /api/completed-initiatives/:itemId/test-cases/:tcId
  * Remove a test case by id — searches every QA suite artifact for this item (epic-level
  * and/or legacy per-feature) rather than assuming it lives in "the latest qa_tests artifact".
+ * Also deletes the mapped ADO test case work item so Azure DevOps stays in sync.
  * Returns: CompletedInitiativeDetail
  */
 router.delete('/:itemId/test-cases/:tcId', async (req: Request, res: Response) => {
@@ -655,6 +685,12 @@ router.delete('/:itemId/test-cases/:tcId', async (req: Request, res: Response) =
       break;
     }
     if (!found) return res.status(404).json({ error: `Test case ${tcId} not found` });
+
+    try {
+      await deleteAdoTestCase(item.id, tcId);
+    } catch (err: any) {
+      logger.warn(`ADO test case delete failed (non-fatal): ${err.message}`);
+    }
 
     logger.info(`Deleted test case ${tcId} from qa_tests for initiative ${item.id}`);
     res.json(await buildDetail(item));

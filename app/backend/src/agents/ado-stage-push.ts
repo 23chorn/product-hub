@@ -239,9 +239,16 @@ export async function pushTestPlanToAdo(workflowId: string, itemId: string): Pro
       logger.warn('Test plan push: no story mappings found — test cases will be created without TestedBy links');
     }
 
-    const existingMap = db.prepare<[string], { plan_id: number; plan_url: string; suite_ids: string; test_case_ids: string; root_suite_id?: number }>(
-      'SELECT plan_id, plan_url, suite_ids, test_case_ids, root_suite_id FROM qa_test_plan_map WHERE workflow_id = ?'
-    ).get(workflowId);
+    // Look up by item, not just this workflow_id — a change request, retry, or any other
+    // path that re-runs epic_qa under a different workflow row for the same item must still
+    // find and reuse the item's one Test Plan instead of creating a second one in ADO.
+    const existingMap = db.prepare<[string], { plan_id: number; plan_url: string; suite_ids: string; test_case_ids: string; root_suite_id?: number }>(`
+      SELECT q.plan_id, q.plan_url, q.suite_ids, q.test_case_ids, q.root_suite_id
+      FROM qa_test_plan_map q
+      JOIN workflows w ON w.id = q.workflow_id
+      WHERE w.item_id = ?
+      ORDER BY q.created_at DESC LIMIT 1
+    `).get(itemId);
 
     const existing = existingMap ? {
       planId: existingMap.plan_id,

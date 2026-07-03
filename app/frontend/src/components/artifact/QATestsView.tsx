@@ -88,10 +88,16 @@ function TestCaseCard({ tc, onDelete }: { tc: TestCase; onDelete?: () => void })
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-mono text-surface-400 dark:text-surface-500">{tc.id}</span>
             <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${prioConf.color}`}>{prioConf.label}</span>
+            {tc.layer === 'technical' && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-medium">API</span>
+            )}
             {tc.prd_ref && <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400">{tc.prd_ref}</span>}
             {(tc.story_ref || tc.linkedStory) && <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400">{tc.story_ref ?? tc.linkedStory}</span>}
           </div>
           <p className="text-base text-surface-800 dark:text-surface-200 mt-0.5 leading-snug">{tc.title}</p>
+          {tc.endpoint && (
+            <p className="text-[10px] font-mono text-indigo-600 dark:text-indigo-400 mt-0.5">{tc.endpoint.method} {tc.endpoint.path}</p>
+          )}
           {tc.category && <p className="text-[10px] text-surface-400 dark:text-surface-500 mt-0.5">{tc.category}</p>}
         </div>
         <svg className={`w-3.5 h-3.5 text-surface-400 flex-shrink-0 mt-1 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">

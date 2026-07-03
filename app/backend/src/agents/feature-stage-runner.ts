@@ -490,11 +490,13 @@ function buildEpicQaPrompt(
   mergedBacklog: string,
   prdContent: string | null,
   epicFeaturesContent: string | null,
+  apiSpecContent: string | null,
 ): string {
   const contextParts: string[] = [];
   if (prdContent) contextParts.push(`**PRD (source of functional requirements):**\n${prdContent}`);
   if (epicFeaturesContent) contextParts.push(`**Epic & Features Plan:**\n${epicFeaturesContent}`);
   contextParts.push(`**Merged Backlog (all approved features and stories):**\n${mergedBacklog}`);
+  if (apiSpecContent) contextParts.push(`**API Contract (OpenAPI 3.0 — source of endpoints for technical test coverage):**\n${apiSpecContent}`);
 
   return `${contextParts.join('\n\n---\n\n')}
 
@@ -502,13 +504,24 @@ function buildEpicQaPrompt(
 
 **Your Task — Produce a Comprehensive Epic QA Test Suite:**
 
-All features for this epic have been approved. Using the merged backlog above, write a single unified QA test suite covering the full epic.
+All features for this epic have been approved. Using the merged backlog above, write a single unified QA test suite covering the full epic. The suite has two layers:
 
-Focus areas (in priority order):
+- **User-facing layer** (\`"layer": "user_facing"\`) — end-to-end scenarios exercised through the UI, from the user's perspective.
+${apiSpecContent
+  ? '- **Technical layer** (`"layer": "technical"`) — direct coverage of the endpoints in the API Contract above: request validation, auth/permission checks, status codes, and response shape. These are contract checks, not UI flows.'
+  : '- **Technical layer** — skip this layer. No API Contract was provided for this epic, so there are no endpoints to trace technical test cases to.'}
+
+Focus areas for the user-facing layer (in priority order):
 1. **Happy path flows** — the primary user journeys each feature enables
 2. **Cross-feature integration scenarios** — behaviour that requires two or more features working together (e.g. Feature A creates data that Feature B displays). These are the highest-risk gaps and deserve explicit coverage.
 3. **Negative/error paths** — the most important failure modes (validation errors, permission failures, boundary violations)
 4. **Edge cases** — unusual states the stories explicitly define or imply
+${apiSpecContent ? `
+Focus areas for the technical layer (in priority order):
+1. **Happy path per endpoint** — one case per endpoint verifying the success response matches its schema
+2. **Auth/permission failures** — 401/403 cases for endpoints that require authentication or specific roles
+3. **Validation failures** — 400 cases for the most important required-field or format violations
+4. **Not-found / conflict paths** — 404/409 cases where the endpoint's behaviour depends on referenced resource state` : ''}
 
 \`\`\`json
 {
@@ -527,6 +540,7 @@ Focus areas (in priority order):
       "type": "happy_path | negative | edge | boundary | security | performance",
       "priority": "critical | high | medium | low",
       "category": "<test category, e.g. End-to-End Flow, Cross-Feature, Error Handling>",
+      "layer": "user_facing",
       "features": ["F1", "F2"],
       "story_ref": "F1.S3",
       "prd_ref": ["FR-01"],
@@ -538,24 +552,48 @@ Focus areas (in priority order):
       "preconditions": ["<required system state>"],
       "test_data": {},
       "tags": ["@smoke", "@regression"]
-    }
+    }${apiSpecContent ? `,
+    {
+      "id": "TC-API-001",
+      "title": "<what is being verified>",
+      "description": "<why this contract check matters>",
+      "type": "happy_path | negative | edge | boundary | security | performance",
+      "priority": "critical | high | medium | low",
+      "category": "API Contract",
+      "layer": "technical",
+      "endpoint": { "method": "POST", "path": "/tasks" },
+      "features": ["F1"],
+      "story_ref": "F1.S3",
+      "prd_ref": ["FR-01"],
+      "scenario": {
+        "given": ["<precondition, e.g. authenticated as role X>"],
+        "when": ["<request made, e.g. POST /tasks with missing title>"],
+        "then": ["<expected status code and response shape>"]
+      },
+      "preconditions": ["<required system state>"],
+      "test_data": {},
+      "tags": ["@smoke", "@regression"]
+    }` : ''}
   ]
 }
 \`\`\`
 
 Requirements:
-- **Scope — user-facing flows only.** Write test cases for user-facing stories (platform: web, ios, android). Backend-only stories have no dedicated test case unless there is a directly observable user outcome (e.g. a notification email). Frame all tests from the user's perspective, never as an API/contract check.
+- **Scope — user-facing layer covers user-facing stories only.** Write user-facing test cases for stories tagged platform: web, ios, android. Backend-only stories have no dedicated user-facing test case unless there is a directly observable user outcome (e.g. a notification email). Frame every user-facing test from the user's perspective, never as an API/contract check.
+- **No accessibility scope.** Do not write test cases for WCAG compliance, color contrast, screen reader announcements, keyboard-only navigation, or other accessibility concerns unless the PRD or backlog explicitly requires them — out of scope for this product by default.
 - **No duplication.** Each scenario appears once. If two features share a user flow, write one integrated test case, not two.
-- **Conservative count — quality over quantity.** Target 1 test case per functional requirement, maximum 2 where the FR has a single critical failure mode worth calling out separately. The absolute cap is 3 test cases per FR. Do not pad.
+- **Conservative count — quality over quantity.** Target 1 user-facing test case per functional requirement, maximum 2 where the FR has a single critical failure mode worth calling out separately. The absolute cap is 3 test cases per FR. Do not pad.
   - Every feature with user-facing stories must have at least one @smoke happy-path case.
-  - At least 25% of cases must be negative or edge type.
+  - At least 25% of user-facing cases must be negative or edge type.
   - Cross-feature integration scenarios should be called out with two or more entries in the \`features\` array.
-- **ID format:** TC-E-NNN (three-digit counter, E = Epic).
+- **ID format:** TC-E-NNN for user-facing cases (three-digit counter, E = Epic)${apiSpecContent ? '; TC-API-NNN for technical cases (three-digit counter, API = technical/contract layer).' : '.'}
 - **story_ref:** a real story_id from the merged backlog (e.g. "F1.S3"), or an array for multi-story scenarios. Never invent a placeholder.
 - **features:** list the feature keys this test exercises (["F1"], ["F2", "F3"], etc.).
 - **prd_ref:** list the FR IDs from the referenced story's prd_ref.
+- **layer:** exactly one of: user_facing, technical.
 - **type:** exactly one of: happy_path, negative, edge, boundary, security, performance.
 - **tags:** non-empty array using only: @smoke, @regression, @negative, @edge, @security, @performance.
+${apiSpecContent ? `- **Technical layer coverage:** every endpoint in the API Contract gets exactly one happy-path technical case, plus its most important failure case(s) — do not write more than 3 technical cases per endpoint. Each technical case's \`endpoint\` field must reference a real \`method\`+\`path\` pair from the API Contract above. Never invent an endpoint that isn't in the contract.` : ''}
 - Include ONLY the JSON artifact in your response (no prose before or after).`;
 }
 
@@ -575,11 +613,12 @@ export async function runEpicQaStage(
   // ── Demo mode ──────────────────────────────────────────────────────────────
   const { isDemoWorkflow } = await import('../demo/demo-mode');
   const db = (await import('../data/database')).default;
-  const wfRow = db.prepare<[string], { policy_overrides: string | null }>(
-    'SELECT policy_overrides FROM workflows WHERE id = ?'
+  const wfRow = db.prepare<[string], { policy_overrides: string | null; stage_sequence: string }>(
+    'SELECT policy_overrides, stage_sequence FROM workflows WHERE id = ?'
   ).get(workflowId);
   const policyOverrides: Record<string, string> = wfRow?.policy_overrides
     ? JSON.parse(wfRow.policy_overrides) : {};
+  const apiSpecStageEnabled = wfRow ? (JSON.parse(wfRow.stage_sequence) as string[]).includes('api_spec') : false;
 
   if (isDemoWorkflow(policyOverrides)) {
     const stub = JSON.stringify({ suite: 'Epic QA Test Suite (Demo)', version: '1.0', metadata: { source_stage: 'epic_qa', notes: 'Demo mode' }, test_cases: [] }, null, 2);
@@ -593,11 +632,16 @@ export async function runEpicQaStage(
   // ── Load context ───────────────────────────────────────────────────────────
   insertEvent(workflowId, 'stage_progress', 'epic_qa', 'Loading merged backlog and PRD for QA synthesis...');
 
-  const [mergedBacklogContent, prdContent, epicFeaturesContent] = await Promise.all([
+  const [mergedBacklogContent, prdContent, epicFeaturesContent, rawApiSpecContent] = await Promise.all([
     loadLatestArtifactContent(itemId, 'backlog'),
     loadLatestArtifactContent(itemId, 'prd'),
     loadLatestArtifactContent(itemId, 'epic_features'),
+    apiSpecStageEnabled ? loadLatestArtifactContent(itemId, 'api_spec') : Promise.resolve(null),
   ]);
+  // Only build technical/API test coverage when the api_spec stage is actually enabled for
+  // this workflow (a stray artifact from before it was disabled must not resurrect it), and
+  // only when it actually produced content — an empty/whitespace artifact means no endpoints.
+  const apiSpecContent = rawApiSpecContent?.trim() || null;
 
   if (!mergedBacklogContent) {
     insertEvent(workflowId, 'error', 'epic_qa', 'No merged backlog found — ensure backlog_merge completed successfully');
@@ -617,7 +661,7 @@ export async function runEpicQaStage(
     `Synthesising QA test suite across ${featureCount} feature(s), ${storyCount} stories...`);
 
   // ── Synthesise ─────────────────────────────────────────────────────────────
-  const synthesisPrompt = buildEpicQaPrompt(mergedBacklogContent, prdContent, epicFeaturesContent);
+  const synthesisPrompt = buildEpicQaPrompt(mergedBacklogContent, prdContent, epicFeaturesContent, apiSpecContent);
 
   const { SpecialistAgent } = await import('./specialist-agent');
   const vera = new SpecialistAgent('qa-engineer');
@@ -674,21 +718,30 @@ export async function runEpicQaRevision(
 ): Promise<void> {
   logger.info('[EPIC QA] Starting targeted revision of epic QA test suite');
   const { saveLocalArtifact, loadLatestArtifactContent } = await import('./artifact-helpers');
+  const db = (await import('../data/database')).default;
 
-  const [mergedBacklogContent, prdContent] = await Promise.all([
+  const wfRow = db.prepare<[string], { stage_sequence: string }>(
+    'SELECT stage_sequence FROM workflows WHERE id = ?'
+  ).get(workflowId);
+  const apiSpecStageEnabled = wfRow ? (JSON.parse(wfRow.stage_sequence) as string[]).includes('api_spec') : false;
+
+  const [mergedBacklogContent, prdContent, rawApiSpecContent] = await Promise.all([
     loadLatestArtifactContent(itemId, 'backlog'),
     loadLatestArtifactContent(itemId, 'prd'),
+    apiSpecStageEnabled ? loadLatestArtifactContent(itemId, 'api_spec') : Promise.resolve(null),
   ]);
+  const apiSpecContent = rawApiSpecContent?.trim() || null;
 
   const contextParts: string[] = [];
   if (prdContent) contextParts.push(`**Current PRD (source of truth):**\n${prdContent}`);
   if (mergedBacklogContent) contextParts.push(`**Current Merged Backlog (stories to test):**\n${mergedBacklogContent}`);
+  if (apiSpecContent) contextParts.push(`**Current API Contract (source of endpoints for technical cases):**\n${apiSpecContent}`);
   const itemContext = contextParts.length > 0 ? contextParts.join('\n\n---\n\n') : undefined;
 
   const directive =
     'You are performing a SURGICAL EDIT of the Epic QA test suite above. Apply ONLY the targeted changes described in the revision brief at the top of this conversation.\n\n' +
     'Rules — apply strictly:\n' +
-    '- Modify ONLY the test cases (TC-E-*) explicitly mentioned in the feedback.\n' +
+    '- Modify ONLY the test cases (TC-E-* or TC-API-*) explicitly mentioned in the feedback.\n' +
     '- Copy all other test cases EXACTLY as-is.\n' +
     '- Do NOT add new test cases unless the feedback explicitly requests it.\n' +
     '- Do NOT restructure, reorder, or rewrite any field not mentioned in the feedback.\n' +
