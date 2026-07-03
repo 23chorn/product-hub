@@ -6,8 +6,20 @@ import { Router, Request, Response } from 'express';
 import db from '../data/database';
 import Logger from '../utils/logger';
 import { getAzureDevOpsClient } from '../integrations/azure-devops';
-import { findInitiativeBySeqNum } from './dev-tickets-routes';
-import { getWorkItemRowsByItem } from '../data/work-item-queries';
+import {
+  findInitiativeBySeqNum, parseStreamFilter, parsePhaseFilter,
+  matchesStream, matchesPhase, buildTitleToPhaseMap,
+  buildStoryIdToLocalKeyMap, topoSortTickets,
+  buildInitiativeContext, loadEpicFeaturesArtifact,
+  buildRequirementMaps, resolveRequirements,
+} from './dev-tickets-routes';
+import { getWorkItemRowsByItem, getDocumentArtifactIds } from '../data/work-item-queries';
+import { loadArtifactContentById } from '../agents/artifact-helpers';
+import {
+  tryParseBacklog, tryParsePRD, getStoryPlatforms,
+  parseFeatureLocalKey, parseStoryLocalKey,
+  type TicketPlatform, type FunctionalRequirement, type NonFunctionalRequirement,
+} from '@pap/shared';
 
 const logger = new Logger('PIPELINE');
 const router = Router();
@@ -329,6 +341,399 @@ router.delete('/:seqNum/ado-workflows/:workflowId', (req: Request, res: Response
   const result = db.prepare(`DELETE FROM ado_work_item_map WHERE workflow_id = ?`).run(workflowId);
   logger.info(`Removed ${result.changes} ADO work item rows from workflow ${workflowId} (initiative #${seqNum})`);
   res.json({ deleted: result.changes });
+});
+
+// ── Pipeline export (context + plan markdown) ────────────────────────────────
+
+interface ExportPayloadTicket {
+  localKey: string;
+  adoId: number;
+  adoUrl: string | null;
+  title: string;
+  featureLocalKey: string | null;
+  persona: string | null;
+  goal: string | null;
+  benefit: string | null;
+  acceptanceCriteria: string[];
+  technicalAcceptanceCriteria: string[];
+  agentContext: string | null;
+  estimatedPoints: number | null;
+  platform: string[];
+  dependsOn: string[];
+  technicalNotes: Record<string, string> | string | null;
+  functionalRequirements: FunctionalRequirement[];
+  nonFunctionalRequirements: NonFunctionalRequirement[];
+}
+
+function buildContextMarkdown(
+  initiative: { seqNum: number; title: string; context: Record<string, any> | null },
+  epic: { title: string; adoId: number; adoUrl: string | null; description: string | null; businessValue: string | null } | null,
+  features: Array<{ localKey: string; title: string; description: string | null; totalPoints: number }>,
+  tickets: Array<{ localKey: string; featureLocalKey: string | null }>,
+  implementationOrder: string[],
+  blockedTickets: string[],
+  payloadByKey: Map<string, ExportPayloadTicket>,
+  stream: string,
+  phase: string,
+): string {
+  const ctx = initiative.context;
+  const date = new Date().toISOString().split('T')[0];
+  const blockedSet = new Set(blockedTickets);
+  const ticketsByFeature = new Map<string, typeof tickets>();
+  for (const t of tickets) {
+    const fk = t.featureLocalKey ?? 'unknown';
+    if (!ticketsByFeature.has(fk)) ticketsByFeature.set(fk, []);
+    ticketsByFeature.get(fk)!.push(t);
+  }
+
+  const lines: string[] = [
+    `# Pipeline Context — Initiative #${initiative.seqNum}: ${initiative.title}`,
+    `**Stream:** ${stream} | **Phase:** ${phase} | **Generated:** ${date}`,
+    '',
+  ];
+
+  if (ctx) {
+    if (ctx.overview) lines.push('## Overview', ctx.overview, '');
+    if (ctx.problemStatement) lines.push('## Problem Statement', ctx.problemStatement, '');
+    if (ctx.targetUsers?.length) lines.push('## Target Users', ...ctx.targetUsers.map((u: string) => `- ${u}`), '');
+    if (ctx.successMetrics) {
+      lines.push('## Success Metrics');
+      lines.push(`**Primary:** ${ctx.successMetrics.primary}`);
+      if (ctx.successMetrics.secondary?.length) lines.push(...ctx.successMetrics.secondary.map((m: string) => `- ${m}`));
+      lines.push('');
+    }
+    if (ctx.strategicAlignment) lines.push('## Strategic Alignment', ctx.strategicAlignment, '');
+    if (ctx.constraints?.length) lines.push('## Constraints', ...ctx.constraints.map((c: string) => `- ${c}`), '');
+    if (ctx.outOfScope?.length) lines.push('## Out of Scope', ...ctx.outOfScope.map((o: string) => `- ${o}`), '');
+  }
+
+  if (epic) {
+    lines.push('## Epic');
+    lines.push(`**${epic.title}** (ADO #${epic.adoId})`);
+    if (epic.description) lines.push('', epic.description);
+    if (epic.businessValue) lines.push('', `**Business Value:** ${epic.businessValue}`);
+    if (epic.adoUrl) lines.push('', `[Open in Azure DevOps](${epic.adoUrl})`);
+    lines.push('');
+  }
+
+  lines.push('---', '', `## Implementation Queue (${implementationOrder.length} tickets)`, '');
+
+  let ticketNum = 0;
+  for (const feature of features) {
+    const featureTickets = ticketsByFeature.get(feature.localKey) ?? [];
+    const orderedKeys = implementationOrder.filter(k => featureTickets.some(t => t.localKey === k));
+    const blockedForFeature = featureTickets.filter(t => blockedSet.has(t.localKey));
+
+    lines.push(`### Feature ${feature.localKey}: ${feature.title} (${feature.totalPoints ?? 0} pts)`);
+    if (feature.description) lines.push('', feature.description);
+    lines.push('');
+
+    if (orderedKeys.length === 0 && blockedForFeature.length === 0) {
+      lines.push(`*No ${stream} tickets in this feature.*`, '');
+      continue;
+    }
+
+    for (const localKey of orderedKeys) {
+      ticketNum++;
+      const t = payloadByKey.get(localKey);
+      const m = featureTickets.find(mt => mt.localKey === localKey);
+      if (!t && !m) continue;
+      const adoId = t?.adoId ?? (m as any)?.adoId;
+      const adoUrl = t?.adoUrl ?? (m as any)?.adoUrl;
+      const pts = t?.estimatedPoints;
+      const ptsStr = pts != null ? ` (${pts} pts)` : '';
+      lines.push(`#### ${ticketNum}. ${localKey} — ${t?.title ?? localKey}${ptsStr}${adoId ? ` [ADO #${adoId}]` : ''}`);
+
+      if (t) {
+        if (t.persona && t.goal) {
+          lines.push('', `**Story:** As ${t.persona}, I want ${t.goal}${t.benefit ? ` so that ${t.benefit}` : ''}.`);
+        }
+        if (t.functionalRequirements.length > 0) {
+          lines.push('', '**Functional Requirements:**');
+          for (const fr of t.functionalRequirements) lines.push(`- **${fr.id}:** ${fr.requirement}`);
+        }
+        if (t.acceptanceCriteria.length > 0) {
+          lines.push('', '**Acceptance Criteria:**');
+          for (const ac of t.acceptanceCriteria) lines.push(`- [ ] ${ac}`);
+        }
+        if (t.technicalAcceptanceCriteria.length > 0) {
+          lines.push('', '**Technical Acceptance Criteria:**');
+          for (const tac of t.technicalAcceptanceCriteria) lines.push(`- [ ] ${tac}`);
+        }
+        if (t.agentContext) lines.push('', '**Implementation Notes:**', t.agentContext);
+        if (t.technicalNotes) {
+          lines.push('', '**Technical Notes:**');
+          if (typeof t.technicalNotes === 'string') {
+            lines.push(t.technicalNotes);
+          } else {
+            for (const [platform, note] of Object.entries(t.technicalNotes).filter(([, v]) => v)) {
+              lines.push(`- **${platform}:** ${note}`);
+            }
+          }
+        }
+        if (t.nonFunctionalRequirements.length > 0) {
+          lines.push('', '**Non-Functional Requirements:**');
+          for (const nfr of t.nonFunctionalRequirements) {
+            lines.push(`- **${nfr.id}** [${nfr.category}, ${nfr.priority}]: ${nfr.requirement}`);
+          }
+        }
+        if (t.dependsOn.length > 0) lines.push('', `**Depends on:** ${t.dependsOn.join(', ')}`);
+        if (t.platform.length > 0) lines.push(`**Platform:** ${t.platform.join(', ')}`);
+      }
+      if (adoUrl) lines.push(`**ADO:** ${adoUrl}`);
+      lines.push('', '---', '');
+    }
+
+    for (const ticket of blockedForFeature) {
+      const pts = (ticket as any).estimatedPoints;
+      const ptsStr = pts != null ? ` (${pts} pts)` : '';
+      lines.push(`#### ~~${ticket.localKey} — ${(ticket as any).title ?? ticket.localKey}${ptsStr}~~ *(blocked — cross-stream dependency)*`);
+      lines.push('', '---', '');
+    }
+  }
+
+  if (ctx?.references?.length) {
+    lines.push('## References');
+    for (const ref of ctx.references) lines.push(`- [${ref.title}](${ref.url})`);
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+function buildPlanMarkdown(
+  initiative: { seqNum: number; title: string },
+  features: Array<{ localKey: string; title: string; totalPoints: number }>,
+  tickets: Array<{ localKey: string; featureLocalKey: string | null }>,
+  implementationOrder: string[],
+  blockedTickets: string[],
+  payloadByKey: Map<string, ExportPayloadTicket>,
+  stream: string,
+  phase: string,
+): string {
+  const date = new Date().toISOString().split('T')[0];
+  const total = implementationOrder.length;
+  const blockedSet = new Set(blockedTickets);
+  const orderedSet = new Set(implementationOrder);
+  const ticketsByFeature = new Map<string, typeof tickets>();
+  for (const t of tickets) {
+    const fk = t.featureLocalKey ?? 'unknown';
+    if (!ticketsByFeature.has(fk)) ticketsByFeature.set(fk, []);
+    ticketsByFeature.get(fk)!.push(t);
+  }
+
+  const lines: string[] = [
+    `# Implementation Plan — Initiative #${initiative.seqNum}: ${initiative.title}`,
+    `**Stream:** ${stream} | **Phase:** ${phase} | **Generated:** ${date}`,
+    '',
+    `## Status: 0 / ${total} complete`,
+    '',
+  ];
+
+  for (const feature of features) {
+    const featureTickets = ticketsByFeature.get(feature.localKey) ?? [];
+    const ordered = implementationOrder.filter(k => featureTickets.some(t => t.localKey === k));
+    const blocked = featureTickets.filter(t => blockedSet.has(t.localKey));
+    const otherStream = featureTickets.filter(t => !orderedSet.has(t.localKey) && !blockedSet.has(t.localKey));
+
+    lines.push(`### Feature ${feature.localKey}: ${feature.title} (${feature.totalPoints ?? 0} pts)`);
+
+    if (ordered.length === 0 && blocked.length === 0) {
+      lines.push(`- *(no ${stream} tickets in this feature)*`);
+    }
+
+    for (const localKey of ordered) {
+      const t = payloadByKey.get(localKey);
+      const m = featureTickets.find(mt => mt.localKey === localKey);
+      const title = t?.title ?? (m as any)?.title ?? localKey;
+      const adoId = t?.adoId ?? (m as any)?.adoId;
+      const pts = t?.estimatedPoints;
+      const ptsStr = pts != null ? ` [${pts}pt]` : '';
+      const adoStr = adoId ? ` — ADO #${adoId}` : '';
+      lines.push(`- [ ] ${localKey} — ${title}${ptsStr}${adoStr}`);
+    }
+
+    for (const ticket of blocked) {
+      const pts = (ticket as any).estimatedPoints;
+      const ptsStr = pts != null ? ` [${pts}pt]` : '';
+      const adoId = (ticket as any).adoId;
+      const adoStr = adoId ? ` — ADO #${adoId}` : '';
+      lines.push(`- ~~${ticket.localKey} — ${(ticket as any).title ?? ticket.localKey}${ptsStr}${adoStr}~~ *(blocked)*`);
+    }
+
+    if (otherStream.length > 0) {
+      lines.push(`- *(${otherStream.length} ticket(s) in other streams)*`);
+    }
+
+    lines.push('');
+  }
+
+  lines.push('## Implementation Order');
+  lines.push('(Topologically sorted — complete in this sequence to respect dependencies)', '');
+  implementationOrder.forEach((key, i) => {
+    const t = payloadByKey.get(key);
+    lines.push(`${i + 1}. ${key} — ${t?.title ?? key}`);
+  });
+
+  if (blockedTickets.length > 0) {
+    lines.push('', '## Blocked (cross-stream dependencies)');
+    for (const key of blockedTickets) {
+      const t = payloadByKey.get(key);
+      lines.push(`- ${key}${t ? ` — ${t.title}` : ''}`);
+    }
+  }
+
+  lines.push('');
+  return lines.join('\n');
+}
+
+/**
+ * GET /api/dev/initiatives/:seqNum/pipeline-export?stream=backend&phase=mvp
+ * Builds PIPELINE_CONTEXT.md and PIPELINE_PLAN.md content in memory and returns
+ * them as JSON so the Progress Tracker UI can trigger a browser download without
+ * needing the CLI or file system access.
+ *
+ * Returns: { context: string, plan: string, seqNum: number, title: string }
+ */
+router.get('/:seqNum/pipeline-export', async (req: Request, res: Response) => {
+  const seqNum = Number(req.params.seqNum);
+  if (!Number.isInteger(seqNum) || seqNum <= 0) {
+    res.status(400).json({ error: 'seqNum must be a positive integer' });
+    return;
+  }
+
+  let streamFilter: Set<TicketPlatform> | null;
+  try { streamFilter = parseStreamFilter(req.query.stream); } catch (err: any) {
+    res.status(400).json({ error: err.message }); return;
+  }
+  let phaseFilter: Set<string> | null;
+  try { phaseFilter = parsePhaseFilter(req.query.phase); } catch (err: any) {
+    res.status(400).json({ error: err.message }); return;
+  }
+
+  try {
+    const initiative = findInitiativeBySeqNum(seqNum);
+    if (!initiative) { res.status(404).json({ error: `Initiative #${seqNum} not found` }); return; }
+
+    const workItemRows = getWorkItemRowsByItem([initiative.id]).get(initiative.id) ?? [];
+    if (workItemRows.length === 0) {
+      res.status(404).json({ error: `Initiative #${seqNum} has no tickets pushed to Azure DevOps yet` }); return;
+    }
+
+    const initiativeContext = await buildInitiativeContext(initiative.id);
+    const { epicFeaturesArtifactId, ticketArtifactId, prdArtifactId } = getDocumentArtifactIds(initiative.id);
+    const backlogContent = ticketArtifactId != null ? await loadArtifactContentById(ticketArtifactId) : null;
+    const backlog = backlogContent ? tryParseBacklog(backlogContent) : null;
+    const { epicMeta: epicFeaturesEpic, content: epicFeaturesContent } = await loadEpicFeaturesArtifact(epicFeaturesArtifactId);
+    const titleToPhase = buildTitleToPhaseMap(epicFeaturesContent);
+
+    const epicRow = workItemRows.find(r => r.ado_type === 'epic');
+    const epicContent = backlog?.epic;
+    const epic = epicRow ? {
+      localKey: epicRow.local_key, adoId: epicRow.ado_id, adoUrl: epicRow.ado_url, title: epicRow.title,
+      description: (epicContent as any)?.description ?? epicFeaturesEpic?.description ?? null,
+      businessValue: (epicContent as any)?.businessValue ?? epicFeaturesEpic?.businessValue ?? null,
+    } : null;
+
+    const featureRows = workItemRows.filter(r => r.ado_type === 'feature')
+      .sort((a, b) => (parseFeatureLocalKey(a.local_key) ?? 0) - (parseFeatureLocalKey(b.local_key) ?? 0));
+    const storyRows = workItemRows.filter(r => r.ado_type === 'story').sort((a, b) => {
+      const pa = parseStoryLocalKey(a.local_key);
+      const pb = parseStoryLocalKey(b.local_key);
+      if (!pa || !pb) return 0;
+      return pa.featureIndex !== pb.featureIndex ? pa.featureIndex - pb.featureIndex : pa.storyIndex - pb.storyIndex;
+    });
+    const storyIdToLocalKey = buildStoryIdToLocalKeyMap(backlog);
+
+    // Build feature metadata
+    const features = featureRows.map(featureRow => {
+      const featureIndex = parseFeatureLocalKey(featureRow.local_key);
+      const featureContent = featureIndex != null ? backlog?.features?.[featureIndex] : undefined;
+      const phase = (featureContent?.title && titleToPhase.get(featureContent.title.toLowerCase())) ?? featureContent?.phase ?? null;
+      const totalPoints = storyRows.filter(r => parseStoryLocalKey(r.local_key)?.featureIndex === featureIndex)
+        .reduce((sum, r) => {
+          const p = parseStoryLocalKey(r.local_key);
+          const sc = p != null ? featureContent?.stories?.[p.storyIndex] : undefined;
+          return sum + ((sc as any)?.estimated_points ?? (sc as any)?.effort ?? 0);
+        }, 0);
+      return { localKey: featureRow.local_key, title: featureRow.title, description: featureContent?.description ?? null, phase, totalPoints };
+    }).filter(f => matchesPhase(f.phase, phaseFilter));
+    const allowedFeatureKeys = new Set(features.map(f => f.localKey));
+
+    // Build ticket summary list
+    const allTickets = storyRows.map(storyRow => {
+      const parsed = parseStoryLocalKey(storyRow.local_key);
+      const featureIndex = parsed?.featureIndex;
+      const featureRow = featureIndex != null ? featureRows.find(r => parseFeatureLocalKey(r.local_key) === featureIndex) : undefined;
+      const featureContent = featureIndex != null ? backlog?.features?.[featureIndex] : undefined;
+      const storyContent = parsed != null ? featureContent?.stories?.[parsed.storyIndex] : undefined;
+      const platforms = storyContent ? getStoryPlatforms(storyContent) : [];
+      const dependsOn = ((storyContent as any)?.depends_on ?? []).map((ref: string) => storyIdToLocalKey.get(ref) ?? ref);
+      return { localKey: storyRow.local_key, adoId: storyRow.ado_id, adoUrl: storyRow.ado_url, title: storyRow.title,
+        featureLocalKey: featureRow?.local_key ?? null, platform: platforms, dependsOn,
+        estimatedPoints: (storyContent as any)?.estimated_points ?? (storyContent as any)?.effort ?? null };
+    })
+    .filter(t => !phaseFilter || !t.featureLocalKey || allowedFeatureKeys.has(t.featureLocalKey))
+    .filter(t => matchesStream(t.platform, streamFilter));
+
+    // Build implementation order
+    const streamTicketKeys = new Set(allTickets.map(t => t.localKey));
+    const blocked: string[] = [];
+    const orderableTickets = allTickets.map(t => {
+      const crossStream = t.dependsOn.filter((dep: string) => !streamTicketKeys.has(dep));
+      if (crossStream.length > 0) { blocked.push(t.localKey); return null; }
+      return { localKey: t.localKey, dependsOn: t.dependsOn.filter((dep: string) => streamTicketKeys.has(dep)) };
+    }).filter((t): t is { localKey: string; dependsOn: string[] } => t !== null);
+    const implementationOrder = topoSortTickets(orderableTickets);
+
+    // Build full ticket payload for ordered tickets
+    const prdContent = prdArtifactId != null ? await loadArtifactContentById(prdArtifactId) : null;
+    const prd = prdContent ? tryParsePRD(prdContent) : null;
+    const { frs, nfrs } = buildRequirementMaps(prd);
+
+    const payloadByKey = new Map<string, ExportPayloadTicket>();
+    const implementationSet = new Set(implementationOrder);
+    for (const storyRow of storyRows.filter(r => implementationSet.has(r.local_key))) {
+      const parsed = parseStoryLocalKey(storyRow.local_key);
+      const featureIndex = parsed?.featureIndex;
+      const featureRow = featureIndex != null ? featureRows.find(r => parseFeatureLocalKey(r.local_key) === featureIndex) : undefined;
+      const featureContent = featureIndex != null ? backlog?.features?.[featureIndex] : undefined;
+      const storyContent = parsed != null ? featureContent?.stories?.[parsed.storyIndex] : undefined;
+      const dependsOn = ((storyContent as any)?.depends_on ?? []).map((ref: string) => storyIdToLocalKey.get(ref) ?? ref);
+      const { functionalRequirements, nonFunctionalRequirements } = resolveRequirements(featureContent, frs, nfrs);
+      payloadByKey.set(storyRow.local_key, {
+        localKey: storyRow.local_key, adoId: storyRow.ado_id, adoUrl: storyRow.ado_url, title: storyRow.title,
+        featureLocalKey: featureRow?.local_key ?? null,
+        persona: (storyContent as any)?.as_a ?? (storyContent as any)?.persona ?? null,
+        goal: (storyContent as any)?.i_want ?? (storyContent as any)?.goal ?? null,
+        benefit: (storyContent as any)?.so_that ?? (storyContent as any)?.benefit ?? null,
+        acceptanceCriteria: (storyContent as any)?.acceptance_criteria ?? (storyContent as any)?.acceptanceCriteria ?? [],
+        technicalAcceptanceCriteria: (storyContent as any)?.technical_acceptance_criteria ?? [],
+        agentContext: (storyContent as any)?.agentContext ?? null,
+        estimatedPoints: (storyContent as any)?.estimated_points ?? (storyContent as any)?.effort ?? null,
+        platform: storyContent ? getStoryPlatforms(storyContent) : [],
+        dependsOn, technicalNotes: (storyContent as any)?.technical_notes ?? null,
+        functionalRequirements, nonFunctionalRequirements,
+      });
+    }
+
+    const streamLabel = streamFilter ? Array.from(streamFilter).join('+') : 'all';
+    const phaseLabel = phaseFilter ? Array.from(phaseFilter).join('+') : 'all';
+
+    const context = buildContextMarkdown(
+      { seqNum: initiative.seq_num, title: initiative.title, context: initiativeContext as any },
+      epic, features, allTickets, implementationOrder, blocked, payloadByKey, streamLabel, phaseLabel,
+    );
+    const plan = buildPlanMarkdown(
+      { seqNum: initiative.seq_num, title: initiative.title },
+      features, allTickets, implementationOrder, blocked, payloadByKey, streamLabel, phaseLabel,
+    );
+
+    res.json({ context, plan, seqNum: initiative.seq_num, title: initiative.title });
+  } catch (err: any) {
+    logger.error(`Failed to generate pipeline export for initiative #${seqNum}`, err);
+    res.status(500).json({ error: err.message || 'Export generation failed' });
+  }
 });
 
 export default router;

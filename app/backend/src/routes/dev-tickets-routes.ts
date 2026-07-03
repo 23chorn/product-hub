@@ -139,7 +139,7 @@ function resolvePhase(
 /** Load and parse the epic_features artifact. Returns both the epic-level description/businessValue
  *  (for the epic card) and the raw content string (so buildTitleToPhaseMap can derive canonical
  *  phase labels without loading the file a second time). */
-async function loadEpicFeaturesArtifact(
+export async function loadEpicFeaturesArtifact(
   artifactId: number | null
 ): Promise<{ epicMeta: { description?: string; businessValue?: string } | null; content: string | null }> {
   if (artifactId == null) return { epicMeta: null, content: null };
@@ -273,7 +273,7 @@ export function topoSortTickets(nodes: Array<{ localKey: string; dependsOn: stri
 }
 
 /** Aggregate initiative-level context from research/PRD/architecture artifacts. */
-async function buildInitiativeContext(itemId: string): Promise<InitiativeContext | null> {
+export async function buildInitiativeContext(itemId: string): Promise<InitiativeContext | null> {
   const { researchArtifactId, prdArtifactId, architectureArtifactId } = getDocumentArtifactIds(itemId);
 
   const research = researchArtifactId != null
@@ -309,7 +309,7 @@ async function buildInitiativeContext(itemId: string): Promise<InitiativeContext
 }
 
 /** Build FR/NFR lookup maps from PRD artifact. */
-function buildRequirementMaps(prd: Record<string, any> | null): {
+export function buildRequirementMaps(prd: Record<string, any> | null): {
   frs: Map<string, FunctionalRequirement>;
   nfrs: Map<string, NonFunctionalRequirement>;
 } {
@@ -339,7 +339,7 @@ function buildRequirementMaps(prd: Record<string, any> | null): {
 }
 
 /** Resolve FR/NFR IDs from feature prdRef to full requirement objects. */
-function resolveRequirements(
+export function resolveRequirements(
   featureContent: any,
   frs: Map<string, FunctionalRequirement>,
   nfrs: Map<string, NonFunctionalRequirement>

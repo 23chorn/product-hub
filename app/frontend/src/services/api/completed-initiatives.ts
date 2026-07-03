@@ -70,6 +70,21 @@ export const completedInitiativesApi = {
     return response.data;
   },
 
+  /** Generate PIPELINE_CONTEXT.md and PIPELINE_PLAN.md content for a given initiative seqNum. */
+  async generatePipelineExport(
+    seqNum: number,
+    opts: { stream?: string; phase?: string } = {},
+  ): Promise<{ context: string; plan: string; seqNum: number; title: string }> {
+    const params: Record<string, string> = {};
+    if (opts.stream) params.stream = opts.stream;
+    if (opts.phase) params.phase = opts.phase;
+    const response = await axios.get(
+      `${API_BASE_URL}/api/dev/initiatives/${seqNum}/pipeline-export`,
+      { params },
+    );
+    return response.data;
+  },
+
   /** Admin-only — hides a completed initiative from the default Progress Tracker list. */
   async archiveCompletedInitiative(itemId: string): Promise<{ ok: true }> {
     const response = await axios.post(`${API_BASE_URL}/api/completed-initiatives/${itemId}/archive`);

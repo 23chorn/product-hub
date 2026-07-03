@@ -20,6 +20,119 @@ import { FigmaScreenPreviewer } from '../artifact/FigmaDesignActions';
 import { parseFigmaDesignContent } from '../../utils/figma-design';
 import { buildPrdMaps } from '../../utils/artifact-to-markdown';
 
+const PIPELINE_STREAMS = ['backend', 'web', 'ios', 'android'] as const;
+type PipelineStream = typeof PIPELINE_STREAMS[number];
+
+function downloadText(content: string, filename: string) {
+  const url = URL.createObjectURL(new Blob([content], { type: 'text/markdown' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function PipelineExportModal({ seqNum, phaseLabels, onClose }: { seqNum: number; phaseLabels: string[]; onClose: () => void }) {
+  const [stream, setStream] = useState<PipelineStream | null>(null);
+  const [phase, setPhase] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const generate = async () => {
+    setLoading(true); setError(null);
+    try {
+      const result = await api.generatePipelineExport(seqNum, { stream: stream ?? undefined, phase: phase ?? undefined });
+      const suffix = stream ? `_${stream}` : '';
+      const phaseSuffix = phase ? `_${phase.toLowerCase().replace(/\s+/g, '_')}` : '';
+      downloadText(result.context, `pipeline_context_${seqNum}${phaseSuffix}${suffix}.md`);
+      downloadText(result.plan, `pipeline_plan_${seqNum}${phaseSuffix}${suffix}.md`);
+      onClose();
+    } catch (err: any) {
+      setError(err?.response?.data?.error ?? err.message ?? 'Export failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60" onClick={onClose}>
+      <div className="relative bg-white dark:bg-surface-900 rounded-xl shadow-xl border border-surface-200 dark:border-surface-700 w-full max-w-sm mx-4 p-5" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100">Pipeline Export</h3>
+          <button onClick={onClose} className="p-1 rounded text-surface-400 hover:text-surface-700 dark:hover:text-surface-200 transition-colors">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-1.5">Stream</p>
+            <div className="flex flex-wrap gap-1.5">
+              {(['all', ...PIPELINE_STREAMS] as const).map(s => (
+                <button
+                  key={s}
+                  onClick={() => setStream(s === 'all' ? null : s)}
+                  className={`text-[11px] px-2.5 py-1 rounded-full transition-colors ${
+                    (s === 'all' ? stream === null : stream === s)
+                      ? 'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-medium'
+                      : 'bg-surface-100 dark:bg-surface-800 text-surface-600 dark:text-surface-400 hover:bg-surface-200 dark:hover:bg-surface-700'
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {phaseLabels.length > 0 && (
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-1.5">Phase</p>
+              <div className="flex flex-wrap gap-1.5">
+                {(['all', ...phaseLabels]).map(p => (
+                  <button
+                    key={p}
+                    onClick={() => setPhase(p === 'all' ? null : p)}
+                    className={`text-[11px] px-2.5 py-1 rounded-full transition-colors ${
+                      (p === 'all' ? phase === null : phase === p)
+                        ? 'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-medium'
+                        : 'bg-surface-100 dark:bg-surface-800 text-surface-600 dark:text-surface-400 hover:bg-surface-200 dark:hover:bg-surface-700'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <p className="mt-3 text-[10px] text-surface-400 dark:text-surface-500">
+          Downloads <code className="font-mono">pipeline_context_{seqNum}.md</code> and <code className="font-mono">pipeline_plan_{seqNum}.md</code>
+        </p>
+
+        {error && <p className="mt-2 text-[10px] text-red-600 dark:text-red-400">{error}</p>}
+
+        <div className="flex gap-2 mt-4">
+          <button
+            onClick={generate}
+            disabled={loading}
+            className="flex-1 text-xs px-3 py-2 rounded-lg bg-brand-500 text-white hover:bg-brand-600 disabled:opacity-40 transition-colors font-medium"
+          >
+            {loading ? 'Generating…' : 'Generate & Download'}
+          </button>
+          <button
+            onClick={onClose}
+            disabled={loading}
+            className="text-xs px-3 py-2 rounded-lg border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-700 disabled:opacity-40 transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface Props {
   itemId: string;
   /** True when reviewing this item from the admin-only Archived Initiatives list. */
@@ -152,6 +265,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
   const [testCountByArtifactId, setTestCountByArtifactId] = useState<Map<number, number>>(new Map());
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
 
   useEffect(() => {
     let stale = false;
@@ -385,6 +499,15 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
             {arr.length === 1 ? 'View Epic ↗' : `Epic ${i + 1} ↗`}
           </a>
         ))}
+        {detail?.seqNum != null && (
+          <button
+            onClick={() => setShowExportModal(true)}
+            disabled={loading}
+            className="px-2.5 py-1 text-xs font-medium rounded-md border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-700/70 transition-colors disabled:opacity-50"
+          >
+            Export Pipeline
+          </button>
+        )}
         <button
           onClick={handleRefresh}
           disabled={refreshing || loading}
@@ -543,6 +666,14 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
           </>
         )}
       </div>
+
+      {showExportModal && detail?.seqNum != null && (
+        <PipelineExportModal
+          seqNum={detail.seqNum}
+          phaseLabels={phaseLabels}
+          onClose={() => setShowExportModal(false)}
+        />
+      )}
 
       {showArchiveConfirm && (
         <ArchiveConfirmModal
