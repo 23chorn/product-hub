@@ -47,6 +47,29 @@ export const completedInitiativesApi = {
     return response.data;
   },
 
+  /** Add a manually authored test case to the latest qa_tests artifact for this initiative. */
+  async addTestCase(
+    itemId: string,
+    data: { title: string; type: string; priority: string; description?: string },
+    archived = false,
+  ): Promise<CompletedInitiativeDetail> {
+    const response = await axios.post(
+      `${API_BASE_URL}/api/completed-initiatives/${itemId}/test-cases`,
+      data,
+      { params: archived ? { archived: true } : undefined },
+    );
+    return response.data;
+  },
+
+  /** Delete a test case by ID from the latest qa_tests artifact for this initiative. */
+  async deleteTestCase(itemId: string, tcId: string, archived = false): Promise<CompletedInitiativeDetail> {
+    const response = await axios.delete(
+      `${API_BASE_URL}/api/completed-initiatives/${itemId}/test-cases/${encodeURIComponent(tcId)}`,
+      { params: archived ? { archived: true } : undefined },
+    );
+    return response.data;
+  },
+
   /** Admin-only — hides a completed initiative from the default Progress Tracker list. */
   async archiveCompletedInitiative(itemId: string): Promise<{ ok: true }> {
     const response = await axios.post(`${API_BASE_URL}/api/completed-initiatives/${itemId}/archive`);

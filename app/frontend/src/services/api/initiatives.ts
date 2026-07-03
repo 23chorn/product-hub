@@ -33,4 +33,19 @@ export const initiativesApi = {
     const response = await axios.post(`${API_BASE_URL}/api/initiatives/${id}/unarchive`);
     return response.data;
   },
+
+  async getInitiativeAssignments(id: string): Promise<{ assignments: Array<{ id: number; name: string; username: string; slackUserId: string | null }> }> {
+    const response = await axios.get(`${API_BASE_URL}/api/initiatives/${id}/assignments`);
+    return response.data;
+  },
+
+  async assignInitiative(id: string, userId: number): Promise<{ ok: boolean; userId: number; userName: string }> {
+    const response = await axios.post(`${API_BASE_URL}/api/initiatives/${id}/assignments`, { userId });
+    return response.data;
+  },
+
+  async unassignInitiative(id: string, userId: number): Promise<{ ok: boolean }> {
+    await axios.delete(`${API_BASE_URL}/api/initiatives/${id}/assignments/${userId}`);
+    return { ok: true };
+  },
 };

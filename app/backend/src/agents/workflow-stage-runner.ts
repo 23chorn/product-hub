@@ -48,7 +48,7 @@ export {
 import { setCancelController, clearCancelController, isCancelRequested } from './workflow-cancel';
 export { getCoordinator, getCritic } from './workflow-agents';
 import { getCoordinator, getCritic } from './workflow-agents';
-import { runBacklogMerge, runMultiAgentFeatureStage, runMultiAgentFeatureRevision, runMultiAgentFeatureQaRevision } from './feature-stage-runner';
+import { runBacklogMerge, runMultiAgentFeatureStage, runMultiAgentFeatureRevision, runMultiAgentFeatureQaRevision, runEpicQaStage, runEpicQaRevision } from './feature-stage-runner';
 
 // ── Autonomous stage execution ────────────────────────────────────────────────
 
@@ -191,6 +191,18 @@ export async function runAutonomousStage(
   // This is a simple concatenation — no LLM call needed, just JSON manipulation.
   if (stage === 'backlog_merge') {
     await runBacklogMerge(sessionId, workflowId, itemId);
+    return;
+  }
+
+  // ── Epic QA Stage ─────────────────────────────────────────────────────────────
+  // Runs once after backlog_merge. Vera synthesises a single unified test suite from the
+  // full merged backlog; TC-E-NNN IDs cover all features with cross-feature integration.
+  if (stage === 'epic_qa') {
+    if (priorDraftContent) {
+      await runEpicQaRevision(sessionId, workflowId, itemId, priorDraftContent, brief);
+    } else {
+      await runEpicQaStage(sessionId, workflowId, itemId);
+    }
     return;
   }
 

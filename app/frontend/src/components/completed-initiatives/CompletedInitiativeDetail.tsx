@@ -18,6 +18,7 @@ import { ArchiveConfirmModal } from '../common/ArchiveConfirmModal';
 import { WorkItemManagePanel } from './WorkItemManagePanel';
 import { FigmaScreenPreviewer } from '../artifact/FigmaDesignActions';
 import { parseFigmaDesignContent } from '../../utils/figma-design';
+import { buildPrdMaps } from '../../utils/artifact-to-markdown';
 
 interface Props {
   itemId: string;
@@ -190,17 +191,9 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
       for (const r of validTests) countMap.set(data.testArtifactIds[r.num], r.data.test_cases.length);
       setTestCountByArtifactId(countMap);
       if (prdContent) {
-        try {
-          const stripped = prdContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-          const prd = JSON.parse(stripped);
-          const normId = (id: string) => id.replace(/-0*(\d+)$/, '$1');
-          const frs: Record<string, string> = {};
-          for (const fr of prd.functional_requirements ?? []) { if (fr.id && fr.requirement) frs[normId(fr.id)] = fr.requirement; }
-          const nfrs: Record<string, string> = {};
-          for (const nfr of prd.non_functional_requirements ?? []) { if (nfr.id && nfr.requirement) nfrs[normId(nfr.id)] = `[${nfr.category ?? nfr.priority ?? ''}] ${nfr.requirement}`.trim(); }
-          setFrMap(frs);
-          setNfrMap(nfrs);
-        } catch { /* non-JSON or missing fields — tooltips just won't show */ }
+        const { frMap: frs, nfrMap: nfrs } = buildPrdMaps(prdContent);
+        setFrMap(frs);
+        setNfrMap(nfrs);
       }
     }).finally(() => { if (!stale) setLoading(false); });
 
@@ -542,6 +535,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
                     itemId={itemId}
                     archived={archived}
                     onUpdate={updated => { setDetail(updated); setEverRefreshed(true); }}
+                    testCases={qa?.test_cases ?? null}
                   />
                 )}
               </div>

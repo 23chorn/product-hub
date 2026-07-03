@@ -21,6 +21,9 @@ export interface ArtifactViewContext {
   pendingCheckpoint?: WorkflowCheckpoint;
   hasApprovePermission: boolean;
   resolveLoading: boolean;
+  /** FR id→text and NFR id→text maps from the PRD artifact — used for hover tooltips on prdRef badges. */
+  frMap?: Record<string, string>;
+  nfrMap?: Record<string, string>;
   /** Rerun the current stage (used by the incomplete-artifact recovery prompt). */
   rerunStage: () => void;
   /** Close the artifact drawer. */
@@ -40,10 +43,11 @@ export interface ArtifactViewContext {
  * finally a raw-markdown fallback.
  */
 export function renderStructuredArtifact(content: string, ctx: ArtifactViewContext): ReactNode {
-  const { artifactType, activeWorkflow, checkpoints, pendingCheckpoint, hasApprovePermission, resolveLoading, rerunStage, onClose, requestDelete } = ctx;
+  const { artifactType, activeWorkflow, checkpoints, pendingCheckpoint, hasApprovePermission, resolveLoading, frMap, nfrMap, rerunStage, onClose, requestDelete } = ctx;
 
   const initiativeTitle = activeWorkflow?.summary ?? activeWorkflow?.goal?.split('\n')[0];
   const epicFeaturesArtifactId = deriveEpicFeaturesArtifactId(checkpoints);
+  const prdArtifactId = checkpoints.find(c => c.stage === 'pm_prd' && c.artifact_id != null)?.artifact_id ?? null;
 
   // The final cross-feature merge ('backlog' exactly, not the per-feature 'backlog_F<n>'
   // artifacts) — show the same Stories/Tests tabbed view as the pipeline's "Stories/Tests"
@@ -55,6 +59,7 @@ export function renderStructuredArtifact(content: string, ctx: ArtifactViewConte
         featureButtons={deriveFeatureButtons(checkpoints)}
         initiativeTitle={initiativeTitle}
         epicFeaturesArtifactId={epicFeaturesArtifactId}
+        prdArtifactId={prdArtifactId}
       />
     );
   }
@@ -77,6 +82,8 @@ export function renderStructuredArtifact(content: string, ctx: ArtifactViewConte
             data={featureBacklogData}
             isFeaturePreview
             initiativeTitle={initiativeTitle}
+            frMap={frMap}
+            nfrMap={nfrMap}
             onDeleteStory={requestDelete ? (storyIndex) => {
               const story = previewFeature?.stories[storyIndex];
               if (!story) return;
@@ -102,6 +109,8 @@ export function renderStructuredArtifact(content: string, ctx: ArtifactViewConte
       <EpicFeaturesView
         data={epicFeaturesData}
         initiativeTitle={initiativeTitle}
+        frMap={frMap}
+        nfrMap={nfrMap}
         onDeletePhase={requestDelete ? (phaseIndex) => {
           const phase = epicFeaturesData.phases?.[phaseIndex];
           if (!phase) return;
@@ -121,6 +130,8 @@ export function renderStructuredArtifact(content: string, ctx: ArtifactViewConte
       <BacklogView
         data={backlogData}
         initiativeTitle={initiativeTitle}
+        frMap={frMap}
+        nfrMap={nfrMap}
         onDeleteStory={requestDelete ? (storyIndex) => {
           const story = previewFeature?.stories[storyIndex];
           if (!story) return;

@@ -1,5 +1,5 @@
 /**
- * Frontend-only open-questions parser for PRD artifacts.
+ * Frontend-only PRD artifact utilities.
  * Structured JSON→markdown converters live in @pap/shared so the backend wiki
  * rendering stays in sync — import renderArtifactMarkdown / isDocumentArtifact
  * from there directly instead of adding wrappers here.
@@ -53,6 +53,22 @@ function sanitizeJsonNewlines(raw: string): string {
   }
 
   return result;
+}
+
+/** Parse a raw PRD artifact string into FR and NFR id→text lookup maps for tooltip display. */
+export function buildPrdMaps(prdContent: string): { frMap: Record<string, string>; nfrMap: Record<string, string> } {
+  const normId = (id: string) => id.replace(/-0*(\d+)$/, '$1');
+  try {
+    const stripped = prdContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+    const prd = JSON.parse(stripped);
+    const frMap: Record<string, string> = {};
+    for (const fr of prd.functional_requirements ?? []) { if (fr.id && fr.requirement) frMap[normId(fr.id)] = fr.requirement; }
+    const nfrMap: Record<string, string> = {};
+    for (const nfr of prd.non_functional_requirements ?? []) { if (nfr.id && nfr.requirement) nfrMap[normId(nfr.id)] = `[${nfr.category ?? nfr.priority ?? ''}] ${nfr.requirement}`.trim(); }
+    return { frMap, nfrMap };
+  } catch {
+    return { frMap: {}, nfrMap: {} };
+  }
 }
 
 /**

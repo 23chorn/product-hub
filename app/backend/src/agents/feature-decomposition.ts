@@ -284,6 +284,7 @@ export async function injectFeatureDecompositionStages(workflowId: string): Prom
     ...sequence.slice(0, storyDecompIndex),
     ...featureStages,
     'backlog_merge',  // Merge all isolated features into final backlog artifact
+    'epic_qa',        // Generate one unified QA test suite across all approved features
     ...sequence.slice(storyDecompIndex + 1)
   ];
 
@@ -334,6 +335,7 @@ export function collapseFeatureDecompositionStages(sequence: string[]): string[]
   let endIdx = firstFeatureIdx;
   while (endIdx < sequence.length && featureStageRe.test(sequence[endIdx])) endIdx++;
   if (sequence[endIdx] === 'backlog_merge') endIdx++;
+  if (sequence[endIdx] === 'epic_qa') endIdx++;
 
   return [
     ...sequence.slice(0, firstFeatureIdx),
@@ -807,7 +809,6 @@ export async function pushFeatureToADO(
   const { getAzureDevOpsClient } = await import('../integrations/azure-devops');
   const client = getAzureDevOpsClient();
   const storyIds: number[] = [];
-  const allTestCases: any[] = [];
 
   for (let si = 0; si < targetFeature.stories.length; si++) {
     const storyData = targetFeature.stories[si];
@@ -867,31 +868,6 @@ export async function pushFeatureToADO(
     storyIds.push(story.id!);
   }
 
-  // QA test cases live in a separate qa_tests artifact (not embedded in story JSON) — load this
-  // feature's via its own checkpoint so we get exactly the right one (qa_tests isn't a per-feature
-  // artifact type, so "latest" alone can't be trusted to pick the right feature).
-  const qaCheckpoint = db.prepare<[string, string], { artifact_id: number | null }>(
-    `SELECT artifact_id FROM checkpoints WHERE workflow_id = ? AND stage = ? AND status = 'approved'
-     ORDER BY created_at DESC LIMIT 1`
-  ).get(workflowId, `story_decomposition_F${featureIndex + 1}_qa`);
-
-  if (qaCheckpoint?.artifact_id) {
-    try {
-      const { loadArtifactContentById } = await import('./artifact-helpers');
-      const qaContent = await loadArtifactContentById(qaCheckpoint.artifact_id);
-      if (qaContent) {
-        const qaCleaned = qaContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-        const qaJsonStart = qaCleaned.indexOf('{');
-        const qaParsed = JSON.parse(qaJsonStart > 0 ? qaCleaned.slice(qaJsonStart) : qaCleaned);
-        for (const tc of qaParsed.test_cases ?? []) {
-          allTestCases.push({ ...tc, title: tc.title ?? tc.id ?? 'Test Case' });
-        }
-      }
-    } catch (err: any) {
-      logger.warn(`[STORY PUSH] Failed to load QA test cases for F${featureIndex + 1}: ${err.message}`);
-    }
-  }
-
   // Save story mappings
   const now = Date.now();
   for (let i = 0; i < storyIds.length; i++) {
@@ -906,82 +882,8 @@ export async function pushFeatureToADO(
   }
 
   logger.info(`[STORY PUSH] Added ${storyIds.length} stories to feature #${featureId}`);
+  // QA test cases are no longer pushed here — they are generated once at epic level
+  // (epic_qa stage, after backlog_merge is approved) and pushed via pushTestPlanToAdo.
 
-  // Push test cases to ADO Test Plans if any were collected
-  // Use a single epic-level test plan across all features (cumulative)
-  let testPlanId: number | null = null;
-  let testPlanUrl: string | null = null;
-  if (allTestCases.length > 0) {
-    try {
-      // Build story map for linking test cases to stories. Include every feature's
-      // stories already pushed to ADO in this workflow (by local_key and ADO title) —
-      // a QA test case sometimes describes user-facing behavior actually owned by a
-      // different feature's stories (e.g. a backend-only feature's test cases verify
-      // outcomes surfaced through another feature's UI), so resolution must span the
-      // whole workflow, not just the feature currently being pushed. Also keep this
-      // feature's own stories by their raw backlog title (pre-prefix) for exact-title refs.
-      const storyMap = new Map<string, number>();
-      for (let i = 0; i < targetFeature.stories.length; i++) {
-        const story = targetFeature.stories[i];
-        if (story.title) storyMap.set(story.title, storyIds[i]);
-      }
-      const workflowStoryMappings = db.prepare<[string], { local_key: string; ado_id: number; title: string }>(
-        `SELECT local_key, ado_id, title FROM ado_work_item_map WHERE workflow_id = ? AND ado_type = 'story'`
-      ).all(workflowId);
-      for (const m of workflowStoryMappings) {
-        storyMap.set(m.local_key, m.ado_id);
-        if (m.title) storyMap.set(m.title, m.ado_id);
-      }
-
-      // Check if test plan already exists for this workflow (epic-level plan shared across features)
-      const existingPlan = db.prepare<[string], { plan_id: number; root_suite_id: number; plan_url: string; suite_ids: string; test_case_ids: string }>(
-        'SELECT plan_id, root_suite_id, plan_url, suite_ids, test_case_ids FROM qa_test_plan_map WHERE workflow_id = ? LIMIT 1'
-      ).get(workflowId);
-
-      const existing = existingPlan ? {
-        planId: existingPlan.plan_id,
-        rootSuiteId: existingPlan.root_suite_id,
-        suiteIds: JSON.parse(existingPlan.suite_ids ?? '{}'),
-        testCaseIds: JSON.parse(existingPlan.test_case_ids ?? '{}'),
-      } : undefined;
-
-      // Use epic title for plan name (shared across all features)
-      const workflow = db.prepare<[string], { summary: string | null; goal: string }>(
-        'SELECT summary, goal FROM workflows WHERE id = ?'
-      ).get(workflowId);
-      const planName = (workflow?.summary ?? backlog.epic?.title ?? 'Test Plan').slice(0, 60);
-
-      const result = await client.pushQATestPlan({ planName, testCases: allTestCases, storyMap, existing });
-      testPlanId = result.planId;
-      testPlanUrl = result.planUrl;
-
-      // Save test plan mapping (INSERT OR REPLACE so we update the same row for all features)
-      db.prepare(`
-        INSERT OR REPLACE INTO qa_test_plan_map
-          (workflow_id, artifact_id, plan_id, root_suite_id, plan_url, suite_ids, test_case_ids, test_case_count, created_at)
-        VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        workflowId,
-        result.planId,
-        result.rootSuiteId,
-        result.planUrl,
-        JSON.stringify(result.suiteIds),
-        JSON.stringify(result.testCaseIds),
-        allTestCases.length,  // This is just the count for this feature; actual total is in ADO
-        now
-      );
-
-      logger.info(`[TEST PLAN PUSH] ${existing ? 'Updated' : 'Created'} test plan #${testPlanId} — added ${allTestCases.length} test cases for feature "${targetFeature.title}"`);
-    } catch (err: any) {
-      logger.error(`[TEST PLAN PUSH] Failed to push test cases for feature F${featureIndex + 1}: ${err.message}`);
-      logger.error(`[TEST PLAN PUSH ERROR] ${err.stack}`);
-    }
-  }
-
-  // No event inserted here — workflow-routes.ts's checkpoint handler (the only caller)
-  // already inserts its own 'ado_pushed' event with the feature/test-plan links once
-  // this returns. Same redundant-duplicate issue as pushEpicAndFeaturesToADO() above —
-  // this one used the wrong event_type 'ado_push' too, so it never linked to anything.
-
-  return { epicId, featureId, storyIds, testPlanId, testPlanUrl, testCaseCount: allTestCases.length };
+  return { epicId, featureId, storyIds, testPlanId: null, testPlanUrl: null, testCaseCount: 0 };
 }

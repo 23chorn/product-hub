@@ -174,6 +174,19 @@ router.get('/', (req: Request, res: Response) => {
       for (const r of cancelledRows) cancelledSet.add(r.workflow_id);
     }
 
+    // Batch-fetch assigned user IDs per item
+    const assignmentMap = new Map<string, number[]>();
+    if (rows.length > 0) {
+      const aRows = db.prepare(
+        `SELECT item_id, user_id FROM item_assignments WHERE item_id IN (${rows.map(() => '?').join(',')})`
+      ).all(...rows.map(r => r.id)) as { item_id: string; user_id: number }[];
+      for (const a of aRows) {
+        const arr = assignmentMap.get(a.item_id) ?? [];
+        arr.push(a.user_id);
+        assignmentMap.set(a.item_id, arr);
+      }
+    }
+
     const items = rows.map(r => {
       const wf = workflowMap.get(r.id);
       const pipelineStatus = wf ? pipelineMap.get(wf.id) : undefined;
@@ -186,6 +199,7 @@ router.get('/', (req: Request, res: Response) => {
         source: r.source,
         isPaused: Boolean(r.is_paused),
         pausedAt: r.paused_at ?? undefined,
+        assignedUserIds: assignmentMap.get(r.id) ?? [],
         workflow: wf ? { id: wf.id, status: wf.status, currentStage: wf.current_stage, summary: wf.summary, stageSequence: JSON.parse(wf.stage_sequence ?? '[]') as string[], pipelineStatus, isCancelled, isDemo, pendingStage, pendingApprovals, updatedAt: wf.updated_at } : undefined,
       };
     });

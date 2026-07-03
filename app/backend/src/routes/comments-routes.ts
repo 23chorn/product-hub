@@ -5,7 +5,7 @@ import Logger from '../utils/logger';
 import { requireAdmin } from '../middleware/auth';
 import type { AuthRequest } from '../middleware/auth';
 import type { InitiativeComment } from '@pap/shared';
-import { getUserById, listUsers } from '../data/users';
+import { getUserById, listUsers, hasAnyUsers } from '../data/users';
 
 const logger = new Logger('COMMENTS');
 const router = Router();
@@ -129,8 +129,9 @@ router.post('/initiatives/:id/resume', requireAdmin, (req: AuthRequest, res: Res
 
 // ── GET /api/initiatives/:id/assignments ─────────────────────────────────────
 
-/** Returns the users currently assigned to receive Slack notifications for this initiative. */
-router.get('/initiatives/:id/assignments', requireAdmin, (req: AuthRequest, res: Response) => {
+/** Returns the users currently assigned to this initiative. Any authenticated user can call this. */
+router.get('/initiatives/:id/assignments', (req: AuthRequest, res: Response) => {
+  if (hasAnyUsers() && !req.user) return res.status(401).json({ error: 'Authentication required' });
   try {
     const rows = db.prepare<[string], { user_id: number }>(
       'SELECT user_id FROM item_assignments WHERE item_id = ? ORDER BY created_at ASC'
@@ -150,14 +151,21 @@ router.get('/initiatives/:id/assignments', requireAdmin, (req: AuthRequest, res:
 
 // ── POST /api/initiatives/:id/assignments ────────────────────────────────────
 
-/** Assign a user to receive Slack notifications for this initiative. Body: { userId: number } */
-router.post('/initiatives/:id/assignments', requireAdmin, (req: AuthRequest, res: Response) => {
+/** Assign a user to this initiative. Any authenticated user may assign themselves; admin required to assign others. */
+router.post('/initiatives/:id/assignments', (req: AuthRequest, res: Response) => {
+  const requestingUser = req.user;
+  if (hasAnyUsers() && !requestingUser) return res.status(401).json({ error: 'Authentication required' });
+
   try {
     const { userId } = req.body as { userId?: number };
     if (!userId) return res.status(400).json({ error: 'userId is required' });
 
-    const user = getUserById(userId);
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    const isSelf = requestingUser && requestingUser.id === userId;
+    const isAdmin = !hasAnyUsers() || requestingUser?.is_admin;
+    if (!isSelf && !isAdmin) return res.status(403).json({ error: 'Admin access required to assign other users' });
+
+    const targetUser = getUserById(userId);
+    if (!targetUser) return res.status(404).json({ error: 'User not found' });
 
     const item = db.prepare<[string], { id: string }>('SELECT id FROM items WHERE id = ?').get(req.params.id);
     if (!item) return res.status(404).json({ error: 'Initiative not found' });
@@ -166,8 +174,8 @@ router.post('/initiatives/:id/assignments', requireAdmin, (req: AuthRequest, res
       'INSERT OR IGNORE INTO item_assignments (item_id, user_id) VALUES (?, ?)'
     ).run(req.params.id, userId);
 
-    logger.info(`User ${user.name} (${userId}) assigned to initiative ${req.params.id}`);
-    res.json({ ok: true, userId, userName: user.name });
+    logger.info(`User ${targetUser.name} (${userId}) assigned to initiative ${req.params.id}`);
+    res.json({ ok: true, userId, userName: targetUser.name });
   } catch (err: any) {
     logger.error('Failed to add assignment', err);
     res.status(500).json({ error: err.message });
@@ -176,11 +184,18 @@ router.post('/initiatives/:id/assignments', requireAdmin, (req: AuthRequest, res
 
 // ── DELETE /api/initiatives/:id/assignments/:userId ───────────────────────────
 
-/** Remove a user's assignment from an initiative. */
-router.delete('/initiatives/:id/assignments/:userId', requireAdmin, (req: AuthRequest, res: Response) => {
+/** Remove a user's assignment from an initiative. Any authenticated user may remove themselves; admin required to remove others. */
+router.delete('/initiatives/:id/assignments/:userId', (req: AuthRequest, res: Response) => {
+  const requestingUser = req.user;
+  if (hasAnyUsers() && !requestingUser) return res.status(401).json({ error: 'Authentication required' });
+
   try {
     const userId = Number(req.params.userId);
     if (isNaN(userId)) return res.status(400).json({ error: 'Invalid userId' });
+
+    const isSelf = requestingUser && requestingUser.id === userId;
+    const isAdmin = !hasAnyUsers() || requestingUser?.is_admin;
+    if (!isSelf && !isAdmin) return res.status(403).json({ error: 'Admin access required to remove other users' });
 
     db.prepare(
       'DELETE FROM item_assignments WHERE item_id = ? AND user_id = ?'

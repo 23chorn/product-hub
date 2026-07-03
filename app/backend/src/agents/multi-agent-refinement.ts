@@ -204,52 +204,12 @@ export function filterQaTestCasesByStoryIds(
   return { qaTests: JSON.stringify(qaJson, null, 2), dropped };
 }
 
-/**
- * Strip any synthesized stories (and the QA test cases that reference them) whose
- * platform falls outside the resolved scope. This is a backstop: the brief already
- * instructs every participant to stay in scope, but this guarantees it even if a
- * model ignores the instruction.
- */
-function enforcePlatformScope(
-  backlog: string,
-  qaTests: string,
-  scope: ProductAreaScope,
-  currentFeatureKey: string
-): { backlog: string; qaTests: string } {
-  const { backlog: filteredBacklog, survivorStoryIds, dropped } = filterBacklogStoriesByScope(backlog, scope);
-  if (dropped === 0) return { backlog: filteredBacklog, qaTests };
 
-  const { qaTests: filteredQaTests, dropped: droppedTests } = filterQaTestCasesByStoryIds(qaTests, survivorStoryIds, currentFeatureKey);
-  if (droppedTests > 0) {
-    logger.warn(`[MULTI-AGENT] Platform scope "${scope.area}" — stripped ${droppedTests} test case(s) referencing out-of-scope stories`);
-  }
-
-  return { backlog: filteredBacklog, qaTests: filteredQaTests };
-}
-
-/**
- * Summarize other already-decomposed features' user-facing stories (local_key + title)
- * so the QA synthesis step can cite a real cross-feature story_ref instead of inventing
- * a placeholder when this feature's own behavior surfaces through another feature's UI
- * (e.g. a backend-only caching feature whose effect is only observable via another
- * feature's Order Entry screen). Only stories already pushed to ADO are visible here —
- * a feature that hasn't run yet simply isn't available to reference.
- */
-function buildCrossFeatureStorySummary(workflowId: string, currentFeatureKey: string): string {
-  const rows = db.prepare<[string, string], { local_key: string; title: string }>(
-    `SELECT local_key, title FROM ado_work_item_map
-     WHERE workflow_id = ? AND ado_type = 'story' AND local_key NOT LIKE ?
-     ORDER BY local_key`
-  ).all(workflowId, `${currentFeatureKey}.%`);
-  if (rows.length === 0) return '';
-  return rows.map(r => `- ${r.local_key}: ${r.title}`).join('\n');
-}
 
 export interface RefinementResult {
-  /** Backlog JSON for this feature — accumulated with prior features and saved as the checkpoint artifact. */
+  /** Backlog JSON for this feature — saved as the checkpoint artifact. */
   backlog: string;
-  /** Standalone QA test suite JSON for this feature — saved as a separate artifact for the QA engineer. */
-  qaTests: string;
+  // qaTests removed — QA is now generated once at epic level after all features are approved (epic_qa stage).
 }
 
 /**
@@ -289,8 +249,7 @@ export async function runMultiAgentRefinement(
         `Demo fixture loaded for Feature ${featureNum} — simulating multi-agent refinement`);
       const delay = DEMO_STAGE_DELAY_MS[stage] ?? 2_000;
       await demoSleep(delay);
-      const demoQaTests = getDemoQaTestsForFeature(stage, featureNum);
-      return { backlog: fixture, qaTests: demoQaTests };
+      return { backlog: fixture };
     }
 
     logger.warn(`[MULTI-AGENT] No demo fixture found for ${stage}, falling back to real workflow`);
@@ -459,26 +418,14 @@ Any story whose UI surfaces one of these screens must cite the screen's frame_ur
 
   // ── Phase 3: Synthesize ────────────────────────────────────────────────────
   insertEvent(workflowId, 'stage_progress', stage,
-    `Phase 3: Synthesize — merging backlog and extracting QA test suite in parallel...`);
+    `Phase 3: Synthesize — merging final backlog...`);
 
-  const qaParticipant = findParticipant(activeParticipants, 'qa-engineer');
-  const veraOutputs = {
-    draft:   qaParticipant ? drafts.get(qaParticipant.name) ?? '' : '',
-    refine1: qaParticipant ? refined1.get(qaParticipant.name) ?? '' : '',
-    refine2: qaParticipant ? refined2.get(qaParticipant.name) ?? '' : '',
-  };
+  const rawBacklog = await synthesizeFinalArtifact(workflowId, stage, featureBrief, refined2);
+  // Platform-scope backstop: drop any out-of-scope stories the model included despite the brief.
+  const { backlog } = filterBacklogStoriesByScope(rawBacklog, platformScope);
 
-  const crossFeatureStories = buildCrossFeatureStorySummary(workflowId, featureLocalKey(featureIndex));
-
-  const [rawBacklog, rawQaTests] = await Promise.all([
-    synthesizeFinalArtifact(workflowId, stage, featureBrief, refined2),
-    synthesizeQaArtifact(workflowId, stage, featureBrief, featureNum, veraOutputs, refined2, activeParticipants, crossFeatureStories),
-  ]);
-
-  const { backlog, qaTests } = enforcePlatformScope(rawBacklog, rawQaTests, platformScope, featureLocalKey(featureIndex));
-
-  logger.info(`[MULTI-AGENT] Feature ${featureNum} refinement complete — backlog: ${backlog.length} chars, QA tests: ${qaTests.length} chars`);
-  return { backlog, qaTests };
+  logger.info(`[MULTI-AGENT] Feature ${featureNum} refinement complete — backlog: ${backlog.length} chars`);
+  return { backlog };
 }
 
 /**
@@ -874,144 +821,3 @@ Merge all contributions into a single JSON artifact following the backlog templa
   return finalArtifact.trim();
 }
 
-/**
- * Load the QA test suite demo fixture filtered to a specific feature number.
- * Falls back to the full suite if filtering isn't possible.
- */
-function getDemoQaTestsForFeature(stage: string, featureNum: number): string {
-  const featureKey = `F${featureNum}`;
-  try {
-    // Resolve fixtures dir the same way getDemoFixture does — from source, since these are
-    // plain .json files that tsc doesn't copy into dist.
-    const fixturesDir = path.join(findRepoRoot(__dirname), 'app/backend/src/demo/fixtures', 'messaging');
-    const raw = fs.readFileSync(path.join(fixturesDir, 'qa-tests.json'), 'utf-8');
-    const suite = JSON.parse(raw);
-    const filtered = {
-      ...suite,
-      suite: `${suite.suite} — Feature ${featureNum}`,
-      metadata: { ...suite.metadata, feature: featureKey, stage },
-      test_cases: (suite.test_cases ?? []).filter(
-        (tc: { story_ref?: string; id?: string }) =>
-          (tc.story_ref ?? '').startsWith(featureKey) ||
-          (tc.id ?? '').includes(`-${featureKey}-`)
-      ),
-    };
-    return JSON.stringify(filtered, null, 2);
-  } catch (err: any) {
-    logger.warn(`[MULTI-AGENT] Could not load QA fixture for Feature ${featureNum}: ${err.message}`);
-    return JSON.stringify({ suite: `Feature ${featureNum} QA Tests`, test_cases: [] }, null, 2);
-  }
-}
-
-/**
- * Phase 3 (parallel): Vera synthesizes her contributions from all refinement rounds
- * into a standalone QA test suite JSON artifact.
- */
-async function synthesizeQaArtifact(
-  workflowId: string,
-  stage: string,
-  featureBrief: string,
-  featureNum: number,
-  veraOutputs: { draft: string; refine1: string; refine2: string },
-  refined2: Map<string, string>,
-  participants: RefinementParticipant[],
-  crossFeatureStories: string
-): Promise<string> {
-  const facilitator = findParticipant(participants, 'story-decomposition');
-  const shardFinalStories = (facilitator ? refined2.get(facilitator.name) : undefined) ?? '';
-
-  const synthesisPrompt = `
-${featureBrief}
-
-**Your Contributions Across All Refinement Rounds:**
-
-**Phase 1 — Testability Concerns:**
-${veraOutputs.draft || '(none)'}
-
----
-
-**Phase 2.1 — AC Review and Sharpening:**
-${veraOutputs.refine1 || '(none)'}
-
----
-
-**Phase 2.2 — Final Confirmation:**
-${veraOutputs.refine2 || '(none)'}
-
----
-
-**Shard - Product Owner's Final Story List (your test targets):**
-${shardFinalStories || '(none)'}
-
----
-${crossFeatureStories ? `**Other Features' User-Facing Stories (already in ADO — cite these by their real story_id when THIS feature's behavior surfaces through another feature's UI, e.g. a backend-only feature whose effect is only observable on another feature's screen):**
-${crossFeatureStories}
-
----
-` : ''}
-
-**Your Task — Produce a Standalone QA Test Suite:**
-Using your testability notes and the finalised story list above, produce a JSON test suite covering the **user-facing flows** of this feature — what an end user does and observes. This is not a technical/API test suite; a separate specialist owns contract-level testing for backend-only stories.
-
-\`\`\`json
-{
-  "suite": "Feature ${featureNum} — <feature title>",
-  "version": "1.0",
-  "metadata": {
-    "feature_key": "F${featureNum}",
-    "source_stage": "${stage}",
-    "notes": "<summary of testability approach and key concerns>"
-  },
-  "test_cases": [
-    {
-      "id": "TC-F${featureNum}-001",
-      "title": "<what is being verified>",
-      "description": "<why this matters>",
-      "type": "happy_path | negative | edge | boundary | security | performance",
-      "priority": "critical | high | medium | low",
-      "category": "<test category, e.g. Channel Membership>",
-      "story_ref": "F${featureNum}.S1",
-      "prd_ref": ["FR-01"],
-      "scenario": {
-        "given": ["<precondition>"],
-        "when": ["<action>"],
-        "then": ["<expected outcome>"]
-      },
-      "preconditions": ["<required system state before test>"],
-      "test_data": {},
-      "tags": ["@smoke", "@regression"]
-    }
-  ]
-}
-\`\`\`
-
-Requirements:
-- **Scope — user-facing flows only**: write test cases against the user-facing stories (\`platform: web\`, \`ios\`, or \`android\`), not backend-only stories. A backend story with no UI counterpart gets no dedicated test case — its behavior is exercised indirectly through the user-facing story that depends on it. The rare exception is backend work with a directly observable user outcome and no UI counterpart (e.g., an alert email triggered by a scheduled job) — frame that test from the user's observable outcome, never as an API/contract check.
-- **Test case limits**: 10-15 test cases is the ceiling for this feature, driven by the feature's user-facing goals and flows (not mechanically per story). If most of this feature's stories are backend-only (e.g. an ingestion job, caching layer, or internal API with no UI), it is correct to produce far fewer — write only the user-facing stories' flows, never pad with technical tests to reach the ceiling.
-  - Priority: the happy path for each major user flow first, then spend remaining budget on the highest-risk user-visible failure modes (validation errors, blocked actions, misleading states)
-  - Focus on the most critical test scenarios — comprehensive, not exhaustive
-- Each test_case id must use the pattern TC-F${featureNum}-NNN (three-digit counter)
-- story_ref must match a real story_id — from the final story list above, or from "Other Features' User-Facing Stories" when this feature's own list has no user-facing story for the flow being tested. Never invent a placeholder story_id (e.g. "iOS-CIRCUIT-1") — if no real story_id exists for the relevant UI yet, omit story_ref entirely rather than fabricate one
-- prd_ref must list the functional requirement ID(s) (e.g. "FR-01") this test verifies — copy from the referenced story's prd_ref
-- type must be exactly one of: happy_path, negative, edge, boundary, security, performance — at least one negative-type case is required, and at least 20% of cases should be negative/edge
-- tags must be a non-empty array using only: @smoke, @regression, @negative, @edge, @security, @performance — tag at least one critical happy-path case @smoke
-- Include ONLY the JSON artifact in your response (no explanatory text before or after)
-`;
-
-  const vera = new SpecialistAgent('qa-engineer');
-  const persona = await vera.loadPersona(stage);
-  const systemPrompt = await vera.buildSystemPrompt(persona, undefined, undefined, true, stage);
-
-  // Use qa_engineer token limit from stage metadata (14k — comfortable headroom for the 10-15 test case cap)
-  const maxTokens = STAGE_MAX_OUTPUT_TOKENS['qa_engineer'] ?? 14_000;
-
-  const output = await collectStreamWithHeartbeat(
-    vera.streamResponse(systemPrompt, [{ role: 'user', content: synthesisPrompt }], resolveAgentModel('qa-engineer'), undefined, maxTokens),
-    // Tagged to the QA sub-stage (not the base story stage) so this progress shows
-    // up in the QA section of the event log instead of bleeding into Refinement.
-    (elapsedSec, chars) => insertEvent(workflowId, 'stage_progress', `${stage}_qa`,
-      progressHeartbeatLine('Phase 3: Synthesize QA tests — extracting test suite', elapsedSec, chars)),
-  );
-
-  return output.trim();
-}

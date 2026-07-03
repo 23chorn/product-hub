@@ -37,13 +37,14 @@ function normalizeCurrentStage(currentStage: string | null, stages: string[]): s
 }
 
 /** Card for one initiative in the HomeScreen grid: title, status, tags, and launch/resume/delete actions.
- *  Admins also get a right-click menu to archive an initiative that's already completed its
- *  pipeline run — same archive endpoint and confirm dialog as the Progress Tracker page. */
+ *  Right-click menu: any authenticated user can assign/unassign themselves; admins can also
+ *  archive/unarchive and open the user-assign flyout. */
 export function InitiativeCard({
   item, isDeleting, isConfirmingDelete, isAnalysing,
   isArchiving, isConfirmingArchive,
   onLaunch, onResume, onRequestDelete, onConfirmDelete, onCancelDelete,
   onRequestArchive, onConfirmArchive, onCancelArchive,
+  onAssignToMe, onUnassignFromMe, onOpenAssignFlyout,
 }: {
   item: EnrichedItem;
   isDeleting: boolean;
@@ -59,6 +60,9 @@ export function InitiativeCard({
   onRequestArchive: () => void;
   onConfirmArchive: () => void;
   onCancelArchive: () => void;
+  onAssignToMe: () => void;
+  onUnassignFromMe: () => void;
+  onOpenAssignFlyout: () => void;
 }) {
   const { user, noAuth } = useAuthStore();
   const isAdmin = noAuth || !!user?.is_admin;
@@ -72,13 +76,15 @@ export function InitiativeCard({
   const needsReview = eff === 'paused_at_checkpoint';
   const pendingApprovals = needsReview ? wf?.pendingApprovals ?? [] : [];
 
-  // Can archive completed initiatives or not-started ones (no workflow yet)
   const isArchived = item.status === 'archived';
   const canArchive = isAdmin && !isArchived && (isComplete || !wf);
   const canUnarchive = isAdmin && isArchived;
+  const canShowAssign = !noAuth && !!user;
+  const isAssignedToMe = canShowAssign && (item.assignedUserIds ?? []).includes(user!.id);
+
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const handleContextMenu = (e: React.MouseEvent) => {
-    if (!canArchive && !canUnarchive) return; // not eligible — let the native browser menu show
+    if (!canArchive && !canUnarchive && !canShowAssign) return;
     e.preventDefault();
     setMenuPos({ x: e.clientX, y: e.clientY });
   };
@@ -107,18 +113,24 @@ export function InitiativeCard({
       onContextMenu={handleContextMenu}
       className={`relative group rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/80 hover:border-surface-300 dark:hover:border-surface-600 hover:shadow-sm transition-all p-5 flex flex-col ${isExpanded ? 'h-auto' : 'h-64'}`}
     >
-      {menuPos && (
-        <CardContextMenu
-          x={menuPos.x}
-          y={menuPos.y}
-          onClose={() => setMenuPos(null)}
-          items={
-            canUnarchive
-              ? [{ label: 'Unarchive Initiative', danger: false, onClick: onRequestArchive }]
-              : [{ label: 'Archive Initiative', danger: true, onClick: onRequestArchive }]
-          }
-        />
-      )}
+      {menuPos && (() => {
+        const items = [];
+        if (canUnarchive) items.push({ label: 'Unarchive Initiative', danger: false, onClick: onRequestArchive });
+        else if (canArchive) items.push({ label: 'Archive Initiative', danger: true, onClick: onRequestArchive });
+        if (canShowAssign) {
+          if (isAssignedToMe) items.push({ label: 'Remove my assignment', danger: false, onClick: onUnassignFromMe });
+          else items.push({ label: 'Assign to me', danger: false, onClick: onAssignToMe });
+          if (isAdmin) items.push({ label: 'Assign to user…', danger: false, onClick: onOpenAssignFlyout });
+        }
+        return (
+          <CardContextMenu
+            x={menuPos.x}
+            y={menuPos.y}
+            onClose={() => setMenuPos(null)}
+            items={items}
+          />
+        );
+      })()}
 
       {isConfirmingArchive && (
         <ArchiveConfirmModal

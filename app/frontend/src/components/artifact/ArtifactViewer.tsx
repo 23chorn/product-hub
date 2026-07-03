@@ -20,6 +20,7 @@ import { renderStructuredArtifact } from './ArtifactContentView';
 import { FigmaDesignActions, FigmaScreenPreviewer } from './FigmaDesignActions';
 import { parseFigmaDesignContent } from '../../utils/figma-design';
 import { copyToClipboard, printArtifact } from '../../utils/markdown';
+import { buildPrdMaps } from '../../utils/artifact-to-markdown';
 
 export function ArtifactViewer() {
   const { viewingArtifactId, setViewingArtifactId, checkpoints, activeWorkflow, applyWorkflowStatus, addCoordinatorMessage } = useWorkflowStore();
@@ -43,6 +44,8 @@ export function ArtifactViewer() {
   const [pendingDelete, setPendingDelete] = useState<{ itemLabel: string; run: () => string } | null>(null);
   const [showRevisionSummary, setShowRevisionSummary] = useState(false);
   const [figmaLinks, setFigmaLinks] = useState<Record<string, string>>({});
+  const [frMap, setFrMap] = useState<Record<string, string>>({});
+  const [nfrMap, setNfrMap] = useState<Record<string, string>>({});
   const setFigmaLink = (key: string, value: string) => setFigmaLinks(prev => ({ ...prev, [key]: value }));
 
   const { user, noAuth } = useAuthStore();
@@ -76,6 +79,19 @@ export function ArtifactViewer() {
     setError(null);
     setVersionInfo(null);
     setFigmaLinks({});
+    setFrMap({});
+    setNfrMap({});
+
+    // Load PRD artifact in parallel (non-blocking) to populate FR/NFR tooltip maps.
+    const prdCheckpoint = checkpoints.find(c => c.stage === 'pm_prd' && c.artifact_id != null);
+    if (prdCheckpoint?.artifact_id) {
+      api.getArtifactContent(prdCheckpoint.artifact_id).then(({ content: prdContent }) => {
+        if (stale) return;
+        const { frMap: frs, nfrMap: nfrs } = buildPrdMaps(prdContent);
+        setFrMap(frs);
+        setNfrMap(nfrs);
+      }).catch(() => {});
+    }
 
     api.getArtifactContent(viewingArtifactId)
       .then(({ content: c, type: t }) => {
@@ -529,6 +545,8 @@ export function ArtifactViewer() {
                       pendingCheckpoint,
                       hasApprovePermission,
                       resolveLoading,
+                      frMap,
+                      nfrMap,
                       rerunStage,
                       onClose: () => setViewingArtifactId(null),
                       requestDelete: (pendingCheckpoint && hasApprovePermission) ? requestDelete : undefined,

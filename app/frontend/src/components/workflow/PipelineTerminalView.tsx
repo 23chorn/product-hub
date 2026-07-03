@@ -651,7 +651,8 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
           const ticketArtifact = ticketCandidates[0] ?? null;
 
           const regularArtifacts = Array.from(latestByType.values())
-            .filter(a => !TICKET_TYPES.has(a.type ?? '') && a.type !== 'backlog' && a.type !== 'qa_tests');
+            .filter(a => !TICKET_TYPES.has(a.type ?? '') && a.type !== 'backlog' && a.type !== 'qa_tests'
+              && !/^backlog_F\d+$/.test(a.type ?? '') && a.type !== 'epic_qa');
 
           const hasArtifacts = regularArtifacts.length > 0 || !!ticketArtifact || featureButtons.length > 0;
           return (

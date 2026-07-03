@@ -136,7 +136,8 @@ export async function runBacklogMerge(
 
 /**
  * Run multi-agent collaborative refinement for one feature, save it in isolation,
- * and create TWO pending checkpoints for PM + QA review.
+ * and create a single checkpoint for backlog review. QA is generated at epic level
+ * after all features are approved (see runEpicQaStage).
  * `featureIndex` is zero-based.
  */
 export async function runMultiAgentFeatureStage(
@@ -185,47 +186,10 @@ export async function runMultiAgentFeatureStage(
       `[MULTI-AGENT] Backlog validation issues for Feature ${featureIndex + 1}`,
       (n) => `Backlog quality check flagged ${n} issue(s) for Feature ${featureIndex + 1} — review before approving`);
 
-    // Save the standalone QA test suite for this feature as a separate artifact.
-    // Type 'qa_tests' lets the QA engineer stage or external tooling load it directly.
-    let qaArtifactId: number | null = null;
-    let qaTestCaseCount: number | undefined;
-    if (result.qaTests) {
-      const strippedQa = stripJsonFence(result.qaTests);
-      qaArtifactId = await saveLocalArtifact(sessionId, 'qa_tests', strippedQa, itemId);
-      logger.info(`[MULTI-AGENT] QA test suite artifact saved for Feature ${featureIndex + 1}`);
-      try { qaTestCaseCount = JSON.parse(strippedQa).test_cases?.length; } catch { /* best-effort, used for event copy only */ }
-
-      // Deterministic QA suite validation — tagged to the QA sub-stage (not the base
-      // story stage) so it shows up in the QA section of the event log.
-      emitValidationWarnings(workflowId, `${stage}_qa`,
-        JSON.parse(validateQaTestsJson({ json: strippedQa })),
-        `[MULTI-AGENT] QA test suite validation issues for Feature ${featureIndex + 1}`,
-        (n) => `QA test suite quality check flagged ${n} issue(s) for Feature ${featureIndex + 1}`);
-    }
-
-    // Create TWO checkpoints for two-stage approval. Roles come from the stage_roles
-    // table (normalized to the base "story_decomposition" / "story_decomposition_qa"
-    // stage — see normalizeStageForRoles), so they're configurable per-deployment and
-    // apply uniformly regardless of how many features this initiative has.
+    // Single checkpoint for backlog review — QA is generated at epic level after all features are approved.
     const { pauseAtCheckpoint } = await import('./workflow-router');
-
-    // Checkpoint 1: Backlog review
     await pauseAtCheckpoint(workflowId, stage, artifactId, undefined, undefined);
-    logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} backlog checkpoint created`);
-
-    // Checkpoint 2: QA test suite review
-    if (qaArtifactId) {
-      await pauseAtCheckpoint(workflowId, `${stage}_qa`, qaArtifactId, undefined, undefined);
-      logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} QA test suite checkpoint created`);
-
-      insertEvent(workflowId, 'stage_completed', `${stage}_qa`,
-        qaTestCaseCount !== undefined
-          ? `QA test suite ready for review — ${qaTestCaseCount} test case(s) for Feature ${featureIndex + 1}`
-          : `QA test suite ready for review for Feature ${featureIndex + 1}`,
-        { artifact_id: qaArtifactId });
-    }
-
-    logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} refinement complete — dual checkpoints created`);
+    logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} refinement complete — checkpoint created`);
 
     insertEvent(workflowId, 'stage_completed', stage,
       `Multi-agent collaborative refinement complete for Feature ${featureIndex + 1} — ready for human review`,
@@ -516,6 +480,284 @@ const QA_REVISION_SPEC: SurgicalRevisionSpec = {
     return JSON.parse(validateQaTestsJson({ json: jsonStr }));
   },
 };
+
+// ── Epic-level QA stage ────────────────────────────────────────────────────────
+// Runs once after backlog_merge. Reads all approved feature backlogs together
+// and has Vera produce a single unified test suite for the full epic — no
+// per-feature duplication, proper cross-feature integration coverage.
+
+function buildEpicQaPrompt(
+  mergedBacklog: string,
+  prdContent: string | null,
+  epicFeaturesContent: string | null,
+): string {
+  const contextParts: string[] = [];
+  if (prdContent) contextParts.push(`**PRD (source of functional requirements):**\n${prdContent}`);
+  if (epicFeaturesContent) contextParts.push(`**Epic & Features Plan:**\n${epicFeaturesContent}`);
+  contextParts.push(`**Merged Backlog (all approved features and stories):**\n${mergedBacklog}`);
+
+  return `${contextParts.join('\n\n---\n\n')}
+
+---
+
+**Your Task — Produce a Comprehensive Epic QA Test Suite:**
+
+All features for this epic have been approved. Using the merged backlog above, write a single unified QA test suite covering the full epic.
+
+Focus areas (in priority order):
+1. **Happy path flows** — the primary user journeys each feature enables
+2. **Cross-feature integration scenarios** — behaviour that requires two or more features working together (e.g. Feature A creates data that Feature B displays). These are the highest-risk gaps and deserve explicit coverage.
+3. **Negative/error paths** — the most important failure modes (validation errors, permission failures, boundary violations)
+4. **Edge cases** — unusual states the stories explicitly define or imply
+
+\`\`\`json
+{
+  "suite": "<Epic title> — QA Test Suite",
+  "version": "1.0",
+  "metadata": {
+    "source_stage": "epic_qa",
+    "feature_count": 0,
+    "notes": "<brief summary of coverage strategy and top risk areas>"
+  },
+  "test_cases": [
+    {
+      "id": "TC-E-001",
+      "title": "<what is being verified>",
+      "description": "<why this scenario matters>",
+      "type": "happy_path | negative | edge | boundary | security | performance",
+      "priority": "critical | high | medium | low",
+      "category": "<test category, e.g. End-to-End Flow, Cross-Feature, Error Handling>",
+      "features": ["F1", "F2"],
+      "story_ref": "F1.S3",
+      "prd_ref": ["FR-01"],
+      "scenario": {
+        "given": ["<precondition>"],
+        "when": ["<action>"],
+        "then": ["<expected outcome>"]
+      },
+      "preconditions": ["<required system state>"],
+      "test_data": {},
+      "tags": ["@smoke", "@regression"]
+    }
+  ]
+}
+\`\`\`
+
+Requirements:
+- **Scope — user-facing flows only.** Write test cases for user-facing stories (platform: web, ios, android). Backend-only stories have no dedicated test case unless there is a directly observable user outcome (e.g. a notification email). Frame all tests from the user's perspective, never as an API/contract check.
+- **No duplication.** Each scenario appears once. If two features share a user flow, write one integrated test case, not two.
+- **Conservative count — quality over quantity.** Target 1 test case per functional requirement, maximum 2 where the FR has a single critical failure mode worth calling out separately. The absolute cap is 3 test cases per FR. Do not pad.
+  - Every feature with user-facing stories must have at least one @smoke happy-path case.
+  - At least 25% of cases must be negative or edge type.
+  - Cross-feature integration scenarios should be called out with two or more entries in the \`features\` array.
+- **ID format:** TC-E-NNN (three-digit counter, E = Epic).
+- **story_ref:** a real story_id from the merged backlog (e.g. "F1.S3"), or an array for multi-story scenarios. Never invent a placeholder.
+- **features:** list the feature keys this test exercises (["F1"], ["F2", "F3"], etc.).
+- **prd_ref:** list the FR IDs from the referenced story's prd_ref.
+- **type:** exactly one of: happy_path, negative, edge, boundary, security, performance.
+- **tags:** non-empty array using only: @smoke, @regression, @negative, @edge, @security, @performance.
+- Include ONLY the JSON artifact in your response (no prose before or after).`;
+}
+
+/**
+ * Generate a single comprehensive QA test suite for the full epic, run once after
+ * backlog_merge when all feature backlogs are approved. Replaces per-feature
+ * qa_tests artifacts with one holistic suite that covers cross-feature flows.
+ */
+export async function runEpicQaStage(
+  sessionId: string,
+  workflowId: string,
+  itemId: string,
+): Promise<void> {
+  logger.info('[EPIC QA] Starting epic-level QA test suite generation');
+  const { saveLocalArtifact, loadLatestArtifactContent } = await import('./artifact-helpers');
+
+  // ── Demo mode ──────────────────────────────────────────────────────────────
+  const { isDemoWorkflow } = await import('../demo/demo-mode');
+  const db = (await import('../data/database')).default;
+  const wfRow = db.prepare<[string], { policy_overrides: string | null }>(
+    'SELECT policy_overrides FROM workflows WHERE id = ?'
+  ).get(workflowId);
+  const policyOverrides: Record<string, string> = wfRow?.policy_overrides
+    ? JSON.parse(wfRow.policy_overrides) : {};
+
+  if (isDemoWorkflow(policyOverrides)) {
+    const stub = JSON.stringify({ suite: 'Epic QA Test Suite (Demo)', version: '1.0', metadata: { source_stage: 'epic_qa', notes: 'Demo mode' }, test_cases: [] }, null, 2);
+    const demoArtifactId = await saveLocalArtifact(sessionId, 'qa_tests', stub, itemId);
+    const { pauseAtCheckpoint } = await import('./workflow-router');
+    await pauseAtCheckpoint(workflowId, 'epic_qa', demoArtifactId, undefined, undefined);
+    insertEvent(workflowId, 'stage_completed', 'epic_qa', 'Epic QA test suite ready for review (demo mode)', { artifact_id: demoArtifactId });
+    return;
+  }
+
+  // ── Load context ───────────────────────────────────────────────────────────
+  insertEvent(workflowId, 'stage_progress', 'epic_qa', 'Loading merged backlog and PRD for QA synthesis...');
+
+  const [mergedBacklogContent, prdContent, epicFeaturesContent] = await Promise.all([
+    loadLatestArtifactContent(itemId, 'backlog'),
+    loadLatestArtifactContent(itemId, 'prd'),
+    loadLatestArtifactContent(itemId, 'epic_features'),
+  ]);
+
+  if (!mergedBacklogContent) {
+    insertEvent(workflowId, 'error', 'epic_qa', 'No merged backlog found — ensure backlog_merge completed successfully');
+    logger.error('[EPIC QA] No merged backlog artifact found');
+    return;
+  }
+
+  let featureCount = 0;
+  let storyCount = 0;
+  try {
+    const backlogJson = JSON.parse(stripJsonFence(mergedBacklogContent));
+    featureCount = backlogJson.features?.length ?? 0;
+    storyCount = (backlogJson.features ?? []).reduce((n: number, f: any) => n + (f.stories?.length ?? 0), 0);
+  } catch { /* best-effort — used only for the progress event */ }
+
+  insertEvent(workflowId, 'stage_progress', 'epic_qa',
+    `Synthesising QA test suite across ${featureCount} feature(s), ${storyCount} stories...`);
+
+  // ── Synthesise ─────────────────────────────────────────────────────────────
+  const synthesisPrompt = buildEpicQaPrompt(mergedBacklogContent, prdContent, epicFeaturesContent);
+
+  const { SpecialistAgent } = await import('./specialist-agent');
+  const vera = new SpecialistAgent('qa-engineer');
+  // QA persona is registered under the 'story_decomposition' stage tag
+  const persona = await vera.loadPersona('story_decomposition');
+  const systemPrompt = await vera.buildSystemPrompt(persona, undefined, undefined, true, 'story_decomposition');
+  const maxTokens = STAGE_MAX_OUTPUT_TOKENS['epic_qa'] ?? 28_000;
+
+  const rawOutput = await collectStreamWithHeartbeat(
+    vera.streamResponse(systemPrompt, [{ role: 'user', content: synthesisPrompt }], resolveAgentModel('qa-engineer'), undefined, maxTokens),
+    (elapsedSec, chars) => insertEvent(workflowId, 'stage_progress', 'epic_qa',
+      progressHeartbeatLine('Synthesising epic QA test suite', elapsedSec, chars)),
+  );
+
+  if (isCancelRequested(workflowId)) {
+    logger.info('[EPIC QA] Result discarded — workflow was cancelled mid-flight');
+    return;
+  }
+
+  const stripped = stripJsonFence(rawOutput.trim());
+  const artifactId = await saveLocalArtifact(sessionId, 'qa_tests', stripped, itemId);
+
+  emitValidationWarnings(workflowId, 'epic_qa',
+    JSON.parse(validateQaTestsJson({ json: stripped })),
+    '[EPIC QA] QA test suite validation issues',
+    (n) => `Epic QA suite quality check flagged ${n} issue(s) — review before approving`);
+
+  const { pauseAtCheckpoint } = await import('./workflow-router');
+  await pauseAtCheckpoint(workflowId, 'epic_qa', artifactId, undefined, undefined);
+
+  let testCaseCount: number | undefined;
+  try { testCaseCount = JSON.parse(stripped).test_cases?.length; } catch { /* best-effort */ }
+
+  insertEvent(workflowId, 'stage_completed', 'epic_qa',
+    testCaseCount !== undefined
+      ? `Epic QA test suite ready — ${testCaseCount} test case(s) across ${featureCount} features`
+      : `Epic QA test suite ready for review`,
+    { artifact_id: artifactId });
+
+  logger.info(`[EPIC QA] Generated ${testCaseCount ?? '?'} test cases across ${featureCount} features`);
+}
+
+/**
+ * Targeted revision of the epic-level QA test suite after a human reviewer
+ * requests changes. Vera applies only the flagged edits; all other test cases
+ * are copied as-is.
+ */
+export async function runEpicQaRevision(
+  sessionId: string,
+  workflowId: string,
+  itemId: string,
+  priorDraft: string,
+  brief: string,
+): Promise<void> {
+  logger.info('[EPIC QA] Starting targeted revision of epic QA test suite');
+  const { saveLocalArtifact, loadLatestArtifactContent } = await import('./artifact-helpers');
+
+  const [mergedBacklogContent, prdContent] = await Promise.all([
+    loadLatestArtifactContent(itemId, 'backlog'),
+    loadLatestArtifactContent(itemId, 'prd'),
+  ]);
+
+  const contextParts: string[] = [];
+  if (prdContent) contextParts.push(`**Current PRD (source of truth):**\n${prdContent}`);
+  if (mergedBacklogContent) contextParts.push(`**Current Merged Backlog (stories to test):**\n${mergedBacklogContent}`);
+  const itemContext = contextParts.length > 0 ? contextParts.join('\n\n---\n\n') : undefined;
+
+  const directive =
+    'You are performing a SURGICAL EDIT of the Epic QA test suite above. Apply ONLY the targeted changes described in the revision brief at the top of this conversation.\n\n' +
+    'Rules — apply strictly:\n' +
+    '- Modify ONLY the test cases (TC-E-*) explicitly mentioned in the feedback.\n' +
+    '- Copy all other test cases EXACTLY as-is.\n' +
+    '- Do NOT add new test cases unless the feedback explicitly requests it.\n' +
+    '- Do NOT restructure, reorder, or rewrite any field not mentioned in the feedback.\n' +
+    '- Preserve the exact JSON schema for every test case.\n' +
+    '- Drop any test case whose story_ref no longer exists in the current merged backlog.\n' +
+    '- Return the complete epic QA test suite JSON — only the flagged test cases will differ.';
+
+  const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [
+    { role: 'user', content: brief },
+    { role: 'assistant', content: '```json\n' + priorDraft + '\n```' },
+    { role: 'user', content: directive },
+  ];
+
+  const { SpecialistAgent } = await import('./specialist-agent');
+  const vera = new SpecialistAgent('qa-engineer');
+  const persona = await vera.loadPersona('story_decomposition');
+  const systemPrompt = await vera.buildSystemPrompt(persona, undefined, itemContext, true, 'story_decomposition');
+  const maxTokens = STAGE_MAX_OUTPUT_TOKENS['epic_qa'] ?? 28_000;
+
+  const rawOutput = await collectStreamWithHeartbeat(
+    vera.streamResponse(systemPrompt, messages, resolveAgentModel('qa-engineer'), undefined, maxTokens),
+    (elapsedSec, chars) => insertEvent(workflowId, 'stage_progress', 'epic_qa',
+      progressHeartbeatLine('Revising epic QA test suite', elapsedSec, chars)),
+  );
+
+  if (isCancelRequested(workflowId)) {
+    logger.info('[EPIC QA] Revision result discarded — workflow was cancelled mid-flight');
+    return;
+  }
+
+  const stripped = stripJsonFence(rawOutput.trim());
+  const artifactId = await saveLocalArtifact(sessionId, 'qa_tests', stripped, itemId);
+
+  emitValidationWarnings(workflowId, 'epic_qa',
+    JSON.parse(validateQaTestsJson({ json: stripped })),
+    '[EPIC QA] QA revision validation issues',
+    (n) => `Epic QA suite revision flagged ${n} issue(s)`);
+
+  // Diff + summary so the reviewer can see exactly what changed
+  let revisionSummary: string | undefined;
+  try {
+    const { computeRevisionDiff } = await import('../utils/revision-diff');
+    const { saveDiffArtifact } = await import('./artifact-helpers');
+    const { summarizeRevisionDiff } = await import('./revision-diff-summary');
+    const diffText = computeRevisionDiff(priorDraft, stripped, 'Epic QA Tests');
+    const diffArtifactId = await saveDiffArtifact(itemId, 'qa_tests', diffText, sessionId);
+    if (diffArtifactId) logger.info(`[EPIC QA] Revision diff saved (id: ${diffArtifactId})`);
+    revisionSummary = await summarizeRevisionDiff({ stageLabel: 'Epic QA Tests', requestContext: brief, diffText }) || undefined;
+  } catch (err: any) {
+    logger.warn(`[EPIC QA] Failed to save revision diff/summary: ${err.message}`);
+  }
+
+  const { pauseAtCheckpoint } = await import('./workflow-router');
+  pauseAtCheckpoint(workflowId, 'epic_qa', artifactId, sessionId, {
+    revision_mode: true,
+    ...(revisionSummary ? { revision_summary: revisionSummary } : {}),
+  });
+
+  let testCaseCount: number | undefined;
+  try { testCaseCount = JSON.parse(stripped).test_cases?.length; } catch { /* best-effort */ }
+
+  insertEvent(workflowId, 'stage_completed', 'epic_qa',
+    testCaseCount !== undefined
+      ? `Epic QA test suite revised — ${testCaseCount} test case(s) ready for review`
+      : 'Epic QA test suite revised — ready for review',
+    { artifact_id: artifactId });
+
+  logger.info(`[EPIC QA] Revision complete — ${testCaseCount ?? '?'} test cases`);
+}
 
 /**
  * Targeted single-agent revision for story_decomposition_F* stages.

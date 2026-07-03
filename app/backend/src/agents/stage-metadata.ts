@@ -10,6 +10,7 @@ export const STAGE_SESSION_MAP: Record<string, { mode: AppMode; agentType: Agent
   prototype:            { mode: 'prototype',         agentType: 'prototype-builder' },
   figma_design:         { mode: 'figma_design',      agentType: 'figma-designer' },
   api_spec:             { mode: 'architecture',      agentType: 'api-spec-designer' },
+  epic_qa:              { mode: 'qa',               agentType: 'qa-engineer' },
 };
 
 // Per-stage output token ceiling. Backlog gets more headroom because the JSON
@@ -23,6 +24,7 @@ export const STAGE_MAX_OUTPUT_TOKENS: Record<string, number> = {
   solution_architect:   20_000,  // data model, API surface, infra, repo impact, new dependencies, open questions
   story_decomposition:  24_000,  // single feature backlog — up to the validator's 12-story limit with full prd_ref/technical detail; 16k was observed hitting the ceiling on a dense feature
   qa_engineer:          14_000,  // 10-15 test cases per feature with full test detail
+  epic_qa:              28_000,  // cross-epic suite: all features × TC-E-NNN cases; more context than per-feature
   prototype:            64_000,
   figma_design:         16_000,
   api_spec:             12_000,  // 10-20 endpoints with schemas; full OpenAPI 3.0 JSON
@@ -51,6 +53,7 @@ export const STAGE_ARTIFACT_LABEL: Record<string, string> = {
   figma_design: 'Figma Mockups',
   story_decomposition: 'Stories',
   backlog_merge: 'Backlog',
+  epic_qa: 'Epic QA Tests',
   qa_engineer: 'QA Tests',
   curator: 'Context Update',
   tech_refinement: 'Tech Refinement',
@@ -276,6 +279,7 @@ const STAGE_STARTED_NARRATION: Record<string, string> = {
   prototype:            'Nova is generating the prototype wireframe and file map from the workflow artifacts.',
   figma_design:         'Bora is generating the Figma mockup plan from the workflow artifacts.',
   api_spec:             'Kira is writing the API Contract from the approved architecture data model and PRD functional requirements.',
+  epic_qa:              'Vera is synthesising the epic-level QA test suite across all approved features.',
 };
 
 export function stageStartedNarration(stage: string): string {

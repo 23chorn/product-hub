@@ -1,5 +1,5 @@
 import type { RefObject } from 'react';
-import { STATUS_FILTERS, type StatusFilter } from './types';
+import { STATUS_FILTERS, PRIMARY_FILTER_KEYS, type StatusFilter } from './types';
 
 interface HomeHeaderProps {
   searchQuery: string;
@@ -10,6 +10,7 @@ interface HomeHeaderProps {
   statusCounts: Record<StatusFilter, number>;
   myPendingCount: number;
   showMineFilter: boolean;
+  showAssignedFilter: boolean;
   isAdmin: boolean;
   productAreas: string[];
   productAreaFilter: string;
@@ -31,6 +32,7 @@ export function HomeHeader({
   statusCounts,
   myPendingCount,
   showMineFilter,
+  showAssignedFilter,
   isAdmin,
   productAreas,
   productAreaFilter,
@@ -40,6 +42,16 @@ export function HomeHeader({
   onThemeFilterChange,
   onCreateInitiative,
 }: HomeHeaderProps) {
+  const primaryFilters = STATUS_FILTERS.filter(f => {
+    if (!PRIMARY_FILTER_KEYS.includes(f.key)) return false;
+    if (f.key === 'mine' && !showMineFilter) return false;
+    if (f.key === 'assigned' && !showAssignedFilter) return false;
+    if (f.adminOnly && !isAdmin) return false;
+    return true;
+  });
+
+  const isSecondaryActive = !PRIMARY_FILTER_KEYS.includes(statusFilter);
+
   return (
     <div className="flex items-center gap-3 flex-nowrap">
 
@@ -81,11 +93,12 @@ export function HomeHeader({
       </div>
 
       <div className="flex items-center gap-1 flex-nowrap flex-shrink-0">
-        {/* Quick access chips for primary filters */}
-        {STATUS_FILTERS.filter(f => ['all', 'mine', 'active'].includes(f.key) && (f.key !== 'mine' || showMineFilter)).map(f => {
+        {/* Primary filter chips */}
+        {primaryFilters.map(f => {
           const count = statusCounts[f.key];
           const isActive = statusFilter === f.key;
           const isMine = f.key === 'mine';
+          const isAssigned = f.key === 'assigned';
           return (
             <button
               key={f.key}
@@ -94,14 +107,18 @@ export function HomeHeader({
                 isActive
                   ? isMine
                     ? 'bg-sky-100 dark:bg-sky-900/40 border-sky-300 dark:border-sky-600 text-sky-800 dark:text-sky-200 font-medium'
+                    : isAssigned
+                    ? 'bg-violet-100 dark:bg-violet-900/40 border-violet-300 dark:border-violet-600 text-violet-800 dark:text-violet-200 font-medium'
                     : 'bg-brand-50 dark:bg-brand-900/40 border-brand-300 dark:border-brand-600 text-brand-800 dark:text-brand-200 font-medium'
                   : isMine && myPendingCount > 0
                     ? 'bg-sky-50 dark:bg-sky-900/20 border-sky-200 dark:border-sky-700 text-sky-600 dark:text-sky-400 hover:border-sky-300'
+                    : isAssigned && count > 0
+                    ? 'bg-violet-50 dark:bg-violet-900/20 border-violet-200 dark:border-violet-700 text-violet-600 dark:text-violet-400 hover:border-violet-300'
                     : 'bg-white dark:bg-surface-800 border-surface-200 dark:border-surface-600 text-surface-500 dark:text-surface-400 hover:border-surface-300 dark:hover:border-surface-500'
               }`}
             >
               {f.label}
-              {count > 0 && f.key !== 'all' && (
+              {(count > 0 && f.key !== 'all') && (
                 <span className={`ml-1 ${isActive ? 'opacity-80' : 'opacity-60'}`}>
                   {count}
                 </span>
@@ -115,29 +132,27 @@ export function HomeHeader({
           );
         })}
 
-        {/* Dropdown for secondary filters */}
+        {/* Dropdown for secondary filters — always shows "More filters" when a primary filter is active */}
         <select
-          value={statusFilter}
+          value={isSecondaryActive ? statusFilter : '_more'}
           onChange={e => onStatusFilterChange(e.target.value as StatusFilter)}
           className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 ${
-            ['review', 'done', 'stopped', 'new', 'archived'].includes(statusFilter)
+            isSecondaryActive
               ? statusFilter === 'review'
                 ? 'bg-amber-100 dark:bg-amber-900/40 border-amber-300 dark:border-amber-600 text-amber-800 dark:text-amber-200 font-medium'
                 : 'bg-brand-50 dark:bg-brand-900/40 border-brand-300 dark:border-brand-600 text-brand-800 dark:text-brand-200 font-medium'
               : 'bg-white dark:bg-surface-800 border-surface-200 dark:border-surface-600 text-surface-500 dark:text-surface-400'
           }`}
         >
-          <option value="all" disabled hidden>More filters</option>
-          {STATUS_FILTERS.filter(f => ['review', 'done', 'stopped', 'new'].includes(f.key)).map(f => (
-            <option key={f.key} value={f.key}>
-              {f.label} {statusCounts[f.key] > 0 ? `(${statusCounts[f.key]})` : ''}
-            </option>
-          ))}
-          {isAdmin && STATUS_FILTERS.filter(f => f.adminOnly).map(f => (
-            <option key={f.key} value={f.key}>
-              {f.label} {statusCounts[f.key] > 0 ? `(${statusCounts[f.key]})` : ''}
-            </option>
-          ))}
+          <option value="_more" disabled hidden>More filters</option>
+          {STATUS_FILTERS
+            .filter(f => !PRIMARY_FILTER_KEYS.includes(f.key))
+            .filter(f => !f.adminOnly || isAdmin)
+            .map(f => (
+              <option key={f.key} value={f.key}>
+                {f.label} {statusCounts[f.key] > 0 ? `(${statusCounts[f.key]})` : ''}
+              </option>
+            ))}
         </select>
       </div>
 

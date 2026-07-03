@@ -7,6 +7,7 @@ import { QATestsView } from './QATestsView';
 import { tryParseEpicFeatures, type EpicFeaturesData } from './EpicFeaturesView';
 import { ArtifactTabShell } from './ArtifactPrimitives';
 import { copyToClipboard } from '../../utils/markdown';
+import { buildPrdMaps } from '../../utils/artifact-to-markdown';
 
 interface StoriesTestsProps {
   featureButtons: FeatureArtifactRef[];
@@ -16,6 +17,8 @@ interface StoriesTestsProps {
   // stage's own backlog artifacts don't repeat. Optional: the Stories tab still renders
   // (as a single epic) without it, just without that extra planning detail.
   epicFeaturesArtifactId?: number | null;
+  /** PRD artifact id — used to load FR/NFR text for hover tooltips on prdRef badges. */
+  prdArtifactId?: number | null;
 }
 
 interface Props extends StoriesTestsProps {
@@ -40,11 +43,13 @@ export function mergeBacklogs(parsed: Array<{ num: number; data: BacklogData }>)
  * artifact viewer's read of the final backlog_merge artifact (the same merge, rendered the
  * same way wherever it's viewed).
  */
-export function BacklogStoriesTests({ featureButtons, initiativeTitle, epicFeaturesArtifactId }: StoriesTestsProps) {
+export function BacklogStoriesTests({ featureButtons, initiativeTitle, epicFeaturesArtifactId, prdArtifactId }: StoriesTestsProps) {
   const [tab, setTab] = useState<'stories' | 'tests'>('stories');
   const [backlog, setBacklog] = useState<BacklogData | null>(null);
   const [qa, setQa] = useState<QATestSuite | null>(null);
   const [epicFeatures, setEpicFeatures] = useState<EpicFeaturesData | null>(null);
+  const [frMap, setFrMap] = useState<Record<string, string>>({});
+  const [nfrMap, setNfrMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
   // Stable keys so the fetch only re-runs when the actual set of artifact ids changes,
@@ -73,17 +78,25 @@ export function BacklogStoriesTests({ featureButtons, initiativeTitle, epicFeatu
       epicFeaturesArtifactId
         ? api.getArtifactContent(epicFeaturesArtifactId).then(({ content }) => tryParseEpicFeatures(content)).catch(() => null)
         : Promise.resolve(null),
-    ]).then(([ticketResults, qaResults, epicFeaturesResult]) => {
+      prdArtifactId
+        ? api.getArtifactContent(prdArtifactId).then(({ content }) => content).catch(() => null)
+        : Promise.resolve(null),
+    ]).then(([ticketResults, qaResults, epicFeaturesResult, prdContent]) => {
       if (stale) return;
       const validTickets = ticketResults.filter((r): r is { num: number; data: BacklogData } => !!r?.data);
       const validQa = qaResults.filter((r): r is { num: number; data: QATestSuite } => !!r?.data);
       setBacklog(mergeBacklogs(validTickets));
       setQa(mergeQaTests(validQa));
       setEpicFeatures(epicFeaturesResult);
+      if (prdContent) {
+        const { frMap: frs, nfrMap: nfrs } = buildPrdMaps(prdContent);
+        setFrMap(frs);
+        setNfrMap(nfrs);
+      }
     }).finally(() => { if (!stale) setLoading(false); });
 
     return () => { stale = true; };
-  }, [ticketKey, qaKey, epicFeaturesArtifactId]);
+  }, [ticketKey, qaKey, epicFeaturesArtifactId, prdArtifactId]);
 
   const totalStories = backlog?.features?.reduce((sum, f) => sum + (f.stories?.length ?? 0), 0) ?? 0;
   const totalTests = qa?.test_cases.length ?? 0;
@@ -99,7 +112,7 @@ export function BacklogStoriesTests({ featureButtons, initiativeTitle, epicFeatu
         <p className="text-sm text-surface-400 animate-pulse">Loading...</p>
       ) : tab === 'stories' ? (
         backlog && (backlog.features?.length ?? 0) > 0 ? (
-          <BacklogView data={backlog} initiativeTitle={initiativeTitle} epicFeatures={epicFeatures} />
+          <BacklogView data={backlog} initiativeTitle={initiativeTitle} epicFeatures={epicFeatures} frMap={frMap} nfrMap={nfrMap} />
         ) : (
           <p className="text-sm text-surface-400 italic">No features approved yet.</p>
         )

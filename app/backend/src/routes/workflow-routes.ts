@@ -310,8 +310,8 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
         }
       }
 
-      // ── qa_engineer: push test plan to ADO Test Plans ─────────────────────────
-      if (cpDetail && (cpDetail.stage === 'qa_engineer' || /^qa_engineer_F\d+$/.test(cpDetail.stage))) {
+      // ── qa_engineer / epic_qa: push test plan to ADO Test Plans ─────────────
+      if (cpDetail && (cpDetail.stage === 'qa_engineer' || cpDetail.stage === 'epic_qa' || /^qa_engineer_F\d+$/.test(cpDetail.stage))) {
         try {
           const { pushTestPlanToAdo } = await import('../agents/ado-stage-push');
           const testPlanUrl = await pushTestPlanToAdo(workflowId, itemId);
@@ -327,19 +327,15 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
         }
       }
 
-      // ── story_decomposition_F*: push stories + test cases to ADO ──────────────
-      // Gated on ownGroupComplete (this feature's own pair, NOT the whole wave): this stage
-      // has two sibling checkpoints (PM stories + QA tests). pushFeatureToADO() pulls test
-      // cases from the QA checkpoint's approved artifact, so it must only run once *both* are
-      // approved — otherwise whichever checkpoint is approved first pushes stories with no
-      // test cases, and the later approval is a no-op because stories already exist, silently
-      // dropping the test cases from ADO. A sibling feature running concurrently in the same
-      // wave has no bearing on THIS feature's own ADO push. Strip the `_qa` suffix so this
-      // resolves the feature index whichever of the pair triggered it.
-      if (cpDetail && cpDetail.stage.startsWith('story_decomposition_F') && ownGroupComplete) {
+      // ── story_decomposition_F*: push stories to ADO ───────────────────────────
+      // Each feature now has exactly ONE checkpoint (stories only). QA is generated at
+      // epic level after all features are approved (epic_qa stage). ownGroupComplete is
+      // true immediately when this single checkpoint is approved since there's no
+      // sibling _qa checkpoint. A concurrent sibling feature in the same wave has no
+      // bearing on THIS feature's push.
+      if (cpDetail && /^story_decomposition_F\d+$/.test(cpDetail.stage) && ownGroupComplete) {
         const { parseFeatureStage, pushFeatureToADO } = await import('../agents/feature-decomposition');
-        const baseStage = cpDetail.stage.replace(/_qa$/, '');
-        const featureIndex = parseFeatureStage(baseStage);
+        const featureIndex = parseFeatureStage(cpDetail.stage);
 
         if (featureIndex !== null) {
           try {
@@ -349,32 +345,13 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
               const { getAzureDevOpsClient } = await import('../integrations/azure-devops');
               const client = getAzureDevOpsClient();
               const featureUrl = `https://dev.azure.com/${client['organization']}/${client['project']}/_workitems/edit/${result.featureId}`;
-              const testPlanUrl = result.testPlanUrl ?? null;
-
-              // This pair has two sibling checkpoints with two separate artifacts (stories
-              // + QA tests) — stamp each with its own link and emit one event per stage so
-              // "Refinement — F<n>" only ever shows the feature link and "QA Tests — F<n>"
-              // only ever shows the test plan link. A single combined event tagged with
-              // whichever sibling happened to be approved last (the old behavior) put both
-              // links on one stage, leaving the other section link-less.
-              const siblings = db.prepare<[string, string, string], { stage: string; artifact_id: number | null }>(
-                `SELECT stage, artifact_id FROM checkpoints WHERE workflow_id = ? AND stage IN (?, ?)`
-              ).all(workflowId, baseStage, `${baseStage}_qa`);
-              for (const sibling of siblings) {
-                const url = sibling.stage.endsWith('_qa') ? testPlanUrl : featureUrl;
-                if (sibling.artifact_id && url) {
-                  db.prepare('UPDATE artifacts SET external_url = ? WHERE id = ?').run(url, sibling.artifact_id);
-                }
+              if (result.featureId) {
+                db.prepare('UPDATE artifacts SET external_url = ? WHERE id = (SELECT artifact_id FROM checkpoints WHERE workflow_id = ? AND stage = ? ORDER BY created_at DESC LIMIT 1)')
+                  .run(featureUrl, workflowId, cpDetail.stage);
               }
-
-              insertEvent(workflowId, 'ado_pushed', baseStage,
+              insertEvent(workflowId, 'ado_pushed', cpDetail.stage,
                 `Feature ${featureIndex + 1} stories pushed to Azure DevOps`,
                 { feature_url: featureUrl });
-              if (testPlanUrl) {
-                insertEvent(workflowId, 'ado_pushed', `${baseStage}_qa`,
-                  `Feature ${featureIndex + 1} test cases pushed to Azure DevOps`,
-                  { test_plan_url: testPlanUrl });
-              }
               logger.info(`[CHECKPOINT] Feature ${featureIndex + 1} approved → pushed to ADO: epic #${result.epicId}, feature #${result.featureId}, ${result.storyIds.length} stories`);
             }
           } catch (err: any) {

@@ -180,7 +180,7 @@ export function PrdRefTags({ prdRef, frMap, nfrMap }: {
   );
 }
 
-function FeatureCard({ feature, idx, phaseIndex, onDeleteFeature }: { feature: EpicFeature; idx: number; phaseIndex: number; onDeleteFeature?: (phaseIndex: number, featureIndex: number) => void }) {
+function FeatureCard({ feature, idx, phaseIndex, frMap, nfrMap, onDeleteFeature }: { feature: EpicFeature; idx: number; phaseIndex: number; frMap?: Record<string, string>; nfrMap?: Record<string, string>; onDeleteFeature?: (phaseIndex: number, featureIndex: number) => void }) {
   const [expanded, setExpanded] = useState(false);
   const hasDetail = (feature.acceptanceCriteria?.length ?? 0) > 0 || !!feature.rationale || !!feature.prdRef;
 
@@ -248,7 +248,7 @@ function FeatureCard({ feature, idx, phaseIndex, onDeleteFeature }: { feature: E
               </ul>
             </div>
           )}
-          {feature.prdRef && <PrdRefTags prdRef={feature.prdRef} />}
+          {feature.prdRef && <PrdRefTags prdRef={feature.prdRef} frMap={frMap} nfrMap={nfrMap} />}
         </div>
       )}
     </div>
@@ -265,11 +265,13 @@ export const PHASE_COLORS: Record<string, string> = {
 interface PhaseSectionProps {
   phase: EpicPhase;
   phaseIndex: number;
+  frMap?: Record<string, string>;
+  nfrMap?: Record<string, string>;
   onDeletePhase?: (phaseIndex: number) => void;
   onDeleteFeature?: (phaseIndex: number, featureIndex: number) => void;
 }
 
-function PhaseSection({ phase, phaseIndex, onDeletePhase, onDeleteFeature }: PhaseSectionProps) {
+function PhaseSection({ phase, phaseIndex, frMap, nfrMap, onDeletePhase, onDeleteFeature }: PhaseSectionProps) {
   const [expanded, setExpanded] = useState(true);
   const colorClass = PHASE_COLORS[phase.label] ?? 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300';
   const epicTitle = phase.epicTitle?.replace(/^(MVP|Phase \d+)\s*[—–-]\s*/i, '');
@@ -307,7 +309,7 @@ function PhaseSection({ phase, phaseIndex, onDeletePhase, onDeleteFeature }: Pha
       {expanded && (
         <div className="border-t border-surface-200 dark:border-surface-700 p-4 space-y-2">
           {phase.features.map((f, i) => (
-            <FeatureCard key={i} feature={f} idx={i} phaseIndex={phaseIndex} onDeleteFeature={onDeleteFeature} />
+            <FeatureCard key={i} feature={f} idx={i} phaseIndex={phaseIndex} frMap={frMap} nfrMap={nfrMap} onDeleteFeature={onDeleteFeature} />
           ))}
         </div>
       )}
@@ -320,11 +322,13 @@ function PhaseSection({ phase, phaseIndex, onDeletePhase, onDeleteFeature }: Pha
 interface EpicFeaturesViewProps {
   data: EpicFeaturesData;
   initiativeTitle?: string;
+  frMap?: Record<string, string>;
+  nfrMap?: Record<string, string>;
   onDeletePhase?: (phaseIndex: number) => void;
   onDeleteFeature?: (phaseIndex: number, featureIndex: number) => void;
 }
 
-export function EpicFeaturesView({ data, initiativeTitle, onDeletePhase, onDeleteFeature }: EpicFeaturesViewProps) {
+export function EpicFeaturesView({ data, initiativeTitle, frMap, nfrMap, onDeletePhase, onDeleteFeature }: EpicFeaturesViewProps) {
   const phases = toPhases(data);
   const totalFeatures = phases.reduce((sum, p) => sum + p.features.length, 0);
   // Legacy flat features[] data has no real phases[] array to splice from — the removal
@@ -357,6 +361,8 @@ export function EpicFeaturesView({ data, initiativeTitle, onDeletePhase, onDelet
           key={i}
           phase={phase}
           phaseIndex={i}
+          frMap={frMap}
+          nfrMap={nfrMap}
           onDeletePhase={supportsDelete ? onDeletePhase : undefined}
           onDeleteFeature={supportsDelete ? onDeleteFeature : undefined}
         />

@@ -19,7 +19,7 @@ import type {
 import { bucketWorkItemState, workItemStatePercent, parseStoryRefs } from '../integrations/azure-devops-format';
 import { refreshItemAdoState } from '../integrations/ado-state-sync';
 import { getAzureDevOpsClient } from '../integrations/azure-devops';
-import { loadArtifactContentById } from '../agents/artifact-helpers';
+import { loadArtifactContentById, loadLatestArtifactContent, saveLocalArtifact } from '../agents/artifact-helpers';
 import {
   getWorkItemRowsByItem, getTestPlanRowsByItem, getDocumentArtifactIds,
   type AdoWorkItemRow, type QaTestPlanRow,
@@ -502,6 +502,107 @@ router.delete('/:itemId/work-items/:adoId', async (req: Request, res: Response) 
   } catch (error: any) {
     logger.error('Failed to delete work item', error);
     res.status(500).json({ error: error.message || 'Failed to delete work item' });
+  }
+});
+
+// ── Test case management ──────────────────────────────────────────────────────
+// Add/delete individual test cases from the latest qa_tests artifact. The artifact
+// is modified in-place (saved as a new artifact row); no ADO Test Plan call is made.
+
+/** Next numeric suffix to use when minting a new TC-M-NNN id. */
+function nextManualTcId(testCases: Array<{ id?: string }>): string {
+  let max = 0;
+  for (const tc of testCases) {
+    const m = tc.id?.match(/(\d+)$/);
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  return `TC-M-${String(max + 1).padStart(3, '0')}`;
+}
+
+/** Find the most recent session for an item (used as the parent for manually-saved artifacts). */
+function latestSessionForItem(itemId: string): string | null {
+  const row = db.prepare<[string], { id: string }>(
+    `SELECT id FROM sessions WHERE item_id = ? ORDER BY created_at DESC LIMIT 1`
+  ).get(itemId);
+  return row?.id ?? null;
+}
+
+/**
+ * POST /api/completed-initiatives/:itemId/test-cases
+ * Add a manually authored test case to the latest qa_tests artifact.
+ * Body: { title, type, priority, description? }
+ * Returns: CompletedInitiativeDetail
+ */
+router.post('/:itemId/test-cases', async (req: Request, res: Response) => {
+  try {
+    const archived = req.query.archived === 'true';
+    const item = getCompletedItemOrUndefined(req.params.itemId, archived);
+    if (!item) return res.status(404).json({ error: 'Completed initiative not found' });
+
+    const { title, type, priority, description } = req.body;
+    if (!title?.trim()) return res.status(400).json({ error: 'title is required' });
+    if (!type?.trim()) return res.status(400).json({ error: 'type is required' });
+    if (!priority?.trim()) return res.status(400).json({ error: 'priority is required' });
+
+    const content = await loadLatestArtifactContent(item.id, 'qa_tests');
+    const stripped = content?.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim() ?? null;
+    let suite: any = stripped ? JSON.parse(stripped) : { suite: 'QA Test Suite', version: '1.0', test_cases: [] };
+    if (!Array.isArray(suite.test_cases)) suite.test_cases = suite.testCases ?? [];
+
+    const newCase: Record<string, unknown> = {
+      id: nextManualTcId(suite.test_cases),
+      title: title.trim(),
+      type: type.trim(),
+      priority: priority.trim(),
+      tags: ['@regression'],
+    };
+    if (description?.trim()) newCase.description = description.trim();
+    suite.test_cases = [...suite.test_cases, newCase];
+
+    const sessionId = latestSessionForItem(item.id);
+    if (!sessionId) return res.status(500).json({ error: 'No session found for this initiative — run the pipeline first' });
+
+    await saveLocalArtifact(sessionId, 'qa_tests', JSON.stringify(suite, null, 2), item.id);
+    logger.info(`Added manual test case ${newCase.id} to qa_tests for initiative ${item.id}`);
+    res.json(buildDetail(item));
+  } catch (error: any) {
+    logger.error('Failed to add test case', error);
+    res.status(500).json({ error: error.message || 'Failed to add test case' });
+  }
+});
+
+/**
+ * DELETE /api/completed-initiatives/:itemId/test-cases/:tcId
+ * Remove a test case by id from the latest qa_tests artifact.
+ * Returns: CompletedInitiativeDetail
+ */
+router.delete('/:itemId/test-cases/:tcId', async (req: Request, res: Response) => {
+  try {
+    const archived = req.query.archived === 'true';
+    const item = getCompletedItemOrUndefined(req.params.itemId, archived);
+    if (!item) return res.status(404).json({ error: 'Completed initiative not found' });
+
+    const tcId = req.params.tcId;
+    const content = await loadLatestArtifactContent(item.id, 'qa_tests');
+    if (!content) return res.status(404).json({ error: 'No qa_tests artifact found for this initiative' });
+
+    const stripped = content.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+    const suite = JSON.parse(stripped);
+    const cases: any[] = suite.test_cases ?? suite.testCases ?? [];
+    const before = cases.length;
+    suite.test_cases = cases.filter((tc: any) => tc.id !== tcId);
+    if (suite.testCases) delete suite.testCases;
+    if (suite.test_cases.length === before) return res.status(404).json({ error: `Test case ${tcId} not found` });
+
+    const sessionId = latestSessionForItem(item.id);
+    if (!sessionId) return res.status(500).json({ error: 'No session found for this initiative' });
+
+    await saveLocalArtifact(sessionId, 'qa_tests', JSON.stringify(suite, null, 2), item.id);
+    logger.info(`Deleted test case ${tcId} from qa_tests for initiative ${item.id}`);
+    res.json(buildDetail(item));
+  } catch (error: any) {
+    logger.error('Failed to delete test case', error);
+    res.status(500).json({ error: error.message || 'Failed to delete test case' });
   }
 });
 

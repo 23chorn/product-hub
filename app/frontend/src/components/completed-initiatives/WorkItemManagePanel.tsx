@@ -1,5 +1,5 @@
 import { useState, useRef, useImperativeHandle, forwardRef } from 'react';
-import type { CompletedInitiativeDetail, CompletedInitiativeWorkItemRow } from '@pap/shared';
+import type { CompletedInitiativeDetail, CompletedInitiativeWorkItemRow, TestCase } from '@pap/shared';
 import { api } from '../../services/api';
 import { WORK_ITEM_STATE_BUCKET_COLORS, WORK_ITEM_STATE_BUCKET_LABELS } from '../../utils/work-item-state-bucket';
 
@@ -8,6 +8,7 @@ interface Props {
   itemId: string;
   archived: boolean;
   onUpdate: (updated: CompletedInitiativeDetail) => void;
+  testCases?: TestCase[] | null;
 }
 
 const TYPE_LABEL: Record<string, string> = { epic: 'Epic', feature: 'Feature', story: 'Story' };
@@ -445,46 +446,375 @@ function EpicSection({
   );
 }
 
-export function WorkItemManagePanel({ items, itemId, archived, onUpdate }: Props) {
-  const { epicGroups, orphanFeatureGroups, orphanStories } = buildEpicGroups(items);
+const TC_TYPES = ['happy_path', 'negative', 'edge', 'boundary', 'security', 'performance'] as const;
+const TC_PRIORITIES = ['critical', 'high', 'medium', 'low'] as const;
 
-  if (items.length === 0) {
-    return <p className="text-sm text-surface-400 italic">No work items tracked for this initiative.</p>;
+const TC_TYPE_COLOR: Record<string, string> = {
+  happy_path:  'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',
+  negative:    'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400',
+  edge:        'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400',
+  boundary:    'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400',
+  security:    'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400',
+  performance: 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400',
+};
+const TC_PRIORITY_COLOR: Record<string, string> = {
+  critical: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400',
+  high:     'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400',
+  medium:   'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400',
+  low:      'bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400',
+};
+
+interface TcGroup {
+  key: string;
+  label: string;
+  cases: TestCase[];
+}
+
+function buildTcGroups(cases: TestCase[]): TcGroup[] {
+  const epicCases: TestCase[] = [];
+  const featureMap = new Map<string, TestCase[]>();
+  const ungrouped: TestCase[] = [];
+
+  for (const tc of cases) {
+    if (!tc.id || tc.id.startsWith('TC-E-') || tc.id.startsWith('TC-M-')) {
+      epicCases.push(tc);
+      continue;
+    }
+    let fk: string | null = null;
+    if (tc.story_ref && typeof tc.story_ref === 'string') {
+      const m = tc.story_ref.match(/^(F\d+)/i);
+      if (m) fk = m[1].toUpperCase();
+    }
+    if (!fk && (tc as any).features?.length) {
+      const m = String((tc as any).features[0]).match(/^(F\d+)/i);
+      if (m) fk = m[1].toUpperCase();
+    }
+    if (fk) {
+      if (!featureMap.has(fk)) featureMap.set(fk, []);
+      featureMap.get(fk)!.push(tc);
+    } else {
+      ungrouped.push(tc);
+    }
   }
 
+  const groups: TcGroup[] = [];
+  if (epicCases.length > 0) {
+    groups.push({ key: '__epic__', label: 'Epic QA Tests', cases: epicCases });
+  }
+  const sortedKeys = [...featureMap.keys()].sort((a, b) => {
+    const numA = parseInt(a.replace(/\D/g, ''), 10) || 0;
+    const numB = parseInt(b.replace(/\D/g, ''), 10) || 0;
+    return numA - numB;
+  });
+  for (const fk of sortedKeys) {
+    groups.push({ key: fk, label: `Feature ${fk}`, cases: featureMap.get(fk)! });
+  }
+  if (ungrouped.length > 0) {
+    groups.push({ key: '__other__', label: 'Other', cases: ungrouped });
+  }
+  return groups;
+}
+
+function TcGroupSection({
+  group, onDelete, deleteId, setDeleteId, saving, onClearError,
+}: {
+  group: TcGroup;
+  onDelete: (id: string) => void;
+  deleteId: string | null;
+  setDeleteId: (id: string | null) => void;
+  saving: boolean;
+  onClearError: () => void;
+}) {
+  const [collapsed, setCollapsed] = useState(true);
+
   return (
-    <div className="space-y-5">
-      {epicGroups.length > 0 && (
-        <div className="space-y-2">
-          {epicGroups.map(group => (
-            <EpicSection key={group.epic.adoId} group={group} itemId={itemId} archived={archived} onUpdate={onUpdate} />
+    <div className="rounded-lg border border-surface-200 dark:border-surface-700 overflow-hidden">
+      <button
+        onClick={() => setCollapsed(v => !v)}
+        className="w-full flex items-center gap-2 px-3 py-2 bg-surface-50 dark:bg-surface-800/60 hover:bg-surface-100 dark:hover:bg-surface-700/50 transition-colors"
+      >
+        <svg
+          className={`w-3 h-3 text-surface-400 flex-shrink-0 transition-transform ${collapsed ? '-rotate-90' : ''}`}
+          fill="none" viewBox="0 0 24 24" stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+        <span className="text-[11px] font-semibold text-surface-700 dark:text-surface-200 flex-1 text-left">
+          {group.label}
+        </span>
+        <span className="text-[10px] text-surface-400 dark:text-surface-500 flex-shrink-0">
+          {group.cases.length} {group.cases.length === 1 ? 'case' : 'cases'}
+        </span>
+      </button>
+
+      {!collapsed && (
+        <div className="divide-y divide-surface-100 dark:divide-surface-700/60">
+          {group.cases.map(tc => (
+            <div key={tc.id || tc.title}>
+              <div className="flex items-center gap-2 px-3 py-2.5 bg-white dark:bg-surface-800/50">
+                {tc.type && (
+                  <span className={`flex-shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded ${TC_TYPE_COLOR[tc.type] ?? TC_TYPE_COLOR.edge}`}>
+                    {tc.type.replace(/_/g, ' ')}
+                  </span>
+                )}
+                {tc.priority && (
+                  <span className={`flex-shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${TC_PRIORITY_COLOR[tc.priority] ?? TC_PRIORITY_COLOR.low}`}>
+                    {tc.priority}
+                  </span>
+                )}
+                {tc.id && (
+                  <span className="flex-shrink-0 text-[10px] font-mono text-surface-400 dark:text-surface-500">{tc.id}</span>
+                )}
+                <span className="flex-1 min-w-0 text-xs text-surface-800 dark:text-surface-100 truncate">{tc.title}</span>
+                {tc.id && (
+                  deleteId === tc.id ? (
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => onDelete(tc.id)}
+                        disabled={saving}
+                        className="text-[10px] px-2 py-0.5 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 transition-colors"
+                      >
+                        {saving ? '…' : 'Delete'}
+                      </button>
+                      <button onClick={() => setDeleteId(null)} disabled={saving}
+                        className="text-[10px] px-2 py-0.5 rounded border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors">
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => { setDeleteId(tc.id); onClearError(); }}
+                      title="Delete"
+                      className="flex-shrink-0 p-1 rounded text-surface-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  )
+                )}
+              </div>
+              {tc.description && (
+                <p className="px-3 pb-2 text-[10px] text-surface-500 dark:text-surface-400 border-t border-surface-100 dark:border-surface-700/60 pt-1.5">{tc.description}</p>
+              )}
+            </div>
           ))}
         </div>
       )}
+    </div>
+  );
+}
 
-      {orphanFeatureGroups.length > 0 && (
-        <div>
-          <h4 className="text-[10px] font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-2">
-            Unassigned Features ({orphanFeatureGroups.length})
-          </h4>
-          <div className="space-y-1.5">
-            {orphanFeatureGroups.map(group => (
-              <FeatureSection key={group.feature.adoId} group={group} itemId={itemId} archived={archived} onUpdate={onUpdate} />
-            ))}
+function TestCasesSection({
+  initialCases, itemId, archived, onUpdate,
+}: {
+  initialCases: TestCase[];
+  itemId: string;
+  archived: boolean;
+  onUpdate: (updated: CompletedInitiativeDetail) => void;
+}) {
+  const [cases, setCases] = useState<TestCase[]>(initialCases);
+  const [showAdd, setShowAdd] = useState(false);
+  const [addTitle, setAddTitle] = useState('');
+  const [addType, setAddType] = useState<string>('happy_path');
+  const [addPriority, setAddPriority] = useState<string>('medium');
+  const [addDesc, setAddDesc] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const groups = buildTcGroups(cases);
+
+  const handleAdd = async () => {
+    if (!addTitle.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await api.addTestCase(itemId, { title: addTitle.trim(), type: addType, priority: addPriority, description: addDesc.trim() || undefined }, archived);
+      onUpdate(updated);
+      const newCase: TestCase = { id: '', title: addTitle.trim(), type: addType, priority: addPriority, ...(addDesc.trim() ? { description: addDesc.trim() } : {}) };
+      setCases(prev => [...prev, newCase]);
+      setAddTitle(''); setAddDesc(''); setAddType('happy_path'); setAddPriority('medium');
+      setShowAdd(false);
+    } catch (err: any) {
+      setError(err?.response?.data?.error ?? err.message ?? 'Failed to add test case');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (tcId: string) => {
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await api.deleteTestCase(itemId, tcId, archived);
+      onUpdate(updated);
+      setCases(prev => prev.filter(tc => tc.id !== tcId));
+      setDeleteId(null);
+    } catch (err: any) {
+      setError(err?.response?.data?.error ?? err.message ?? 'Failed to delete test case');
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-[10px] font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400">
+          Test Cases ({cases.length})
+        </h3>
+        <button
+          onClick={() => { setShowAdd(v => !v); setError(null); }}
+          className="flex items-center gap-1 text-[10px] px-2 py-1 rounded border border-dashed border-surface-300 dark:border-surface-600 text-surface-500 dark:text-surface-400 hover:border-brand-400 hover:text-brand-600 dark:hover:text-brand-400 transition-colors"
+        >
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Add test case
+        </button>
+      </div>
+
+      {showAdd && (
+        <div className="mb-3 rounded-lg border border-brand-200 dark:border-brand-800/50 bg-brand-50/50 dark:bg-brand-900/10 p-3 space-y-2">
+          <div>
+            <label className="block text-[10px] font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-1">Title *</label>
+            <input
+              type="text"
+              value={addTitle}
+              onChange={e => setAddTitle(e.target.value)}
+              placeholder="What is being verified…"
+              className="w-full text-xs px-2 py-1.5 rounded border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 placeholder:text-surface-400 focus:outline-none focus:border-brand-400"
+            />
+          </div>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="block text-[10px] font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-1">Type</label>
+              <select
+                value={addType}
+                onChange={e => setAddType(e.target.value)}
+                className="w-full text-xs px-2 py-1.5 rounded border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-700 dark:text-surface-300 focus:outline-none focus:border-brand-400"
+              >
+                {TC_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+              </select>
+            </div>
+            <div className="flex-1">
+              <label className="block text-[10px] font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-1">Priority</label>
+              <select
+                value={addPriority}
+                onChange={e => setAddPriority(e.target.value)}
+                className="w-full text-xs px-2 py-1.5 rounded border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-700 dark:text-surface-300 focus:outline-none focus:border-brand-400"
+              >
+                {TC_PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-[10px] font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-1">Description <span className="font-normal normal-case">(optional)</span></label>
+            <textarea
+              value={addDesc}
+              onChange={e => setAddDesc(e.target.value)}
+              placeholder="Why this scenario matters…"
+              rows={2}
+              className="w-full text-xs px-2 py-1.5 rounded border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 placeholder:text-surface-400 resize-none focus:outline-none focus:border-brand-400"
+            />
+          </div>
+          {error && <p className="text-[10px] text-red-600 dark:text-red-400">{error}</p>}
+          <div className="flex gap-1.5">
+            <button
+              onClick={handleAdd}
+              disabled={saving || !addTitle.trim()}
+              className="text-[10px] px-2.5 py-1 rounded bg-brand-500 text-white hover:bg-brand-600 disabled:opacity-40 transition-colors"
+            >
+              {saving ? 'Adding…' : 'Add'}
+            </button>
+            <button
+              onClick={() => { setShowAdd(false); setError(null); }}
+              disabled={saving}
+              className="text-[10px] px-2.5 py-1 rounded border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}
 
-      {orphanStories.length > 0 && (
-        <div>
-          <h4 className="text-[10px] font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-2">
-            Unassigned Stories ({orphanStories.length})
-          </h4>
-          <div className="space-y-1.5">
-            {orphanStories.map(item => (
-              <WorkItemRow key={item.adoId} item={item} itemId={itemId} archived={archived} onUpdate={onUpdate} />
-            ))}
-          </div>
+      {cases.length === 0 && !showAdd && (
+        <p className="text-xs text-surface-400 italic">No test cases yet.</p>
+      )}
+
+      <div className="space-y-2">
+        {groups.map(group => (
+          <TcGroupSection
+            key={group.key}
+            group={group}
+            onDelete={handleDelete}
+            deleteId={deleteId}
+            setDeleteId={setDeleteId}
+            saving={saving}
+            onClearError={() => setError(null)}
+          />
+        ))}
+      </div>
+
+      {error && !showAdd && <p className="mt-2 text-[10px] text-red-600 dark:text-red-400">{error}</p>}
+    </div>
+  );
+}
+
+export function WorkItemManagePanel({ items, itemId, archived, onUpdate, testCases }: Props) {
+  const { epicGroups, orphanFeatureGroups, orphanStories } = buildEpicGroups(items);
+  const hasWorkItems = items.length > 0;
+
+  return (
+    <div className="space-y-8">
+      {hasWorkItems ? (
+        <div className="space-y-5">
+          {epicGroups.length > 0 && (
+            <div className="space-y-2">
+              {epicGroups.map(group => (
+                <EpicSection key={group.epic.adoId} group={group} itemId={itemId} archived={archived} onUpdate={onUpdate} />
+              ))}
+            </div>
+          )}
+
+          {orphanFeatureGroups.length > 0 && (
+            <div>
+              <h4 className="text-[10px] font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-2">
+                Unassigned Features ({orphanFeatureGroups.length})
+              </h4>
+              <div className="space-y-1.5">
+                {orphanFeatureGroups.map(group => (
+                  <FeatureSection key={group.feature.adoId} group={group} itemId={itemId} archived={archived} onUpdate={onUpdate} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {orphanStories.length > 0 && (
+            <div>
+              <h4 className="text-[10px] font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-2">
+                Unassigned Stories ({orphanStories.length})
+              </h4>
+              <div className="space-y-1.5">
+                {orphanStories.map(item => (
+                  <WorkItemRow key={item.adoId} item={item} itemId={itemId} archived={archived} onUpdate={onUpdate} />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="text-sm text-surface-400 italic">No work items tracked for this initiative.</p>
+      )}
+
+      {testCases != null && (
+        <div className="border-t border-surface-200 dark:border-surface-700 pt-6">
+          <TestCasesSection
+            initialCases={testCases}
+            itemId={itemId}
+            archived={archived}
+            onUpdate={onUpdate}
+          />
         </div>
       )}
     </div>

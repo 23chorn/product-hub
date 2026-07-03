@@ -13,6 +13,7 @@ import { HomeHeader } from './HomeHeader';
 import { PageHeaderActions } from '../common/PageHeaderActions';
 import { NewInitiativeForm } from './NewInitiativeForm';
 import { LaunchPipelineModal } from './LaunchPipelineModal';
+import { AssignUserFlyout } from '../common/AssignUserFlyout';
 import { effectiveStatus, STATUS_FILTERS, type EnrichedItem, type LaunchPhase, type StatusFilter, type WorkflowPreset } from './types';
 
 let _cachedLocalItems: EnrichedItem[] = [];
@@ -58,6 +59,7 @@ export function HomeScreen() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmArchiveId, setConfirmArchiveId] = useState<string | null>(null);
   const [archivingId, setArchivingId] = useState<string | null>(null);
+  const [assignFlyoutItemId, setAssignFlyoutItemId] = useState<string | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -286,6 +288,48 @@ export function HomeScreen() {
     setLaunchError(null);
   };
 
+  const handleAssignToMe = async (item: EnrichedItem) => {
+    if (!user) return;
+    try {
+      await api.assignInitiative(item.id, user.id);
+      setLocalItems(localItems.map(i =>
+        i.id === item.id ? { ...i, assignedUserIds: [...new Set([...(i.assignedUserIds ?? []), user.id])] } : i
+      ));
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.message || 'Failed to assign');
+    }
+  };
+
+  const handleUnassignFromMe = async (item: EnrichedItem) => {
+    if (!user) return;
+    try {
+      await api.unassignInitiative(item.id, user.id);
+      setLocalItems(localItems.map(i =>
+        i.id === item.id ? { ...i, assignedUserIds: (i.assignedUserIds ?? []).filter(id => id !== user.id) } : i
+      ));
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.message || 'Failed to unassign');
+    }
+  };
+
+  const handleToggleUserAssignment = async (item: EnrichedItem, userId: number, assign: boolean) => {
+    try {
+      if (assign) {
+        await api.assignInitiative(item.id, userId);
+        setLocalItems(localItems.map(i =>
+          i.id === item.id ? { ...i, assignedUserIds: [...new Set([...(i.assignedUserIds ?? []), userId])] } : i
+        ));
+      } else {
+        await api.unassignInitiative(item.id, userId);
+        setLocalItems(localItems.map(i =>
+          i.id === item.id ? { ...i, assignedUserIds: (i.assignedUserIds ?? []).filter(id => id !== userId) } : i
+        ));
+      }
+    } catch (err: any) {
+      toast.error(err.response?.data?.error || err.message || 'Failed to update assignment');
+    }
+  };
+
   const canCreate = canLaunchWorkflow(user, noAuth);
 
   const visibleItems = useMemo(
@@ -301,7 +345,7 @@ export function HomeScreen() {
       return true;
     });
 
-    const c: Record<StatusFilter, number> = { all: filtered.length, active: 0, review: 0, done: 0, stopped: 0, new: 0, mine: 0, archived: 0, paused: 0 };
+    const c: Record<StatusFilter, number> = { all: filtered.length, active: 0, review: 0, done: 0, stopped: 0, new: 0, mine: 0, archived: 0, paused: 0, assigned: 0 };
     filtered.forEach(item => {
       if (item.status === 'archived') {
         c.archived++;
@@ -314,9 +358,11 @@ export function HomeScreen() {
         else if (s === 'cancelled') c.stopped++;
         else if (s === 'complete') c.done++;
         else c.new++;
-        // Count items in mine filter separately
         if (item.workflow && s !== 'cancelled' && mineWorkflowIds.has(item.workflow.id)) {
           c.mine++;
+        }
+        if (user && item.assignedUserIds?.includes(user.id)) {
+          c.assigned++;
         }
       }
     });
@@ -347,6 +393,7 @@ export function HomeScreen() {
       if (statusFilter === 'paused' && !item.isPaused) return false;
       if (statusFilter !== 'paused' && statusFilter !== 'all' && item.isPaused) return false;
 
+      if (statusFilter === 'assigned' && !item.assignedUserIds?.includes(user?.id ?? -1)) return false;
       // Stopped initiatives never count as needing review/approval, even if a
       // checkpoint was left pending at the moment the workflow was cancelled.
       if (statusFilter === 'mine' && (!item.workflow || s === 'cancelled' || !mineWorkflowIds.has(item.workflow.id))) return false;
@@ -393,6 +440,7 @@ export function HomeScreen() {
           statusCounts={statusCounts}
           myPendingCount={myPendingCount}
           showMineFilter={!noAuth && !!user}
+          showAssignedFilter={!noAuth && !!user}
           isAdmin={isAdmin}
           productAreas={productAreas}
           productAreaFilter={productAreaFilter}
@@ -494,6 +542,9 @@ export function HomeScreen() {
                       onRequestArchive={() => setConfirmArchiveId(item.id)}
                       onConfirmArchive={() => handleArchiveInitiative(item)}
                       onCancelArchive={() => setConfirmArchiveId(null)}
+                      onAssignToMe={() => handleAssignToMe(item)}
+                      onUnassignFromMe={() => handleUnassignFromMe(item)}
+                      onOpenAssignFlyout={() => setAssignFlyoutItemId(item.id)}
                     />
                   ))}
                 </div>
@@ -503,6 +554,18 @@ export function HomeScreen() {
 
         </div>
       </div>
+
+      {/* Assign user flyout (admin) */}
+      {assignFlyoutItemId && (() => {
+        const flyoutItem = localItems.find(i => i.id === assignFlyoutItemId);
+        return flyoutItem ? (
+          <AssignUserFlyout
+            item={flyoutItem}
+            onClose={() => setAssignFlyoutItemId(null)}
+            onToggle={(userId, assign) => handleToggleUserAssignment(flyoutItem, userId, assign)}
+          />
+        ) : null;
+      })()}
 
       {/* Launch confirmation modal */}
       {launchItem && launchPhase && (
