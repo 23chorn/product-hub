@@ -35,6 +35,13 @@ const NAV_TABS: Array<{ key: PageKey; label: string; visible?: (ctx: NavTabVisib
   { key: 'quickFeature', label: 'Quick Feature', visible: ({ canLaunch, navTabs }) => canLaunch && (navTabs?.quickFeature ?? false) },
 ];
 
+/** Same gating NAV_TABS uses for which buttons render — reused to catch a persisted
+ *  `activePage` (see pageNavStore) that's no longer valid for this user/config. */
+function isPageVisible(key: PageKey, ctx: NavTabVisibilityCtx): boolean {
+  const tab = NAV_TABS.find(t => t.key === key);
+  return tab?.visible ? tab.visible(ctx) : true;
+}
+
 // Description shown in the shared PageHeader's title slot for whichever tab is active
 // (the page name itself is already shown by the active nav tab).
 const PAGE_DESCRIPTIONS: Record<PageKey, string> = {
@@ -139,6 +146,17 @@ function App() {
     }
   }, []);
 
+  // A persisted activePage (see pageNavStore) may no longer be valid for this session —
+  // e.g. a different, lower-privilege user, or a feature flag disabled server-side since
+  // last visit. Only check once auth and config have both resolved, so the gated tabs
+  // (discovery/quickFeature default to hidden pre-config) aren't wrongly bounced to home.
+  useEffect(() => {
+    if (authLoading || config == null) return;
+    if (!isPageVisible(activePage, { canLaunch: canLaunchWorkflow(user, noAuth), navTabs: config.features.navTabs })) {
+      setActivePage('home');
+    }
+  }, [authLoading, config, user, noAuth, activePage, setActivePage]);
+
   useEffect(() => {
     const onDemoStarted = (event: Event) => {
       const detail = (event as CustomEvent<{ title?: string }>).detail;
@@ -164,6 +182,7 @@ function App() {
     try { await api.logout(); } catch { /* */ }
     authLogout();
     resetHomeScreenFilter();
+    setActivePage('home');
     setShowLogin(true);
   }
 
@@ -319,7 +338,7 @@ function App() {
 
         {/* Page nav */}
         <nav className="flex items-center gap-1 px-6">
-          {NAV_TABS.filter(tab => tab.visible ? tab.visible({ canLaunch: canLaunchWorkflow(user, noAuth), navTabs: config?.features.navTabs }) : true).map(tab => {
+          {NAV_TABS.filter(tab => isPageVisible(tab.key, { canLaunch: canLaunchWorkflow(user, noAuth), navTabs: config?.features.navTabs })).map(tab => {
             const active = activePage === tab.key;
             return (
               <button

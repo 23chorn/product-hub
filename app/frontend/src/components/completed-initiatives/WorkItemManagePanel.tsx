@@ -550,52 +550,47 @@ function TcGroupSection({
       {!collapsed && (
         <div className="divide-y divide-surface-100 dark:divide-surface-700/60">
           {group.cases.map(tc => (
-            <div key={tc.id || tc.title}>
-              <div className="flex items-center gap-2 px-3 py-2.5 bg-white dark:bg-surface-800/50">
-                {tc.type && (
-                  <span className={`flex-shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded ${TC_TYPE_COLOR[tc.type] ?? TC_TYPE_COLOR.edge}`}>
-                    {tc.type.replace(/_/g, ' ')}
-                  </span>
-                )}
-                {tc.priority && (
-                  <span className={`flex-shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${TC_PRIORITY_COLOR[tc.priority] ?? TC_PRIORITY_COLOR.low}`}>
-                    {tc.priority}
-                  </span>
-                )}
-                {tc.id && (
-                  <span className="flex-shrink-0 text-[10px] font-mono text-surface-400 dark:text-surface-500">{tc.id}</span>
-                )}
-                <span className="flex-1 min-w-0 text-xs text-surface-800 dark:text-surface-100 truncate">{tc.title}</span>
-                {tc.id && (
-                  deleteId === tc.id ? (
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      <button
-                        onClick={() => onDelete(tc.id)}
-                        disabled={saving}
-                        className="text-[10px] px-2 py-0.5 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 transition-colors"
-                      >
-                        {saving ? '…' : 'Delete'}
-                      </button>
-                      <button onClick={() => setDeleteId(null)} disabled={saving}
-                        className="text-[10px] px-2 py-0.5 rounded border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors">
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
+            <div key={tc.id || tc.title} className="flex items-center gap-2 px-3 py-2.5 bg-white dark:bg-surface-800/50">
+              {tc.type && (
+                <span className={`flex-shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded ${TC_TYPE_COLOR[tc.type] ?? TC_TYPE_COLOR.edge}`}>
+                  {tc.type.replace(/_/g, ' ')}
+                </span>
+              )}
+              {tc.priority && (
+                <span className={`flex-shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${TC_PRIORITY_COLOR[tc.priority] ?? TC_PRIORITY_COLOR.low}`}>
+                  {tc.priority}
+                </span>
+              )}
+              {tc.id && (
+                <span className="flex-shrink-0 text-[10px] font-mono text-surface-400 dark:text-surface-500">{tc.id}</span>
+              )}
+              <span className="flex-1 min-w-0 text-xs text-surface-800 dark:text-surface-100 truncate">{tc.title}</span>
+              {tc.id && (
+                deleteId === tc.id ? (
+                  <div className="flex items-center gap-1 flex-shrink-0">
                     <button
-                      onClick={() => { setDeleteId(tc.id); onClearError(); }}
-                      title="Delete"
-                      className="flex-shrink-0 p-1 rounded text-surface-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                      onClick={() => onDelete(tc.id)}
+                      disabled={saving}
+                      className="text-[10px] px-2 py-0.5 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 transition-colors"
                     >
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
+                      {saving ? '…' : 'Delete'}
                     </button>
-                  )
-                )}
-              </div>
-              {tc.description && (
-                <p className="px-3 pb-2 text-[10px] text-surface-500 dark:text-surface-400 border-t border-surface-100 dark:border-surface-700/60 pt-1.5">{tc.description}</p>
+                    <button onClick={() => setDeleteId(null)} disabled={saving}
+                      className="text-[10px] px-2 py-0.5 rounded border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors">
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => { setDeleteId(tc.id); onClearError(); }}
+                    title="Delete"
+                    className="flex-shrink-0 p-1 rounded text-surface-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                )
               )}
             </div>
           ))}
