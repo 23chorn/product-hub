@@ -30,7 +30,12 @@ function downloadText(content: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-function PipelineExportModal({ seqNum, phaseLabels, onClose }: { seqNum: number; phaseLabels: string[]; onClose: () => void }) {
+function PipelineExportModal({ seqNum, availableStreams, phaseLabels, onClose }: {
+  seqNum: number;
+  availableStreams: PipelineStream[];
+  phaseLabels: string[];
+  onClose: () => void;
+}) {
   const [stream, setStream] = useState<PipelineStream | null>(null);
   const [phase, setPhase] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -65,24 +70,26 @@ function PipelineExportModal({ seqNum, phaseLabels, onClose }: { seqNum: number;
         </div>
 
         <div className="space-y-3">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-1.5">Stream</p>
-            <div className="flex flex-wrap gap-1.5">
-              {(['all', ...PIPELINE_STREAMS] as const).map(s => (
-                <button
-                  key={s}
-                  onClick={() => setStream(s === 'all' ? null : s)}
-                  className={`text-[11px] px-2.5 py-1 rounded-full transition-colors ${
-                    (s === 'all' ? stream === null : stream === s)
-                      ? 'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-medium'
-                      : 'bg-surface-100 dark:bg-surface-800 text-surface-600 dark:text-surface-400 hover:bg-surface-200 dark:hover:bg-surface-700'
-                  }`}
-                >
-                  {s}
-                </button>
-              ))}
+          {availableStreams.length > 0 && (
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-1.5">Stream</p>
+              <div className="flex flex-wrap gap-1.5">
+                {(['all', ...availableStreams] as const).map(s => (
+                  <button
+                    key={s}
+                    onClick={() => setStream(s === 'all' ? null : s as PipelineStream)}
+                    className={`text-[11px] px-2.5 py-1 rounded-full transition-colors ${
+                      (s === 'all' ? stream === null : stream === s)
+                        ? 'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-medium'
+                        : 'bg-surface-100 dark:bg-surface-800 text-surface-600 dark:text-surface-400 hover:bg-surface-200 dark:hover:bg-surface-700'
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {phaseLabels.length > 0 && (
             <div>
@@ -478,6 +485,12 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
   const testTypeCounts = phaseTestTypeCounts;
   const visibleTabs = detail ? TABS.filter(t => visibleTabsFor(detail).has(t.key)) : TABS;
 
+  // Streams that actually have tagged tickets in this initiative (for the export modal).
+  const availableStreams: PipelineStream[] = (() => {
+    const all = backlog ? countTicketsByPlatform(getAllStories(backlog)) : null;
+    return PIPELINE_STREAMS.filter(s => (all?.[s] ?? 0) > 0);
+  })();
+
   return (
     <div className="flex flex-col h-full overflow-hidden bg-surface-50 dark:bg-surface-950">
       <PageHeaderTitle>
@@ -670,6 +683,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
       {showExportModal && detail?.seqNum != null && (
         <PipelineExportModal
           seqNum={detail.seqNum}
+          availableStreams={availableStreams}
           phaseLabels={phaseLabels}
           onClose={() => setShowExportModal(false)}
         />
