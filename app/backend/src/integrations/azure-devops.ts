@@ -4,6 +4,7 @@ import { BacklogStructure, featureLocalKey, storyLocalKey } from '@pap/shared';
 import {
   adoErrorMessage,
   toNearestFibonacci,
+  DEV_COMPLEXITY_FIBONACCI,
   stripStoryPrefix,
   escapeHtml,
   formatGivenWhenThen,
@@ -325,7 +326,7 @@ export class AzureDevOpsClient {
             description: storyDescription,
             acceptanceCriteria: acceptanceCriteriaHtml,
             effort: storyData.effort,
-            aiEstimateDevHours: storyData.aiEstimatedHours !== undefined ? toNearestFibonacci(storyData.aiEstimatedHours) : undefined,
+            aiEstimateDevHours: storyData.aiEstimatedHours !== undefined ? toNearestFibonacci(storyData.aiEstimatedHours, DEV_COMPLEXITY_FIBONACCI) : undefined,
             aiEstimateQaHours: storyData.aiEstimatedQaHours,
             tags: deriveTeamTags(storyData.technical_notes),
             parentId: feature.id,
@@ -455,7 +456,7 @@ export class AzureDevOpsClient {
           description: storyDescription,
           acceptanceCriteria: acceptanceCriteriaHtml,
           effort: storyData.effort,
-          aiEstimateDevHours: storyData.aiEstimatedHours !== undefined ? toNearestFibonacci(storyData.aiEstimatedHours) : undefined,
+          aiEstimateDevHours: storyData.aiEstimatedHours !== undefined ? toNearestFibonacci(storyData.aiEstimatedHours, DEV_COMPLEXITY_FIBONACCI) : undefined,
           aiEstimateQaHours: storyData.aiEstimatedQaHours,
           tags: deriveTeamTags(storyData.technical_notes),
           parentId: createdFeature.id,
@@ -623,7 +624,7 @@ export class AzureDevOpsClient {
 
         if (storyMapping) {
           const rawAiHours = storyData.aiEstimatedHours;
-          const fibAiHours = rawAiHours !== undefined && rawAiHours !== null ? toNearestFibonacci(rawAiHours) : undefined;
+          const fibAiHours = rawAiHours !== undefined && rawAiHours !== null ? toNearestFibonacci(rawAiHours, DEV_COMPLEXITY_FIBONACCI) : undefined;
           logger.info(`Story "${storyData.title}" (#${storyMapping.ado_id}): aiEstimatedHours=${rawAiHours} → fibonacciValue=${fibAiHours}`);
           await this.updateWorkItem(storyMapping.ado_id, {
             title: storyData.title,
@@ -637,7 +638,7 @@ export class AzureDevOpsClient {
         } else {
           // Create new story
           const rawAiHours = storyData.aiEstimatedHours;
-          const fibAiHours = rawAiHours !== undefined && rawAiHours !== null ? toNearestFibonacci(rawAiHours) : undefined;
+          const fibAiHours = rawAiHours !== undefined && rawAiHours !== null ? toNearestFibonacci(rawAiHours, DEV_COMPLEXITY_FIBONACCI) : undefined;
           const story = await this.createWorkItem({
             type: this.workItemTypes.story as any,
             title: storyData.title,

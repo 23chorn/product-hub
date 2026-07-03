@@ -15,9 +15,18 @@ export function adoErrorMessage(error: any): string {
   return error?.response?.data?.message || error?.message || 'Unknown error';
 }
 
-/** Round a number to the nearest value in the Fibonacci sequence (1–144). */
-export function toNearestFibonacci(n: number): number {
-  const fibs = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144];
+/** Full Fibonacci scale used for general-purpose rounding (1–144). */
+const FIBONACCI_SCALE = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144];
+
+/**
+ * Fibonacci scale for the "AI Estimate Dev" relative complexity score pushed to
+ * ADO's Custom.AIEstimateDev field. Capped at 8 — anything larger should be split
+ * into smaller stories rather than carrying a bigger complexity number.
+ */
+export const DEV_COMPLEXITY_FIBONACCI = [1, 2, 3, 5, 8];
+
+/** Round a number to the nearest value in a Fibonacci sequence (defaults to the full 1–144 scale). */
+export function toNearestFibonacci(n: number, fibs: number[] = FIBONACCI_SCALE): number {
   if (n <= 0) return 1;
   return fibs.reduce((prev, curr) => (Math.abs(curr - n) < Math.abs(prev - n) ? curr : prev));
 }

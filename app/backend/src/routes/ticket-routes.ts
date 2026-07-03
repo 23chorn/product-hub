@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { initSSE, sseSend } from '../utils/sse';
 import { streamAI, resolveAgentModel } from '../utils/ai-provider';
+import { toNearestFibonacci, DEV_COMPLEXITY_FIBONACCI } from '../integrations/azure-devops-format';
 import Logger from '../utils/logger';
 
 // Mirrors DEFAULT_AI_HOURS_PER_POINT in sprint-estimation.ts (non-linear: AI helps more on routine work)
@@ -10,25 +11,18 @@ const logger = new Logger('TICKET-ROUTES');
 
 export const ticketRoutes = Router();
 
-const FIBONACCI = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144];
-
-function toNearestFibonacci(n: number): number {
-  if (n <= 0) return 1;
-  return FIBONACCI.reduce((prev, curr) => (Math.abs(curr - n) < Math.abs(prev - n) ? curr : prev));
-}
-
 function computeAiEstimateDev(storyPoints: number): number {
   const mapping = AI_HOURS_PER_POINT;
   const keys = Object.keys(mapping).map(Number).sort((a, b) => a - b);
-  if (mapping[storyPoints] != null) return toNearestFibonacci(mapping[storyPoints]);
+  if (mapping[storyPoints] != null) return toNearestFibonacci(mapping[storyPoints], DEV_COMPLEXITY_FIBONACCI);
   const lower = keys.filter(k => k <= storyPoints).pop();
   const upper = keys.find(k => k >= storyPoints);
   if (lower != null && upper != null && lower !== upper) {
     const ratio = (storyPoints - lower) / (upper - lower);
-    return toNearestFibonacci(mapping[lower] + ratio * (mapping[upper] - mapping[lower]));
+    return toNearestFibonacci(mapping[lower] + ratio * (mapping[upper] - mapping[lower]), DEV_COMPLEXITY_FIBONACCI);
   }
   const highest = keys[keys.length - 1];
-  return toNearestFibonacci((storyPoints / highest) * mapping[highest]);
+  return toNearestFibonacci((storyPoints / highest) * mapping[highest], DEV_COMPLEXITY_FIBONACCI);
 }
 
 const SYSTEM_PROMPT = `You are an expert product manager and delivery lead. Your job is to format a raw ticket into a proper Agile user story and estimate its complexity.

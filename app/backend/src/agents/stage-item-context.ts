@@ -76,14 +76,6 @@ export const ITEM_CONTEXT_BUILDERS: Record<string, (params: ItemContextParams) =
     }
     parts.push(techStackNote);
 
-    const swaggerDocs = db.prepare(`
-      SELECT label, content FROM swagger_api_docs WHERE active = 1 AND content IS NOT NULL
-    `).all() as Array<{ label: string; content: string }>;
-    if (swaggerDocs.length > 0) {
-      const docsBlock = swaggerDocs.map((d) => `### ${d.label}\n\n${d.content}`).join('\n\n');
-      parts.push(`**Current API Surface (live Swagger/OpenAPI docs for existing services — extend or align with these, don't duplicate or break them):**\n\n${docsBlock}`);
-    }
-
     return addPlatformScope(parts.join('\n\n---\n\n'));
   },
 

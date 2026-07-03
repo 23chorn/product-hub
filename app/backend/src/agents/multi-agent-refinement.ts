@@ -264,12 +264,17 @@ export async function runMultiAgentRefinement(
   logger.info(`[MULTI-AGENT] Active participants for Feature ${featureNum}: ${participantNames}`);
 
   // ── Load Context ────────────────────────────────────────────────────────────
-  const [prdContent, archContent, epicFeaturesContent, figmaContent] = await Promise.all([
+  const wfRow = db.prepare('SELECT stage_sequence FROM workflows WHERE id = ?').get(workflowId) as { stage_sequence: string } | undefined;
+  const apiSpecStageEnabled = wfRow ? (JSON.parse(wfRow.stage_sequence) as string[]).includes('api_spec') : false;
+
+  const [prdContent, archContent, epicFeaturesContent, figmaContent, rawApiSpecContent] = await Promise.all([
     loadLatestArtifactContent(itemId, 'prd'),
     loadLatestArtifactContent(itemId, 'architecture'),
     loadLatestArtifactContent(itemId, 'epic_features'), // Epic + features from epic_feature_planner
     loadLatestArtifactContent(itemId, 'figma_design'),  // Designer-approved screens from the figma_design stage, if it ran
+    apiSpecStageEnabled ? loadLatestArtifactContent(itemId, 'api_spec') : Promise.resolve(null), // Proposed endpoint changes from api_spec, if it ran
   ]);
+  const apiSpecContent = rawApiSpecContent?.trim() || null;
 
   // Extract the target feature from the epic_features artifact.
   // flattenFeatures handles both new phases[] and legacy features[] formats.
@@ -393,13 +398,14 @@ Any story whose UI surfaces one of these screens must cite the screen's frame_ur
 
 **Full PRD:** ${prdContent ? '(appended below)' : '(not available)'}
 **Architecture:** ${archContent ? '(appended below)' : '(not available)'}
+**API Contract:** ${apiSpecContent ? '(appended below)' : '(not available)'}
 `.trim();
 
   // ── Phase 1: Draft (Parallel) ──────────────────────────────────────────────
   insertEvent(workflowId, 'stage_progress', stage,
     `Phase 1: Draft — ${activeParticipants.length} agents proposing initial contributions in parallel (${participantNames})...`);
 
-  const draftPrompts = buildDraftPrompts(featureNum, featureBrief, prdContent, archContent, activeParticipants);
+  const draftPrompts = buildDraftPrompts(featureNum, featureBrief, prdContent, archContent, apiSpecContent, activeParticipants);
   const drafts = await runPhaseInParallel(workflowId, stage, 'Draft', draftPrompts);
 
   // ── Phase 2: Refine Round 1 ────────────────────────────────────────────────
@@ -506,6 +512,7 @@ function buildDraftPrompts(
   featureBrief: string,
   prdContent: string | null,
   archContent: string | null,
+  apiSpecContent: string | null,
   participants: RefinementParticipant[] = PARTICIPANTS
 ): Array<{ participant: RefinementParticipant; prompt: string }> {
   return participants.map(participant => {
@@ -600,6 +607,9 @@ Plain text list of technical direction, kept high-level — exact endpoints, sch
     }
     if (archContent) {
       prompt += `\n\n**Architecture Reference:**\n${archContent.slice(0, 4000)}...`;
+    }
+    if (apiSpecContent) {
+      prompt += `\n\n**API Contract Reference (proposed endpoint changes/additions from the api_spec stage):**\n${apiSpecContent.slice(0, 4000)}...`;
     }
 
     return { participant, prompt };
