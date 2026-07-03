@@ -1,8 +1,8 @@
 # Stage-Specific Checks: Architecture Document (Atlas)
 
-Structural validation (TBD/unresolved decisions, Repository Impact section, Cross-Platform Contracts section, cost estimates) has already been performed by automated tools. Do not re-raise structural presence issues. Focus on whether the decisions made are correct and the content within those sections is sound.
+Structural validation (TBD/unresolved decisions, Repository Impact section, data model, key decisions) has already been performed by automated tools. Do not re-raise structural presence issues. Focus on whether the decisions made are correct and the content within those sections is sound.
 
-This stage is currently scoped down for reliability (no system diagram, data-flow walkthroughs, deployment pipeline, or failure-mode table) — do not flag their absence as a gap.
+This stage is intentionally scoped: no API surface, no system diagrams, no infrastructure costs, no deployment pipelines, no scalability projections — do not flag their absence as a gap. API shapes and endpoint specifications belong in stories, not the architecture document.
 
 ## Tech stack alignment
 
@@ -25,9 +25,8 @@ This stage is currently scoped down for reliability (no system diagram, data-flo
 
 ## Design soundness
 
-- Cross-Platform Contracts must be internally consistent. A DTO defined for one platform that contradicts the API surface described elsewhere in the same document is **CRITICAL**.
 - Data model choices must be appropriate. A normalisation decision that would cause cartesian joins on high-volume queries, or a denormalisation that creates update anomalies, is **MAJOR** — call it out with the specific table/query concern.
-- Scalability approach must match stated load assumptions. An architecture claiming to handle significant concurrent load with a single-instance synchronous service and no caching is **MAJOR** — the design does not support the stated goal.
+- Key decisions must be consistent with each other. A decision that contradicts another decision in the same document (e.g., two incompatible storage strategies for the same data) is **CRITICAL**.
 
 ## Open Questions
 

@@ -187,7 +187,16 @@ function architectureToMarkdown(d: Record<string, any>, variant: MarkdownVariant
     }
   }
 
-  if (d.technology_decisions) {
+  // New schema: flat key_decisions array
+  if (Array.isArray(d.key_decisions) && d.key_decisions.length) {
+    lines.push(`## Key Decisions\n`);
+    lines.push(tableHeader('Decision', 'Choice'));
+    for (const dec of d.key_decisions) lines.push(row(dec.decision ?? '', dec.choice ?? ''));
+    lines.push('');
+  }
+
+  // Legacy schema: technology_decisions nested by platform (kept for existing artifacts)
+  if (d.technology_decisions && !Array.isArray(d.key_decisions)) {
     lines.push(`## Technology Decisions\n`);
     for (const [platform, decisions] of Object.entries(d.technology_decisions)) {
       if (!Array.isArray(decisions) || decisions.length === 0) continue;
@@ -200,6 +209,22 @@ function architectureToMarkdown(d: Record<string, any>, variant: MarkdownVariant
 
   if (d.data_model) {
     lines.push(`## Data Model\n`);
+
+    // New schema: new_entities + entity_changes
+    if (Array.isArray(d.data_model.new_entities) && d.data_model.new_entities.length) {
+      lines.push(`### New Tables\n`);
+      lines.push(tableHeader('Entity', 'Purpose', 'Key Fields', 'Relationships'));
+      for (const e of d.data_model.new_entities) lines.push(row(e.name ?? '', e.purpose ?? '', e.key_fields ?? '', e.relationships ?? ''));
+      lines.push('');
+    }
+    if (Array.isArray(d.data_model.entity_changes) && d.data_model.entity_changes.length) {
+      lines.push(`### Changes to Existing Tables\n`);
+      lines.push(tableHeader('Table', 'Change'));
+      for (const e of d.data_model.entity_changes) lines.push(row(e.entity ?? '', e.change ?? ''));
+      lines.push('');
+    }
+
+    // Legacy schema: entities + entity_relationship_diagram (kept for existing artifacts)
     if (Array.isArray(d.data_model.entities) && d.data_model.entities.length) {
       lines.push(tableHeader('Entity', 'Primary Key', 'Key Fields', 'Relationships', 'Notes'));
       for (const e of d.data_model.entities) lines.push(row(e.name ?? '', e.primary_key ?? '', e.key_fields ?? '', e.relationships ?? '', e.notes ?? ''));
@@ -210,6 +235,7 @@ function architectureToMarkdown(d: Record<string, any>, variant: MarkdownVariant
     }
   }
 
+  // Legacy schema: api_surface (kept for existing artifacts)
   if (Array.isArray(d.api_surface) && d.api_surface.length) {
     lines.push(`## API Surface\n`);
     for (const svc of d.api_surface) {

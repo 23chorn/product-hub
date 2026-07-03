@@ -286,22 +286,14 @@ export function validateArchitectureJson(input: Record<string, unknown>): string
     issues.push('Unresolved "TBD" or "to be determined" found — the architecture must make definitive technology choices, not defer them');
   }
 
-  // technology_decisions — at least one platform key with entries
-  if (!p.technology_decisions || typeof p.technology_decisions !== 'object' || Array.isArray(p.technology_decisions)) {
-    issues.push('root: "technology_decisions" must be an object keyed by platform');
+  // key_decisions — flat array, 2-4 entries
+  if (!Array.isArray(p.key_decisions) || p.key_decisions.length === 0) {
+    issues.push('root: "key_decisions" must be a non-empty array of irreversible/non-obvious architectural choices');
   } else {
-    const platforms = Object.keys(p.technology_decisions);
-    if (platforms.length === 0) {
-      issues.push('technology_decisions: must include at least one platform section');
-    }
-    platforms.forEach(pl => {
-      const decisions = p.technology_decisions[pl];
-      if (!Array.isArray(decisions) || decisions.length === 0) return;
-      decisions.forEach((d: any, i: number) => {
-        const lp = `technology_decisions.${pl}[${i}]`;
-        req(d, 'decision', lp, issues);
-        req(d, 'choice', lp, issues);
-      });
+    p.key_decisions.forEach((d: any, i: number) => {
+      const lp = `key_decisions[${i}]`;
+      req(d, 'decision', lp, issues);
+      req(d, 'choice', lp, issues);
     });
   }
 
@@ -314,7 +306,6 @@ export function validateArchitectureJson(input: Record<string, unknown>): string
       req(dep, 'name', lp, issues);
       req(dep, 'type', lp, issues);
       req(dep, 'not_solvable_with_existing_stack_because', lp, issues);
-      // justification must be substantive
       const justification = dep.not_solvable_with_existing_stack_because;
       if (typeof justification === 'string' && justification.trim().length < 20) {
         issues.push(`${lp}: "not_solvable_with_existing_stack_because" is too vague — explain specifically what the existing stack cannot do`);
@@ -326,36 +317,26 @@ export function validateArchitectureJson(input: Record<string, unknown>): string
   if (!p.data_model || typeof p.data_model !== 'object') {
     issues.push('root: "data_model" object is required');
   } else {
-    req(p.data_model, 'entity_relationship_diagram', 'data_model', issues);
-    const entities = reqArray(p.data_model, 'entities', 'data_model', issues, 1);
-    entities?.forEach((e: any, i: number) => {
-      const lp = `data_model.entities[${i}]`;
-      req(e, 'name', lp, issues);
-      req(e, 'primary_key', lp, issues);
-      req(e, 'key_fields', lp, issues);
-      req(e, 'relationships', lp, issues);
-    });
-  }
-
-  // api_surface
-  const apis = reqArray(p, 'api_surface', 'root', issues, 1);
-  apis?.forEach((svc: any, i: number) => {
-    const lp = `api_surface[${i}]`;
-    req(svc, 'service', lp, issues);
-    const eps = svc?.endpoints;
-    if (!Array.isArray(eps) || eps.length === 0) {
-      issues.push(`${lp}: "endpoints" must be a non-empty array`);
+    if (!Array.isArray(p.data_model.new_entities)) {
+      issues.push('data_model: "new_entities" must be an array (use [] if no new tables)');
     } else {
-      eps.forEach((ep: any, j: number) => {
-        const elp = `${lp}.endpoints[${j}]`;
-        req(ep, 'method', elp, issues);
-        req(ep, 'path', elp, issues);
-        req(ep, 'purpose', elp, issues);
-        req(ep, 'request', elp, issues);
-        req(ep, 'response', elp, issues);
+      p.data_model.new_entities.forEach((e: any, i: number) => {
+        const lp = `data_model.new_entities[${i}]`;
+        req(e, 'name', lp, issues);
+        req(e, 'purpose', lp, issues);
+        req(e, 'key_fields', lp, issues);
       });
     }
-  });
+    if (!Array.isArray(p.data_model.entity_changes)) {
+      issues.push('data_model: "entity_changes" must be an array (use [] if no existing tables change)');
+    } else {
+      p.data_model.entity_changes.forEach((e: any, i: number) => {
+        const lp = `data_model.entity_changes[${i}]`;
+        req(e, 'entity', lp, issues);
+        req(e, 'change', lp, issues);
+      });
+    }
+  }
 
   // repository_impact
   const repos = reqArray(p, 'repository_impact', 'root', issues, 1);

@@ -11,22 +11,30 @@ function getGitInfo() {
     const commit = execSync('git rev-parse HEAD').toString().trim();
     const commitShort = execSync('git rev-parse --short HEAD').toString().trim();
     const branch = execSync('git rev-parse --abbrev-ref HEAD').toString().trim();
-    const tag = execSync('git describe --tags --abbrev=0 2>nul || echo ""').toString().trim();
-    const isDirty = execSync('git diff --quiet || echo "dirty"').toString().trim() === 'dirty';
+    const commitCount = parseInt(execSync('git rev-list --count HEAD').toString().trim(), 10);
 
-    return {
-      commit,
-      commitShort,
-      branch,
-      tag: tag || null,
-      isDirty,
-    };
+    let tag = null;
+    try {
+      tag = execSync('git describe --tags --abbrev=0', { stdio: ['pipe', 'pipe', 'pipe'] }).toString().trim() || null;
+    } catch {
+      // no tags yet
+    }
+
+    let isDirty = false;
+    try {
+      execSync('git diff --quiet', { stdio: 'pipe' });
+    } catch {
+      isDirty = true;
+    }
+
+    return { commit, commitShort, branch, commitCount, tag, isDirty };
   } catch (err) {
     console.warn('Warning: Could not get git info:', err.message);
     return {
       commit: 'unknown',
       commitShort: 'unknown',
       branch: 'unknown',
+      commitCount: 0,
       tag: null,
       isDirty: false,
     };
@@ -37,8 +45,12 @@ function generateVersion() {
   const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
   const git = getGitInfo();
 
+  // Derive patch from commit count so version auto-increments on every new commit.
+  const [major, minor] = packageJson.version.split('.').map(Number);
+  const versionString = `${major}.${minor}.${git.commitCount}`;
+
   const version = {
-    version: packageJson.version,
+    version: versionString,
     buildTime: new Date().toISOString(),
     git,
     nodeVersion: process.version,

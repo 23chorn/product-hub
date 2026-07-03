@@ -5,31 +5,19 @@ Schema:
 ```json
 {
   "title": "[Initiative Name] — Solution Architecture",
-  "overview": "2–3 sentences: what is being built, platforms in scope, core architectural approach, target scale.",
-  "technology_decisions": {
-    "backend": [{ "decision": "Decision area", "choice": "Chosen technology" }],
-    "web": [{ "decision": "", "choice": "" }],
-    "ios": [{ "decision": "", "choice": "" }],
-    "android": [{ "decision": "", "choice": "" }],
-    "infrastructure": [{ "decision": "", "choice": "" }]
-  },
+  "overview": "2–3 sentences: what is being built, platforms in scope, core architectural approach.",
+  "approach": "1–2 sentences: how this fits the existing system — extending an existing pattern, adding a new service boundary, or integrating a new external API.",
+  "key_decisions": [
+    { "decision": "Decision area", "choice": "Chosen approach or technology" }
+  ],
   "data_model": {
-    "entities": [
-      { "name": "Entity name", "primary_key": "pk field", "key_fields": "field1, field2, field3", "relationships": "1:N with OtherEntity", "notes": "Constraints, indexing, soft-delete" }
+    "new_entities": [
+      { "name": "Entity name", "purpose": "What it represents", "key_fields": "field1, field2, field3", "relationships": "FK to ExistingTable" }
     ],
-    "entity_relationship_diagram": "ASCII diagram showing relationships and cardinality. MUST be drawn vertically (top-to-bottom) with each box/node on its own line, and the JSON string MUST use literal \\n newline escapes between every line — never emit the diagram as a single flat line, or it will not render."
+    "entity_changes": [
+      { "entity": "ExistingTableName", "change": "One-line summary of column or index added/removed" }
+    ]
   },
-  "api_surface": [
-    {
-      "service": "Service name (repo: reponame)",
-      "endpoints": [
-        { "method": "GET|POST|PUT|DELETE|PATCH", "path": "/path", "purpose": "What it does", "request": "Key request fields", "response": "Key response fields", "notes": "Auth, idempotency, rate limits (brief, no exhaustive enumerations)" }
-      ]
-    }
-  ],
-  "repository_impact": [
-    { "repo": "repo-name", "changes_required": "One-line summary of what changes", "notes": "Blocking gate or critical constraint (1 sentence max, omit if none)" }
-  ],
   "new_dependencies": [
     {
       "name": "LibraryOrServiceName",
@@ -37,17 +25,22 @@ Schema:
       "not_solvable_with_existing_stack_because": "Specific reason the existing tech cannot do this"
     }
   ],
+  "repository_impact": [
+    { "repo": "repo-name", "changes_required": "One-line summary of what changes" }
+  ],
   "open_questions": [
-    { "decision": "Unresolved architectural decision — only when external input is required", "recommendation": "Architect's recommended resolution (1 sentence max, no line breaks)", "risk": "Risk if left unresolved (1 sentence max, no line breaks)", "owner": "Product|Business|Legal|Engineering-leads — whoever can unblock this" }
+    { "decision": "Unresolved question — only when external input is genuinely required", "recommendation": "Architect's recommended resolution (1 sentence max)", "risk": "Risk if left unresolved (1 sentence max)", "owner": "Product|Business|Legal|Engineering-leads" }
   ]
 }
 ```
 
 Rules:
-- Only include platform keys (backend/web/ios/android/infrastructure) that are in scope.
-- For every repo in context/repos.md, include a repository_impact entry (use "No changes" if unaffected).
-- new_dependencies: list every technology that does NOT already appear in context/tech-stack.md. If all choices reuse the existing stack, set this to an empty array `[]`. An empty array is a deliberate statement — it will be shown prominently to the PM reviewer as confirmation that no new dependencies are introduced.
-- Infrastructure, hosting topology, deployment pipelines, cost estimates, and failure-mode tables are out of scope — do not include them.
-- BREVITY IS MANDATORY: This document is for tech team buy-in, not implementation handoff. Every field has explicit length constraints above. No exhaustive enumerations, no inline implementation guidance, no repeated content. The `entity_relationship_diagram` is the one permitted diagram — include it as specified above. Other diagrams, data-flow walkthroughs, alert configurations, and load test specifications are out of scope.
-- open_questions: Only raise a question when the architect genuinely cannot resolve it without external input — scale figures from Product, compliance obligations from Legal, retention periods from Business. If you can decide it, decide it here. Do NOT use open_questions as a deferred to-do list. Implementation details (retry logic, specific library versions, error handling strategies, edge-case handling) belong in the story decomposition phase — never here.
-- JSON VALIDITY: All string fields must be valid JSON strings. Never include literal newline characters (line breaks) in "recommendation", "risk", or any other string field. If you need to express multiple points, use semicolons or em-dashes within a single sentence, not line breaks. The entity_relationship_diagram field is the ONLY exception where \\n escapes are required.
+- **key_decisions**: 2–4 entries maximum. Only include choices that are irreversible or non-obvious from the existing tech stack. If the existing stack already covers it, do not list it.
+- **data_model.new_entities**: List only net-new tables. Use an empty array `[]` if no new tables are needed.
+- **data_model.entity_changes**: List only changes to existing tables. Use an empty array `[]` if no existing tables change.
+- **new_dependencies**: List every technology that does NOT already appear in context/tech-stack.md. Use `[]` if all choices reuse the existing stack — this is a deliberate statement shown prominently to reviewers.
+- **repository_impact**: For every repo in context/repos.md, include an entry. Use "No changes required" if unaffected.
+- **open_questions**: Only raise a question when you genuinely cannot resolve it without external input — scale figures from Product, compliance obligations from Legal, retention periods from Business. If you can decide it, decide it here. Do NOT use open_questions as a deferred to-do list. API shapes, retry logic, error handling, and implementation details belong in story decomposition — never here.
+- **API endpoints are out of scope.** Do not specify HTTP methods, paths, request/response shapes, or service contracts. Those belong in stories and implementation.
+- **Infrastructure, deployment pipelines, cost estimates, and scalability projections are out of scope.**
+- JSON validity: Never include literal newline characters in string fields. Use semicolons or em-dashes for multiple points within one field.

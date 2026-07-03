@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { MarkdownContent } from '../common/MarkdownContent';
 import { useWorkflowStore } from '../../stores/workflowStore';
 import { useConfigStore } from '../../stores/configStore';
@@ -19,7 +19,7 @@ import { useCheckpointActions } from '../../hooks/useCheckpointActions';
 import { renderStructuredArtifact } from './ArtifactContentView';
 import { FigmaDesignActions, FigmaScreenPreviewer } from './FigmaDesignActions';
 import { parseFigmaDesignContent } from '../../utils/figma-design';
-import { copyToClipboard } from '../../utils/markdown';
+import { copyToClipboard, printArtifact } from '../../utils/markdown';
 
 export function ArtifactViewer() {
   const { viewingArtifactId, setViewingArtifactId, checkpoints, activeWorkflow, applyWorkflowStatus, addCoordinatorMessage } = useWorkflowStore();
@@ -46,6 +46,7 @@ export function ArtifactViewer() {
   const setFigmaLink = (key: string, value: string) => setFigmaLinks(prev => ({ ...prev, [key]: value }));
 
   const { user, noAuth } = useAuthStore();
+  const printRef = useRef<HTMLDivElement>(null);
 
   // Find the pending checkpoint that has this artifact
   const pendingCheckpoint = checkpoints.find(
@@ -120,6 +121,7 @@ export function ArtifactViewer() {
 
   const isFigmaDesign = artifactType === 'figma_design' || pendingCheckpoint?.stage === 'figma_design';
   const figmaDesign = isFigmaDesign ? parseFigmaDesignContent(content) : null;
+  const isPrintable = !!(content && !loading && !isEditing && !isFigmaDesign && !isBacklog && artifactType !== 'prototype' && artifactType !== 'qa_tests');
 
   const emitMessage = (content: string) =>
     addCoordinatorMessage({ role: 'coordinator', content, timestamp: Date.now() });
@@ -393,6 +395,18 @@ export function ArtifactViewer() {
                   )}
                 </button>
               )}
+              {isPrintable && (
+                <button
+                  onClick={() => printRef.current && printArtifact(printRef.current, ARTIFACT_TYPE_LABELS[artifactType] ?? artifactType)}
+                  className="flex items-center gap-1 px-2 py-1 text-xs rounded-md border border-surface-200 dark:border-surface-700 text-surface-500 dark:text-surface-400 hover:border-surface-300 dark:hover:border-surface-600 hover:text-surface-700 dark:hover:text-surface-200 transition-colors"
+                  title="Export as PDF"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Export PDF
+                </button>
+              )}
               <ArtifactSyncActions
                 artifactType={artifactType}
                 activeWorkflow={activeWorkflow}
@@ -508,7 +522,7 @@ export function ArtifactViewer() {
                         onLinkChange={setFigmaLink}
                         readonly={pendingCheckpoint?.stage !== 'figma_design'}
                       />
-                    ) : content ? renderStructuredArtifact(content, {
+                    ) : content ? <div ref={printRef}>{renderStructuredArtifact(content, {
                       artifactType,
                       activeWorkflow,
                       checkpoints,
@@ -518,7 +532,7 @@ export function ArtifactViewer() {
                       rerunStage,
                       onClose: () => setViewingArtifactId(null),
                       requestDelete: (pendingCheckpoint && hasApprovePermission) ? requestDelete : undefined,
-                    }) : error ? (
+                    })}</div> : error ? (
                       <p className="text-sm text-red-500">{error}</p>
                     ) : pendingCheckpoint ? (
                       <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
