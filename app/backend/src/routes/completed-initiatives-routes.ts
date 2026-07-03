@@ -8,22 +8,24 @@ import { Router, Request, Response } from 'express';
 import db from '../data/database';
 import Logger from '../utils/logger';
 import { requireAdmin } from '../middleware/auth';
-import { effectiveStatus, resolveDisplayTitle } from '@pap/shared';
+import { effectiveStatus, resolveDisplayTitle, tryParseQATests, mergeQaTests } from '@pap/shared';
 import type {
   WorkflowInfo,
   WorkItemStateBucket,
   CompletedInitiativeSummary,
   CompletedInitiativeDetail,
   CompletedInitiativeWorkItemRow,
+  AssignedUser,
 } from '@pap/shared';
 import { bucketWorkItemState, workItemStatePercent, parseStoryRefs } from '../integrations/azure-devops-format';
 import { refreshItemAdoState } from '../integrations/ado-state-sync';
 import { getAzureDevOpsClient } from '../integrations/azure-devops';
-import { loadArtifactContentById, loadLatestArtifactContent, saveLocalArtifact } from '../agents/artifact-helpers';
+import { loadArtifactContentById, saveLocalArtifact, updateArtifactContent } from '../agents/artifact-helpers';
 import {
   getWorkItemRowsByItem, getTestPlanRowsByItem, getDocumentArtifactIds,
-  type AdoWorkItemRow, type QaTestPlanRow,
+  type AdoWorkItemRow,
 } from '../data/work-item-queries';
+import { getAssignedUsersByItem } from '../data/item-assignments';
 
 const logger = new Logger('COMPLETED-INITIATIVES');
 const router = Router();
@@ -148,12 +150,30 @@ export function computePercentComplete(workItemRows: AdoWorkItemRow[]): number |
   return Math.round(total / synced.length);
 }
 
+/** Live test case count from the current per-feature qa_tests artifacts — NOT
+ *  qa_test_plan_map.test_case_count, which is only a snapshot as of the last ADO push and
+ *  goes stale the moment a test case is added/removed locally (completed-initiatives test-case
+ *  routes below only rewrite the artifact, they don't touch qa_test_plan_map). Mirrors the
+ *  merge CompletedInitiativeDetail.tsx does client-side so the list and detail views agree. */
+async function computeLiveTestCaseCount(itemId: string): Promise<number> {
+  const { testArtifactIds } = getDocumentArtifactIds(itemId);
+  if (testArtifactIds.length === 0) return 0;
+  const parsed = await Promise.all(testArtifactIds.map(async (id, num) => {
+    const content = await loadArtifactContentById(id);
+    const data = content ? tryParseQATests(content) : null;
+    return data ? { num, data } : null;
+  }));
+  const valid = parsed.filter((p): p is { num: number; data: NonNullable<ReturnType<typeof tryParseQATests>> } => p != null);
+  return mergeQaTests(valid)?.test_cases.length ?? 0;
+}
+
 function buildSummary(
   itemId: string,
   seqNum: number | null,
   title: string,
   workItemRows: AdoWorkItemRow[],
-  testPlanRows: QaTestPlanRow[]
+  testCaseCount: number,
+  assignedUsers: AssignedUser[]
 ): CompletedInitiativeSummary {
   const stateBuckets: Record<WorkItemStateBucket, number> = { ...EMPTY_BUCKETS };
   let epicCount = 0, featureCount = 0, storyCount = 0;
@@ -193,9 +213,10 @@ function buildSummary(
     featureCount,
     storyCount,
     stateBuckets,
-    testCaseCount: testPlanRows.reduce((sum, r) => sum + (r.test_case_count ?? 0), 0),
+    testCaseCount,
     lastRefreshedAt: anyUnsynced ? null : minSyncedAt,
     percentComplete: computePercentComplete(workItemRows),
+    assignedUsers,
   };
 }
 
@@ -215,10 +236,12 @@ function toWorkItemRow(row: AdoWorkItemRow): CompletedInitiativeWorkItemRow {
   };
 }
 
-function buildDetail(item: CandidateRow): CompletedInitiativeDetail {
+async function buildDetail(item: CandidateRow): Promise<CompletedInitiativeDetail> {
   const workItemRows = getWorkItemRowsByItem([item.id]).get(item.id) ?? [];
   const testPlanRows = getTestPlanRowsByItem([item.id]).get(item.id) ?? [];
-  const summary = buildSummary(item.id, item.seq_num, item.title, workItemRows, testPlanRows);
+  const assignedUsers = getAssignedUsersByItem([item.id]).get(item.id) ?? [];
+  const testCaseCount = await computeLiveTestCaseCount(item.id);
+  const summary = buildSummary(item.id, item.seq_num, item.title, workItemRows, testCaseCount, assignedUsers);
   return {
     ...summary,
     workItems: workItemRows.map(toWorkItemRow),
@@ -237,7 +260,7 @@ export function getCompletedItemOrUndefined(itemId: string, archived = false): C
 }
 
 /** Builds the summary list for either the default (active) or admin-only archived view. */
-function listCompletedSummaries(archived: boolean): CompletedInitiativeSummary[] {
+async function listCompletedSummaries(archived: boolean): Promise<CompletedInitiativeSummary[]> {
   const candidates = getCandidateItems(archived);
   const workflowInfoByItem = getLatestWorkflowInfo(candidates.map(c => c.id));
   const completedItems = filterCompleted(candidates, workflowInfoByItem)
@@ -246,10 +269,17 @@ function listCompletedSummaries(archived: boolean): CompletedInitiativeSummary[]
 
   const itemIds = completedItems.map(c => c.id);
   const workItemRowsByItem = getWorkItemRowsByItem(itemIds);
-  const testPlanRowsByItem = getTestPlanRowsByItem(itemIds);
+  const assignedUsersByItem = getAssignedUsersByItem(itemIds);
+  const testCaseCounts = await Promise.all(itemIds.map(computeLiveTestCaseCount));
+  const testCaseCountByItem = new Map(itemIds.map((id, i) => [id, testCaseCounts[i]]));
 
   return completedItems.map(c =>
-    buildSummary(c.id, c.seq_num, c.title, workItemRowsByItem.get(c.id) ?? [], testPlanRowsByItem.get(c.id) ?? [])
+    buildSummary(
+      c.id, c.seq_num, c.title,
+      workItemRowsByItem.get(c.id) ?? [],
+      testCaseCountByItem.get(c.id) ?? 0,
+      assignedUsersByItem.get(c.id) ?? [],
+    )
   );
 }
 
@@ -276,14 +306,9 @@ async function cascadeDeleteTestCases(
   const testCaseIds: Record<string, number> = JSON.parse(planRow.test_case_ids ?? '{}');
   if (Object.keys(testCaseIds).length === 0) return;
 
-  // Find qa_tests artifact IDs for this item via approved QA checkpoints
-  const qaArtifactIds = (db.prepare(`
-    SELECT DISTINCT c.artifact_id
-    FROM checkpoints c
-    JOIN workflows w ON w.id = c.workflow_id
-    WHERE w.item_id = ? AND c.status = 'approved' AND c.artifact_id IS NOT NULL
-      AND c.stage LIKE 'story_decomposition_%_qa'
-  `).all(itemId) as { artifact_id: number }[]).map(r => r.artifact_id);
+  // Find qa_tests artifact IDs for this item via approved QA checkpoints (epic-level and/or
+  // legacy per-feature — same resolution buildDetail/computeLiveTestCaseCount use).
+  const qaArtifactIds = getDocumentArtifactIds(itemId).testArtifactIds;
 
   // Collect local test case IDs whose story_ref mentions an affected story
   const toDeleteLocalIds = new Set<string>();
@@ -323,9 +348,9 @@ async function cascadeDeleteTestCases(
  * GET /api/completed-initiatives
  * List every completed, ADO-pushed initiative with rollup counts and state buckets.
  */
-router.get('/', (_req: Request, res: Response) => {
+router.get('/', async (_req: Request, res: Response) => {
   try {
-    res.json(listCompletedSummaries(false));
+    res.json(await listCompletedSummaries(false));
   } catch (error: any) {
     logger.error('Failed to list completed initiatives', error);
     res.status(500).json({ error: error.message || 'Failed to list completed initiatives' });
@@ -336,9 +361,9 @@ router.get('/', (_req: Request, res: Response) => {
  * GET /api/completed-initiatives/archived
  * Admin-only review list — initiatives manually archived off the default list above.
  */
-router.get('/archived', requireAdmin, (_req: Request, res: Response) => {
+router.get('/archived', requireAdmin, async (_req: Request, res: Response) => {
   try {
-    res.json(listCompletedSummaries(true));
+    res.json(await listCompletedSummaries(true));
   } catch (error: any) {
     logger.error('Failed to list archived initiatives', error);
     res.status(500).json({ error: error.message || 'Failed to list archived initiatives' });
@@ -350,11 +375,11 @@ router.get('/archived', requireAdmin, (_req: Request, res: Response) => {
  * Cached drill-down — full work item + test plan rows. No ADO call.
  * ?archived=true looks it up among archived initiatives instead (admin review view).
  */
-router.get('/:itemId', (req: Request, res: Response) => {
+router.get('/:itemId', async (req: Request, res: Response) => {
   try {
     const item = getCompletedItemOrUndefined(req.params.itemId, req.query.archived === 'true');
     if (!item) return res.status(404).json({ error: 'Completed initiative not found' });
-    res.json(buildDetail(item));
+    res.json(await buildDetail(item));
   } catch (error: any) {
     logger.error('Failed to load completed initiative', error);
     res.status(500).json({ error: error.message || 'Failed to load completed initiative' });
@@ -370,7 +395,7 @@ router.post('/:itemId/refresh', async (req: Request, res: Response) => {
     const item = getCompletedItemOrUndefined(req.params.itemId, req.query.archived === 'true');
     if (!item) return res.status(404).json({ error: 'Completed initiative not found' });
     const { refreshed, notFound } = await refreshItemAdoState(item.id);
-    res.json({ ...buildDetail(item), refreshed, notFound });
+    res.json({ ...(await buildDetail(item)), refreshed, notFound });
   } catch (error: any) {
     logger.error('Failed to refresh ADO state', error);
     res.status(500).json({ error: error.message || 'Failed to refresh ADO state' });
@@ -417,7 +442,7 @@ router.patch('/:itemId/work-items/:adoId', async (req: Request, res: Response) =
     }
 
     logger.info(`Updated ADO #${adoId} for initiative ${item.id}: ${Object.keys(updates).join(', ')}`);
-    res.json(buildDetail(item));
+    res.json(await buildDetail(item));
   } catch (error: any) {
     logger.error('Failed to update work item', error);
     res.status(500).json({ error: error.message || 'Failed to update work item' });
@@ -498,7 +523,7 @@ router.delete('/:itemId/work-items/:adoId', async (req: Request, res: Response) 
     })();
 
     logger.info(`Deleted ${row.ado_type} ADO #${adoId} (${row.local_key}) from initiative ${item.id}`);
-    res.json(buildDetail(item));
+    res.json(await buildDetail(item));
   } catch (error: any) {
     logger.error('Failed to delete work item', error);
     res.status(500).json({ error: error.message || 'Failed to delete work item' });
@@ -506,10 +531,38 @@ router.delete('/:itemId/work-items/:adoId', async (req: Request, res: Response) 
 });
 
 // ── Test case management ──────────────────────────────────────────────────────
-// Add/delete individual test cases from the latest qa_tests artifact. The artifact
-// is modified in-place (saved as a new artifact row); no ADO Test Plan call is made.
+// Add/delete individual test cases directly on the artifact that actually holds them.
+// A qa_tests artifact type isn't unique per item — legacy items have one per feature
+// (story_decomposition_F<n>_qa) and current items have one at epic level (epic_qa) — so
+// "the latest qa_tests artifact overall" can silently be the wrong one. Every test case
+// is mutated in place via updateArtifactContent, keeping its existing checkpoint link.
 
-/** Next numeric suffix to use when minting a new TC-M-NNN id. */
+interface QaArtifact { artifactId: number; suite: { test_cases: any[]; testCases?: any[]; [k: string]: any } }
+
+/** Every real QA test-suite artifact for this item (epic-level and/or legacy per-feature),
+ *  newest first, parsed and ready to mutate. */
+async function loadQaArtifacts(itemId: string): Promise<QaArtifact[]> {
+  const { testArtifactIds } = getDocumentArtifactIds(itemId);
+  if (testArtifactIds.length === 0) return [];
+  const rows = db.prepare(
+    `SELECT id FROM artifacts WHERE id IN (${testArtifactIds.map(() => '?').join(',')}) ORDER BY created_at DESC`
+  ).all(...testArtifactIds) as { id: number }[];
+
+  const results: QaArtifact[] = [];
+  for (const row of rows) {
+    const content = await loadArtifactContentById(row.id);
+    if (!content) continue;
+    const stripped = content.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+    try {
+      const suite = JSON.parse(stripped);
+      if (!Array.isArray(suite.test_cases)) suite.test_cases = suite.testCases ?? [];
+      results.push({ artifactId: row.id, suite });
+    } catch { /* skip an unparsable artifact rather than fail the whole lookup */ }
+  }
+  return results;
+}
+
+/** Next numeric suffix to use when minting a new TC-M-NNN id, unique across every suite. */
 function nextManualTcId(testCases: Array<{ id?: string }>): string {
   let max = 0;
   for (const tc of testCases) {
@@ -529,7 +582,9 @@ function latestSessionForItem(itemId: string): string | null {
 
 /**
  * POST /api/completed-initiatives/:itemId/test-cases
- * Add a manually authored test case to the latest qa_tests artifact.
+ * Add a manually authored test case to the newest QA suite artifact (epic-level, or the
+ * newest per-feature one on legacy items). Bootstraps a fresh artifact only if the
+ * initiative has no QA suite at all yet.
  * Body: { title, type, priority, description? }
  * Returns: CompletedInitiativeDetail
  */
@@ -544,27 +599,30 @@ router.post('/:itemId/test-cases', async (req: Request, res: Response) => {
     if (!type?.trim()) return res.status(400).json({ error: 'type is required' });
     if (!priority?.trim()) return res.status(400).json({ error: 'priority is required' });
 
-    const content = await loadLatestArtifactContent(item.id, 'qa_tests');
-    const stripped = content?.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim() ?? null;
-    let suite: any = stripped ? JSON.parse(stripped) : { suite: 'QA Test Suite', version: '1.0', test_cases: [] };
-    if (!Array.isArray(suite.test_cases)) suite.test_cases = suite.testCases ?? [];
-
+    const qaArtifacts = await loadQaArtifacts(item.id);
     const newCase: Record<string, unknown> = {
-      id: nextManualTcId(suite.test_cases),
+      id: nextManualTcId(qaArtifacts.flatMap(a => a.suite.test_cases)),
       title: title.trim(),
       type: type.trim(),
       priority: priority.trim(),
       tags: ['@regression'],
     };
     if (description?.trim()) newCase.description = description.trim();
-    suite.test_cases = [...suite.test_cases, newCase];
 
-    const sessionId = latestSessionForItem(item.id);
-    if (!sessionId) return res.status(500).json({ error: 'No session found for this initiative — run the pipeline first' });
+    if (qaArtifacts.length > 0) {
+      const target = qaArtifacts[0]; // newest
+      target.suite.test_cases = [...target.suite.test_cases, newCase];
+      if (target.suite.testCases) delete target.suite.testCases;
+      await updateArtifactContent(target.artifactId, JSON.stringify(target.suite, null, 2));
+    } else {
+      const sessionId = latestSessionForItem(item.id);
+      if (!sessionId) return res.status(500).json({ error: 'No session found for this initiative — run the pipeline first' });
+      const suite = { suite: 'QA Test Suite', version: '1.0', test_cases: [newCase] };
+      await saveLocalArtifact(sessionId, 'qa_tests', JSON.stringify(suite, null, 2), item.id);
+    }
 
-    await saveLocalArtifact(sessionId, 'qa_tests', JSON.stringify(suite, null, 2), item.id);
     logger.info(`Added manual test case ${newCase.id} to qa_tests for initiative ${item.id}`);
-    res.json(buildDetail(item));
+    res.json(await buildDetail(item));
   } catch (error: any) {
     logger.error('Failed to add test case', error);
     res.status(500).json({ error: error.message || 'Failed to add test case' });
@@ -573,7 +631,8 @@ router.post('/:itemId/test-cases', async (req: Request, res: Response) => {
 
 /**
  * DELETE /api/completed-initiatives/:itemId/test-cases/:tcId
- * Remove a test case by id from the latest qa_tests artifact.
+ * Remove a test case by id — searches every QA suite artifact for this item (epic-level
+ * and/or legacy per-feature) rather than assuming it lives in "the latest qa_tests artifact".
  * Returns: CompletedInitiativeDetail
  */
 router.delete('/:itemId/test-cases/:tcId', async (req: Request, res: Response) => {
@@ -583,23 +642,22 @@ router.delete('/:itemId/test-cases/:tcId', async (req: Request, res: Response) =
     if (!item) return res.status(404).json({ error: 'Completed initiative not found' });
 
     const tcId = req.params.tcId;
-    const content = await loadLatestArtifactContent(item.id, 'qa_tests');
-    if (!content) return res.status(404).json({ error: 'No qa_tests artifact found for this initiative' });
+    const qaArtifacts = await loadQaArtifacts(item.id);
 
-    const stripped = content.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-    const suite = JSON.parse(stripped);
-    const cases: any[] = suite.test_cases ?? suite.testCases ?? [];
-    const before = cases.length;
-    suite.test_cases = cases.filter((tc: any) => tc.id !== tcId);
-    if (suite.testCases) delete suite.testCases;
-    if (suite.test_cases.length === before) return res.status(404).json({ error: `Test case ${tcId} not found` });
+    let found = false;
+    for (const { artifactId, suite } of qaArtifacts) {
+      const before = suite.test_cases.length;
+      suite.test_cases = suite.test_cases.filter((tc: any) => tc.id !== tcId);
+      if (suite.test_cases.length === before) continue;
+      if (suite.testCases) delete suite.testCases;
+      await updateArtifactContent(artifactId, JSON.stringify(suite, null, 2));
+      found = true;
+      break;
+    }
+    if (!found) return res.status(404).json({ error: `Test case ${tcId} not found` });
 
-    const sessionId = latestSessionForItem(item.id);
-    if (!sessionId) return res.status(500).json({ error: 'No session found for this initiative' });
-
-    await saveLocalArtifact(sessionId, 'qa_tests', JSON.stringify(suite, null, 2), item.id);
     logger.info(`Deleted test case ${tcId} from qa_tests for initiative ${item.id}`);
-    res.json(buildDetail(item));
+    res.json(await buildDetail(item));
   } catch (error: any) {
     logger.error('Failed to delete test case', error);
     res.status(500).json({ error: error.message || 'Failed to delete test case' });

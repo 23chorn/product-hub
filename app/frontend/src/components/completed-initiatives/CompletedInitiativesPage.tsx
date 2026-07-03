@@ -6,6 +6,7 @@ import { relativeTime } from '../../utils/relative-time';
 import { WORK_ITEM_STATE_BUCKETS, WORK_ITEM_STATE_BUCKET_LABELS, WORK_ITEM_STATE_BUCKET_COLORS } from '../../utils/work-item-state-bucket';
 import { CompletedInitiativeDetail } from './CompletedInitiativeDetail';
 import { PageHeaderTitle } from '../common/PageHeaderTitle';
+import { formatAssignedLabel } from '../../utils/assigned-users';
 
 type View = 'active' | 'archived';
 
@@ -98,6 +99,14 @@ export function CompletedInitiativesPage() {
                 </div>
 
                 <div className="flex gap-1.5 flex-wrap mt-2">
+                  {item.assignedUsers.length > 0 && (
+                    <span
+                      className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 font-medium"
+                      title={item.assignedUsers.map(u => u.name).join(', ')}
+                    >
+                      {formatAssignedLabel(item.assignedUsers, user?.id)}
+                    </span>
+                  )}
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-400">
                     {item.featureCount} feature{item.featureCount !== 1 ? 's' : ''}
                   </span>

@@ -53,9 +53,6 @@ product-hub/
 │   ├── schema.ts       Canonical Drizzle schema (tracked)
 │   ├── migrations/     Versioned SQL migrations, applied automatically on startup
 │   └── product-ops.db  Runtime database (gitignored)
-├── packages/
-│   └── pipeline/      @xcube/pipeline — developer CLI: pulls initiative tickets, writes context
-│                      files, updates ADO states, and launches Claude Code for implementation
 ├── data/              Artifact exports (gitignored)
 ├── docs/              Deployment, developer, integration, and setup guides
 └── scripts/           Setup and utility scripts
@@ -352,7 +349,7 @@ Context files can be edited from the UI (**Knowledge Studio** button in the head
 
 ## Developer Pipeline CLI (`@xcube/pipeline`)
 
-Once Product Hub has pushed tickets to Azure DevOps, developers use the `pipeline` CLI to pull their stream's tickets and start implementing:
+Once Product Hub has pushed tickets to Azure DevOps, developers use the `pipeline` CLI to pull their stream's tickets and start implementing. The CLI lives in its own repository — it only talks to this app's `/api/dev/initiatives/*` endpoints, it isn't part of this codebase.
 
 ```bash
 # Install globally
@@ -369,7 +366,9 @@ The CLI:
 4. Moves tickets from "New" → "In Dev" in Azure DevOps
 5. Launches Claude Code seeded with the context files
 
-See [`packages/pipeline/README.md`](packages/pipeline/README.md) for configuration and full usage.
+The Progress Tracker's "Export Plan/Context" button (in `CompletedInitiativeDetail.tsx`) generates
+the same two files for manual download without the CLI — see
+`GET /api/dev/initiatives/:seqNum/pipeline-export` in `app/backend/src/routes/pipeline-routes.ts`.
 
 ## Development
 

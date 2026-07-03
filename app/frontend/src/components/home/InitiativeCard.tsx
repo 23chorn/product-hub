@@ -5,6 +5,7 @@ import { StatusBadge } from './StatusBadge';
 import { useAuthStore, ROLE_LABELS, canLaunchWorkflow } from '../../stores/authStore';
 import { CardContextMenu } from '../common/CardContextMenu';
 import { ArchiveConfirmModal } from '../common/ArchiveConfirmModal';
+import { formatAssignedLabel } from '../../utils/assigned-users';
 
 /** Format a workflow's last state-change timestamp, e.g. "18 Jun, 14:32". */
 function formatUpdatedAt(ms: number): string {
@@ -80,7 +81,8 @@ export function InitiativeCard({
   const canArchive = isAdmin && !isArchived && (isComplete || !wf);
   const canUnarchive = isAdmin && isArchived;
   const canShowAssign = !noAuth && !!user;
-  const isAssignedToMe = canShowAssign && (item.assignedUserIds ?? []).includes(user!.id);
+  const assignedUsers = item.assignedUsers ?? [];
+  const isAssignedToMe = canShowAssign && assignedUsers.some(u => u.id === user!.id);
 
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -228,6 +230,14 @@ export function InitiativeCard({
           </span>
         )}
         <StatusBadge wf={wf} isPaused={item.isPaused} />
+        {assignedUsers.length > 0 && (
+          <span
+            className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400"
+            title={assignedUsers.map(u => u.name).join(', ')}
+          >
+            {formatAssignedLabel(assignedUsers, canShowAssign ? user!.id : undefined)}
+          </span>
+        )}
         {isAdmin && approvalBadges.map((label) => (
           <span
             key={label}
@@ -319,6 +329,7 @@ export function InitiativeCard({
                     : stage === 'epic_feature_planner' ? 'epics'
                     : stage === 'story_decomposition' ? 'stories'
                     : stage === 'backlog_merge' ? 'backlog'
+                    : stage === 'epic_qa' ? 'test cases'
                     : stage === 'figma_design' ? 'figma'
                     : stage === 'api_spec' ? 'api'
                     : stage;

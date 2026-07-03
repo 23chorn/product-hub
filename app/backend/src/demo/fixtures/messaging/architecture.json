@@ -1,128 +1,53 @@
 {
-  "title": "Architecture: In-App Messaging & Trade Chat \u2014 xCube",
+  "title": "Architecture: In-App Messaging & Trade Chat — xCube",
   "overview": "The messaging feature adds a real-time channel-based chat layer to xCube. The architecture prioritises sub-500ms delivery latency, horizontal scalability to 10,000 concurrent connections, and a compliant 7-year message retention pipeline. The new Message Service sits alongside existing xCube backend services, reusing PostgreSQL (RDS) for channel metadata and adding Cassandra for message storage and Redis Pub/Sub for fan-out.",
-  "technology_decisions": {
-    "backend": [
-      {
-        "decision": "Message store",
-        "choice": "Apache Cassandra"
-      },
-      {
-        "decision": "Real-time fan-out",
-        "choice": "Redis Pub/Sub"
-      },
-      {
-        "decision": "Content moderation \u2014 Stage 1",
-        "choice": "Rule-based classifier (in-process, <5ms)"
-      },
-      {
-        "decision": "Content moderation \u2014 Stage 2",
-        "choice": "LLM prompt-based classifier (async, ~200ms)"
-      },
-      {
-        "decision": "Archive pipeline",
-        "choice": "Debezium CDC \u2192 Kafka \u2192 S3 (Parquet)"
-      }
-    ],
-  },
+  "approach": "Adds a new stateless Message Service alongside existing xCube backend services and a WebSocket gateway for real-time delivery, reusing the existing quote WebSocket infrastructure for ticker card price updates rather than building new market-data plumbing.",
+  "key_decisions": [
+    {
+      "decision": "Message store",
+      "choice": "Apache Cassandra"
+    },
+    {
+      "decision": "Real-time fan-out",
+      "choice": "Redis Pub/Sub"
+    },
+    {
+      "decision": "Content moderation",
+      "choice": "Two-stage: in-process rule-based classifier (<5ms), then async LLM prompt-based classifier (~200ms)"
+    },
+    {
+      "decision": "Archive pipeline",
+      "choice": "Debezium CDC → Kafka → S3 (Parquet)"
+    }
+  ],
   "data_model": {
-    "entities": [
+    "new_entities": [
       {
         "name": "channels (PostgreSQL)",
-        "primary_key": "id UUID",
-        "key_fields": "name TEXT UNIQUE, topic TEXT, created_by UUID, created_at TIMESTAMPTZ, member_count INT",
-        "relationships": "1:N with channel_members",
-        "notes": "PostgreSQL chosen for channel metadata \u2014 relational, low write volume, ACID guarantees needed for member_count updates"
+        "purpose": "Channel metadata and membership counts",
+        "key_fields": "id UUID PK, name TEXT UNIQUE, topic TEXT, created_by UUID, created_at TIMESTAMPTZ, member_count INT",
+        "relationships": "1:N with channel_members"
       },
       {
         "name": "channel_members (PostgreSQL)",
-        "primary_key": "(channel_id UUID, user_id UUID)",
-        "key_fields": "joined_at TIMESTAMPTZ",
-        "relationships": "N:1 with channels, N:1 with users",
-        "notes": "Simple membership join table; index on user_id for 'my channels' query"
+        "purpose": "Channel membership join table",
+        "key_fields": "channel_id UUID, user_id UUID, joined_at TIMESTAMPTZ",
+        "relationships": "N:1 with channels, N:1 with users"
       },
       {
         "name": "messages (Cassandra)",
-        "primary_key": "channel_id UUID PARTITION KEY, created_at TIMESTAMP CLUSTERING KEY DESC",
-        "key_fields": "message_id UUID, user_id UUID, content TEXT, ticker_ref TEXT (JSON nullable), moderation_status TEXT (approved|pending|rejected)",
-        "relationships": "N:1 with channels",
-        "notes": "Partition by channel_id; clustering DESC gives most-recent-first reads without sorting; TTL = 7 years per row"
-      },
-      {
-        "name": "Redis keys",
-        "primary_key": "N/A",
-        "key_fields": "channel:{id}:subscribers SET, ratelimit:msg:{user_id} sliding window counter (max 30/min), Pub/Sub topic ch:{channel_id}",
-        "relationships": "N/A",
-        "notes": "All Redis state is ephemeral; reconnect recovers from Cassandra history"
+        "purpose": "Message storage partitioned by channel, most-recent-first reads, 7-year TTL for compliance",
+        "key_fields": "channel_id UUID (partition key), created_at TIMESTAMP (clustering key desc), message_id UUID, user_id UUID, content TEXT, ticker_ref TEXT (JSON nullable), moderation_status TEXT (approved|pending|rejected)",
+        "relationships": "N:1 with channels"
       }
     ],
-    "entity_relationship_diagram": "users 1\u2500\u2500N channel_members N\u2500\u25001 channels\nchannels 1\u2500\u2500N messages (Cassandra)\nmessages N\u2500\u25001 users"
+    "entity_changes": []
   },
-  "api_surface": [
-    {
-      "service": "Channels Service (repo: xcube-api)",
-      "endpoints": [
-        {
-          "method": "GET",
-          "path": "/api/channels",
-          "purpose": "List public channels paginated by activity",
-          "request": "JWT header, ?cursor, ?limit",
-          "response": "[{id, name, topic, memberCount, lastMessageAt}]",
-          "notes": "Sorted by lastMessageAt DESC"
-        },
-        {
-          "method": "POST",
-          "path": "/api/channels",
-          "purpose": "Create a new public channel",
-          "request": "{name, topic}",
-          "response": "{id, name, topic, createdAt}",
-          "notes": "400 if name already taken"
-        },
-        {
-          "method": "POST",
-          "path": "/api/channels/:id/join",
-          "purpose": "Join a channel",
-          "request": "JWT header",
-          "response": "200",
-          "notes": "Increments member_count; idempotent"
-        },
-        {
-          "method": "POST",
-          "path": "/api/channels/:id/leave",
-          "purpose": "Leave a channel",
-          "request": "JWT header",
-          "response": "200",
-          "notes": "Decrements member_count; idempotent"
-        },
-        {
-          "method": "GET",
-          "path": "/api/channels/:id/messages",
-          "purpose": "Fetch message history (cursor-based)",
-          "request": "JWT header, ?before=ISO8601, ?limit=50",
-          "response": "[Message]",
-          "notes": "Reads from Cassandra; cursor is created_at of oldest returned message"
-        }
-      ]
-    },
-    {
-      "service": "WebSocket Protocol (repo: xcube-api)",
-      "endpoints": [
-        {
-          "method": "WS",
-          "path": "/ws/chat",
-          "purpose": "Real-time message send and receive",
-          "request": "JWT as query param (?token=...)",
-          "response": "JSON frames per message or ticker update",
-          "notes": "Client sends subscribe/send/unsubscribe frames; server pushes message and ticker_update frames; moderation_held frame if message is flagged"
-        }
-      ]
-    }
-  ],
   "repository_impact": [
     {
       "repo": "xcube-api",
       "changes_required": "New channels and messages services; Cassandra client + schema migrations; Redis Pub/Sub fan-out; Moderation Service (rule-based + LLM classifier); WebSocket gateway integration; Archive pipeline (Debezium + Kafka producer)",
-      "notes": "Message Service pods are stateless \u2014 scale independently from existing API pods"
+      "notes": "Message Service pods are stateless — scale independently from existing API pods"
     },
     {
       "repo": "xcube-ios",
@@ -155,20 +80,20 @@
   "open_questions": [
     {
       "decision": "Cassandra cluster sizing for 3-year message volume at 10K MAU sending 10 messages/day",
-      "recommendation": "Model at 10B messages/year; r6g.xlarge \u00d7 3 handles ~50K writes/sec \u2014 sufficient. Review at 50K MAU milestone.",
+      "recommendation": "Model at 10B messages/year; r6g.xlarge × 3 handles ~50K writes/sec — sufficient. Review at 50K MAU milestone.",
       "risk": "Under-provisioned cluster causes write failures at market open peak",
       "owner": "Product"
     },
     {
       "decision": "LLM classifier model selection for moderation",
       "recommendation": "Claude Haiku for cost-efficiency (~$0.0003/message); evaluate Mistral as fallback; do not use GPT-4 at MVP volumes due to cost",
-      "risk": "Model prompt injection via crafted message content \u2014 test adversarially before launch",
+      "risk": "Model prompt injection via crafted message content — test adversarially before launch",
       "owner": "Engineering-leads"
     },
     {
       "decision": "Message hold vs. deliver-then-remove for flagged content",
       "recommendation": "Hold before delivery for MVP (safer); accept latency cost for flagged messages; revisit if false-positive rate >5% creates UX complaints",
-      "risk": "Hold approach means legitimate messages may be delayed 10\u201330 minutes during human review queue backup",
+      "risk": "Hold approach means legitimate messages may be delayed 10–30 minutes during human review queue backup",
       "owner": "Product"
     }
   ]

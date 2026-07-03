@@ -533,6 +533,11 @@ export interface KbFileCommit {
 
 export type WorkItemStateBucket = 'not_started' | 'in_progress' | 'done' | 'removed';
 
+export interface AssignedUser {
+  id: number;
+  name: string;
+}
+
 export interface CompletedInitiativeSummary {
   itemId: string;
   seqNum: number | null;
@@ -548,6 +553,7 @@ export interface CompletedInitiativeSummary {
    *  (stories, or features when an initiative has no stories). Null until at least one
    *  work item has a synced state. */
   percentComplete: number | null;
+  assignedUsers: AssignedUser[];
 }
 
 export interface CompletedInitiativeWorkItemRow {

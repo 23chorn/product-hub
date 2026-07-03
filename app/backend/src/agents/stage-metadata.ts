@@ -142,12 +142,11 @@ Key requirements:
 This stage is intentionally scoped down for reliability right now — fewer sections, written concisely. More sections (diagrams, data-flow walkthroughs, deployment/failure-mode detail) will be reintroduced once this smaller scope is solid. Do not add sections beyond the template.
 
 Key requirements:
-- **technology_decisions**: name specific products for each decision area; include only platform keys that are in scope. No rationale prose — decision and choice only.
-- **data_model.entities**: table with PKs, key fields, relationships, and notes. entity_relationship_diagram must be an ASCII string.
-- **api_surface**: every endpoint with method, path, request/response shapes, auth, and idempotency notes — keep each note to one line.
+- **key_decisions**: 2–4 entries maximum — decision and choice only, no rationale prose. Only choices that are irreversible or non-obvious from the existing tech stack.
+- **data_model.new_entities** / **data_model.entity_changes**: net-new tables vs. changes to existing tables, kept separate. Empty array when there are none of one kind.
 - **new_dependencies**: name, type, and not_solvable_with_existing_stack_because only. No alternatives evaluated, no cost breakdown.
 
-Hosting infrastructure, deployment pipelines, cost estimates, and failure-mode tables are out of scope for this document.
+API endpoints, hosting infrastructure, deployment pipelines, cost estimates, and failure-mode tables are out of scope for this document.
 
 If a context/tech-stack.md file was provided, align all choices with the existing stack and explain deviations. If no tech stack was provided, recommend specific technologies with tradeoffs.`,
   },
@@ -413,7 +412,7 @@ export const STAGE_TOOL_DEFINITIONS: Record<string, StageToolDefinition[]> = {
   solution_architect: [
     {
       name: 'validate_architecture_json',
-      description: 'Validate your architecture JSON before returning it. Checks technology_decisions (decision and choice fields only), new_dependencies structure, data_model entities and ERD, api_surface endpoints, repository_impact, and open_questions. Also scans for unresolved TBD decisions. Call after completing the full JSON object.',
+      description: 'Validate your architecture JSON before returning it. Checks key_decisions (decision and choice fields only), new_dependencies structure, data_model.new_entities/entity_changes, repository_impact, and open_questions. Also scans for unresolved TBD decisions. Call after completing the full JSON object.',
       input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete architecture JSON string (may be wrapped in a ```json code block)' } }, required: ['json'] },
     },
   ],

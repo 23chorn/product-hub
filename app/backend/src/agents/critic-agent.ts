@@ -91,18 +91,16 @@ Focus on:
     case 'solution_architect':
       return `## Artifact Stage: Architecture Document (Atlas)
 
-Structural validation (TBD detection, Repository Impact section, Cross-Platform Contracts section, cost estimates, failure mode table) has already been performed by automated tools. Do not re-raise those checks.
+This stage is intentionally scoped down: API endpoints, hosting infrastructure, deployment pipelines, cost estimates, and failure-mode tables are out of scope for this document — do not raise their absence as an issue. Structural validation (TBD detection, repository_impact coverage) has already been performed by automated tools. Do not re-raise those checks.
 
 Focus on:
-- **CRITICAL**: Does any technology in technology_decisions that is absent from the existing tech stack also appear in the new_dependencies field with a credible justification? If not, the architecture has introduced an undeclared dependency.
+- **CRITICAL**: Does any technology in key_decisions that is absent from the existing tech stack also appear in the new_dependencies field with a credible justification? If not, the architecture has introduced an undeclared dependency.
 - **CRITICAL**: Does any technology choice duplicate a capability already provided by the existing stack (e.g. SignalR when WebSocket exists, Kafka/RabbitMQ when Redis pub/sub exists, a new auth provider when existing auth covers it)? Name the overlap explicitly.
 - **MAJOR**: Is each new_dependencies entry justified with a specific, nameable gap in the existing stack — or does it use vague language ("better performance", "needed for real-time")?
-- Are Repository Impact entries that say "No changes" plausible — or has the architect silently omitted repos that clearly need work?
-- Are Cross-Platform Contracts internally consistent with the API surface described elsewhere in the document?
+- Are repository_impact entries that say "No changes required" plausible — or has the architect silently omitted repos that clearly need work?
 - Does every NFR from the PRD have a specific architectural decision addressing it — not just an acknowledgement?
 - Are PRD open questions resolved or explicitly acknowledged with a mitigation approach?
-- Is the data model sound (normalisation choices, indexing for query patterns)?
-- Does the scalability approach actually support the stated load assumptions?
+- Is the data model sound — are new_entities and entity_changes correctly separated, with plausible relationships and no missing table for something key_decisions implies?
 - PM Questions cover business constraints only — not technology choices.
 
 `;

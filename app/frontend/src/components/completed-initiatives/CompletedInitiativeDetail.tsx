@@ -38,22 +38,21 @@ function PipelineExportModal({ seqNum, availableStreams, phaseLabels, onClose }:
 }) {
   const [stream, setStream] = useState<PipelineStream | null>(null);
   const [phase, setPhase] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<'context' | 'plan' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const generate = async () => {
-    setLoading(true); setError(null);
+  const generate = async (file: 'context' | 'plan') => {
+    setLoading(file); setError(null);
     try {
       const result = await api.generatePipelineExport(seqNum, { stream: stream ?? undefined, phase: phase ?? undefined });
       const suffix = stream ? `_${stream}` : '';
       const phaseSuffix = phase ? `_${phase.toLowerCase().replace(/\s+/g, '_')}` : '';
-      downloadText(result.context, `pipeline_context_${seqNum}${phaseSuffix}${suffix}.md`);
-      downloadText(result.plan, `pipeline_plan_${seqNum}${phaseSuffix}${suffix}.md`);
-      onClose();
+      if (file === 'context') downloadText(result.context, `pipeline_context_${seqNum}${phaseSuffix}${suffix}.md`);
+      else downloadText(result.plan, `pipeline_plan_${seqNum}${phaseSuffix}${suffix}.md`);
     } catch (err: any) {
       setError(err?.response?.data?.error ?? err.message ?? 'Export failed');
     } finally {
-      setLoading(false);
+      setLoading(null);
     }
   };
 
@@ -113,24 +112,43 @@ function PipelineExportModal({ seqNum, availableStreams, phaseLabels, onClose }:
           )}
         </div>
 
-        <p className="mt-3 text-[10px] text-surface-400 dark:text-surface-500">
-          Downloads <code className="font-mono">pipeline_context_{seqNum}.md</code> and <code className="font-mono">pipeline_plan_{seqNum}.md</code>
-        </p>
+        {error && <p className="mt-3 text-[10px] text-red-600 dark:text-red-400">{error}</p>}
 
-        {error && <p className="mt-2 text-[10px] text-red-600 dark:text-red-400">{error}</p>}
+        <div className="mt-4 space-y-2">
+          <div className="flex items-start gap-3 rounded-lg border border-surface-200 dark:border-surface-700 p-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-surface-800 dark:text-surface-100">Context</p>
+              <p className="text-[10px] text-surface-500 dark:text-surface-400 mt-0.5">Full initiative background — problem statement, users, metrics, constraints — and every ticket's story, acceptance criteria, FR/NFR, and technical notes. Read by Claude before starting work.</p>
+            </div>
+            <button
+              onClick={() => generate('context')}
+              disabled={loading !== null}
+              className="flex-shrink-0 text-[11px] px-3 py-1.5 rounded-lg border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-200 hover:bg-surface-50 dark:hover:bg-surface-700 disabled:opacity-40 transition-colors font-medium"
+            >
+              {loading === 'context' ? '…' : 'Download'}
+            </button>
+          </div>
 
-        <div className="flex gap-2 mt-4">
-          <button
-            onClick={generate}
-            disabled={loading}
-            className="flex-1 text-xs px-3 py-2 rounded-lg bg-brand-500 text-white hover:bg-brand-600 disabled:opacity-40 transition-colors font-medium"
-          >
-            {loading ? 'Generating…' : 'Generate & Download'}
-          </button>
+          <div className="flex items-start gap-3 rounded-lg border border-surface-200 dark:border-surface-700 p-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-surface-800 dark:text-surface-100">Plan</p>
+              <p className="text-[10px] text-surface-500 dark:text-surface-400 mt-0.5">Ordered checklist of tickets to implement, sorted by dependency. Claude works through it top-to-bottom, checking each item off as it goes.</p>
+            </div>
+            <button
+              onClick={() => generate('plan')}
+              disabled={loading !== null}
+              className="flex-shrink-0 text-[11px] px-3 py-1.5 rounded-lg bg-brand-500 text-white hover:bg-brand-600 disabled:opacity-40 transition-colors font-medium"
+            >
+              {loading === 'plan' ? '…' : 'Download'}
+            </button>
+          </div>
+        </div>
+
+        <div className="flex justify-end mt-3">
           <button
             onClick={onClose}
-            disabled={loading}
-            className="text-xs px-3 py-2 rounded-lg border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-700 disabled:opacity-40 transition-colors"
+            disabled={loading !== null}
+            className="text-xs px-3 py-1.5 rounded-lg border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-700 disabled:opacity-40 transition-colors"
           >
             Cancel
           </button>
@@ -167,6 +185,16 @@ const TABS: Array<{ key: DocTab; label: string }> = [
 ];
 
 const PLATFORM_ORDER: TicketPlatform[] = ['backend', 'web', 'ios', 'android'];
+
+/** Persists the last tab viewed per initiative, so reloading/reopening the same
+ *  initiative lands back where the user left off instead of resetting to the default. */
+function lastTabStorageKey(itemId: string): string {
+  return `completed-initiative-tab:${itemId}`;
+}
+function readLastTab(itemId: string): DocTab | null {
+  const stored = localStorage.getItem(lastTabStorageKey(itemId));
+  return TABS.some(t => t.key === stored) ? (stored as DocTab) : null;
+}
 
 /** Tabs that have content for a given detail object. Manage is always visible. */
 function visibleTabsFor(detail: CompletedInitiativeDetailData): Set<DocTab> {
@@ -283,10 +311,14 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
     api.getCompletedInitiative(itemId, archived).then(async (data) => {
       if (stale) return;
       setDetail(data);
-      // Pick the first tab that actually has content for this initiative
+      // Resume the tab the user was last on for this initiative, if it's still visible;
+      // otherwise pick the first tab that actually has content.
       const visible = visibleTabsFor(data);
-      const firstTab = (['tickets', 'tests', 'research', 'prd', 'architecture', 'figma', 'manage'] as DocTab[])
-        .find(k => visible.has(k)) ?? 'manage';
+      const lastTab = readLastTab(itemId);
+      const firstTab = lastTab && visible.has(lastTab)
+        ? lastTab
+        : (['tickets', 'tests', 'research', 'prd', 'architecture', 'figma', 'manage'] as DocTab[])
+            .find(k => visible.has(k)) ?? 'manage';
       setTab(firstTab);
 
       const [ticketResult, epicFeaturesResult, testResults, prdContent] = await Promise.all([
@@ -320,6 +352,10 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
 
     return () => { stale = true; };
   }, [itemId, archived]);
+
+  useEffect(() => {
+    localStorage.setItem(lastTabStorageKey(itemId), tab);
+  }, [itemId, tab]);
 
   useEffect(() => {
     if (!SINGLE_DOC_TABS.includes(tab as SingleDocTab)) return;

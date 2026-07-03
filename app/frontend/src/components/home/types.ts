@@ -1,10 +1,10 @@
 /** Shared types and status helper for the HomeScreen and its sub-components. */
-import type { AirtableItem, WorkflowInfo } from '@pap/shared';
+import type { AirtableItem, AssignedUser, WorkflowInfo } from '@pap/shared';
 
-export type { WorkflowInfo } from '@pap/shared';
+export type { WorkflowInfo, AssignedUser } from '@pap/shared';
 export { effectiveStatus } from '@pap/shared';
 
-export type EnrichedItem = AirtableItem & { source?: string; workflow?: WorkflowInfo; isPaused?: boolean; pausedAt?: number; assignedUserIds?: number[] };
+export type EnrichedItem = AirtableItem & { source?: string; workflow?: WorkflowInfo; isPaused?: boolean; pausedAt?: number; assignedUsers?: AssignedUser[] };
 
 export type LaunchPhase = 'confirming' | 'launching';
 export type StatusFilter = 'all' | 'active' | 'review' | 'done' | 'stopped' | 'new' | 'mine' | 'archived' | 'paused' | 'assigned';

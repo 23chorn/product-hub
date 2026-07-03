@@ -206,21 +206,16 @@ function runArch(json: unknown): ValidatorResult {
 const validArchitecture = {
   title: 'Price Alerts Architecture',
   overview: 'Real-time alert pipeline using a WebSocket push channel.',
-  technology_decisions: {
-    backend: [
-      { decision: 'Real-time transport', choice: 'WebSocket', rationale: 'Lowest latency for price pushes', alternatives: 'Evaluated polling — ruled out due to latency' },
-    ],
-  },
+  approach: 'Extends the existing quote service with a new alert-evaluation worker.',
+  key_decisions: [
+    { decision: 'Real-time transport', choice: 'WebSocket' },
+  ],
   new_dependencies: [],
   data_model: {
-    entity_relationship_diagram: 'Alert belongs_to User',
-    entities: [{ name: 'Alert', primary_key: 'id', key_fields: 'price_threshold, symbol', relationships: 'belongs_to User' }],
+    new_entities: [{ name: 'Alert', purpose: 'Tracks a user price threshold', key_fields: 'id, price_threshold, symbol', relationships: 'belongs_to User' }],
+    entity_changes: [],
   },
-  api_surface: [
-    { service: 'alerts-api', endpoints: [{ method: 'POST', path: '/alerts', purpose: 'create alert', request: '{symbol, threshold}', response: '{id}' }] },
-  ],
   repository_impact: [{ repo: 'backend', changes_required: 'Add alerts module' }],
-  security_considerations: ['Rate-limit alert creation per user'],
 };
 
 describe('validateArchitectureJson', () => {
@@ -234,31 +229,31 @@ describe('validateArchitectureJson', () => {
     expect(r.issues!.some(i => i.includes('TBD'))).toBe(true);
   });
 
-  it('requires at least one platform in technology_decisions', () => {
-    const r = runArch({ ...validArchitecture, technology_decisions: {} });
+  it('requires at least one entry in key_decisions', () => {
+    const r = runArch({ ...validArchitecture, key_decisions: [] });
     expect(r.valid).toBe(false);
-    expect(r.issues!.some(i => i.includes('technology_decisions'))).toBe(true);
+    expect(r.issues!.some(i => i.includes('key_decisions'))).toBe(true);
   });
 
   it('requires a substantive justification for new dependencies', () => {
     const r = runArch({
       ...validArchitecture,
-      new_dependencies: [{ name: 'Redis', type: 'cache', not_solvable_with_existing_stack_because: 'needed it', existing_alternatives_evaluated: 'none', cost_or_risk: 'low' }],
+      new_dependencies: [{ name: 'Redis', type: 'cache', not_solvable_with_existing_stack_because: 'needed it' }],
     });
     expect(r.valid).toBe(false);
     expect(r.issues!.some(i => i.includes('too vague'))).toBe(true);
   });
 
-  it('requires at least one data model entity', () => {
-    const r = runArch({ ...validArchitecture, data_model: { ...validArchitecture.data_model, entities: [] } });
+  it('requires new_entities and entity_changes to be arrays', () => {
+    const r = runArch({ ...validArchitecture, data_model: { ...validArchitecture.data_model, new_entities: 'none' } });
     expect(r.valid).toBe(false);
-    expect(r.issues!.some(i => i.includes('entities'))).toBe(true);
+    expect(r.issues!.some(i => i.includes('new_entities'))).toBe(true);
   });
 
-  it('requires non-empty endpoints per API surface service', () => {
-    const r = runArch({ ...validArchitecture, api_surface: [{ service: 'alerts-api', endpoints: [] }] });
+  it('requires at least one repository_impact entry', () => {
+    const r = runArch({ ...validArchitecture, repository_impact: [] });
     expect(r.valid).toBe(false);
-    expect(r.issues!.some(i => i.includes('endpoints'))).toBe(true);
+    expect(r.issues!.some(i => i.includes('repository_impact'))).toBe(true);
   });
 
 });

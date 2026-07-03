@@ -157,7 +157,7 @@ After the workflow completes, additional stages are available from the workflow 
 
 ## Phase 2 — Implementation (developer CLI)
 
-Once story decomposition is complete and tickets exist in ADO, a developer uses `@xcube/pipeline` to pull their work and launch Claude Code.
+Once story decomposition is complete and tickets exist in ADO, a developer uses `@xcube/pipeline` to pull their work and launch Claude Code. The CLI is maintained in its own repository — it only calls back to Product Hub's `/api/dev/initiatives/*` endpoints.
 
 ### Step 1: Install the CLI
 
@@ -168,7 +168,7 @@ npm install -g @xcube/pipeline
 
 ### Step 2: Configure
 
-Create a `.env` file in your implementation repository (or in `packages/pipeline/` if running from source):
+Create a `.env` file in your implementation repository (or in the pipeline CLI's own repo, if running from source):
 
 ```bash
 PIPELINE_API_URL=http://your-product-hub-host:3001

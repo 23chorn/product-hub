@@ -148,12 +148,12 @@ describe('computePercentComplete', () => {
 
   it('falls back to feature rows when an initiative has no stories', () => {
     const rows = [
-      workItemRow({ adoType: 'epic', state: 'Active' }),
-      workItemRow({ adoType: 'feature', state: 'Active' }),
-      workItemRow({ adoType: 'feature', state: 'Done' }),
+      workItemRow({ adoType: 'epic', state: 'In Dev' }),
+      workItemRow({ adoType: 'feature', state: 'Ready for Dev' }),
+      workItemRow({ adoType: 'feature', state: 'In Testing' }),
     ];
-    // Active=25, Done=100 → average 62.5, rounded to 63.
-    expect(computePercentComplete(rows)).toBe(63);
+    // Ready for Dev=10, In Testing=80 → average 45, regardless of the epic's own state.
+    expect(computePercentComplete(rows)).toBe(45);
   });
 
   it('returns null when nothing has synced yet', () => {

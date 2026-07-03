@@ -15,13 +15,10 @@ interface HomeHeaderProps {
   productAreas: string[];
   productAreaFilter: string;
   onProductAreaFilterChange: (v: string) => void;
-  themes: string[];
-  themeFilter: string;
-  onThemeFilterChange: (v: string) => void;
   onCreateInitiative?: () => void;
 }
 
-/** Home screen search box, status filter chips, and product area/theme filters —
+/** Home screen search box, status filter chips, and product area filter —
  * portaled into the shared PageHeader's actions slot. */
 export function HomeHeader({
   searchQuery,
@@ -37,9 +34,6 @@ export function HomeHeader({
   productAreas,
   productAreaFilter,
   onProductAreaFilterChange,
-  themes,
-  themeFilter,
-  onThemeFilterChange,
   onCreateInitiative,
 }: HomeHeaderProps) {
   const primaryFilters = STATUS_FILTERS.filter(f => {
@@ -156,7 +150,7 @@ export function HomeHeader({
         </select>
       </div>
 
-      {/* Product area + theme filters */}
+      {/* Product area filter */}
       {productAreas.length > 0 && (
         <select
           value={productAreaFilter}
@@ -165,16 +159,6 @@ export function HomeHeader({
         >
           <option value="all">Product areas</option>
           {productAreas.map(area => <option key={area} value={area}>{area}</option>)}
-        </select>
-      )}
-      {themes.length > 0 && (
-        <select
-          value={themeFilter}
-          onChange={e => onThemeFilterChange(e.target.value)}
-          className="text-xs px-2.5 py-1.5 rounded-lg border border-surface-200 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-600 dark:text-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-500 max-w-[120px]"
-        >
-          <option value="all">Themes</option>
-          {themes.map(theme => <option key={theme} value={theme}>{theme}</option>)}
         </select>
       )}
 

@@ -42,6 +42,7 @@ coverage/
 .temp/
 .tmp/
 .claude/
+.codex/
 
 
 # Only ignore root-level templates/ (not agents/templates/)

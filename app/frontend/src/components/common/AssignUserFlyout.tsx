@@ -13,7 +13,7 @@ interface Props {
 export function AssignUserFlyout({ item, onClose, onToggle }: Props) {
   const [users, setUsers] = useState<CurrentUser[]>([]);
   const [loading, setLoading] = useState(true);
-  const assignedIds = new Set(item.assignedUserIds ?? []);
+  const assignedIds = new Set((item.assignedUsers ?? []).map(u => u.id));
 
   useEffect(() => {
     api.listUsers()

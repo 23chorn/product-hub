@@ -76,8 +76,9 @@ export function getTestPlanRowsByItem(itemIds: string[]): Map<string, QaTestPlan
  *    so no per-feature merge is needed here the way the frontend has to for QA.
  *  - test cases: qa_tests is not a per-feature-suffixed type (unlike backlog_F<n>), so "latest"
  *    alone can't be trusted to mean "every feature's latest" — resolve one artifact id per
- *    story_decomposition_F<n>_qa checkpoint instead, mirroring how pushFeatureToADO itself
- *    looks up a single feature's QA checkpoint (feature-decomposition.ts).
+ *    story_decomposition_F<n>_qa checkpoint (legacy per-feature QA) plus the epic_qa checkpoint
+ *    (current epic-level QA), mirroring how pushFeatureToADO itself looks up a single feature's
+ *    QA checkpoint (feature-decomposition.ts).
  */
 export function getDocumentArtifactIds(itemId: string): {
   researchArtifactId: number | null;
@@ -107,10 +108,11 @@ export function getDocumentArtifactIds(itemId: string): {
 
   const latestQaPerFeature = new Map<string, { artifact_id: number; created_at: number }>();
   for (const row of qaCheckpointRows) {
-    const match = /^story_decomposition_F(\d+)_qa$/.exec(row.stage);
-    if (!match) continue;
-    const existing = latestQaPerFeature.get(match[1]);
-    if (!existing || row.created_at > existing.created_at) latestQaPerFeature.set(match[1], row);
+    const perFeatureMatch = /^story_decomposition_F(\d+)_qa$/.exec(row.stage);
+    const key = perFeatureMatch ? perFeatureMatch[1] : row.stage === 'epic_qa' ? 'epic' : null;
+    if (!key) continue;
+    const existing = latestQaPerFeature.get(key);
+    if (!existing || row.created_at > existing.created_at) latestQaPerFeature.set(key, row);
   }
 
   return {

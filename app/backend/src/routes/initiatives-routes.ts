@@ -5,6 +5,7 @@ import Logger from '../utils/logger';
 import { parseRoles } from '../agents/workflow-db';
 import { isDemoWorkflow } from '../demo/demo-mode';
 import { coerceProductArea, itemSessionDir, nextItemSeqNum } from '../agents/item-metadata';
+import { getAssignedUsersByItem } from '../data/item-assignments';
 import { isProductUser, requireRole, requireAdmin } from '../middleware/auth';
 import type { AuthRequest } from '../middleware/auth';
 import type { AirtableItem, LocalInitiative } from '@pap/shared';
@@ -174,18 +175,8 @@ router.get('/', (req: Request, res: Response) => {
       for (const r of cancelledRows) cancelledSet.add(r.workflow_id);
     }
 
-    // Batch-fetch assigned user IDs per item
-    const assignmentMap = new Map<string, number[]>();
-    if (rows.length > 0) {
-      const aRows = db.prepare(
-        `SELECT item_id, user_id FROM item_assignments WHERE item_id IN (${rows.map(() => '?').join(',')})`
-      ).all(...rows.map(r => r.id)) as { item_id: string; user_id: number }[];
-      for (const a of aRows) {
-        const arr = assignmentMap.get(a.item_id) ?? [];
-        arr.push(a.user_id);
-        assignmentMap.set(a.item_id, arr);
-      }
-    }
+    // Batch-fetch assigned users per item
+    const assignmentMap = getAssignedUsersByItem(rows.map(r => r.id));
 
     const items = rows.map(r => {
       const wf = workflowMap.get(r.id);
@@ -199,7 +190,7 @@ router.get('/', (req: Request, res: Response) => {
         source: r.source,
         isPaused: Boolean(r.is_paused),
         pausedAt: r.paused_at ?? undefined,
-        assignedUserIds: assignmentMap.get(r.id) ?? [],
+        assignedUsers: assignmentMap.get(r.id) ?? [],
         workflow: wf ? { id: wf.id, status: wf.status, currentStage: wf.current_stage, summary: wf.summary, stageSequence: JSON.parse(wf.stage_sequence ?? '[]') as string[], pipelineStatus, isCancelled, isDemo, pendingStage, pendingApprovals, updatedAt: wf.updated_at } : undefined,
       };
     });

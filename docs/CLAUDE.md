@@ -51,17 +51,15 @@ agents/
 context/           Project context files loaded into every agent system prompt
   behaviour/       xCube Docs from Azure Wiki — current implementation reference for PRD and story phases
 db/                SQLite database (product-ops.db, gitignored) + schema.ts (Drizzle schema) + migrations/
-packages/
-  pipeline/        @xcube/pipeline — developer CLI: pulls initiative context from Product Hub,
-                   writes PIPELINE_CONTEXT.md + PIPELINE_PLAN.md, updates ADO states, launches Claude Code
 ```
 
-`packages/pipeline` is a **standalone npm package** (not a workspace in the root `package.json`). It has its own `tsconfig.json`, `package.json`, and `dist/` output. Build it separately:
-```bash
-cd packages/pipeline && npm run build   # tsc → dist/
-cd packages/pipeline && npm run dev     # ts-node for local dev
-```
-The pipeline CLI is distributed as `@xcube/pipeline` and consumed by developers in their implementation repos — it calls back to the Product Hub API (`/api/dev/initiatives/*`) to pull ticket context.
+The `@xcube/pipeline` developer CLI (pulls initiative context, writes `PIPELINE_CONTEXT.md` +
+`PIPELINE_PLAN.md`, updates ADO states, launches Claude Code) lives in its own repo, not here —
+it only calls back to the Product Hub API (`/api/dev/initiatives/*`, `app/backend/src/routes/dev-tickets-routes.ts`
+and `pipeline-routes.ts`). The in-app "Export Plan/Context" button on the Progress Tracker
+(`CompletedInitiativeDetail.tsx` → `GET /api/dev/initiatives/:seqNum/pipeline-export`) is a
+separate, self-contained implementation of the same context/plan generation — it does not
+depend on the CLI package.
 
 Frontend proxies `/api/*` to the backend via Vite config. The shared package must be built (`npm run build` in `app/shared`) before type changes are visible to the backend.
 

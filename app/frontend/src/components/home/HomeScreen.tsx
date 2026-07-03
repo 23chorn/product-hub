@@ -41,7 +41,6 @@ export function HomeScreen() {
   const [statusFilter, setStatusFilterRaw] = useState<StatusFilter>(_cachedStatusFilter);
   const setStatusFilter = (f: StatusFilter) => { _cachedStatusFilter = f; setStatusFilterRaw(f); };
   const [productAreaFilter, setProductAreaFilter] = useState<string>('all');
-  const [themeFilter, setThemeFilter] = useState<string>('all');
   const [myPendingCount, setMyPendingCount] = useState(0);
   const [mineWorkflowIds, setMineWorkflowIds] = useState<Set<string>>(new Set());
   const [itemsLoaded, setItemsLoaded] = useState(false);
@@ -293,7 +292,9 @@ export function HomeScreen() {
     try {
       await api.assignInitiative(item.id, user.id);
       setLocalItems(localItems.map(i =>
-        i.id === item.id ? { ...i, assignedUserIds: [...new Set([...(i.assignedUserIds ?? []), user.id])] } : i
+        i.id === item.id && !i.assignedUsers?.some(u => u.id === user.id)
+          ? { ...i, assignedUsers: [...(i.assignedUsers ?? []), { id: user.id, name: user.name }] }
+          : i
       ));
     } catch (err: any) {
       toast.error(err.response?.data?.error || err.message || 'Failed to assign');
@@ -305,7 +306,7 @@ export function HomeScreen() {
     try {
       await api.unassignInitiative(item.id, user.id);
       setLocalItems(localItems.map(i =>
-        i.id === item.id ? { ...i, assignedUserIds: (i.assignedUserIds ?? []).filter(id => id !== user.id) } : i
+        i.id === item.id ? { ...i, assignedUsers: (i.assignedUsers ?? []).filter(u => u.id !== user.id) } : i
       ));
     } catch (err: any) {
       toast.error(err.response?.data?.error || err.message || 'Failed to unassign');
@@ -315,14 +316,16 @@ export function HomeScreen() {
   const handleToggleUserAssignment = async (item: EnrichedItem, userId: number, assign: boolean) => {
     try {
       if (assign) {
-        await api.assignInitiative(item.id, userId);
+        const { userName } = await api.assignInitiative(item.id, userId);
         setLocalItems(localItems.map(i =>
-          i.id === item.id ? { ...i, assignedUserIds: [...new Set([...(i.assignedUserIds ?? []), userId])] } : i
+          i.id === item.id && !i.assignedUsers?.some(u => u.id === userId)
+            ? { ...i, assignedUsers: [...(i.assignedUsers ?? []), { id: userId, name: userName }] }
+            : i
         ));
       } else {
         await api.unassignInitiative(item.id, userId);
         setLocalItems(localItems.map(i =>
-          i.id === item.id ? { ...i, assignedUserIds: (i.assignedUserIds ?? []).filter(id => id !== userId) } : i
+          i.id === item.id ? { ...i, assignedUsers: (i.assignedUsers ?? []).filter(u => u.id !== userId) } : i
         ));
       }
     } catch (err: any) {
@@ -338,10 +341,9 @@ export function HomeScreen() {
   );
 
   const statusCounts = useMemo<Record<StatusFilter, number>>(() => {
-    // Filter items by product area and theme first, so counts reflect current filters
+    // Filter items by product area first, so counts reflect current filter
     const filtered = visibleItems.filter(item => {
       if (productAreaFilter !== 'all' && item.productArea !== productAreaFilter) return false;
-      if (themeFilter !== 'all' && item.strategicTheme !== themeFilter) return false;
       return true;
     });
 
@@ -361,20 +363,16 @@ export function HomeScreen() {
         if (item.workflow && s !== 'cancelled' && mineWorkflowIds.has(item.workflow.id)) {
           c.mine++;
         }
-        if (user && item.assignedUserIds?.includes(user.id)) {
+        if (user && item.assignedUsers?.some(u => u.id === user.id)) {
           c.assigned++;
         }
       }
     });
     return c;
-  }, [visibleItems, productAreaFilter, themeFilter, mineWorkflowIds]);
+  }, [visibleItems, productAreaFilter, mineWorkflowIds]);
 
   const productAreas = useMemo(
     () => Array.from(new Set(visibleItems.map(i => i.productArea).filter((v): v is string => !!v))).sort(),
-    [visibleItems]
-  );
-  const themes = useMemo(
-    () => Array.from(new Set(visibleItems.map(i => i.strategicTheme).filter((v): v is string => !!v))).sort(),
     [visibleItems]
   );
 
@@ -393,7 +391,7 @@ export function HomeScreen() {
       if (statusFilter === 'paused' && !item.isPaused) return false;
       if (statusFilter !== 'paused' && statusFilter !== 'all' && item.isPaused) return false;
 
-      if (statusFilter === 'assigned' && !item.assignedUserIds?.includes(user?.id ?? -1)) return false;
+      if (statusFilter === 'assigned' && !item.assignedUsers?.some(u => u.id === (user?.id ?? -1))) return false;
       // Stopped initiatives never count as needing review/approval, even if a
       // checkpoint was left pending at the moment the workflow was cancelled.
       if (statusFilter === 'mine' && (!item.workflow || s === 'cancelled' || !mineWorkflowIds.has(item.workflow.id))) return false;
@@ -403,14 +401,13 @@ export function HomeScreen() {
       if (statusFilter === 'stopped' && s !== 'cancelled') return false;
       if (statusFilter === 'new' && item.workflow) return false;
       if (productAreaFilter !== 'all' && item.productArea !== productAreaFilter) return false;
-      if (themeFilter !== 'all' && item.strategicTheme !== themeFilter) return false;
       if (!q) return true;
       const qId = q.replace(/^#/, '');
       return item.initiative.toLowerCase().includes(q)
         || (item.description?.toLowerCase().includes(q) ?? false)
         || (qId.length > 0 && item.seqNum != null && String(item.seqNum).includes(qId));
     });
-  }, [visibleItems, statusFilter, searchQuery, mineWorkflowIds, productAreaFilter, themeFilter]);
+  }, [visibleItems, statusFilter, searchQuery, mineWorkflowIds, productAreaFilter]);
 
   const openForm = () => {
     setShowForm(true);
@@ -418,12 +415,11 @@ export function HomeScreen() {
   };
 
   const hasResults = filteredLocalItems.length > 0;
-  const hasActiveFilters = !!searchQuery || statusFilter !== 'all' || productAreaFilter !== 'all' || themeFilter !== 'all';
+  const hasActiveFilters = !!searchQuery || statusFilter !== 'all' || productAreaFilter !== 'all';
   const clearFilters = () => {
     setSearchQuery('');
     setStatusFilter('all');
     setProductAreaFilter('all');
-    setThemeFilter('all');
   };
 
   return (
@@ -445,9 +441,6 @@ export function HomeScreen() {
           productAreas={productAreas}
           productAreaFilter={productAreaFilter}
           onProductAreaFilterChange={setProductAreaFilter}
-          themes={themes}
-          themeFilter={themeFilter}
-          onThemeFilterChange={setThemeFilter}
           onCreateInitiative={canCreate ? openForm : undefined}
         />
       </PageHeaderActions>
@@ -482,7 +475,6 @@ export function HomeScreen() {
                 {searchQuery && <> "<span className="font-medium">{searchQuery}</span>"</>}
                 {statusFilter !== 'all' && <> with status <span className="font-medium">{STATUS_FILTERS.find(f => f.key === statusFilter)?.label}</span></>}
                 {productAreaFilter !== 'all' && <> in <span className="font-medium">{productAreaFilter}</span></>}
-                {themeFilter !== 'all' && <> themed <span className="font-medium">{themeFilter}</span></>}
               </p>
               <button
                 onClick={clearFilters}

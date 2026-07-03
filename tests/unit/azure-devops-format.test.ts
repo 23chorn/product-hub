@@ -201,11 +201,11 @@ describe('getStateBucketMap / bucketWorkItemState', () => {
   const ORIGINAL_ENV = { ...process.env };
   afterEach(() => { process.env = { ...ORIGINAL_ENV }; });
 
-  it('maps the default Agile states to their buckets', () => {
+  it('maps the default xCube workflow states to their buckets', () => {
     delete process.env.AZURE_DEVOPS_STATE_BUCKETS_JSON;
     expect(bucketWorkItemState('New')).toBe('not_started');
-    expect(bucketWorkItemState('Active')).toBe('in_progress');
-    expect(bucketWorkItemState('Closed')).toBe('done');
+    expect(bucketWorkItemState('In Dev')).toBe('in_progress');
+    expect(bucketWorkItemState('Done')).toBe('done');
     expect(bucketWorkItemState('Removed')).toBe('removed');
   });
 
