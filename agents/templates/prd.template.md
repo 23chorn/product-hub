@@ -39,6 +39,7 @@ Schema:
 ```
 
 Rules:
+- success_metrics: `target` must be a concise threshold value only — e.g. "≥15% within 90 days; <12% triggers review". Do NOT include derivation rationale, benchmark citations, or supporting calculations. Those belong in the Research Brief, not in the metric itself.
 - non_functional_requirements: 3 max — only the highest-priority thresholds that engineering absolutely must design to. Common candidates: a latency SLA, a data retention requirement, a scalability target.
 - Aim for 10–20 functional requirements.
 - open_questions: Up to 10, ranked by impact. **Business decisions only** — scope boundaries, expected user behaviour in ambiguous edge cases, priority trade-offs between conflicting requirements, unresolved compliance or policy constraints. Do NOT include implementation questions (which service owns X, which algorithm to use, how to handle a technical edge case) — those belong to the Solution Architect and Engineering stages. The `owner` must be a business stakeholder (Product, Business, Legal, Compliance, Design). If the owner would be Engineering or Architecture, the question is not a PRD question.
