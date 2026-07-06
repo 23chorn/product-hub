@@ -119,6 +119,8 @@ const STAGE_SHORT_LABELS_BASE: Record<string, string> = {
   qa_engineer: 'QA Tests',
   prototype: 'Prototype',
   figma_design: 'Figma',
+  epic_qa: 'Test Cases',
+  curator: 'Curator',
   // Session mode aliases — artifact.stage = s.mode, not the workflow stage name
   prd: 'PRD',
   architecture: 'Arch',

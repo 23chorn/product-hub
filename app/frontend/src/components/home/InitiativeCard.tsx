@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { resolveDisplayTitle } from '@pap/shared';
+import { STAGE_SHORT_LABELS } from '../../constants/stage-labels';
 import { effectiveStatus, type EnrichedItem } from './types';
 import { StatusBadge } from './StatusBadge';
 import { useAuthStore, ROLE_LABELS, canLaunchWorkflow } from '../../stores/authStore';
 import { CardContextMenu } from '../common/CardContextMenu';
 import { ArchiveConfirmModal } from '../common/ArchiveConfirmModal';
 import { formatAssignedLabel } from '../../utils/assigned-users';
+import { splitProductAreas } from '../../utils/product-area';
 
 /** Format a workflow's last state-change timestamp, e.g. "18 Jun, 14:32". */
 function formatUpdatedAt(ms: number): string {
@@ -16,36 +18,47 @@ function formatUpdatedAt(ms: number): string {
 }
 
 /**
- * Derive the display stage list from the workflow's actual stage_sequence.
- * Strips out dynamic feature sub-stages (story_decomposition_F*) that are
- * injected after approval and would overflow the dot bar.
+ * Derive the display stage list from the workflow's actual stage_sequence. Only
+ * shows real LLM stages — strips out dynamic feature sub-stages (story_decomposition_F*)
+ * that would overflow the dot bar, and backlog_merge, which is a plain JSON concatenation
+ * of the per-feature story artifacts with no LLM call, so it doesn't get its own dot.
  *
- * backlog_merge/epic_qa aren't seeded into stage_sequence at launch either — the
- * backend only injects them once epic_feature_planner finishes and the feature
- * count is known (see injectFeatureDecompositionStages), replacing the single
- * 'story_decomposition' placeholder with the expanded F* stages + these two. Without
- * this, the "test cases" dot would pop into the bar mid-run instead of always being
- * there like the epics/stories placeholders are — insert them as placeholders too,
- * right where they'll land once the real expansion happens.
+ * epic_qa isn't seeded into stage_sequence at launch — the backend only injects it once
+ * epic_feature_planner finishes and the feature count is known (see
+ * injectFeatureDecompositionStages), replacing the single 'story_decomposition' placeholder
+ * with the expanded F* stages + backlog_merge + epic_qa. Without this, the "test cases" dot
+ * would pop into the bar mid-run instead of always being there like the stories placeholder
+ * is — insert it as a placeholder too, right where it'll land once the real expansion happens.
  */
 function displayStages(stageSequence: string[] | undefined): string[] {
   if (!stageSequence || stageSequence.length === 0) return [];
-  const filtered = stageSequence.filter(s => !/story_decomposition_F\d/.test(s));
-  const storyDecompIdx = filtered.indexOf('story_decomposition');
-  if (storyDecompIdx !== -1) {
-    filtered.splice(storyDecompIdx + 1, 0, 'backlog_merge', 'epic_qa');
+  const isStoryStage = (s: string) => s === 'story_decomposition' || /^story_decomposition_F\d+$/.test(s);
+  const firstStoryIdx = stageSequence.findIndex(isStoryStage);
+  const filtered = stageSequence.filter(s => !isStoryStage(s) && s !== 'backlog_merge');
+  if (firstStoryIdx === -1) return filtered;
+
+  // Re-insert a single 'story_decomposition' ("stories") placeholder at the position where
+  // the (possibly already-expanded) per-feature run started — covers both the pre-expansion
+  // single placeholder and the post-expansion F1..Fn entries, both filtered out above.
+  const insertAt = stageSequence
+    .slice(0, firstStoryIdx)
+    .filter(s => !isStoryStage(s) && s !== 'backlog_merge').length;
+  filtered.splice(insertAt, 0, 'story_decomposition');
+  if (!filtered.includes('epic_qa')) {
+    filtered.splice(insertAt + 1, 0, 'epic_qa');
   }
   return filtered;
 }
 
 /** Map a current stage to its display-stage equivalent.
- *  story_decomposition_F* stages are filtered from the dot bar, so while they're active
- *  we pin the indicator to backlog_merge (the next visible stage they're heading toward). */
+ *  story_decomposition_F* sub-stages and backlog_merge itself (the JSON-merge step with no
+ *  dot of its own) are filtered from the bar, so while either is active we pin the indicator
+ *  to 'story_decomposition' — the "stories" dot stays current until epic_qa actually starts. */
 function normalizeCurrentStage(currentStage: string | null, stages: string[]): string | null {
   if (!currentStage) return null;
   if (stages.includes(currentStage)) return currentStage;
-  if (/story_decomposition_F\d/.test(currentStage) && stages.includes('backlog_merge')) {
-    return 'backlog_merge';
+  if (currentStage === 'backlog_merge' || /^story_decomposition_F\d+$/.test(currentStage)) {
+    return stages.includes('story_decomposition') ? 'story_decomposition' : null;
   }
   return null;
 }
@@ -260,7 +273,7 @@ export function InitiativeCard({
             Needs {label}
           </span>
         ))}
-        {item.productArea && item.productArea.split(',').map(area => area.trim()).filter(Boolean).map(area => (
+        {item.productArea && splitProductAreas(item.productArea).map(area => (
           <span key={area} className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400">
             {area}
           </span>
@@ -336,16 +349,8 @@ export function InitiativeCard({
                 {stagesWithComplete.map((stage, idx) => {
                   const isCompleted = idx < currentStageIdx;
                   const isCurrent = idx === currentStageIdx;
-                  const shortName = stage === 'complete' ? 'done'
-                    : stage === 'pm_prd' ? 'prd'
-                    : stage === 'solution_architect' ? 'architect'
-                    : stage === 'epic_feature_planner' ? 'epics'
-                    : stage === 'story_decomposition' ? 'stories'
-                    : stage === 'backlog_merge' ? 'backlog'
-                    : stage === 'epic_qa' ? 'test cases'
-                    : stage === 'figma_design' ? 'figma'
-                    : stage === 'api_spec' ? 'api'
-                    : stage;
+                  // 'complete' is a virtual dot appended locally, not a real workflow stage.
+                  const shortName = stage === 'complete' ? 'Done' : (STAGE_SHORT_LABELS[stage] ?? stage);
                   return (
                     <div key={stage} className="relative flex flex-col items-center">
                       <div className={`w-2 h-2 rounded-full border-2 transition-all ${

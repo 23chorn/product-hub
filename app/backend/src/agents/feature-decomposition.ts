@@ -10,7 +10,7 @@ import { stmts, insertEvent, logger } from './workflow-db';
 import { loadLatestArtifactContent, loadLatestArtifactWikiUrl } from './artifact-helpers';
 import { stripJsonFence } from '../utils/json-repair';
 import { getAzureDevOpsClient } from '../integrations/azure-devops';
-import { deriveAiEstimateDev, ensureStreamPrefix } from '../integrations/azure-devops-format';
+import { deriveAiEstimateDev, ensureStreamPrefix, buildAcceptanceCriteriaHtml } from '../integrations/azure-devops-format';
 import { featureLocalKey, storyLocalKey } from '@pap/shared';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -840,14 +840,7 @@ export async function pushFeatureToADO(
     }
 
     // Build acceptance criteria (product + technical combined)
-    const allAcceptanceCriteria = [
-      ...acceptanceCriteria.map((ac: string) => {
-        const parts = ac.split(/\b(Given|When|Then|And)\b/);
-        return parts.map((p, i) => (i % 2 === 1 ? `<strong>${p}</strong>` : p)).join('');
-      }),
-      ...(technicalAcceptanceCriteria.length > 0 ? ['<hr><strong>Technical Acceptance Criteria:</strong>'] : []),
-      ...technicalAcceptanceCriteria.map((tac: string) => `⚙ ${tac}`)
-    ].join('<br>');
+    const allAcceptanceCriteria = buildAcceptanceCriteriaHtml(acceptanceCriteria, technicalAcceptanceCriteria);
 
     // Convert platform array to semicolon-separated tags for ADO
     const tags = platform.length > 0 ? platform.join('; ') : undefined;

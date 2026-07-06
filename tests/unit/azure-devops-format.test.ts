@@ -159,6 +159,17 @@ describe('buildAcceptanceCriteriaHtml', () => {
     expect(html).toContain('<b>AC 2</b><br><b>Given</b> A<br><b>Then</b> B');
     expect(html.split('<br><br>').length).toBe(2);
   });
+  it('appends a bulleted Technical Acceptance Criteria section when provided', () => {
+    const html = buildAcceptanceCriteriaHtml(['Given X Then Y'], ['Room entity: Foo', 'Retrofit interface: Bar'])!;
+    expect(html).toContain('<hr><b>Technical Acceptance Criteria:</b><ul><li>Room entity: Foo</li><li>Retrofit interface: Bar</li></ul>');
+  });
+  it('omits the technical section when no technical criteria are given', () => {
+    const html = buildAcceptanceCriteriaHtml(['Given X Then Y'], [])!;
+    expect(html).not.toContain('Technical Acceptance Criteria');
+  });
+  it('returns undefined when both product and technical criteria are empty', () => {
+    expect(buildAcceptanceCriteriaHtml([], [])).toBeUndefined();
+  });
 });
 
 describe('Test Plans constants', () => {

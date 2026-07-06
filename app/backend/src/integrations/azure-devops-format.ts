@@ -160,14 +160,25 @@ export function buildStoryDescriptionHtml(story: StoryHtmlInput): string {
 
 /**
  * Build the numbered "AC n" acceptance-criteria HTML block for ADO's
- * AcceptanceCriteria field. Returns undefined when there are no criteria so
- * callers can pass the result straight through to createWorkItem/updateWorkItem.
+ * AcceptanceCriteria field, followed by an optional bulleted "Technical
+ * Acceptance Criteria" section. Returns undefined when there's nothing to
+ * show so callers can pass the result straight through to createWorkItem/updateWorkItem.
  */
-export function buildAcceptanceCriteriaHtml(acceptanceCriteria: string[] | undefined): string | undefined {
-  if (!acceptanceCriteria || acceptanceCriteria.length === 0) return undefined;
-  return acceptanceCriteria
+export function buildAcceptanceCriteriaHtml(
+  acceptanceCriteria: string[] | undefined,
+  technicalAcceptanceCriteria?: string[],
+): string | undefined {
+  const productHtml = (acceptanceCriteria ?? [])
     .map((ac, i) => `<b>AC ${i + 1}</b><br>${formatGivenWhenThen(escapeHtml(ac))}`)
     .join('<br><br>');
+
+  const technical = (technicalAcceptanceCriteria ?? []).filter(Boolean);
+  const technicalHtml = technical.length > 0
+    ? `<hr><b>Technical Acceptance Criteria:</b><ul>${technical.map(tac => `<li>${escapeHtml(tac)}</li>`).join('')}</ul>`
+    : '';
+
+  if (!productHtml && !technicalHtml) return undefined;
+  return productHtml + technicalHtml;
 }
 
 /**

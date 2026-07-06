@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { initSSE, sseSend } from '../utils/sse';
+import { requireAdmin } from '../middleware/auth';
 import {
   createChangeRequest,
   getChangeRequest,
@@ -19,8 +20,9 @@ export const changeRequestRoutes = Router();
  * POST /api/workflow/:id/change-request
  * Create a new change request for a completed workflow.
  * Body: { type, description }
+ * Admin-only — reopens/reruns stages on a completed workflow.
  */
-changeRequestRoutes.post('/workflow/:id/change-request', (req: Request, res: Response) => {
+changeRequestRoutes.post('/workflow/:id/change-request', requireAdmin, (req: Request, res: Response) => {
   const { type, description } = req.body as { type?: string; description?: string };
   if (!type || !description) {
     return res.status(400).json({ error: 'type and description are required' });
@@ -66,8 +68,9 @@ changeRequestRoutes.get('/change-request/:crId', (req: Request, res: Response) =
 /**
  * POST /api/change-request/:crId/assess
  * Trigger impact assessment via the Coordinator. Returns SSE stream.
+ * Admin-only.
  */
-changeRequestRoutes.post('/change-request/:crId/assess', async (req: Request, res: Response) => {
+changeRequestRoutes.post('/change-request/:crId/assess', requireAdmin, async (req: Request, res: Response) => {
   const crId = parseInt(req.params.crId, 10);
   if (isNaN(crId)) return res.status(400).json({ error: 'Invalid CR id' });
 
@@ -110,8 +113,9 @@ changeRequestRoutes.post('/change-request/:crId/assess', async (req: Request, re
  * POST /api/change-request/:crId/execute
  * Execute a change request with confirmed stages.
  * Body: { stages: string[] }
+ * Admin-only — reruns stages on a completed workflow.
  */
-changeRequestRoutes.post('/change-request/:crId/execute', async (req: Request, res: Response) => {
+changeRequestRoutes.post('/change-request/:crId/execute', requireAdmin, async (req: Request, res: Response) => {
   const crId = parseInt(req.params.crId, 10);
   if (isNaN(crId)) return res.status(400).json({ error: 'Invalid CR id' });
 
@@ -134,8 +138,9 @@ changeRequestRoutes.post('/change-request/:crId/execute', async (req: Request, r
 /**
  * POST /api/change-request/:crId/cancel
  * Cancel a pending or assessed change request.
+ * Admin-only.
  */
-changeRequestRoutes.post('/change-request/:crId/cancel', (req: Request, res: Response) => {
+changeRequestRoutes.post('/change-request/:crId/cancel', requireAdmin, (req: Request, res: Response) => {
   const crId = parseInt(req.params.crId, 10);
   if (isNaN(crId)) return res.status(400).json({ error: 'Invalid CR id' });
 

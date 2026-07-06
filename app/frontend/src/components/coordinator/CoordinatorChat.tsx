@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { MarkdownContent } from '../common/MarkdownContent';
+import { useAuthStore } from '../../stores/authStore';
 import { useWorkflowStore, type WorkflowEvent, type WorkflowStatus, type CoordinatorMessage } from '../../stores/workflowStore';
 import { ContextDiffPanel } from './ContextDiffPanel';
 import { STAGE_LABELS } from '../../constants/stage-labels';
@@ -13,6 +14,8 @@ import { ChangeRequestSection } from './ChangeRequestSection';
 import { PipelineTerminalView } from '../workflow/PipelineTerminalView';
 
 export function CoordinatorChat() {
+  const { user, noAuth } = useAuthStore();
+  const isAdmin = noAuth || !!user?.is_admin;
   const {
     activeWorkflow, stageSequence, completedStages, currentStage, pendingStage, checkpoints,
     applyWorkflowStatus, resetWorkflow, setViewingArtifactId,
@@ -281,7 +284,7 @@ export function CoordinatorChat() {
           <PipelineTerminalView
             coordinatorMessages={coordinatorMessages}
             isRunning={!isComplete}
-            showCRButton={isComplete && !showCRForm && !crAssessment}
+            showCRButton={isAdmin && isComplete && !showCRForm && !crAssessment}
             onShowCRForm={() => setShowCRForm(true)}
             pendingDiffCount={pendingDiffCount}
             onShowDiffPanel={() => setShowDiffPanel(true)}

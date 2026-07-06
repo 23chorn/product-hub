@@ -6,6 +6,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { api } from '../../services/api';
 import { deriveStageStatus } from '../../utils/stage-tracker-helpers';
 import { deriveFeatureButtons } from '../../utils/feature-artifacts';
+import { splitProductAreas } from '../../utils/product-area';
 import { StageRow } from './StageRow';
 import { tryParseEpicFeatures, toPhases } from '../artifact/EpicFeaturesView';
 import { STAGE_LABELS, STAGE_SHORT_LABELS } from '../../constants/stage-labels';
@@ -383,11 +384,11 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
               </svg>
             </button>
           )}
-          {productArea && (
-            <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400">
-              {productArea}
+          {productArea && splitProductAreas(productArea).map(area => (
+            <span key={area} className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400">
+              {area}
             </span>
-          )}
+          ))}
           {strategicTheme && (
             <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
               {strategicTheme}
