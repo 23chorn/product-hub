@@ -263,18 +263,11 @@ export type AgentType = 'pm' | 'analyst' | 'epic-feature-planner' | 'architect' 
 // Session Types
 // ============================================
 
-export interface ChatMessage {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  timestamp: number;
-}
-
 export interface Session {
   id: string;
   itemId: string;
   type: 'prd' | 'backlog';
   status: 'active' | 'completed' | 'cancelled' | 'archived';
-  messages: ChatMessage[];
   createdAt: number;
   updatedAt: number;
   prdContent?: PRDContent;

@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import db from './database';
 import { resolveArtifactPath } from '../agents/artifact-helpers';
 import { nextItemSeqNum } from '../agents/item-metadata';
-import type { Session, ChatMessage, AppMode } from '@pap/shared';
+import type { Session, AppMode } from '@pap/shared';
 
 // ---------------------------------------------------------------------------
 // Prepared statements
@@ -46,19 +46,6 @@ const stmts = {
   ),
   updateWorkflow: db.prepare(
     `UPDATE sessions SET workflow_context = ?, updated_at = ? WHERE id = ?`
-  ),
-
-  // Messages
-  insertMessage: db.prepare(
-    `INSERT INTO messages (session_id, role, content, sequence, timestamp)
-     VALUES (?, ?, ?, ?, ?)`
-  ),
-  getMessages: db.prepare(
-    `SELECT role, content, timestamp FROM messages
-     WHERE session_id = ? ORDER BY sequence ASC`
-  ),
-  getMessageCount: db.prepare(
-    `SELECT COUNT(*) as count FROM messages WHERE session_id = ?`
   ),
 
   // Artifacts
@@ -110,13 +97,12 @@ interface SessionRow {
   updated_at: number;
 }
 
-function rowToSession(row: SessionRow, messages: ChatMessage[] = []): Session {
+function rowToSession(row: SessionRow): Session {
   return {
     id: row.id,
     itemId: row.item_id,
     type: (row.mode === 'prd' || row.mode === 'backlog') ? row.mode : 'prd',
     status: row.status as Session['status'],
-    messages,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     agentId: row.agent_id,
@@ -143,15 +129,13 @@ class SessionStore {
   findActiveSession(itemId: string, mode: AppMode | string): Session | null {
     const row = stmts.findActiveSession.get(itemId, mode) as SessionRow | undefined;
     if (!row) return null;
-    const messages = this.getMessages(row.id);
-    return rowToSession(row, messages);
+    return rowToSession(row);
   }
 
   getSession(sessionId: string): Session | undefined {
     const row = stmts.getSession.get(sessionId) as SessionRow | undefined;
     if (!row) return undefined;
-    const messages = this.getMessages(row.id);
-    return rowToSession(row, messages);
+    return rowToSession(row);
   }
 
   completeSession(sessionId: string): void {
@@ -174,18 +158,6 @@ class SessionStore {
 
   getSessionIdsByItem(itemId: string): Array<{ id: string; mode: string }> {
     return stmts.getSessionIdsByItem.all(itemId) as Array<{ id: string; mode: string }>;
-  }
-
-  // Messages
-
-  addMessage(sessionId: string, role: 'user' | 'assistant', content: string): void {
-    const countRow = stmts.getMessageCount.get(sessionId) as { count: number };
-    const sequence = (countRow?.count ?? 0) + 1;
-    stmts.insertMessage.run(sessionId, role, content, sequence, Date.now());
-  }
-
-  getMessages(sessionId: string): ChatMessage[] {
-    return stmts.getMessages.all(sessionId) as ChatMessage[];
   }
 
   // Workflow state

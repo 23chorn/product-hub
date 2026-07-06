@@ -1,4 +1,4 @@
-import { Session, ChatMessage, PRDContent, BacklogStructure, AgentType, AppMode } from '@pap/shared';
+import { Session, PRDContent, BacklogStructure, AgentType, AppMode } from '@pap/shared';
 import { sessionStore } from '../data/session-store';
 import Logger from '../utils/logger';
 
@@ -54,20 +54,6 @@ export class SessionManager {
    */
   getSession(sessionId: string): Session | undefined {
     return sessionStore.getSession(sessionId);
-  }
-
-  /**
-   * Add a message to a session
-   */
-  addMessage(sessionId: string, role: 'user' | 'assistant', content: string): void {
-    sessionStore.addMessage(sessionId, role, content);
-  }
-
-  /**
-   * Get all messages in a session
-   */
-  getMessages(sessionId: string): ChatMessage[] {
-    return sessionStore.getMessages(sessionId);
   }
 
   /**
