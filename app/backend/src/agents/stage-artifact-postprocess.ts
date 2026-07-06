@@ -18,7 +18,8 @@
 
 import { stripJsonFence } from '../utils/json-repair';
 import { saveLocalArtifact, updateArtifactContent } from './artifact-helpers';
-import { getFigmaFileKey, resolveItemPlatform, resolvedFramePlatform } from './prototype-agent';
+import { getFigmaFileKey, resolveItemPlatform, resolvedFramePlatform, writeFigmaAnnotations } from './prototype-agent';
+import { flattenFeatures, resolveFeatureDependencies } from './feature-decomposition';
 import { logger, insertEvent } from './workflow-db';
 
 export interface ArtifactPostprocessParams {
@@ -68,7 +69,6 @@ export const STAGE_ARTIFACT_POSTPROCESSORS: Record<string, ArtifactPostprocessor
 
       if (fileKey && screens.length > 0) {
         insertEvent(workflowId, 'stage_progress', stage, 'Writing design brief to Figma...');
-        const { writeFigmaAnnotations } = await import('./prototype-agent');
         const result = await writeFigmaAnnotations(fileKey, screens, parsed.navigation_flow);
 
         if (result.success) {
@@ -97,7 +97,6 @@ export const STAGE_ARTIFACT_POSTPROCESSORS: Record<string, ArtifactPostprocessor
     const jsonContent = stripJsonFence(artifactContent);
     try {
       const parsed = JSON.parse(jsonContent);
-      const { flattenFeatures, resolveFeatureDependencies } = await import('./feature-decomposition');
 
       // Ensure stories: [] on every feature (phased or legacy) — the legacy block
       // only ever handled the flat shape; phased output was previously left untouched.

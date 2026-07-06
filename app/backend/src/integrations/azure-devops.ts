@@ -4,12 +4,10 @@ import { BacklogStructure, featureLocalKey, storyLocalKey } from '@pap/shared';
 import {
   adoErrorMessage,
   deriveAiEstimateDev,
-  stripStoryPrefix,
-  escapeHtml,
-  formatGivenWhenThen,
-  buildTechnicalSuggestions,
-  buildPlatformNotes,
+  buildStoryDescriptionHtml,
+  buildAcceptanceCriteriaHtml,
   deriveTeamTags,
+  type StoryHtmlInput,
 } from './azure-devops-format';
 import {
   pushQATestPlan as pushQATestPlanImpl,
@@ -42,6 +40,17 @@ export interface WorkItem {
     [key: string]: any;
   };
 }
+
+/**
+ * Story shape accepted by createStoriesUnderFeature — structurally satisfied by
+ * BacklogStructure stories and by addFeatureToEpic's inline story payloads.
+ */
+type BacklogStoryInput = StoryHtmlInput & {
+  title: string;
+  acceptanceCriteria?: string[];
+  effort?: number;
+  aiEstimatedQaHours?: number;
+};
 
 export interface CreateWorkItemRequest {
   type: 'Epic' | 'Feature' | 'User Story' | 'Task';
@@ -147,6 +156,44 @@ export class AzureDevOpsClient {
     logger.info(
       `Azure DevOps configured: ${this.organization}/${this.project}`
     );
+  }
+
+  // Typed wrappers that fill in the configured (process-template-specific) work item
+  // type, so callers don't need to reach into workItemTypes and cast.
+  async createEpic(request: Omit<CreateWorkItemRequest, 'type'>): Promise<WorkItem> {
+    return this.createWorkItem({ ...request, type: this.workItemTypes.epic as CreateWorkItemRequest['type'] });
+  }
+
+  async createFeature(request: Omit<CreateWorkItemRequest, 'type'>): Promise<WorkItem> {
+    return this.createWorkItem({ ...request, type: this.workItemTypes.feature as CreateWorkItemRequest['type'] });
+  }
+
+  async createStory(request: Omit<CreateWorkItemRequest, 'type'>): Promise<WorkItem> {
+    return this.createWorkItem({ ...request, type: this.workItemTypes.story as CreateWorkItemRequest['type'] });
+  }
+
+  /**
+   * Create story work items under a feature. Shared by createBacklog and
+   * addFeatureToEpic — one source of truth for the description/AC HTML and
+   * estimate/tag derivation. Returns the created story IDs in input order.
+   */
+  private async createStoriesUnderFeature(featureId: number, stories: BacklogStoryInput[]): Promise<number[]> {
+    const storyIds: number[] = [];
+    for (const storyData of stories) {
+      const story = await this.createWorkItem({
+        type: this.workItemTypes.story as any,
+        title: storyData.title,
+        description: buildStoryDescriptionHtml(storyData),
+        acceptanceCriteria: buildAcceptanceCriteriaHtml(storyData.acceptanceCriteria),
+        effort: storyData.effort,
+        aiEstimateDevHours: deriveAiEstimateDev(storyData.effort),
+        aiEstimateQaHours: storyData.aiEstimatedQaHours,
+        tags: deriveTeamTags(storyData.technical_notes),
+        parentId: featureId,
+      });
+      storyIds.push(story.id!);
+    }
+    return storyIds;
   }
 
   /**
@@ -283,13 +330,11 @@ export class AzureDevOpsClient {
     extraEpicIds: number[];
     featureIds: number[];
     storyIds: number[];
-    taskIds: number[];
   }> {
     logger.info(`Creating backlog structure: ${structure.epic.title}`);
 
     const featureIds: number[] = [];
     const storyIds: number[] = [];
-    const taskIds: number[] = [];
     const extraEpicIds: number[] = [];
 
     /** Create ADO features + stories under a given parent epic ID */
@@ -302,37 +347,7 @@ export class AzureDevOpsClient {
           parentId,
         });
         featureIds.push(feature.id!);
-
-        for (const storyData of featureData.stories) {
-          const storyDescription = [
-            `<b>As a</b> ${escapeHtml(stripStoryPrefix(storyData.persona, /^as an?\s+/i))}`,
-            `<b>I want</b> ${escapeHtml(stripStoryPrefix(storyData.goal, /^i want\s+(to\s+)?/i))}`,
-            `<b>So that</b> ${escapeHtml(stripStoryPrefix(storyData.benefit, /^so that\s+/i))}`,
-          ].join('<br>') + buildTechnicalSuggestions(storyData.technical) + buildPlatformNotes(storyData.technical_notes);
-
-          let acceptanceCriteriaHtml: string | undefined;
-          if (storyData.acceptanceCriteria && storyData.acceptanceCriteria.length > 0) {
-            acceptanceCriteriaHtml = storyData.acceptanceCriteria
-              .map((ac, i) => {
-                const formatted = formatGivenWhenThen(escapeHtml(ac));
-                return `<b>AC ${i + 1}</b><br>${formatted}`;
-              })
-              .join('<br><br>');
-          }
-
-          const story = await this.createWorkItem({
-            type: this.workItemTypes.story as any,
-            title: storyData.title,
-            description: storyDescription,
-            acceptanceCriteria: acceptanceCriteriaHtml,
-            effort: storyData.effort,
-            aiEstimateDevHours: deriveAiEstimateDev(storyData.effort),
-            aiEstimateQaHours: storyData.aiEstimatedQaHours,
-            tags: deriveTeamTags(storyData.technical_notes),
-            parentId: feature.id,
-          });
-          storyIds.push(story.id!);
-        }
+        storyIds.push(...await this.createStoriesUnderFeature(feature.id!, featureData.stories));
       }
     };
 
@@ -383,7 +398,7 @@ export class AzureDevOpsClient {
         `Created backlog: Epic #${epic.id}${extraEpicIds.length ? ` + ${extraEpicIds.length} phase epic(s)` : ''}, ${featureIds.length} features, ${storyIds.length} stories`
       );
 
-      return { epicId: epic.id!, extraEpicIds, featureIds, storyIds, taskIds };
+      return { epicId: epic.id!, extraEpicIds, featureIds, storyIds };
     } catch (error: any) {
       logger.error('Failed to create backlog structure', error);
       throw error;
@@ -420,8 +435,6 @@ export class AzureDevOpsClient {
   ): Promise<{ featureId: number; storyIds: number[] }> {
     logger.info(`Adding feature "${feature.title}" to epic #${epicId}`);
 
-    const storyIds: number[] = [];
-
     try {
       // Create the feature under the epic
       const createdFeature = await this.createWorkItem({
@@ -432,38 +445,7 @@ export class AzureDevOpsClient {
       });
       logger.info(`Created feature #${createdFeature.id!}: ${feature.title}`);
 
-      // Create each story under the feature
-      for (const storyData of feature.stories) {
-        const storyDescription = [
-          `<b>As a</b> ${escapeHtml(stripStoryPrefix(storyData.persona, /^as an?\s+/i))}`,
-          `<b>I want</b> ${escapeHtml(stripStoryPrefix(storyData.goal, /^i want\s+(to\s+)?/i))}`,
-          `<b>So that</b> ${escapeHtml(stripStoryPrefix(storyData.benefit, /^so that\s+/i))}`,
-        ].join('<br>') + buildTechnicalSuggestions(storyData.technical) + buildPlatformNotes(storyData.technical_notes);
-
-        let acceptanceCriteriaHtml: string | undefined;
-        if (storyData.acceptanceCriteria && storyData.acceptanceCriteria.length > 0) {
-          acceptanceCriteriaHtml = storyData.acceptanceCriteria
-            .map((ac, i) => {
-              const formatted = formatGivenWhenThen(escapeHtml(ac));
-              return `<b>AC ${i + 1}</b><br>${formatted}`;
-            })
-            .join('<br><br>');
-        }
-
-        const story = await this.createWorkItem({
-          type: this.workItemTypes.story as any,
-          title: storyData.title,
-          description: storyDescription,
-          acceptanceCriteria: acceptanceCriteriaHtml,
-          effort: storyData.effort,
-          aiEstimateDevHours: deriveAiEstimateDev(storyData.effort),
-          aiEstimateQaHours: storyData.aiEstimatedQaHours,
-          tags: deriveTeamTags(storyData.technical_notes),
-          parentId: createdFeature.id,
-        });
-        storyIds.push(story.id!);
-        logger.info(`Created story #${story.id!}: ${storyData.title}`);
-      }
+      const storyIds = await this.createStoriesUnderFeature(createdFeature.id!, feature.stories);
 
       logger.info(`Added feature #${createdFeature.id!} with ${storyIds.length} stories to epic #${epicId}`);
       return { featureId: createdFeature.id!, storyIds };
@@ -606,21 +588,10 @@ export class AzureDevOpsClient {
         const storyKey = storyLocalKey(featureKey, si);
         const storyMapping = existingMap.get(storyKey);
 
-        const storyDescription = [
-          `<b>As a</b> ${escapeHtml(storyData.persona)}`,
-          `<b>I want</b> ${escapeHtml(storyData.goal)}`,
-          `<b>So that</b> ${escapeHtml(storyData.benefit)}`,
-        ].join('<br>') + buildTechnicalSuggestions(storyData.technical) + buildPlatformNotes(storyData.technical_notes);
-
-        let acceptanceCriteriaHtml: string | undefined;
-        if (storyData.acceptanceCriteria && storyData.acceptanceCriteria.length > 0) {
-          acceptanceCriteriaHtml = storyData.acceptanceCriteria
-            .map((ac, i) => {
-              const formatted = formatGivenWhenThen(escapeHtml(ac));
-              return `<b>AC ${i + 1}</b><br>${formatted}`;
-            })
-            .join('<br><br>');
-        }
+        // Shared builders strip duplicated "As a…"/"I want…" prefixes — previously this
+        // update path lacked the strip its create-path siblings had (copy drift).
+        const storyDescription = buildStoryDescriptionHtml(storyData);
+        const acceptanceCriteriaHtml = buildAcceptanceCriteriaHtml(storyData.acceptanceCriteria);
 
         if (storyMapping) {
           await this.updateWorkItem(storyMapping.ado_id, {
@@ -776,10 +747,15 @@ export class AzureDevOpsClient {
   }
 
   /**
-   * Get Epic URL for browser
+   * Browser edit URL for any work item (epic, feature, story, task).
    */
+  getWorkItemUrl(id: number): string {
+    return `https://dev.azure.com/${this.organization}/${this.project}/_workitems/edit/${id}`;
+  }
+
+  /** Historical alias for getWorkItemUrl — it was never epic-specific. Prefer getWorkItemUrl in new code. */
   getEpicUrl(epicId: number): string {
-    return `https://dev.azure.com/${this.organization}/${this.project}/_workitems/edit/${epicId}`;
+    return this.getWorkItemUrl(epicId);
   }
 
   /**

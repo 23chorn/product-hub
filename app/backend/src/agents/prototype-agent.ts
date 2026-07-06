@@ -16,9 +16,10 @@ import * as fs from 'fs';
 import * as fsAsync from 'fs/promises';
 import * as path from 'path';
 import { streamAI, resolveModelId, type SystemPrompt, type TokenUsage } from '../utils/ai-provider';
-import { repairTruncatedJson } from '../utils/json-repair';
+import { repairTruncatedJson, stripJsonFence } from '../utils/json-repair';
 import type { AgentType } from '@pap/shared';
 import { loadLatestArtifactContent, saveLocalArtifact, resolveArtifactPath } from './artifact-helpers';
+import { SpecialistAgent } from './specialist-agent';
 import { readProductArea, itemSessionDir } from './item-metadata';
 import db from '../data/database';
 import Logger from '../utils/logger';
@@ -371,8 +372,7 @@ export async function embedFigmaLinksInFrontendTickets(
 
   let backlog: any;
   try {
-    const cleaned = backlogRaw.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-    backlog = JSON.parse(cleaned);
+    backlog = JSON.parse(stripJsonFence(backlogRaw));
   } catch {
     logger.warn('[FIGMA-ADO] Could not parse backlog artifact JSON — skipping link embed');
     return;
@@ -572,7 +572,6 @@ export async function* revisePrototype(
   `).get(workflowId);
   if (!workflow) throw new Error(`Workflow ${workflowId} not found`);
 
-  const { SpecialistAgent } = await import('./specialist-agent');
   const contextAgent = new SpecialistAgent('prototype-builder' as AgentType);
 
   const [persona, template, localDesignSystem, scopedContext] = await Promise.all([

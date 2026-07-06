@@ -135,6 +135,41 @@ export function buildPlatformNotes(notes: { ios?: string | null; android?: strin
   ].join('');
 }
 
+/** Story fields consumed by the description / acceptance-criteria HTML builders below. */
+export interface StoryHtmlInput {
+  persona: string;
+  goal: string;
+  benefit: string;
+  technical?: Parameters<typeof buildTechnicalSuggestions>[0];
+  technical_notes?: Parameters<typeof buildPlatformNotes>[0];
+}
+
+/**
+ * Build the "As a / I want / So that" story description HTML pushed to ADO,
+ * including the technical-suggestions and platform-notes sections when present.
+ * Leading prefixes the model may have duplicated into the fields ("As a...",
+ * "I want to...") are stripped so the bold labels don't render twice.
+ */
+export function buildStoryDescriptionHtml(story: StoryHtmlInput): string {
+  return [
+    `<b>As a</b> ${escapeHtml(stripStoryPrefix(story.persona, /^as an?\s+/i))}`,
+    `<b>I want</b> ${escapeHtml(stripStoryPrefix(story.goal, /^i want\s+(to\s+)?/i))}`,
+    `<b>So that</b> ${escapeHtml(stripStoryPrefix(story.benefit, /^so that\s+/i))}`,
+  ].join('<br>') + buildTechnicalSuggestions(story.technical) + buildPlatformNotes(story.technical_notes);
+}
+
+/**
+ * Build the numbered "AC n" acceptance-criteria HTML block for ADO's
+ * AcceptanceCriteria field. Returns undefined when there are no criteria so
+ * callers can pass the result straight through to createWorkItem/updateWorkItem.
+ */
+export function buildAcceptanceCriteriaHtml(acceptanceCriteria: string[] | undefined): string | undefined {
+  if (!acceptanceCriteria || acceptanceCriteria.length === 0) return undefined;
+  return acceptanceCriteria
+    .map((ac, i) => `<b>AC ${i + 1}</b><br>${formatGivenWhenThen(escapeHtml(ac))}`)
+    .join('<br><br>');
+}
+
 /**
  * Derive team tags from per-platform technical_notes.
  * A platform is tagged when its notes field is present and non-trivial.

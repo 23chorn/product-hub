@@ -25,7 +25,10 @@ import db from '../data/database';
 import { insertEvent, parseRoles } from '../agents/workflow-db';
 import { nextItemSeqNum } from '../agents/item-metadata';
 import { resolveArtifactPath, loadArtifactContentById, updateArtifactContent, approveWikiArtifact } from '../agents/artifact-helpers';
-import { pushItemStatusToAirtable } from '../agents/ado-stage-push';
+import { pushItemStatusToAirtable, pushBacklogToAdo, pushTestPlanToAdo } from '../agents/ado-stage-push';
+import { pushEpicAndFeaturesToADO, injectFeatureDecompositionStages, parseFeatureStage, pushFeatureToADO } from '../agents/feature-decomposition';
+import { embedFigmaLinksInFrontendTickets, loadFigmaMockupFileData, extractFigmaFileKey, setFigmaFileKey } from '../agents/prototype-agent';
+import { getAzureDevOpsClient } from '../integrations/azure-devops';
 import { airtableStatusForStage, checkpointArtifactLabel } from '../agents/stage-metadata';
 import Logger from '../utils/logger';
 import {
@@ -69,8 +72,7 @@ workflowRoutes.post('/start', async (req: AuthRequest, res: Response) => {
   // • No itemId supplied → generate a new local record.
   // • itemId supplied but not in DB → Airtable initiative; insert a shadow record so the FK is satisfied.
   if (!itemId) {
-    const { randomUUID: uuid } = require('crypto');
-    const id = uuid();
+    const id = randomUUID();
     const now = Date.now();
     const title = goal.slice(0, 100) + (goal.length > 100 ? '...' : '');
     const metadata = productArea ? JSON.stringify({ productArea }) : null;
@@ -261,9 +263,7 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
         try {
           const { appConfig } = require('../config/app-config');
           if (appConfig.integrations.workItems === 'ado') {
-            const { pushEpicAndFeaturesToADO } = await import('../agents/feature-decomposition');
             const result = await pushEpicAndFeaturesToADO(workflowId);
-            const { getAzureDevOpsClient } = await import('../integrations/azure-devops');
             const client = getAzureDevOpsClient();
             const epicUrls = result.epicIds.map(id => client.getEpicUrl(id));
             const epicUrl = epicUrls[0];
@@ -278,7 +278,6 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
           logger.error(`[CHECKPOINT] Failed to push epic to ADO: ${err.message}`);
         }
 
-        const { injectFeatureDecompositionStages } = await import('../agents/feature-decomposition');
         try {
           const featureCount = await injectFeatureDecompositionStages(workflowId);
           logger.info(`[CHECKPOINT] epic_feature_planner approved → injected ${featureCount} feature stages`);
@@ -290,7 +289,6 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
       // ── story_decomposition: push full backlog to ADO Boards ───────────────────
       if (cpDetail && cpDetail.stage === 'story_decomposition') {
         try {
-          const { pushBacklogToAdo } = await import('../agents/ado-stage-push');
           const epicUrl = await pushBacklogToAdo(workflowId, itemId);
           if (epicUrl) {
             stampArtifactUrl(epicUrl);
@@ -301,7 +299,6 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
 
             // Stories now exist in ADO — embed Figma links into the frontend ones.
             // Fire-and-forget: a failed embed must not block workflow advance.
-            const { embedFigmaLinksInFrontendTickets } = await import('../agents/prototype-agent');
             embedFigmaLinksInFrontendTickets(workflowId, itemId)
               .catch(err => logger.warn(`[FIGMA-ADO] Link embed failed: ${err.message}`));
           }
@@ -313,7 +310,6 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
       // ── qa_engineer / epic_qa: push test plan to ADO Test Plans ─────────────
       if (cpDetail && (cpDetail.stage === 'qa_engineer' || cpDetail.stage === 'epic_qa' || /^qa_engineer_F\d+$/.test(cpDetail.stage))) {
         try {
-          const { pushTestPlanToAdo } = await import('../agents/ado-stage-push');
           const testPlanUrl = await pushTestPlanToAdo(workflowId, itemId);
           if (testPlanUrl) {
             stampArtifactUrl(testPlanUrl);
@@ -334,7 +330,6 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
       // sibling _qa checkpoint. A concurrent sibling feature in the same wave has no
       // bearing on THIS feature's push.
       if (cpDetail && /^story_decomposition_F\d+$/.test(cpDetail.stage) && ownGroupComplete) {
-        const { parseFeatureStage, pushFeatureToADO } = await import('../agents/feature-decomposition');
         const featureIndex = parseFeatureStage(cpDetail.stage);
 
         if (featureIndex !== null) {
@@ -342,9 +337,8 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
             const { appConfig } = require('../config/app-config');
             if (appConfig.integrations.workItems === 'ado') {
               const result = await pushFeatureToADO(workflowId, featureIndex);
-              const { getAzureDevOpsClient } = await import('../integrations/azure-devops');
               const client = getAzureDevOpsClient();
-              const featureUrl = `https://dev.azure.com/${client['organization']}/${client['project']}/_workitems/edit/${result.featureId}`;
+              const featureUrl = client.getEpicUrl(result.featureId);
               if (result.featureId) {
                 db.prepare('UPDATE artifacts SET external_url = ? WHERE id = (SELECT artifact_id FROM checkpoints WHERE workflow_id = ? AND stage = ? ORDER BY created_at DESC LIMIT 1)')
                   .run(featureUrl, workflowId, cpDetail.stage);
@@ -553,7 +547,6 @@ workflowRoutes.post('/checkpoint/figma-complete', async (req: AuthRequest, res: 
     ).get(cp.workflow_id);
 
     // If the designer pasted their own link, persist its file key for future snapshot lookups
-    const { loadFigmaMockupFileData, extractFigmaFileKey, setFigmaFileKey } = await import('../agents/prototype-agent');
     if (trimmedFigmaUrl && wf?.item_id) {
       const fileKey = extractFigmaFileKey(trimmedFigmaUrl);
       if (fileKey) setFigmaFileKey(wf.item_id, fileKey);

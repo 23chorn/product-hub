@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto';
 import db from '../data/database';
 import { itemSessionDir } from './item-metadata';
 import { STAGE_ARTIFACT_TYPE } from './stage-metadata';
-import { saveToWiki, loadFromWiki, wikiPathForArtifact } from '../integrations/document-store/azure-wiki-store';
+import { saveToWiki, loadFromWiki, updateInWiki, wikiPathForArtifact } from '../integrations/document-store/azure-wiki-store';
 import { convertArtifactToMarkdown } from '../utils/artifact-to-markdown';
 import Logger from '../utils/logger';
 import { findRepoRoot } from '../utils/find-repo-root';
@@ -389,7 +389,6 @@ export async function updateArtifactContent(artifactId: number, content: string)
 
   if (row.wiki_path) {
     try {
-      const { updateInWiki } = await import('../integrations/document-store/azure-wiki-store');
       const { url } = await updateInWiki(row.wiki_path, toWikiContent(row.type, content, 'draft'));
       if (url !== row.wiki_url) {
         db.prepare('UPDATE artifacts SET wiki_url = ? WHERE id = ?').run(url, artifactId);

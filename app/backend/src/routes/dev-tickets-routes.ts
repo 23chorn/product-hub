@@ -23,6 +23,7 @@ import {
 import { bucketWorkItemState } from '../integrations/azure-devops-format';
 import { getWorkItemRowsByItem, getTestPlanRowsByItem, getDocumentArtifactIds, type AdoWorkItemRow } from '../data/work-item-queries';
 import { loadArtifactContentById } from '../agents/artifact-helpers';
+import { stripJsonFence } from '../utils/json-repair';
 
 const logger = new Logger('DEV-TICKETS');
 const router = Router();
@@ -104,8 +105,7 @@ export function buildTitleToPhaseMap(epicFeaturesContent: string | null): Map<st
   const map = new Map<string, string>();
   if (!epicFeaturesContent) return map;
   try {
-    const stripped = epicFeaturesContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-    const parsed = JSON.parse(stripped);
+    const parsed = JSON.parse(stripJsonFence(epicFeaturesContent));
     if (Array.isArray(parsed.phases)) {
       for (const phase of parsed.phases) {
         for (const feature of (phase.features ?? []) as Array<{ title?: string }>) {
@@ -146,8 +146,7 @@ export async function loadEpicFeaturesArtifact(
   const content = await loadArtifactContentById(artifactId);
   if (!content) return { epicMeta: null, content: null };
   try {
-    const stripped = content.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-    const parsed = JSON.parse(stripped);
+    const parsed = JSON.parse(stripJsonFence(content));
     return { epicMeta: parsed?.epic ?? null, content };
   } catch {
     return { epicMeta: null, content };

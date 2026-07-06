@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from '../../stores/authStore';
+import { api } from '../../services/api';
 import type { InitiativeComment } from '@pap/shared';
 
 type Tab = 'activity' | 'decisions';
@@ -75,9 +76,8 @@ export function CommentsPanel({ itemId }: { itemId: string }) {
   const listRef = useRef<HTMLDivElement>(null);
 
   const fetchComments = () => {
-    fetch(`/api/initiatives/${itemId}/comments`)
-      .then(r => r.json())
-      .then((data: InitiativeComment[]) => setComments(data))
+    api.getInitiativeComments(itemId)
+      .then(data => setComments(data))
       .catch(() => {})
       .finally(() => setLoading(false));
   };
@@ -95,11 +95,7 @@ export function CommentsPanel({ itemId }: { itemId: string }) {
     if (commentType === 'decision' && !title.trim()) return;
     setSubmitting(true);
     try {
-      await fetch(`/api/initiatives/${itemId}/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ body: body.trim(), type: commentType, title: title.trim() || undefined }),
-      });
+      await api.addInitiativeComment(itemId, { body: body.trim(), type: commentType, title: title.trim() || undefined });
       setBody('');
       setTitle('');
       fetchComments();
@@ -113,11 +109,7 @@ export function CommentsPanel({ itemId }: { itemId: string }) {
     if (!pauseReason.trim()) return;
     setPauseSubmitting(true);
     try {
-      await fetch(`/api/initiatives/${itemId}/pause`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ body: pauseReason.trim() }),
-      });
+      await api.pauseInitiative(itemId, pauseReason.trim());
       setPauseReason('');
       setShowPauseForm(false);
       fetchComments();
@@ -132,11 +124,7 @@ export function CommentsPanel({ itemId }: { itemId: string }) {
   const handleResume = async () => {
     setPauseSubmitting(true);
     try {
-      await fetch(`/api/initiatives/${itemId}/resume`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ body: 'Initiative resumed.' }),
-      });
+      await api.resumeInitiative(itemId);
       fetchComments();
       scrollToBottom();
       window.dispatchEvent(new Event('initiative-status-changed'));

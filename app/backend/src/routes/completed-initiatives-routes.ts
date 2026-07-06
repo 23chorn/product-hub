@@ -21,6 +21,7 @@ import { bucketWorkItemState, workItemStatePercent, parseStoryRefs } from '../in
 import { refreshItemAdoState } from '../integrations/ado-state-sync';
 import { getAzureDevOpsClient } from '../integrations/azure-devops';
 import { loadArtifactContentById, updateArtifactContent } from '../agents/artifact-helpers';
+import { stripJsonFence } from '../utils/json-repair';
 import {
   getWorkItemRowsByItem, getTestPlanRowsByItem, getDocumentArtifactIds,
   type AdoWorkItemRow,
@@ -315,9 +316,8 @@ async function cascadeDeleteTestCases(
   for (const artifactId of qaArtifactIds) {
     const content = await loadArtifactContentById(artifactId);
     if (!content) continue;
-    const cleaned = content.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
     let qa: any;
-    try { qa = JSON.parse(cleaned); } catch { continue; }
+    try { qa = JSON.parse(stripJsonFence(content)); } catch { continue; }
     for (const tc of (qa.test_cases ?? qa.testCases ?? []) as any[]) {
       if (!tc.id) continue;
       const storyRef = tc.story_ref ?? tc.linkedStory ?? null;
@@ -565,9 +565,8 @@ async function loadQaArtifacts(itemId: string): Promise<QaArtifact[]> {
   for (const row of rows) {
     const content = await loadArtifactContentById(row.id);
     if (!content) continue;
-    const stripped = content.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
     try {
-      const suite = JSON.parse(stripped);
+      const suite = JSON.parse(stripJsonFence(content));
       if (!Array.isArray(suite.test_cases)) suite.test_cases = suite.testCases ?? [];
       results.push({ artifactId: row.id, suite });
     } catch { /* skip an unparsable artifact rather than fail the whole lookup */ }

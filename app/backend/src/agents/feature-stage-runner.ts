@@ -4,19 +4,39 @@
  * single-specialist flow. Split out of runAutonomousStage, which dispatches here
  * when the stage name matches story_decomposition_F<n>.
  *
- * Exports three functions:
+ * Exports:
  *   runBacklogMerge — merge all isolated feature artifacts into final backlog
- *   runMultiAgentFeatureStage  — full 3-phase pipeline for initial runs
- *   runMultiAgentFeatureRevision — surgical single-agent edit for human/critic revisions
+ *   runMultiAgentFeatureStage — full 3-phase pipeline for initial runs
+ *   runMultiAgentFeatureRevision / runMultiAgentFeatureQaRevision — surgical
+ *     single-agent edits for human/critic revisions (spec-driven, see below)
+ *   runEpicQaStage / runEpicQaRevision — epic-level QA suite generation + revision
  */
 import type { AgentType } from '@pap/shared';
+import db from '../data/database';
 import { logger, insertEvent } from './workflow-db';
 import { validateBacklogJson, validateQaTestsJson } from './tool-validators';
 import { isCancelRequested } from './workflow-cancel';
 import { resolveAgentModel } from '../utils/ai-provider';
 import { progressHeartbeatLine, collectStreamWithHeartbeat, STAGE_MAX_OUTPUT_TOKENS } from './stage-metadata';
 import { stripJsonFence, repairTruncatedJson } from '../utils/json-repair';
-import type { ProductAreaScope } from './multi-agent-refinement';
+import { computeRevisionDiff } from '../utils/revision-diff';
+import { loadEpicFeatures } from './feature-decomposition';
+import { loadLatestArtifactContent, saveLocalArtifact, saveDiffArtifact } from './artifact-helpers';
+import { SpecialistAgent } from './specialist-agent';
+import { summarizeRevisionDiff } from './revision-diff-summary';
+import { isDemoWorkflow } from '../demo/demo-mode';
+import {
+  runMultiAgentRefinement,
+  resolveProductAreaScope,
+  buildPlatformScopeSection,
+  buildFeaturePlatformScopeSection,
+  filterBacklogStoriesByScope,
+  filterBacklogStoriesByFeaturePlatforms,
+  filterQaTestCasesByStoryIds,
+  type ProductAreaScope,
+} from './multi-agent-refinement';
+// workflow-router is imported dynamically throughout this module: it reaches back here
+// via workflow-mutations → workflow-stage-runner, so a static import would be circular.
 
 /**
  * Log + emit a validation_warning event for a deterministic validator result, but only
@@ -36,6 +56,34 @@ function emitValidationWarnings(
 }
 
 /**
+ * Compute + persist the revision diff for a surgical edit and summarise it so the
+ * reviewer can confirm at a glance that the requested changes were applied.
+ * Best-effort: failures are logged, never fatal to the revision itself. The diff is
+ * saved under the same folder as the revised artifact (artifactType, e.g. backlog_F2),
+ * not the suffixed stage name, so a feature's outputs stay together — see saveDiffArtifact.
+ */
+async function saveRevisionDiffAndSummary(opts: {
+  itemId: string;
+  sessionId: string;
+  artifactType: string;
+  diffLabel: string;
+  priorDraft: string;
+  revisedContent: string;
+  brief: string;
+  logPrefix: string;
+}): Promise<string | undefined> {
+  try {
+    const diffText = computeRevisionDiff(opts.priorDraft, opts.revisedContent, opts.diffLabel);
+    const diffArtifactId = await saveDiffArtifact(opts.itemId, opts.artifactType, diffText, opts.sessionId);
+    if (diffArtifactId) logger.info(`${opts.logPrefix} revision diff saved (id: ${diffArtifactId})`);
+    return await summarizeRevisionDiff({ stageLabel: opts.diffLabel, requestContext: opts.brief, diffText }) || undefined;
+  } catch (err: any) {
+    logger.warn(`${opts.logPrefix} failed to save revision diff/summary: ${err.message}`);
+    return undefined;
+  }
+}
+
+/**
  * Merge all isolated feature artifacts (backlog_F1, backlog_F2, backlog_F3, ...) into
  * a single final backlog artifact. This is a simple JSON merge — no LLM call needed.
  */
@@ -45,23 +93,19 @@ export async function runBacklogMerge(
   itemId: string
 ): Promise<void> {
   logger.info(`[BACKLOG MERGE] Starting merge of all feature artifacts`);
-  const { loadLatestArtifactContent, saveLocalArtifact } = await import('./artifact-helpers');
 
   insertEvent(workflowId, 'stage_progress', 'backlog_merge',
     'Merging all feature artifacts into final backlog...');
 
   // Load epic_features first — it's the authoritative source for feature count and phase
   // labels. Both the gap-safe iteration below and the phase back-fill rely on it.
-  const { flattenFeatures } = await import('./feature-decomposition');
-  const epicFeaturesRaw = await loadLatestArtifactContent(itemId, 'epic_features');
   let authoritativeFeatures: any[] = [];
   let mergedEpic: any = null;
-  if (epicFeaturesRaw) {
-    try {
-      authoritativeFeatures = flattenFeatures(JSON.parse(epicFeaturesRaw));
-    } catch (err: any) {
-      logger.warn(`[BACKLOG MERGE] Could not parse epic_features: ${err.message}`);
-    }
+  try {
+    const epicFeatures = await loadEpicFeatures(itemId);
+    if (epicFeatures) authoritativeFeatures = epicFeatures.features;
+  } catch (err: any) {
+    logger.warn(`[BACKLOG MERGE] Could not parse epic_features: ${err.message}`);
   }
 
   // Iterate over every feature slot by authoritative count so a missing backlog_F* in the
@@ -129,7 +173,7 @@ export async function runBacklogMerge(
     { artifact_id: artifactId, feature_count: featureArtifacts.length });
 
   // Create checkpoint for final backlog review (optional — or auto-advance)
-  const { pauseAtCheckpoint } = await import('./workflow-router');
+  const { pauseAtCheckpoint } = await import('./workflow-router'); // dynamic: breaks the workflow-router → stage-runner cycle
   await pauseAtCheckpoint(workflowId, 'backlog_merge', artifactId, undefined, undefined, 'pm');
   logger.info(`[BACKLOG MERGE] Checkpoint created for final backlog review`);
 }
@@ -147,7 +191,6 @@ export async function runMultiAgentFeatureStage(
   itemId: string,
   featureIndex: number
 ): Promise<void> {
-  const { runMultiAgentRefinement } = await import('./multi-agent-refinement');
 
   try {
     const result = await runMultiAgentRefinement(workflowId, itemId, stage, featureIndex);
@@ -166,7 +209,6 @@ export async function runMultiAgentFeatureStage(
     // The synthesis call can hit its maxTokens ceiling on a dense feature, leaving the
     // tail of the JSON mid-string — repair before parsing instead of crashing the stage.
     let newFeature: any;
-    const { saveLocalArtifact } = await import('./artifact-helpers');
     const featureNum = featureIndex + 1;
     try {
       newFeature = JSON.parse(repairTruncatedJson(strippedBacklog));
@@ -187,7 +229,7 @@ export async function runMultiAgentFeatureStage(
       (n) => `Backlog quality check flagged ${n} issue(s) for Feature ${featureIndex + 1} — review before approving`);
 
     // Single checkpoint for backlog review — QA is generated at epic level after all features are approved.
-    const { pauseAtCheckpoint } = await import('./workflow-router');
+    const { pauseAtCheckpoint } = await import('./workflow-router'); // dynamic: breaks the workflow-router → stage-runner cycle
     await pauseAtCheckpoint(workflowId, stage, artifactId, undefined, undefined);
     logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} refinement complete — checkpoint created`);
 
@@ -268,12 +310,10 @@ async function runFeatureSurgicalRevision(
   // architecture, or an upstream backlog was itself corrected since this feature was last
   // drafted. Without this, the surgical edit only sees the (possibly stale) prior draft and
   // generic feedback text, so a since-corrected claim never reaches the model and can resurface.
-  const { resolveProductAreaScope, buildPlatformScopeSection } = await import('./multi-agent-refinement');
   const platformScope = resolveProductAreaScope(itemId);
   const platformScopeSection = buildPlatformScopeSection(platformScope);
   const { itemContext, extra } = await spec.loadContext(itemId, featureNum, platformScopeSection);
 
-  const { SpecialistAgent } = await import('./specialist-agent');
   const agent = new SpecialistAgent(spec.agentType);
   const personaStage = spec.personaStage(stage);
   const persona = await agent.loadPersona(personaStage);
@@ -321,32 +361,19 @@ async function runFeatureSurgicalRevision(
     (n) => `Revised ${spec.noun} quality check flagged ${n} issue(s) for Feature ${featureNum}`);
 
   // Save revised artifact (isolated, not accumulated)
-  const { saveLocalArtifact, saveDiffArtifact } = await import('./artifact-helpers');
-  const { computeRevisionDiff } = await import('../utils/revision-diff');
   const artifactContent = JSON.stringify(revised, null, 2);
   const artifactId = await saveLocalArtifact(sessionId, spec.artifactType(featureNum), artifactContent, itemId);
 
-  // Compute and save diff, then summarise it so the reviewer can confirm at a glance
-  // that the requested changes were applied.
-  let revisionSummary: string | undefined;
-  try {
-    const diffText = computeRevisionDiff(priorDraft, artifactContent, spec.diffLabel(featureNum));
-    // Save the diff under the same folder as the revised artifact (artifactType, e.g. backlog_F2),
-    // not the suffixed stage name, so a feature's outputs stay together — see saveDiffArtifact.
-    const diffArtifactId = await saveDiffArtifact(itemId, spec.artifactType(featureNum), diffText, sessionId);
-    if (diffArtifactId) logger.info(`[MULTI-AGENT REVISION] ${spec.noun} diff artifact saved (id: ${diffArtifactId})`);
-    const { summarizeRevisionDiff } = await import('./revision-diff-summary');
-    revisionSummary = await summarizeRevisionDiff({
-      stageLabel: spec.diffLabel(featureNum),
-      requestContext: brief,
-      diffText,
-    }) || undefined;
-  } catch (err: any) {
-    logger.warn(`[MULTI-AGENT REVISION] Failed to save ${spec.noun} diff/summary: ${err.message}`);
-  }
+  const revisionSummary = await saveRevisionDiffAndSummary({
+    itemId, sessionId, brief, priorDraft,
+    revisedContent: artifactContent,
+    artifactType: spec.artifactType(featureNum),
+    diffLabel: spec.diffLabel(featureNum),
+    logPrefix: `[MULTI-AGENT REVISION] ${spec.noun}`,
+  });
 
   // Create checkpoint for human review
-  const { pauseAtCheckpoint } = await import('./workflow-router');
+  const { pauseAtCheckpoint } = await import('./workflow-router'); // dynamic: breaks the workflow-router → stage-runner cycle
   pauseAtCheckpoint(workflowId, stage, artifactId, sessionId, {
     revision_mode: true, feature: featureNum,
     ...(revisionSummary ? { revision_summary: revisionSummary } : {}),
@@ -370,27 +397,21 @@ const STORY_REVISION_SPEC: SurgicalRevisionSpec = {
   diffLabel: (featureNum) => `Feature ${featureNum} Backlog`,
 
   async loadContext(itemId, featureNum, platformScopeSection) {
-    const { loadLatestArtifactContent } = await import('./artifact-helpers');
-    const [prdContent, archContent, epicFeaturesContent] = await Promise.all([
-      loadLatestArtifactContent(itemId, 'prd'),
-      loadLatestArtifactContent(itemId, 'architecture'),
-      loadLatestArtifactContent(itemId, 'epic_features'),
-    ]);
-
     // This feature's own platform declaration (if the planner scoped it to specific
     // platforms, e.g. a sibling feature owns the other UI platform) — same lookup the
     // initial synthesis uses, so a revision can't drift from that scope.
-    let featurePlatforms: string[] | undefined;
-    if (epicFeaturesContent) {
-      try {
-        const { flattenFeatures } = await import('./feature-decomposition');
-        const targetFeature = flattenFeatures(JSON.parse(epicFeaturesContent))[featureNum - 1];
-        if (Array.isArray(targetFeature?.platforms)) featurePlatforms = targetFeature.platforms;
-      } catch (err: any) {
+    const [prdContent, archContent, epicFeaturesLoaded] = await Promise.all([
+      loadLatestArtifactContent(itemId, 'prd'),
+      loadLatestArtifactContent(itemId, 'architecture'),
+      loadEpicFeatures(itemId).catch((err: any) => {
         logger.warn(`[MULTI-AGENT REVISION] Failed to resolve Feature ${featureNum} platform scope: ${err.message}`);
-      }
-    }
-    const { buildFeaturePlatformScopeSection } = await import('./multi-agent-refinement');
+        return null;
+      }),
+    ]);
+
+    let featurePlatforms: string[] | undefined;
+    const revisionTargetFeature = epicFeaturesLoaded?.features[featureNum - 1];
+    if (Array.isArray(revisionTargetFeature?.platforms)) featurePlatforms = revisionTargetFeature.platforms;
     const featurePlatformScopeSection = buildFeaturePlatformScopeSection(featurePlatforms);
 
     const contextParts: string[] = [];
@@ -418,7 +439,6 @@ const STORY_REVISION_SPEC: SurgicalRevisionSpec = {
     // Enforce platform scope on the revision too — guards against a model carrying an
     // out-of-scope story forward from the prior draft when the feedback didn't mention it.
     // Checks both the initiative-wide scope and this feature's own narrower declaration.
-    const { filterBacklogStoriesByScope, filterBacklogStoriesByFeaturePlatforms } = await import('./multi-agent-refinement');
     const { backlog: itemScoped } = filterBacklogStoriesByScope(JSON.stringify(revised), platformScope);
     const { backlog } = filterBacklogStoriesByFeaturePlatforms(itemScoped, extra.featurePlatforms);
     return JSON.parse(backlog);
@@ -445,7 +465,6 @@ const QA_REVISION_SPEC: SurgicalRevisionSpec = {
   async loadContext(itemId, featureNum, platformScopeSection) {
     // Reload fresh — a since-corrected PRD, or a backlog revision that dropped/changed
     // stories, must reach this revision or stale claims and dangling story references persist.
-    const { loadLatestArtifactContent } = await import('./artifact-helpers');
     const [prdContent, currentBacklogContent] = await Promise.all([
       loadLatestArtifactContent(itemId, 'prd'),
       loadLatestArtifactContent(itemId, `backlog_F${featureNum}`),
@@ -485,7 +504,6 @@ const QA_REVISION_SPEC: SurgicalRevisionSpec = {
           if (story?.story_id) validStoryIds.add(story.story_id);
         }
       }
-      const { filterQaTestCasesByStoryIds } = await import('./multi-agent-refinement');
       const { qaTests, dropped } = filterQaTestCasesByStoryIds(JSON.stringify(revised), validStoryIds, `F${featureNum}`);
       if (dropped > 0) {
         logger.warn(`[MULTI-AGENT REVISION] Feature ${featureNum} QA revision — stripped ${dropped} test case(s) referencing stories that no longer exist`);
@@ -506,6 +524,52 @@ const QA_REVISION_SPEC: SurgicalRevisionSpec = {
 // Runs once after backlog_merge. Reads all approved feature backlogs together
 // and has Vera produce a single unified test suite for the full epic — no
 // per-feature duplication, proper cross-feature integration coverage.
+
+/**
+ * Load the artifacts shared by epic QA generation and revision: merged backlog, PRD,
+ * and (optionally) the epic_features plan. The API contract is only loaded when the
+ * api_spec stage is actually enabled for this workflow (a stray artifact from before
+ * it was disabled must not resurrect technical coverage), and only counts when it
+ * produced content — an empty/whitespace artifact means no endpoints.
+ */
+async function loadEpicQaInputs(
+  workflowId: string,
+  itemId: string,
+  opts: { includeEpicFeatures?: boolean } = {}
+): Promise<{
+  mergedBacklogContent: string | null;
+  prdContent: string | null;
+  epicFeaturesContent: string | null;
+  apiSpecContent: string | null;
+}> {
+  const wfRow = db.prepare<[string], { stage_sequence: string }>(
+    'SELECT stage_sequence FROM workflows WHERE id = ?'
+  ).get(workflowId);
+  const apiSpecStageEnabled = wfRow ? (JSON.parse(wfRow.stage_sequence) as string[]).includes('api_spec') : false;
+
+  const [mergedBacklogContent, prdContent, epicFeaturesContent, rawApiSpecContent] = await Promise.all([
+    loadLatestArtifactContent(itemId, 'backlog'),
+    loadLatestArtifactContent(itemId, 'prd'),
+    opts.includeEpicFeatures ? loadLatestArtifactContent(itemId, 'epic_features') : Promise.resolve(null),
+    apiSpecStageEnabled ? loadLatestArtifactContent(itemId, 'api_spec') : Promise.resolve(null),
+  ]);
+
+  return { mergedBacklogContent, prdContent, epicFeaturesContent, apiSpecContent: rawApiSpecContent?.trim() || null };
+}
+
+/** Vera configured for the epic QA stage — her persona is registered under the 'story_decomposition' stage tag. */
+async function buildEpicQaAgent(itemContext?: string) {
+  const vera = new SpecialistAgent('qa-engineer');
+  const persona = await vera.loadPersona('story_decomposition');
+  const systemPrompt = await vera.buildSystemPrompt(persona, undefined, itemContext, true, 'story_decomposition');
+  const maxTokens = STAGE_MAX_OUTPUT_TOKENS['epic_qa'] ?? 28_000;
+  return { vera, systemPrompt, maxTokens };
+}
+
+/** Best-effort test_cases count from a QA suite JSON string — undefined when unparseable. */
+function countTestCases(json: string): number | undefined {
+  try { return JSON.parse(json).test_cases?.length; } catch { return undefined; }
+}
 
 function buildEpicQaPrompt(
   mergedBacklog: string,
@@ -630,22 +694,18 @@ export async function runEpicQaStage(
   itemId: string,
 ): Promise<void> {
   logger.info('[EPIC QA] Starting epic-level QA test suite generation');
-  const { saveLocalArtifact, loadLatestArtifactContent } = await import('./artifact-helpers');
 
   // ── Demo mode ──────────────────────────────────────────────────────────────
-  const { isDemoWorkflow } = await import('../demo/demo-mode');
-  const db = (await import('../data/database')).default;
-  const wfRow = db.prepare<[string], { policy_overrides: string | null; stage_sequence: string }>(
-    'SELECT policy_overrides, stage_sequence FROM workflows WHERE id = ?'
+  const wfRow = db.prepare<[string], { policy_overrides: string | null }>(
+    'SELECT policy_overrides FROM workflows WHERE id = ?'
   ).get(workflowId);
   const policyOverrides: Record<string, string> = wfRow?.policy_overrides
     ? JSON.parse(wfRow.policy_overrides) : {};
-  const apiSpecStageEnabled = wfRow ? (JSON.parse(wfRow.stage_sequence) as string[]).includes('api_spec') : false;
 
   if (isDemoWorkflow(policyOverrides)) {
     const stub = JSON.stringify({ suite: 'Epic QA Test Suite (Demo)', version: '1.0', metadata: { source_stage: 'epic_qa', notes: 'Demo mode' }, test_cases: [] }, null, 2);
     const demoArtifactId = await saveLocalArtifact(sessionId, 'qa_tests', stub, itemId);
-    const { pauseAtCheckpoint } = await import('./workflow-router');
+    const { pauseAtCheckpoint } = await import('./workflow-router'); // dynamic: breaks the workflow-router → stage-runner cycle
     await pauseAtCheckpoint(workflowId, 'epic_qa', demoArtifactId, undefined, undefined);
     insertEvent(workflowId, 'stage_completed', 'epic_qa', 'Epic QA test suite ready for review (demo mode)', { artifact_id: demoArtifactId });
     return;
@@ -654,16 +714,8 @@ export async function runEpicQaStage(
   // ── Load context ───────────────────────────────────────────────────────────
   insertEvent(workflowId, 'stage_progress', 'epic_qa', 'Loading merged backlog and PRD for QA synthesis...');
 
-  const [mergedBacklogContent, prdContent, epicFeaturesContent, rawApiSpecContent] = await Promise.all([
-    loadLatestArtifactContent(itemId, 'backlog'),
-    loadLatestArtifactContent(itemId, 'prd'),
-    loadLatestArtifactContent(itemId, 'epic_features'),
-    apiSpecStageEnabled ? loadLatestArtifactContent(itemId, 'api_spec') : Promise.resolve(null),
-  ]);
-  // Only build technical/API test coverage when the api_spec stage is actually enabled for
-  // this workflow (a stray artifact from before it was disabled must not resurrect it), and
-  // only when it actually produced content — an empty/whitespace artifact means no endpoints.
-  const apiSpecContent = rawApiSpecContent?.trim() || null;
+  const { mergedBacklogContent, prdContent, epicFeaturesContent, apiSpecContent } =
+    await loadEpicQaInputs(workflowId, itemId, { includeEpicFeatures: true });
 
   if (!mergedBacklogContent) {
     insertEvent(workflowId, 'error', 'epic_qa', 'No merged backlog found — ensure backlog_merge completed successfully');
@@ -685,12 +737,7 @@ export async function runEpicQaStage(
   // ── Synthesise ─────────────────────────────────────────────────────────────
   const synthesisPrompt = buildEpicQaPrompt(mergedBacklogContent, prdContent, epicFeaturesContent, apiSpecContent);
 
-  const { SpecialistAgent } = await import('./specialist-agent');
-  const vera = new SpecialistAgent('qa-engineer');
-  // QA persona is registered under the 'story_decomposition' stage tag
-  const persona = await vera.loadPersona('story_decomposition');
-  const systemPrompt = await vera.buildSystemPrompt(persona, undefined, undefined, true, 'story_decomposition');
-  const maxTokens = STAGE_MAX_OUTPUT_TOKENS['epic_qa'] ?? 28_000;
+  const { vera, systemPrompt, maxTokens } = await buildEpicQaAgent();
 
   const rawOutput = await collectStreamWithHeartbeat(
     vera.streamResponse(systemPrompt, [{ role: 'user', content: synthesisPrompt }], resolveAgentModel('qa-engineer'), undefined, maxTokens),
@@ -711,11 +758,10 @@ export async function runEpicQaStage(
     '[EPIC QA] QA test suite validation issues',
     (n) => `Epic QA suite quality check flagged ${n} issue(s) — review before approving`);
 
-  const { pauseAtCheckpoint } = await import('./workflow-router');
+  const { pauseAtCheckpoint } = await import('./workflow-router'); // dynamic: breaks the workflow-router → stage-runner cycle
   await pauseAtCheckpoint(workflowId, 'epic_qa', artifactId, undefined, undefined);
 
-  let testCaseCount: number | undefined;
-  try { testCaseCount = JSON.parse(stripped).test_cases?.length; } catch { /* best-effort */ }
+  const testCaseCount = countTestCases(stripped);
 
   insertEvent(workflowId, 'stage_completed', 'epic_qa',
     testCaseCount !== undefined
@@ -739,20 +785,8 @@ export async function runEpicQaRevision(
   brief: string,
 ): Promise<void> {
   logger.info('[EPIC QA] Starting targeted revision of epic QA test suite');
-  const { saveLocalArtifact, loadLatestArtifactContent } = await import('./artifact-helpers');
-  const db = (await import('../data/database')).default;
 
-  const wfRow = db.prepare<[string], { stage_sequence: string }>(
-    'SELECT stage_sequence FROM workflows WHERE id = ?'
-  ).get(workflowId);
-  const apiSpecStageEnabled = wfRow ? (JSON.parse(wfRow.stage_sequence) as string[]).includes('api_spec') : false;
-
-  const [mergedBacklogContent, prdContent, rawApiSpecContent] = await Promise.all([
-    loadLatestArtifactContent(itemId, 'backlog'),
-    loadLatestArtifactContent(itemId, 'prd'),
-    apiSpecStageEnabled ? loadLatestArtifactContent(itemId, 'api_spec') : Promise.resolve(null),
-  ]);
-  const apiSpecContent = rawApiSpecContent?.trim() || null;
+  const { mergedBacklogContent, prdContent, apiSpecContent } = await loadEpicQaInputs(workflowId, itemId);
 
   const contextParts: string[] = [];
   if (prdContent) contextParts.push(`**Current PRD (source of truth):**\n${prdContent}`);
@@ -777,11 +811,7 @@ export async function runEpicQaRevision(
     { role: 'user', content: directive },
   ];
 
-  const { SpecialistAgent } = await import('./specialist-agent');
-  const vera = new SpecialistAgent('qa-engineer');
-  const persona = await vera.loadPersona('story_decomposition');
-  const systemPrompt = await vera.buildSystemPrompt(persona, undefined, itemContext, true, 'story_decomposition');
-  const maxTokens = STAGE_MAX_OUTPUT_TOKENS['epic_qa'] ?? 28_000;
+  const { vera, systemPrompt, maxTokens } = await buildEpicQaAgent(itemContext);
 
   const rawOutput = await collectStreamWithHeartbeat(
     vera.streamResponse(systemPrompt, messages, resolveAgentModel('qa-engineer'), undefined, maxTokens),
@@ -802,28 +832,21 @@ export async function runEpicQaRevision(
     '[EPIC QA] QA revision validation issues',
     (n) => `Epic QA suite revision flagged ${n} issue(s)`);
 
-  // Diff + summary so the reviewer can see exactly what changed
-  let revisionSummary: string | undefined;
-  try {
-    const { computeRevisionDiff } = await import('../utils/revision-diff');
-    const { saveDiffArtifact } = await import('./artifact-helpers');
-    const { summarizeRevisionDiff } = await import('./revision-diff-summary');
-    const diffText = computeRevisionDiff(priorDraft, stripped, 'Epic QA Tests');
-    const diffArtifactId = await saveDiffArtifact(itemId, 'qa_tests', diffText, sessionId);
-    if (diffArtifactId) logger.info(`[EPIC QA] Revision diff saved (id: ${diffArtifactId})`);
-    revisionSummary = await summarizeRevisionDiff({ stageLabel: 'Epic QA Tests', requestContext: brief, diffText }) || undefined;
-  } catch (err: any) {
-    logger.warn(`[EPIC QA] Failed to save revision diff/summary: ${err.message}`);
-  }
+  const revisionSummary = await saveRevisionDiffAndSummary({
+    itemId, sessionId, brief, priorDraft,
+    revisedContent: stripped,
+    artifactType: 'qa_tests',
+    diffLabel: 'Epic QA Tests',
+    logPrefix: '[EPIC QA]',
+  });
 
-  const { pauseAtCheckpoint } = await import('./workflow-router');
+  const { pauseAtCheckpoint } = await import('./workflow-router'); // dynamic: breaks the workflow-router → stage-runner cycle
   pauseAtCheckpoint(workflowId, 'epic_qa', artifactId, sessionId, {
     revision_mode: true,
     ...(revisionSummary ? { revision_summary: revisionSummary } : {}),
   });
 
-  let testCaseCount: number | undefined;
-  try { testCaseCount = JSON.parse(stripped).test_cases?.length; } catch { /* best-effort */ }
+  const testCaseCount = countTestCases(stripped);
 
   insertEvent(workflowId, 'stage_completed', 'epic_qa',
     testCaseCount !== undefined

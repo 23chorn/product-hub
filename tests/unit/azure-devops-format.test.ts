@@ -7,6 +7,8 @@ import {
   formatGivenWhenThen,
   buildTechnicalSuggestions,
   buildPlatformNotes,
+  buildStoryDescriptionHtml,
+  buildAcceptanceCriteriaHtml,
   deriveTeamTags,
   buildTestCaseDescription,
   buildTestStepsXml,
@@ -116,6 +118,46 @@ describe('buildPlatformNotes / deriveTeamTags', () => {
     expect(deriveTeamTags(notes)).toBe('iOS');
     expect(deriveTeamTags(undefined)).toBeUndefined();
     expect(deriveTeamTags({ ios: 'n/a' })).toBeUndefined();
+  });
+});
+
+describe('buildStoryDescriptionHtml', () => {
+  it('renders the As a / I want / So that lines with bold labels', () => {
+    expect(buildStoryDescriptionHtml({ persona: 'power user', goal: 'filter results', benefit: 'I find things faster' }))
+      .toBe('<b>As a</b> power user<br><b>I want</b> filter results<br><b>So that</b> I find things faster');
+  });
+  it('strips duplicated prefixes the model left in the fields', () => {
+    const html = buildStoryDescriptionHtml({
+      persona: 'As a power user',
+      goal: 'I want to filter results',
+      benefit: 'so that I find things faster',
+    });
+    expect(html).toBe('<b>As a</b> power user<br><b>I want</b> filter results<br><b>So that</b> I find things faster');
+  });
+  it('escapes HTML and appends technical sections when present', () => {
+    const html = buildStoryDescriptionHtml({
+      persona: 'user <b>',
+      goal: 'x',
+      benefit: 'y',
+      technical: { dataChanges: 'add column' },
+      technical_notes: { ios: 'use SwiftUI' },
+    });
+    expect(html).toContain('<b>As a</b> user &lt;b&gt;');
+    expect(html).toContain('<b>Data Changes:</b> add column');
+    expect(html).toContain('<b>iOS:</b> use SwiftUI');
+  });
+});
+
+describe('buildAcceptanceCriteriaHtml', () => {
+  it('returns undefined for missing or empty criteria', () => {
+    expect(buildAcceptanceCriteriaHtml(undefined)).toBeUndefined();
+    expect(buildAcceptanceCriteriaHtml([])).toBeUndefined();
+  });
+  it('numbers each AC and formats Given/When/Then', () => {
+    const html = buildAcceptanceCriteriaHtml(['Given X When Y Then Z', 'Given A Then B'])!;
+    expect(html).toContain('<b>AC 1</b><br><b>Given</b> X<br><b>When</b> Y<br><b>Then</b> Z');
+    expect(html).toContain('<b>AC 2</b><br><b>Given</b> A<br><b>Then</b> B');
+    expect(html.split('<br><br>').length).toBe(2);
   });
 });
 

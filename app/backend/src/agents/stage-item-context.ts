@@ -17,6 +17,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import db from '../data/database';
 import { loadLatestArtifactContent } from './artifact-helpers';
+import { loadRelevantBehaviourDocs } from './behaviour-context';
 import { syncSwaggerDoc, type SwaggerDocRow } from '../integrations/swagger-sync';
 import Logger from '../utils/logger';
 
@@ -48,7 +49,6 @@ export const ITEM_CONTEXT_BUILDERS: Record<string, (params: ItemContextParams) =
     const parts: string[] = [];
     if (analystContent) parts.push(`**Research Brief (use as background for the PRD):**\n\n${analystContent}`);
 
-    const { loadRelevantBehaviourDocs } = await import('./behaviour-context');
     const behaviourDocs = await loadRelevantBehaviourDocs(`${goalText ?? ''} ${analystContent ?? ''}`);
     if (behaviourDocs) parts.push(behaviourDocs);
 

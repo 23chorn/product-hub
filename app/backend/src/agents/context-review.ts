@@ -3,6 +3,7 @@ import { StatusChange } from '@pap/shared';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import Logger from '../utils/logger';
+import { stripJsonFence } from '../utils/json-repair';
 import { findRepoRoot } from '../utils/find-repo-root';
 
 const logger = new Logger('CONTEXT-REVIEW');
@@ -101,11 +102,10 @@ export async function generateContextProposals(
 
   logger.info(`Context review raw response: ${fullResponse.length} chars`);
 
-  // Strip markdown code fences the model may wrap around JSON
-  const cleaned = fullResponse
-    .replace(/^```json?\s*/m, '')
-    .replace(/\s*```\s*$/m, '')
-    .trim();
+  // Strip markdown code fences (and any preamble) the model may wrap around JSON.
+  // The previous local regex required a "json" language tag, so a plain ``` fence
+  // was never stripped — stripJsonFence handles both.
+  const cleaned = stripJsonFence(fullResponse);
 
   try {
     const parsed = JSON.parse(cleaned);

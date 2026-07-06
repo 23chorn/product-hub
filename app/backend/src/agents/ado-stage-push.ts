@@ -13,6 +13,7 @@
 
 import db from '../data/database';
 import { loadArtifactContentById } from './artifact-helpers';
+import { stripJsonFence } from '../utils/json-repair';
 import { loadPrdForItem, buildEpicEnrichment, buildFeatureEnrichment } from '../utils/prd-enrichment';
 import { insertEvent } from './workflow-db';
 import { featureLocalKey, storyLocalKey } from '@pap/shared';
@@ -59,9 +60,8 @@ export async function pushBacklogToAdo(workflowId: string, itemId: string): Prom
       return null;
     }
 
-    const cleaned = rawContent.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
     let backlog: any;
-    try { backlog = JSON.parse(cleaned); } catch {
+    try { backlog = JSON.parse(stripJsonFence(rawContent)); } catch {
       logger.warn('Board push: backlog artifact is not valid JSON');
       return null;
     }
@@ -213,9 +213,8 @@ export async function pushTestPlanToAdo(workflowId: string, itemId: string): Pro
       return null;
     }
 
-    const raw = qaRaw.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
     let qa: any;
-    try { qa = JSON.parse(raw); } catch {
+    try { qa = JSON.parse(stripJsonFence(qaRaw)); } catch {
       logger.warn('Test plan push: QA artifact is not valid JSON');
       return null;
     }

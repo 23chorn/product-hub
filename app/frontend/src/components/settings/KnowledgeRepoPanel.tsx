@@ -2,11 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../../services/api';
 import { useToast } from '../../hooks/useToast';
 import type { KbRepo } from '@pap/shared';
-
-function formatTimestamp(ts: number | null): string {
-  if (!ts) return 'never';
-  return new Date(ts).toLocaleString();
-}
+import { formatTimestamp } from '../../utils/relative-time';
 
 const blankForm = { label: '', repository: '', branch: '', project: '' };
 

@@ -2,11 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../../services/api';
 import { useContextKeeperStore } from '../../stores/contextKeeperStore';
 import { useAuthStore, isViewOnly } from '../../stores/authStore';
-
-function formatTimestamp(ts: number | null): string {
-  if (!ts) return 'never';
-  return new Date(ts).toLocaleString();
-}
+import { formatTimestamp } from '../../utils/relative-time';
 
 /**
  * Manual trigger for Airtable status-change detection: checks Airtable initiative

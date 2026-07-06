@@ -5,6 +5,8 @@
  * functions over the tool input; registered in tool-registry.ts.
  */
 
+import { stripJsonFence } from '../utils/json-repair';
+
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
 function ok(): string {
@@ -34,8 +36,8 @@ function parseJson(input: Record<string, unknown>): { parsed: any; issues: strin
   if (typeof raw !== 'string' || !raw.trim()) {
     return { parsed: null, issues: ['Input "json" must be a non-empty string'] };
   }
-  // Strip markdown code fences if the model wrapped the JSON
-  const stripped = raw.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+  // Strip markdown code fences (and any preamble prose) if the model wrapped the JSON
+  const stripped = stripJsonFence(raw);
   try {
     return { parsed: JSON.parse(stripped), issues: [] };
   } catch (e: any) {

@@ -12,7 +12,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import db from '../data/database';
 import { streamAI, resolveAgentModel, getActiveProvider } from '../utils/ai-provider';
-import { repairTruncatedJson } from '../utils/json-repair';
+import { repairTruncatedJson, stripJsonFence } from '../utils/json-repair';
 import Logger from '../utils/logger';
 import type { DiscoveryOpportunityEvidence, DiscoverySourceType } from '@pap/shared';
 import { findRepoRoot } from '../utils/find-repo-root';
@@ -75,12 +75,6 @@ function summarizeCurrentAppState(): string {
     const desc = (r.description ?? '').slice(0, APP_STATE_DESC_LENGTH);
     return `- ${r.title}${desc ? `: ${desc}` : ''}`;
   }).join('\n');
-}
-
-function extractJsonBlock(raw: string): string {
-  const stripped = raw.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
-  const jsonStart = stripped.indexOf('{');
-  return jsonStart > 0 ? stripped.slice(jsonStart) : stripped;
 }
 
 /** Escapes literal control characters (raw newlines/tabs) inside JSON string values — weaker models sometimes emit these unescaped. */
@@ -146,7 +140,7 @@ function parseJsonLoose(text: string): any {
 }
 
 function parseOpportunities(raw: string): OpportunityDraft[] {
-  const jsonContent = extractJsonBlock(raw);
+  const jsonContent = stripJsonFence(raw);
   const parsed = parseJsonLoose(jsonContent);
 
   const opportunities = parsed.opportunities;

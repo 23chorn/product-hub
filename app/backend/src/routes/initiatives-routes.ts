@@ -1,4 +1,6 @@
 import { Router, Request, Response } from 'express';
+import * as fs from 'fs';
+import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import db from '../data/database';
 import Logger from '../utils/logger';
@@ -359,9 +361,6 @@ router.delete('/:id', async (req: Request, res: Response) => {
       if (adoEnabled) {
         try {
           // Collect external resource IDs before deleting DB rows
-          const fs = await import('fs');
-          const path = await import('path');
-
           // Wiki artifact paths (analyst, pm_prd, solution_architect, prototype)
           const wikiPaths = db.prepare<[string], { wiki_path: string }>(
             `SELECT DISTINCT a.wiki_path
@@ -425,7 +424,6 @@ router.delete('/:id', async (req: Request, res: Response) => {
     }
 
     // ── Delete session directory from disk ─────────────────────────────────
-    const fs = await import('fs');
     const sessionDir = itemSessionDir(id);
     if (fs.existsSync(sessionDir)) {
       fs.rmSync(sessionDir, { recursive: true, force: true });

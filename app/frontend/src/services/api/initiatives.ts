@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { AirtableItem, LocalInitiative } from '@pap/shared';
+import type { AirtableItem, InitiativeComment, LocalInitiative } from '@pap/shared';
 import { API_BASE_URL } from './base';
 
 export const initiativesApi = {
@@ -47,5 +47,22 @@ export const initiativesApi = {
   async unassignInitiative(id: string, userId: number): Promise<{ ok: boolean }> {
     await axios.delete(`${API_BASE_URL}/api/initiatives/${id}/assignments/${userId}`);
     return { ok: true };
+  },
+
+  async getInitiativeComments(id: string): Promise<InitiativeComment[]> {
+    const response = await axios.get(`${API_BASE_URL}/api/initiatives/${id}/comments`);
+    return response.data;
+  },
+
+  async addInitiativeComment(id: string, comment: { body: string; type: 'note' | 'decision'; title?: string }): Promise<void> {
+    await axios.post(`${API_BASE_URL}/api/initiatives/${id}/comments`, comment);
+  },
+
+  async pauseInitiative(id: string, reason: string): Promise<void> {
+    await axios.post(`${API_BASE_URL}/api/initiatives/${id}/pause`, { body: reason });
+  },
+
+  async resumeInitiative(id: string, note = 'Initiative resumed.'): Promise<void> {
+    await axios.post(`${API_BASE_URL}/api/initiatives/${id}/resume`, { body: note });
   },
 };

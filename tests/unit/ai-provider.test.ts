@@ -7,6 +7,7 @@ import {
   resolveAgentModel,
   modelShortLabel,
   getAgentModelLabels,
+  extractValidatorFallback,
 } from '../../app/backend/src/utils/ai-provider';
 import {
   PROVIDER_MODELS,
@@ -122,6 +123,87 @@ describe('modelShortLabel', () => {
   it('strips path and version suffixes for non-Claude ids', () => {
     expect(modelShortLabel('meta/llama3.2:1b')).toBe('llama3.2');
     expect(modelShortLabel('mistral')).toBe('mistral');
+  });
+});
+
+describe('extractValidatorFallback', () => {
+  // Anthropic-shaped blocks: { type: 'text', text } / { type: 'tool_use', name, input }
+  const anthropicGetText = (b: any) => (b.type === 'text' ? b.text : null);
+  const anthropicGetToolUse = (b: any) => (b.type === 'tool_use' ? b : null);
+  // Bedrock-shaped blocks: { text } / { toolUse: { name, input } }
+  const bedrockGetText = (b: any) => b.text ?? null;
+  const bedrockGetToolUse = (b: any) => b.toolUse ?? null;
+
+  const bigJson = JSON.stringify({ title: 'x'.repeat(200) });
+
+  it('returns the validator JSON when no text was streamed (Anthropic shape)', () => {
+    const messages = [
+      { role: 'user', content: 'go' },
+      { role: 'assistant', content: [{ type: 'tool_use', name: 'validate_backlog_json', input: { json: bigJson } }] },
+    ];
+    expect(extractValidatorFallback('ANTHROPIC', messages, anthropicGetText, anthropicGetToolUse)).toBe(bigJson);
+  });
+
+  it('returns the validator JSON when it dwarfs a short give-up message (Bedrock shape)', () => {
+    const messages = [
+      { role: 'assistant', content: [
+        { toolUse: { name: 'validate_backlog_json', input: { json: bigJson } } },
+        { text: 'Validation kept failing, giving up.' },
+      ] },
+    ];
+    expect(extractValidatorFallback('BEDROCK', messages, bedrockGetText, bedrockGetToolUse)).toBe(bigJson);
+  });
+
+  it('returns null when the streamed text stands on its own', () => {
+    const longText = 'a'.repeat(500);
+    const messages = [
+      { role: 'assistant', content: [
+        { type: 'tool_use', name: 'validate_backlog_json', input: { json: '{"a":1}' } },
+        { type: 'text', text: longText },
+      ] },
+    ];
+    expect(extractValidatorFallback('ANTHROPIC', messages, anthropicGetText, anthropicGetToolUse)).toBeNull();
+  });
+
+  it('ignores non-validator tool calls entirely', () => {
+    const messages = [
+      { role: 'assistant', content: [{ type: 'tool_use', name: 'search_web', input: { json: bigJson } }] },
+    ];
+    expect(extractValidatorFallback('ANTHROPIC', messages, anthropicGetText, anthropicGetToolUse)).toBeNull();
+  });
+
+  it('finds a validator call in an earlier turn when the last turn has only unrelated tools', () => {
+    const messages = [
+      { role: 'assistant', content: [{ type: 'tool_use', name: 'validate_qa_tests_json', input: { json: bigJson } }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: '1', content: 'issues' }] },
+      { role: 'assistant', content: [{ type: 'tool_use', name: 'search_web', input: { query: 'x' } }] },
+    ];
+    expect(extractValidatorFallback('ANTHROPIC', messages, anthropicGetText, anthropicGetToolUse)).toBe(bigJson);
+  });
+
+  it('prefers the most recent validator call when several turns have one', () => {
+    const firstJson = JSON.stringify({ draft: 1, pad: 'x'.repeat(100) });
+    const secondJson = JSON.stringify({ draft: 2, pad: 'y'.repeat(100) });
+    const messages = [
+      { role: 'assistant', content: [{ type: 'tool_use', name: 'validate_backlog_json', input: { json: firstJson } }] },
+      { role: 'assistant', content: [{ type: 'tool_use', name: 'validate_backlog_json', input: { json: secondJson } }] },
+    ];
+    expect(extractValidatorFallback('ANTHROPIC', messages, anthropicGetText, anthropicGetToolUse)).toBe(secondJson);
+  });
+
+  it('repairs a truncated inner JSON string before returning it', () => {
+    const truncated = '{"title": "long draft that got cut off mid-str';
+    const messages = [
+      { role: 'assistant', content: [{ type: 'tool_use', name: 'validate_backlog_json', input: { json: truncated } }] },
+    ];
+    const result = extractValidatorFallback('ANTHROPIC', messages, anthropicGetText, anthropicGetToolUse);
+    expect(result).not.toBeNull();
+    expect(() => JSON.parse(result!)).not.toThrow();
+  });
+
+  it('returns null when there is neither text nor a validator call', () => {
+    const messages = [{ role: 'assistant', content: [{ type: 'text', text: '   ' }] }];
+    expect(extractValidatorFallback('ANTHROPIC', messages, anthropicGetText, anthropicGetToolUse)).toBeNull();
   });
 });
 

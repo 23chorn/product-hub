@@ -1,3 +1,9 @@
+/** Absolute local-time label for a nullable epoch-ms timestamp — 'never' when unset. */
+export function formatTimestamp(ts: number | null): string {
+  if (!ts) return 'never';
+  return new Date(ts).toLocaleString();
+}
+
 /** "3h ago" / "2d ago" — coarse, since the dashboard only needs a sense of staleness. */
 export function relativeTime(ts: number): string {
   const minutes = Math.round((Date.now() - ts) / 60000);

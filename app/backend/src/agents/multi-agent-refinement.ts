@@ -17,6 +17,7 @@ import { SpecialistAgent } from './specialist-agent';
 import { resolveAgentModel } from '../utils/ai-provider';
 import { progressHeartbeatLine, collectStreamWithHeartbeat, STAGE_MAX_OUTPUT_TOKENS } from './stage-metadata';
 import { stripJsonFence, parseJsonLoose } from '../utils/json-repair';
+import { loadEpicFeatures } from './feature-decomposition';
 import { readProductArea } from './item-metadata';
 import { featureLocalKey, type AgentType } from '@pap/shared';
 import * as fs from 'fs';
@@ -326,10 +327,14 @@ export async function runMultiAgentRefinement(
   const wfRow = db.prepare('SELECT stage_sequence FROM workflows WHERE id = ?').get(workflowId) as { stage_sequence: string } | undefined;
   const apiSpecStageEnabled = wfRow ? (JSON.parse(wfRow.stage_sequence) as string[]).includes('api_spec') : false;
 
-  const [prdContent, archContent, epicFeaturesContent, figmaContent, rawApiSpecContent] = await Promise.all([
+  const [prdContent, archContent, epicFeaturesLoaded, figmaContent, rawApiSpecContent] = await Promise.all([
     loadLatestArtifactContent(itemId, 'prd'),
     loadLatestArtifactContent(itemId, 'architecture'),
-    loadLatestArtifactContent(itemId, 'epic_features'), // Epic + features from epic_feature_planner
+    // Epic + features from epic_feature_planner
+    loadEpicFeatures(itemId).catch((err: any) => {
+      logger.warn(`[MULTI-AGENT] Failed to parse epic_features: ${err.message}`);
+      return null;
+    }),
     loadLatestArtifactContent(itemId, 'figma_design'),  // Designer-approved screens from the figma_design stage, if it ran
     apiSpecStageEnabled ? loadLatestArtifactContent(itemId, 'api_spec') : Promise.resolve(null), // Proposed endpoint changes from api_spec, if it ran
   ]);
@@ -341,35 +346,29 @@ export async function runMultiAgentRefinement(
   let epicContext: any = null;
   let phaseContext: { label: string; deliverable?: string; epicTitle?: string } | null = null;
 
-  if (epicFeaturesContent) {
-    try {
-      const epicFeatures = JSON.parse(epicFeaturesContent);
-      const { flattenFeatures } = await import('./feature-decomposition');
-      const allFeatures = flattenFeatures(epicFeatures);
-      if (allFeatures[featureIndex]) {
-        targetFeature = allFeatures[featureIndex];
-      }
+  if (epicFeaturesLoaded) {
+    const { raw: epicFeatures, features: allFeatures } = epicFeaturesLoaded;
+    if (allFeatures[featureIndex]) {
+      targetFeature = allFeatures[featureIndex];
+    }
 
-      epicContext = epicFeatures.epic || null;
+    epicContext = epicFeatures.epic || null;
 
-      // Find which phase contains this feature by walking the phase list in order
-      if (Array.isArray(epicFeatures.phases)) {
-        let count = 0;
-        for (const phase of epicFeatures.phases) {
-          const features = Array.isArray(phase.features) ? phase.features : [];
-          if (featureIndex < count + features.length) {
-            phaseContext = {
-              label: phase.label,
-              deliverable: phase.deliverable,
-              epicTitle: phase.epicTitle,
-            };
-            break;
-          }
-          count += features.length;
+    // Find which phase contains this feature by walking the phase list in order
+    if (Array.isArray(epicFeatures.phases)) {
+      let count = 0;
+      for (const phase of epicFeatures.phases) {
+        const features = Array.isArray(phase.features) ? phase.features : [];
+        if (featureIndex < count + features.length) {
+          phaseContext = {
+            label: phase.label,
+            deliverable: phase.deliverable,
+            epicTitle: phase.epicTitle,
+          };
+          break;
         }
+        count += features.length;
       }
-    } catch (err: any) {
-      logger.warn(`[MULTI-AGENT] Failed to parse epic_features: ${err.message}`);
     }
   }
 

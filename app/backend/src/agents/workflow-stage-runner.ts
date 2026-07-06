@@ -49,6 +49,7 @@ import { setCancelController, clearCancelController, isCancelRequested } from '.
 export { getCoordinator, getCritic } from './workflow-agents';
 import { getCoordinator, getCritic } from './workflow-agents';
 import { runBacklogMerge, runMultiAgentFeatureStage, runMultiAgentFeatureRevision, runMultiAgentFeatureQaRevision, runEpicQaStage, runEpicQaRevision } from './feature-stage-runner';
+import { pushLinksToAirtable } from './ado-stage-push';
 
 // ── Autonomous stage execution ────────────────────────────────────────────────
 
@@ -499,7 +500,6 @@ export async function runAutonomousStage(
 
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
         const localUrl = `${frontendUrl}/?artifact=${artifactId}`;
-        const { pushLinksToAirtable } = await import('./ado-stage-push');
         await pushLinksToAirtable(itemRow.airtable_id, { [airtableField]: localUrl });
         logger.info(`Pushed ${airtableField} to Airtable for stage ${stage}`);
       } catch (err: any) {
@@ -577,7 +577,6 @@ export async function runAutonomousStage(
             'SELECT airtable_id FROM items WHERE id = ?'
           ).get(itemId);
           if (itemRow?.airtable_id) {
-            const { pushLinksToAirtable } = await import('./ado-stage-push');
             pushLinksToAirtable(itemRow.airtable_id, { [airtableField]: url }).catch(() => {});
           }
         }
