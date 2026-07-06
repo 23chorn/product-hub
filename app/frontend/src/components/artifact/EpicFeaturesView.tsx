@@ -149,6 +149,15 @@ export function normalizePrdId(id: string): string {
   return id.replace(/-0*(\d+)$/, '$1');
 }
 
+/** Collapse the drifting journey id spellings the model has produced across runs
+ *  ("J1", "Journey 1", "Journey_1", "journey1", ...) to one compact "J<n>" form, so
+ *  the same journey renders the same badge label across every feature that references
+ *  it. Falls back to the trimmed original for free-text journey names with no numeric id. */
+function normalizeJourneyId(id: string): string {
+  const match = id.trim().match(/^j(?:ourney)?[\s_-]*(\d+)$/i);
+  return match ? `J${match[1]}` : id.trim();
+}
+
 export function PrdRefTags({ prdRef, frMap, nfrMap }: {
   prdRef: PrdRef;
   frMap?: Record<string, string>;
@@ -172,7 +181,7 @@ export function PrdRefTags({ prdRef, frMap, nfrMap }: {
       })}
       {journeys.map(j => {
         const colonIdx = j.indexOf(': ');
-        const jId = colonIdx !== -1 ? j.slice(0, colonIdx) : j;
+        const jId = normalizeJourneyId(colonIdx !== -1 ? j.slice(0, colonIdx) : j);
         const tip = colonIdx !== -1 ? j.slice(colonIdx + 2) : undefined;
         return <span key={j} title={tip} className={`text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 ${tip ? 'cursor-help' : ''}`}>{jId}</span>;
       })}

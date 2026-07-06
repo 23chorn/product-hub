@@ -34,7 +34,7 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
           ],
           "prdRef": {
             "functionalRequirements": ["FR-01", "FR-03"],
-            "userJourneys": ["Trading · Share trade idea"]
+            "userJourneys": ["J1: Share trade idea"]
           },
           "deferredTo": null,
           "dependsOn": [],
@@ -78,7 +78,7 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
   - "Users can leave a channel and the system removes them from future message delivery within 1 second"
 - **prdRef**: Traceability back to the PRD. Use exact IDs.
   - `functionalRequirements`: FR IDs this feature satisfies (e.g. `["FR-01", "FR-03"]`)
-  - `userJourneys`: Journey names from the PRD this feature supports
+  - `userJourneys`: Journeys from the PRD this feature supports, as `"<id>: <journey name>"` using the PRD's exact `user_journeys[].id` (e.g. `["J1: Share trade idea"]`) — never invent a new id or drop it and use the name alone, or the same journey will render a different badge on every feature that references it
 - **deferredTo**: If this feature was scoped for this phase but is being moved out, note the target phase. Otherwise `null`.
 - **dependsOn**: Array of EXACT feature titles (copy-pasted, case-sensitive) from elsewhere in this epic that this feature cannot start until they are done — i.e. building or changing this feature requires the depended-on feature's behavior or contract to already be settled. Empty array `[]` if this feature has no prerequisites and can be built in parallel with any other feature.
   - Reference features by their exact `title` string, including ones in earlier phases.
@@ -131,7 +131,7 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
           ],
           "prdRef": {
             "functionalRequirements": ["FR-01", "FR-02"],
-            "userJourneys": ["Trading · Share trade idea"]
+            "userJourneys": ["J1: Share trade idea"]
           },
           "deferredTo": null,
           "dependsOn": [],
@@ -148,7 +148,7 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
           ],
           "prdRef": {
             "functionalRequirements": ["FR-03"],
-            "userJourneys": ["Social · Join community"]
+            "userJourneys": ["J2: Join community"]
           },
           "deferredTo": null,
           "dependsOn": [],
@@ -186,7 +186,7 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
           ],
           "prdRef": {
             "functionalRequirements": ["FR-05"],
-            "userJourneys": ["Social · Stay updated"]
+            "userJourneys": ["J3: Stay updated"]
           },
           "deferredTo": null,
           "dependsOn": ["Real-time Message Delivery"],

@@ -12,7 +12,7 @@ Schema:
   ],
   "user_journeys": [
     {
-      "id": "Journey 1",
+      "id": "J1",
       "name": "Journey name",
       "steps": ["User does X", "System responds Y", "User does Z", "Outcome: what the user achieves"]
     }
