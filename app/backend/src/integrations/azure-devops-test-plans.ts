@@ -181,6 +181,28 @@ async function addTestCasesToSuite(
 }
 
 /**
+ * Remove a test case work item from a test suite (deletes its test point, not the work item).
+ * A Test Case work item that's still a member of a suite cannot be hard-deleted — ADO rejects
+ * the work item destroy with a 400 until every test point referencing it is gone — so this
+ * must run before deleteWorkItem. Silently swallows 404 (already removed from the suite).
+ */
+export async function removeTestCaseFromSuite(
+  ctx: TestPlanContext,
+  planId: number,
+  suiteId: number,
+  testCaseId: number,
+): Promise<void> {
+  try {
+    await ctx.client.delete(`/test/plans/${planId}/suites/${suiteId}/testcases/${testCaseId}`, {
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (error: any) {
+    if (error.response?.status === 404) return;
+    throw new Error(`Failed to remove test case #${testCaseId} from suite #${suiteId}: ${adoErrorMessage(error)}`);
+  }
+}
+
+/**
  * Push or sync a QA test suite to ADO Test Plans.
  * Creates a plan + per-type suites on first push; updates existing test cases and
  * adds new ones on subsequent pushes. Returns accumulated IDs and counts.

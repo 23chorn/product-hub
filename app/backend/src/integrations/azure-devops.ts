@@ -15,6 +15,7 @@ import {
 import {
   pushQATestPlan as pushQATestPlanImpl,
   deleteTestPlan as deleteTestPlanImpl,
+  removeTestCaseFromSuite as removeTestCaseFromSuiteImpl,
   type TestPlanContext,
 } from './azure-devops-test-plans';
 import {
@@ -935,6 +936,15 @@ export class AzureDevOpsClient {
     return pushQATestPlanImpl(this.testPlanContext, params);
   }
 
+  /**
+   * Remove a test case work item from a test suite. Must run before deleteWorkItem —
+   * a Test Case still referenced by a suite's test points can't be hard-deleted.
+   * Delegates to ./azure-devops-test-plans.
+   */
+  async removeTestCaseFromSuite(planId: number, suiteId: number, testCaseId: number): Promise<void> {
+    return removeTestCaseFromSuiteImpl(this.testPlanContext, planId, suiteId, testCaseId);
+  }
+
   // ── Git Items API (Knowledge Studio) ──────────────────────────────────────────
 
   /**
@@ -985,7 +995,7 @@ export class AzureDevOpsClient {
       logger.info(`Deleted work item #${id}`);
     } catch (err: any) {
       if (err.response?.status === 404) return;
-      logger.warn(`Failed to delete work item #${id}: ${err.response?.status} ${err.message}`);
+      logger.warn(`Failed to delete work item #${id}: ${err.response?.status} ${adoErrorMessage(err)}`);
       throw err;
     }
   }
