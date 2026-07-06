@@ -117,7 +117,7 @@ export function BacklogStoriesTests({ featureButtons, initiativeTitle, epicFeatu
           <p className="text-sm text-surface-400 italic">No features approved yet.</p>
         )
       ) : qa && qa.test_cases.length > 0 ? (
-        <QATestsView data={qa} />
+        <QATestsView data={qa} frMap={frMap} />
       ) : (
         <p className="text-sm text-surface-400 italic">No QA tests approved yet.</p>
       )}

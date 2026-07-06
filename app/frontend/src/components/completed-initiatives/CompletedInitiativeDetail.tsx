@@ -707,7 +707,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
                 {tab === 'tests' && (
                   <div className="max-w-4xl mx-auto space-y-4">
                     {phaseQa && phaseQa.test_cases.length > 0 ? (
-                      <QATestsView data={phaseQa} />
+                      <QATestsView data={phaseQa} frMap={frMap} />
                     ) : (
                       <p className="text-sm text-surface-400 italic">No test case content found for this initiative.</p>
                     )}

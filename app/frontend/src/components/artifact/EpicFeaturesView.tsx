@@ -145,7 +145,7 @@ export function removeFeatureFromPhase(data: EpicFeaturesData, phaseIndex: numbe
 // ── Sub-components ───────────────────────────────────────────────────────────
 
 // Strip dashes and leading zeros from numeric suffix so "FR-01"/"FR-1" → "FR1" to match PRD id format.
-function normalizePrdId(id: string): string {
+export function normalizePrdId(id: string): string {
   return id.replace(/-0*(\d+)$/, '$1');
 }
 

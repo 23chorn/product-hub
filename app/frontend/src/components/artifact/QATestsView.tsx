@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { TestCase, QATestSuite } from '@pap/shared';
 import { ExpandableText } from '../common/ExpandableText';
 import { DeleteItemButton } from '../common/DeleteItemButton';
+import { normalizePrdId } from './EpicFeaturesView';
 
 /** Remove one test case by its position in data.test_cases. The view groups/reorders
  *  cases by type or priority for display via .filter() (preserves object identity), so
@@ -51,24 +52,50 @@ function priorityMeta(priority: string): { label: string; color: string; dot: st
   };
 }
 
+/** Extract [feature number, test case number] from a test case for sort ordering.
+ *  Feature number comes from story_ref (e.g. "F1.S3" -> 1), since epic-level ids
+ *  (TC-E-NNN / TC-API-NNN) don't encode it; falls back to the legacy TC-F<n>-NNN id
+ *  format when story_ref is absent or not a plain string. Test case number is the
+ *  trailing counter in the id (e.g. TC-E-007 -> 7). Missing pieces sort last. */
+function testCaseSortKey(tc: TestCase): [number, number] {
+  const ref = typeof tc.story_ref === 'string' ? tc.story_ref : undefined;
+  const featureMatch = ref?.match(/^F(\d+)/) ?? tc.id.match(/^TC-F(\d+)-/);
+  const featureNum = featureMatch ? parseInt(featureMatch[1], 10) : Number.MAX_SAFE_INTEGER;
+  const caseMatch = tc.id.match(/(\d+)$/);
+  const caseNum = caseMatch ? parseInt(caseMatch[1], 10) : Number.MAX_SAFE_INTEGER;
+  return [featureNum, caseNum];
+}
+
+/** Sort test cases by feature number then test case number, so each category section
+ *  reads in a stable, predictable order rather than raw artifact/merge order. */
+function sortTestCases(testCases: TestCase[]): TestCase[] {
+  return [...testCases].sort((a, b) => {
+    const [featureA, caseA] = testCaseSortKey(a);
+    const [featureB, caseB] = testCaseSortKey(b);
+    return featureA - featureB || caseA - caseB;
+  });
+}
+
 /** Group test cases by their actual `type` value — known TYPE_ORDER types first (in that
  *  order), then any other types in first-seen order — so every category present in the data
- *  gets its own square and section instead of being lumped into a catch-all "Other" bucket. */
+ *  gets its own square and section instead of being lumped into a catch-all "Other" bucket.
+ *  Cases within each group are ordered by feature number then test case number. */
 export function groupByType(testCases: TestCase[]): Array<[string, TestCase[]]> {
   const present = Array.from(new Set(testCases.map(tc => tc.type)));
   const ordered = [...TYPE_ORDER.filter(t => present.includes(t)), ...present.filter(t => !TYPE_ORDER.includes(t))];
-  return ordered.map(type => [type, testCases.filter(tc => tc.type === type)]);
+  return ordered.map(type => [type, sortTestCases(testCases.filter(tc => tc.type === type))]);
 }
 
 /** Group test cases by their actual `priority` value, mirroring groupByType — known
- *  PRIORITY_ORDER priorities first (in that order), then any other values in first-seen order. */
+ *  PRIORITY_ORDER priorities first (in that order), then any other values in first-seen order.
+ *  Cases within each group are ordered by feature number then test case number. */
 function groupByPriority(testCases: TestCase[]): Array<[string, TestCase[]]> {
   const present = Array.from(new Set(testCases.map(tc => tc.priority)));
   const ordered = [...PRIORITY_ORDER.filter(p => present.includes(p)), ...present.filter(p => !PRIORITY_ORDER.includes(p))];
-  return ordered.map(priority => [priority, testCases.filter(tc => tc.priority === priority)]);
+  return ordered.map(priority => [priority, sortTestCases(testCases.filter(tc => tc.priority === priority))]);
 }
 
-function TestCaseCard({ tc, onDelete }: { tc: TestCase; onDelete?: () => void }) {
+function TestCaseCard({ tc, frMap, onDelete }: { tc: TestCase; frMap?: Record<string, string>; onDelete?: () => void }) {
   const [open, setOpen] = useState(false);
   const typeConf = typeMeta(tc.type);
   const prioConf = priorityMeta(tc.priority);
@@ -91,7 +118,19 @@ function TestCaseCard({ tc, onDelete }: { tc: TestCase; onDelete?: () => void })
             {tc.layer === 'technical' && (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-medium">API</span>
             )}
-            {tc.prd_ref && <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400">{tc.prd_ref}</span>}
+            {(Array.isArray(tc.prd_ref) ? tc.prd_ref : tc.prd_ref ? [tc.prd_ref] : []).map(fr => {
+              const key = normalizePrdId(fr);
+              const tip = frMap?.[key];
+              return (
+                <span
+                  key={fr}
+                  title={tip}
+                  className={`text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400 ${tip ? 'cursor-help' : ''}`}
+                >
+                  {key}
+                </span>
+              );
+            })}
             {(tc.story_ref || tc.linkedStory) && <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400">{tc.story_ref ?? tc.linkedStory}</span>}
           </div>
           <p className="text-base text-surface-800 dark:text-surface-200 mt-0.5 leading-snug">{tc.title}</p>
@@ -201,7 +240,7 @@ function TestCaseCard({ tc, onDelete }: { tc: TestCase; onDelete?: () => void })
   );
 }
 
-export function QATestsView({ data, onDeleteTestCase }: { data: QATestSuite; onDeleteTestCase?: (index: number) => void }) {
+export function QATestsView({ data, frMap, onDeleteTestCase }: { data: QATestSuite; frMap?: Record<string, string>; onDeleteTestCase?: (index: number) => void }) {
   // Counts (and the test case groups below) are derived from the test cases themselves rather
   // than the artifact's separate `coverage` field — that field is frequently absent (current
   // multi-agent QA artifacts don't populate it) or stale (a merged/filtered test_cases list
@@ -304,6 +343,7 @@ export function QATestsView({ data, onDeleteTestCase }: { data: QATestSuite; onD
                   <TestCaseCard
                     key={tc.id}
                     tc={tc}
+                    frMap={frMap}
                     onDelete={onDeleteTestCase ? () => onDeleteTestCase(data.test_cases.indexOf(tc)) : undefined}
                   />
                 ))}

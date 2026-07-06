@@ -150,6 +150,7 @@ export function renderStructuredArtifact(content: string, ctx: ArtifactViewConte
   if (qaData) return (
     <QATestsView
       data={qaData}
+      frMap={frMap}
       onDeleteTestCase={requestDelete ? (index) => {
         const tc = qaData.test_cases[index];
         if (!tc) return;

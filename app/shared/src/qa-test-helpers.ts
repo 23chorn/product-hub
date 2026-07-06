@@ -26,7 +26,7 @@ export interface TestCase {
   layer?: 'technical' | 'user_facing';
   /** Endpoint this case targets — only present for layer: 'technical' cases. */
   endpoint?: TestCaseEndpoint;
-  prd_ref?: string;
+  prd_ref?: string | string[];
   story_ref?: string;
   linkedStory?: string;
   scenario?: QAScenario;
