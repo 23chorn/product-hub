@@ -19,10 +19,23 @@ function formatUpdatedAt(ms: number): string {
  * Derive the display stage list from the workflow's actual stage_sequence.
  * Strips out dynamic feature sub-stages (story_decomposition_F*) that are
  * injected after approval and would overflow the dot bar.
+ *
+ * backlog_merge/epic_qa aren't seeded into stage_sequence at launch either — the
+ * backend only injects them once epic_feature_planner finishes and the feature
+ * count is known (see injectFeatureDecompositionStages), replacing the single
+ * 'story_decomposition' placeholder with the expanded F* stages + these two. Without
+ * this, the "test cases" dot would pop into the bar mid-run instead of always being
+ * there like the epics/stories placeholders are — insert them as placeholders too,
+ * right where they'll land once the real expansion happens.
  */
 function displayStages(stageSequence: string[] | undefined): string[] {
   if (!stageSequence || stageSequence.length === 0) return [];
-  return stageSequence.filter(s => !/story_decomposition_F\d/.test(s));
+  const filtered = stageSequence.filter(s => !/story_decomposition_F\d/.test(s));
+  const storyDecompIdx = filtered.indexOf('story_decomposition');
+  if (storyDecompIdx !== -1) {
+    filtered.splice(storyDecompIdx + 1, 0, 'backlog_merge', 'epic_qa');
+  }
+  return filtered;
 }
 
 /** Map a current stage to its display-stage equivalent.
