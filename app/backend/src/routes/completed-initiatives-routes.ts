@@ -298,8 +298,8 @@ async function cascadeDeleteTestCases(
 ): Promise<void> {
   if (affectedStoryKeys.size === 0) return;
 
-  const planRow = db.prepare<[string], { plan_id: number; suite_ids: string; test_case_ids: string; test_case_count: number }>(
-    `SELECT plan_id, suite_ids, test_case_ids, test_case_count FROM qa_test_plan_map WHERE workflow_id = ?`
+  const planRow = db.prepare<[string], { plan_id: number; test_case_ids: string; test_case_count: number }>(
+    `SELECT plan_id, test_case_ids, test_case_count FROM qa_test_plan_map WHERE workflow_id = ?`
   ).get(workflowId);
   if (!planRow) return;
 
@@ -310,10 +310,8 @@ async function cascadeDeleteTestCases(
   // legacy per-feature — same resolution buildDetail/computeLiveTestCaseCount use).
   const qaArtifactIds = getDocumentArtifactIds(itemId).testArtifactIds;
 
-  // Collect local test case IDs whose story_ref mentions an affected story, along with each
-  // one's type (needed below to find which suite the ADO work item must be removed from).
+  // Collect local test case IDs whose story_ref mentions an affected story.
   const toDeleteLocalIds = new Set<string>();
-  const typeByLocalId = new Map<string, string>();
   for (const artifactId of qaArtifactIds) {
     const content = await loadArtifactContentById(artifactId);
     if (!content) continue;
@@ -326,7 +324,6 @@ async function cascadeDeleteTestCases(
       if (!storyRef) continue;
       if (parseStoryRefs(storyRef).some(r => affectedStoryKeys.has(r))) {
         toDeleteLocalIds.add(String(tc.id));
-        if (tc.type) typeByLocalId.set(String(tc.id), tc.type);
       }
     }
   }
@@ -340,22 +337,18 @@ async function cascadeDeleteTestCases(
   }
   if (localIdByAdoId.size === 0) return;
 
-  // A Test Case work item still referenced by its suite's test points can't be hard-deleted
-  // (ADO rejects the destroy with a 400) — remove each one from its type suite first.
-  const suiteIds: Record<string, number> = JSON.parse(planRow.suite_ids ?? '{}');
-  for (const [adoId, lid] of localIdByAdoId) {
-    const suiteId = suiteIds[typeByLocalId.get(lid) ?? ''];
-    if (suiteId === undefined) continue;
+  // Test Case work items reject the generic work item destroy call — delete each one via
+  // the Test Management API instead. Best-effort: a failure on one doesn't stop the rest,
+  // and only the ids ADO actually confirmed deleted are cleared from the mapping.
+  const deletedAdoIds: number[] = [];
+  for (const adoId of localIdByAdoId.keys()) {
     try {
-      await getAzureDevOpsClient().removeTestCaseFromSuite(planRow.plan_id, suiteId, adoId);
+      await getAzureDevOpsClient().deleteTestCase(adoId);
+      deletedAdoIds.push(adoId);
     } catch (err: any) {
-      logger.warn(`Failed to remove test case ${lid} (ado #${adoId}) from suite before cascade delete: ${err.message}`);
+      logger.warn(`Failed to delete test case (ado #${adoId}) during cascade delete: ${err.message}`);
     }
   }
-
-  // Only clear the ids ADO actually confirmed deleted — a failed delete must keep its
-  // mapping so it isn't silently treated as gone while still sitting in the ADO plan.
-  const deletedAdoIds = await getAzureDevOpsClient().deleteWorkItems([...localIdByAdoId.keys()]);
   for (const adoId of deletedAdoIds) delete testCaseIds[localIdByAdoId.get(adoId)!];
 
   db.prepare(`UPDATE qa_test_plan_map SET test_case_ids = ?, test_case_count = ? WHERE plan_id = ?`)
@@ -587,16 +580,10 @@ async function loadQaArtifacts(itemId: string): Promise<QaArtifact[]> {
  * from every qa_test_plan_map row for this item. Searches all of the item's plan rows
  * (not just the newest) since legacy items can have more than one. Non-throwing —
  * caller treats ADO sync as best-effort so a failure never blocks the local delete.
- *
- * A Test Case work item that's still a member of its test suite can't be hard-deleted —
- * ADO rejects the work item destroy with a 400 until the test point referencing it is gone
- * — so it must first be removed from the type suite it was pushed into (tcType selects
- * which suite via suite_ids). Falls back to deleting the work item directly if the suite
- * mapping is missing (e.g. a case pushed before suite_ids was recorded).
  */
-async function deleteAdoTestCase(itemId: string, tcId: string, tcType: string | undefined): Promise<void> {
-  const planRows = db.prepare<[string], { plan_id: number; suite_ids: string; test_case_ids: string; test_case_count: number }>(`
-    SELECT q.plan_id, q.suite_ids, q.test_case_ids, q.test_case_count
+async function deleteAdoTestCase(itemId: string, tcId: string): Promise<void> {
+  const planRows = db.prepare<[string], { plan_id: number; test_case_ids: string; test_case_count: number }>(`
+    SELECT q.plan_id, q.test_case_ids, q.test_case_count
     FROM qa_test_plan_map q
     JOIN workflows w ON w.id = q.workflow_id
     WHERE w.item_id = ?
@@ -607,15 +594,7 @@ async function deleteAdoTestCase(itemId: string, tcId: string, tcType: string | 
     const adoId = testCaseIds[tcId];
     if (adoId === undefined) continue;
 
-    const suiteIds: Record<string, number> = JSON.parse(planRow.suite_ids ?? '{}');
-    const suiteId = tcType ? suiteIds[tcType] : undefined;
-    if (suiteId !== undefined) {
-      await getAzureDevOpsClient().removeTestCaseFromSuite(planRow.plan_id, suiteId, adoId);
-    } else {
-      logger.warn(`No suite mapping for test case ${tcId} (type "${tcType}") — deleting work item directly`);
-    }
-
-    await getAzureDevOpsClient().deleteWorkItem(adoId);
+    await getAzureDevOpsClient().deleteTestCase(adoId);
 
     delete testCaseIds[tcId];
     db.prepare(`UPDATE qa_test_plan_map SET test_case_ids = ?, test_case_count = ? WHERE plan_id = ?`)
@@ -642,18 +621,14 @@ router.delete('/:itemId/test-cases/:tcId', async (req: Request, res: Response) =
 
     const tcId = req.params.tcId;
 
-    // Loaded up front so the test case's `type` is known before the ADO delete — the ADO
-    // side needs it to find which suite the work item must be removed from first.
-    const qaArtifacts = await loadQaArtifacts(item.id);
-    const tcType = qaArtifacts.flatMap(a => a.suite.test_cases).find((tc: any) => tc.id === tcId)?.type;
-
     try {
-      await deleteAdoTestCase(item.id, tcId, tcType);
+      await deleteAdoTestCase(item.id, tcId);
     } catch (err: any) {
       logger.error(`ADO test case delete failed for ${tcId}: ${err.message}`);
       return res.status(502).json({ error: `Could not delete the test case in Azure DevOps: ${err.message}` });
     }
 
+    const qaArtifacts = await loadQaArtifacts(item.id);
     let found = false;
     for (const { artifactId, suite } of qaArtifacts) {
       const before = suite.test_cases.length;
