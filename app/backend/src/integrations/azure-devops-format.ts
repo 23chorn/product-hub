@@ -31,6 +31,16 @@ export function toNearestFibonacci(n: number, fibs: number[] = FIBONACCI_SCALE):
   return fibs.reduce((prev, curr) => (Math.abs(curr - n) < Math.abs(prev - n) ? curr : prev));
 }
 
+/**
+ * Derive the "AI Estimate Dev" value pushed to ADO's Custom.AIEstimateDev field from a
+ * story's effort/story-point estimate. Effort is already estimated on roughly this scale
+ * (see the story-decomposition prompt), so this just rounds/caps it to the 1–8 scale rather
+ * than deriving from a separate hours estimate.
+ */
+export function deriveAiEstimateDev(effort: number | undefined | null): number | undefined {
+  return effort !== undefined && effort !== null ? toNearestFibonacci(effort, DEV_COMPLEXITY_FIBONACCI) : undefined;
+}
+
 /** Strip leading user-story prefixes that the model may have included in the JSON fields. */
 export function stripStoryPrefix(text: string, prefix: RegExp): string {
   return text.replace(prefix, '').trim();
@@ -144,6 +154,23 @@ export function deriveTeamTags(notes: { ios?: string | null; android?: string | 
   if (isPresent(notes.android)) tags.push('Android');
 
   return tags.length ? tags.join('; ') : undefined;
+}
+
+/** Canonical display labels for the single-platform `platform` field on story-decomposition stories. */
+const PLATFORM_STREAM_LABELS: Record<string, string> = { backend: 'Backend', web: 'Web', ios: 'iOS', android: 'Android' };
+
+/**
+ * Stamp a story's platform stream tag (e.g. "[Backend]") onto its title. The
+ * story-decomposition prompt asks the model to append this itself, but compliance
+ * is inconsistent, so it's stamped here from the validated `platform` field instead
+ * — every ADO ticket then reliably shows which stream it belongs to.
+ */
+export function ensureStreamPrefix(title: string, platform: string | string[] | undefined): string {
+  const platformStr = Array.isArray(platform) ? platform[0] : platform;
+  const label = platformStr ? PLATFORM_STREAM_LABELS[platformStr.toLowerCase()] : undefined;
+  if (!label) return title;
+  if (new RegExp(`\\[${label}\\]`, 'i').test(title)) return title;
+  return `${title} [${label}]`;
 }
 
 // ── Test Plans constants ──────────────────────────────────────────────────────

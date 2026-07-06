@@ -130,12 +130,20 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
       .catch(() => setFeaturePhaseLabels([]));
   }, [epicFeaturesArtifactId]);
 
-  // Auto-scroll event log — but only when the user is already near the bottom.
-  // Otherwise a new message (e.g. after approving a stage) would yank them down
-  // away from whatever they'd scrolled up to read.
+  // Auto-scroll event log. On first mount (e.g. returning to this initiative
+  // from another page) snap straight to the bottom with no animation — the
+  // most recent event is the most relevant content. After that, only scroll
+  // for new messages if the user is already near the bottom, so we don't yank
+  // them away from whatever they'd scrolled up to read.
+  const didInitialScrollRef = useRef(false);
   useEffect(() => {
     const el = eventScrollRef.current;
     if (!el) return;
+    if (!didInitialScrollRef.current) {
+      didInitialScrollRef.current = true;
+      bottomRef.current?.scrollIntoView({ behavior: 'auto' });
+      return;
+    }
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
     if (nearBottom) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [coordinatorMessages.length]);

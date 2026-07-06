@@ -371,15 +371,34 @@ const STORY_REVISION_SPEC: SurgicalRevisionSpec = {
 
   async loadContext(itemId, featureNum, platformScopeSection) {
     const { loadLatestArtifactContent } = await import('./artifact-helpers');
-    const [prdContent, archContent] = await Promise.all([
+    const [prdContent, archContent, epicFeaturesContent] = await Promise.all([
       loadLatestArtifactContent(itemId, 'prd'),
       loadLatestArtifactContent(itemId, 'architecture'),
+      loadLatestArtifactContent(itemId, 'epic_features'),
     ]);
+
+    // This feature's own platform declaration (if the planner scoped it to specific
+    // platforms, e.g. a sibling feature owns the other UI platform) — same lookup the
+    // initial synthesis uses, so a revision can't drift from that scope.
+    let featurePlatforms: string[] | undefined;
+    if (epicFeaturesContent) {
+      try {
+        const { flattenFeatures } = await import('./feature-decomposition');
+        const targetFeature = flattenFeatures(JSON.parse(epicFeaturesContent))[featureNum - 1];
+        if (Array.isArray(targetFeature?.platforms)) featurePlatforms = targetFeature.platforms;
+      } catch (err: any) {
+        logger.warn(`[MULTI-AGENT REVISION] Failed to resolve Feature ${featureNum} platform scope: ${err.message}`);
+      }
+    }
+    const { buildFeaturePlatformScopeSection } = await import('./multi-agent-refinement');
+    const featurePlatformScopeSection = buildFeaturePlatformScopeSection(featurePlatforms);
+
     const contextParts: string[] = [];
     if (prdContent) contextParts.push(`**Current PRD (use as the source of truth — supersedes anything implied by the prior draft below):**\n\n${prdContent}`);
     if (archContent) contextParts.push(`**Current Architecture Document:**\n\n${archContent}`);
     if (platformScopeSection) contextParts.push(platformScopeSection);
-    return { itemContext: contextParts.length > 0 ? contextParts.join('\n\n---\n\n') : undefined, extra: {} };
+    if (featurePlatformScopeSection) contextParts.push(featurePlatformScopeSection);
+    return { itemContext: contextParts.length > 0 ? contextParts.join('\n\n---\n\n') : undefined, extra: { featurePlatforms } };
   },
 
   buildDirective(featureNum, platformScopeSection) {
@@ -395,11 +414,13 @@ const STORY_REVISION_SPEC: SurgicalRevisionSpec = {
     );
   },
 
-  async postProcess(revised, { platformScope }) {
+  async postProcess(revised, { platformScope, extra }) {
     // Enforce platform scope on the revision too — guards against a model carrying an
     // out-of-scope story forward from the prior draft when the feedback didn't mention it.
-    const { filterBacklogStoriesByScope } = await import('./multi-agent-refinement');
-    const { backlog } = filterBacklogStoriesByScope(JSON.stringify(revised), platformScope);
+    // Checks both the initiative-wide scope and this feature's own narrower declaration.
+    const { filterBacklogStoriesByScope, filterBacklogStoriesByFeaturePlatforms } = await import('./multi-agent-refinement');
+    const { backlog: itemScoped } = filterBacklogStoriesByScope(JSON.stringify(revised), platformScope);
+    const { backlog } = filterBacklogStoriesByFeaturePlatforms(itemScoped, extra.featurePlatforms);
     return JSON.parse(backlog);
   },
 
@@ -582,6 +603,7 @@ Requirements:
 - **Scope — user-facing layer covers user-facing stories only.** Write user-facing test cases for stories tagged platform: web, ios, android. Backend-only stories have no dedicated user-facing test case unless there is a directly observable user outcome (e.g. a notification email). Frame every user-facing test from the user's perspective, never as an API/contract check.
 - **No accessibility scope.** Do not write test cases for WCAG compliance, color contrast, screen reader announcements, keyboard-only navigation, or other accessibility concerns unless the PRD or backlog explicitly requires them — out of scope for this product by default.
 - **No duplication.** Each scenario appears once. If two features share a user flow, write one integrated test case, not two.
+- **iOS + Android = one "mobile" test case.** When a functional scenario has both an iOS story and an Android story (same flow, split into per-platform tickets only because story authoring requires one platform per story), write ONE test case covering both — reference both story_ids in \`story_ref\` as an array (e.g. \`["F1.S9", "F1.S10"]\`) and phrase the title/scenario as the shared "mobile" flow, not "iOS: ..." or "Android: ...". Only split them into separate test cases when the flows genuinely diverge per platform (e.g. a platform-specific permission prompt, gesture, or store policy) — if you do, say so explicitly in the description. Web always gets its own separate test case since its flow is never identical to mobile's.
 - **Conservative count — quality over quantity.** Target 1 user-facing test case per functional requirement, maximum 2 where the FR has a single critical failure mode worth calling out separately. The absolute cap is 3 test cases per FR. Do not pad.
   - Every feature with user-facing stories must have at least one @smoke happy-path case.
   - At least 25% of user-facing cases must be negative or edge type.

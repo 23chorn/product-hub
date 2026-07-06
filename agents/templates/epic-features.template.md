@@ -38,6 +38,7 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
           },
           "deferredTo": null,
           "dependsOn": [],
+          "platforms": null,
           "stories": []
         }
       ]
@@ -85,6 +86,7 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
   - Do NOT invent IDs (no "F1", "F2") — titles only. The system resolves titles to IDs after generation.
   - Most features should have an EMPTY `dependsOn`. Only mark a dependency when a change to the other feature would force rework of this one (shared data contract, shared UI surface, sequential user journey step). Two features that merely live in the same phase are NOT automatically dependent.
   - Never depend on a feature in a LATER phase, and never create a circular dependency (A depends on B, B depends on A) — if you find yourself doing this, the features are too tightly coupled and should be merged into one feature instead.
+- **platforms**: `null` (or omit) by default — the feature's scenarios can span whichever platforms apply. Set to an array subset of `["backend", "web", "ios", "android"]` ONLY when you are deliberately splitting the same functional area into platform-specific sibling features (e.g. one feature for the iOS/Android UI, another for the Web UI of the same capability) — each sibling then gets its OWN subset, never overlapping on a UI platform. This is the signal the downstream story-decomposition agent uses to keep each feature's stories on its own platform(s); backend is always implicitly allowed regardless of this field.
 - **stories**: MUST be an empty array `[]`. User stories are added later by the story decomposition agent.
 
 ---
@@ -101,6 +103,7 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
 8. **ACCEPTANCE CRITERIA** — Feature-level only. 3-5 per feature. Testable and outcome-focused.
 9. **DEPENDENCY DISCIPLINE** — Default every feature's `dependsOn` to `[]`. Only add a prerequisite when truly blocking. Over-tagging dependencies defeats parallel delivery; under-tagging risks rework. When in doubt, leave it empty.
 10. **NO ACCESSIBILITY SCOPE** — Do not propose accessibility-specific features or ACs (screen reader support, TalkBack, VoiceOver, voice control, etc.) — out of scope for this product unless the PRD explicitly calls for it.
+11. **PLATFORM-SPLIT SIBLINGS DECLARE `platforms`** — If you split one functional area into separate features per platform (e.g. "Alert Setup — Mobile UI" and "Alert Setup — Web UI"), each MUST set `platforms` to its own non-overlapping subset. Never leave both siblings with `platforms: null` — that gives the downstream agent no signal and it will generate stories for every platform in both features.
 
 ---
 

@@ -404,7 +404,7 @@ export const STAGE_TOOL_DEFINITIONS: Record<string, StageToolDefinition[]> = {
   epic_feature_planner: [
     {
       name: 'validate_epic_features_json',
-      description: 'Validate your epic and feature plan JSON before returning it. Checks: epic header fields (title ≤6 words, description, prdLink); phases[] structure (required — features must be nested under phases, not at root level); phase labels (exactly "MVP", "Phase 2", "Phase 3", "Phase 4"); max 5 features per phase; max 4 phases; per-feature checks: acceptance criteria (3–5, no user-story format), prdRef.functionalRequirements (FR-XX format), stories must be empty []; TBD flags. Call after completing the full JSON object.',
+      description: 'Validate your epic and feature plan JSON before returning it. Checks: epic header fields (title ≤6 words, description, prdLink); phases[] structure (required — features must be nested under phases, not at root level); phase labels (exactly "MVP", "Phase 2", "Phase 3", "Phase 4"); max 5 features per phase; max 4 phases; per-feature checks: acceptance criteria (3–5, no user-story format), prdRef.functionalRequirements (FR-XX format), stories must be empty [], platforms (if set, non-empty subset of backend/web/ios/android); TBD flags. Call after completing the full JSON object.',
       input_schema: { type: 'object', properties: { json: { type: 'string', description: 'The complete epic & features JSON string (may be wrapped in a ```json code block)' } }, required: ['json'] },
     },
   ],

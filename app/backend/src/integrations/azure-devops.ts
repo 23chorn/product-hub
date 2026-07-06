@@ -3,8 +3,7 @@ import Logger from '../utils/logger';
 import { BacklogStructure, featureLocalKey, storyLocalKey } from '@pap/shared';
 import {
   adoErrorMessage,
-  toNearestFibonacci,
-  DEV_COMPLEXITY_FIBONACCI,
+  deriveAiEstimateDev,
   stripStoryPrefix,
   escapeHtml,
   formatGivenWhenThen,
@@ -327,7 +326,7 @@ export class AzureDevOpsClient {
             description: storyDescription,
             acceptanceCriteria: acceptanceCriteriaHtml,
             effort: storyData.effort,
-            aiEstimateDevHours: storyData.aiEstimatedHours !== undefined ? toNearestFibonacci(storyData.aiEstimatedHours, DEV_COMPLEXITY_FIBONACCI) : undefined,
+            aiEstimateDevHours: deriveAiEstimateDev(storyData.effort),
             aiEstimateQaHours: storyData.aiEstimatedQaHours,
             tags: deriveTeamTags(storyData.technical_notes),
             parentId: feature.id,
@@ -457,7 +456,7 @@ export class AzureDevOpsClient {
           description: storyDescription,
           acceptanceCriteria: acceptanceCriteriaHtml,
           effort: storyData.effort,
-          aiEstimateDevHours: storyData.aiEstimatedHours !== undefined ? toNearestFibonacci(storyData.aiEstimatedHours, DEV_COMPLEXITY_FIBONACCI) : undefined,
+          aiEstimateDevHours: deriveAiEstimateDev(storyData.effort),
           aiEstimateQaHours: storyData.aiEstimatedQaHours,
           tags: deriveTeamTags(storyData.technical_notes),
           parentId: createdFeature.id,
@@ -624,29 +623,24 @@ export class AzureDevOpsClient {
         }
 
         if (storyMapping) {
-          const rawAiHours = storyData.aiEstimatedHours;
-          const fibAiHours = rawAiHours !== undefined && rawAiHours !== null ? toNearestFibonacci(rawAiHours, DEV_COMPLEXITY_FIBONACCI) : undefined;
-          logger.info(`Story "${storyData.title}" (#${storyMapping.ado_id}): aiEstimatedHours=${rawAiHours} → fibonacciValue=${fibAiHours}`);
           await this.updateWorkItem(storyMapping.ado_id, {
             title: storyData.title,
             description: storyDescription,
             acceptanceCriteria: acceptanceCriteriaHtml,
-            aiEstimateDevHours: fibAiHours,
+            aiEstimateDevHours: deriveAiEstimateDev(storyData.effort),
             aiEstimateQaHours: storyData.aiEstimatedQaHours,
             tags: deriveTeamTags(storyData.technical_notes),
           });
           updated++;
         } else {
           // Create new story
-          const rawAiHours = storyData.aiEstimatedHours;
-          const fibAiHours = rawAiHours !== undefined && rawAiHours !== null ? toNearestFibonacci(rawAiHours, DEV_COMPLEXITY_FIBONACCI) : undefined;
           const story = await this.createWorkItem({
             type: this.workItemTypes.story as any,
             title: storyData.title,
             description: storyDescription,
             acceptanceCriteria: acceptanceCriteriaHtml,
             effort: storyData.effort,
-            aiEstimateDevHours: fibAiHours,
+            aiEstimateDevHours: deriveAiEstimateDev(storyData.effort),
             aiEstimateQaHours: storyData.aiEstimatedQaHours,
             tags: deriveTeamTags(storyData.technical_notes),
             parentId: featureAdoId,

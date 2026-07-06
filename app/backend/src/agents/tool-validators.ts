@@ -384,6 +384,9 @@ export function validateBacklogJson(input: Record<string, unknown>): string {
     if (!asA)    issues.push(`${p}: missing as_a`);
     if (!iWant)  issues.push(`${p}: missing i_want`);
     if (!soThat) issues.push(`${p}: missing so_that`);
+    if (asA && /\b(qa|quality assurance|test(er|ing)?\s*engineer)\b/i.test(String(asA))) {
+      issues.push(`${p}: persona "${asA}" is a QA/testing role — test coverage belongs to the dedicated test-case creation stage, not a backlog story. Rewrite this story around an end-user or system persona, or remove it if it has no non-testing value.`);
+    }
 
     const ac = story.acceptance_criteria ?? story.acceptanceCriteria;
     if (!Array.isArray(ac) || ac.length === 0) {
@@ -561,6 +564,21 @@ function validateFeature(f: any, lp: string, issues: string[]): void {
     issues.push(`${lp}: "stories" must be an empty array [] — user stories are added by the story decomposition agent`);
   } else if (f.stories.length > 0) {
     issues.push(`${lp}: "stories" must be empty [] at this stage — found ${f.stories.length} item(s). Story decomposition is a separate stage.`);
+  }
+
+  // platforms is optional (null/omitted = unrestricted), but when present must be a
+  // non-empty subset of the valid streams — this is the signal that keeps a platform-split
+  // sibling feature (e.g. mobile UI vs. web UI) from bleeding stories onto the other's platform.
+  if (f.platforms != null) {
+    if (!Array.isArray(f.platforms) || f.platforms.length === 0) {
+      issues.push(`${lp}: "platforms" must be a non-empty array when set (or omit/null it entirely) — one of: backend, web, ios, android`);
+    } else {
+      f.platforms.forEach((platform: any, j: number) => {
+        if (typeof platform !== 'string' || !VALID_PLATFORMS.has(platform)) {
+          issues.push(`${lp}.platforms[${j}]: invalid platform "${platform}" — must be one of: backend, web, ios, android`);
+        }
+      });
+    }
   }
 
   if (hasTBD(f)) {

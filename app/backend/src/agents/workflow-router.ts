@@ -814,11 +814,15 @@ export function getWorkflowStatus(workflowId: string): WorkflowStatus {
 
   // Full membership of the wave the current stage belongs to (or just [currentStage]
   // for non-wave / legacy workflows) — lets the UI show every concurrently-running
-  // feature as in-progress instead of just one.
+  // feature as in-progress instead of just one. Exclude any sibling that already has
+  // an approved checkpoint: revising one feature (e.g. F3) sets current_stage to F3 and
+  // status to 'active' for the re-run, but that must not flip an already-approved sibling
+  // (F2, already pushed to ADO) back to an in-progress spinner just because they share a wave.
   const decompMeta = parseDecompositionMetadata(workflow.decomposition_metadata);
   let inProgressStages: string[] = [];
   if (workflow.current_stage && workflow.status === 'active') {
-    inProgressStages = findWaveForStage(decompMeta, workflow.current_stage) ?? [workflow.current_stage];
+    const wave = findWaveForStage(decompMeta, workflow.current_stage) ?? [workflow.current_stage];
+    inProgressStages = wave.filter(s => !completedStages.includes(s));
   }
 
   // Look up the active specialist session for the current stage

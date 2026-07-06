@@ -125,23 +125,36 @@ export function buildPlatformScopeSection(scope: ProductAreaScope): string {
 }
 
 /**
- * Strip any stories whose platform falls outside the resolved scope from a backlog
- * JSON artifact (epic + features + stories). This is a backstop: the brief already
- * instructs participants to stay in scope, but this guarantees it even if a model
- * ignores the instruction. Returns the surviving story_ids so QA test cases that
- * reference a dropped story can be cleaned up too.
+ * Build the "## Feature Platform Scope" brief section for when THIS feature (as
+ * opposed to the whole initiative) is declared to cover only specific platforms —
+ * e.g. one sibling feature owns the iOS/Android UI and another owns the Web UI for
+ * the same functional area. Returns '' when the feature has no declared restriction
+ * (it inherits only the initiative-wide Platform Scope section above).
  */
-export function filterBacklogStoriesByScope(
+export function buildFeaturePlatformScopeSection(platforms: string[] | undefined): string {
+  if (!Array.isArray(platforms) || platforms.length === 0) return '';
+
+  const labels: Record<string, string> = { web: 'Web', ios: 'iOS', android: 'Android' };
+  const included = new Set(platforms.map(p => p.toLowerCase()));
+  const excluded = (['web', 'ios', 'android'] as const).filter(p => !included.has(p));
+  if (excluded.length === 0) return '';
+
+  return `
+## Feature Platform Scope
+**This feature covers ONLY:** ${platforms.join(', ')}
+- Do NOT create stories for ${excluded.map(p => labels[p]).join(' or ')} in this feature — another feature in this phase already owns that platform's UI. Backend/API stories are still fine if this feature genuinely needs its own backend work.
+- This applies to every contributor, including Shard's story list.`;
+}
+
+/**
+ * Shared core for the platform-scope backstops below: drop any stories whose
+ * `platform` isn't in `allowed` from a backlog JSON artifact (epic + features +
+ * stories). Stories with no platform set always pass through unfiltered.
+ */
+function filterStoriesByAllowedPlatforms(
   backlog: string,
-  scope: ProductAreaScope
+  allowed: Set<string>
 ): { backlog: string; survivorStoryIds: Set<string> | null; dropped: number } {
-  if (!scope.area) return { backlog, survivorStoryIds: null, dropped: 0 }; // unscoped — nothing to enforce
-
-  const allowed = new Set<string>(['backend']); // backend work is always in scope regardless of channel
-  if (scope.hasWeb) allowed.add('web');
-  if (scope.hasIOS) allowed.add('ios');
-  if (scope.hasAndroid) allowed.add('android');
-
   const backlogJson = parseJsonLoose(backlog);
   if (!backlogJson || !Array.isArray(backlogJson.features)) return { backlog, survivorStoryIds: null, dropped: 0 };
 
@@ -161,9 +174,55 @@ export function filterBacklogStoriesByScope(
   }
 
   if (dropped === 0) return { backlog, survivorStoryIds, dropped: 0 };
-
-  logger.warn(`[MULTI-AGENT] Platform scope "${scope.area}" — stripped ${dropped} out-of-scope story/stories from the backlog`);
   return { backlog: JSON.stringify(backlogJson, null, 2), survivorStoryIds, dropped };
+}
+
+/**
+ * Strip any stories whose platform falls outside the resolved scope from a backlog
+ * JSON artifact (epic + features + stories). This is a backstop: the brief already
+ * instructs participants to stay in scope, but this guarantees it even if a model
+ * ignores the instruction. Returns the surviving story_ids so QA test cases that
+ * reference a dropped story can be cleaned up too.
+ */
+export function filterBacklogStoriesByScope(
+  backlog: string,
+  scope: ProductAreaScope
+): { backlog: string; survivorStoryIds: Set<string> | null; dropped: number } {
+  if (!scope.area) return { backlog, survivorStoryIds: null, dropped: 0 }; // unscoped — nothing to enforce
+
+  const allowed = new Set<string>(['backend']); // backend work is always in scope regardless of channel
+  if (scope.hasWeb) allowed.add('web');
+  if (scope.hasIOS) allowed.add('ios');
+  if (scope.hasAndroid) allowed.add('android');
+
+  const { backlog: filtered, survivorStoryIds, dropped } = filterStoriesByAllowedPlatforms(backlog, allowed);
+  if (dropped > 0) {
+    logger.warn(`[MULTI-AGENT] Platform scope "${scope.area}" — stripped ${dropped} out-of-scope story/stories from the backlog`);
+  }
+  return { backlog: filtered, survivorStoryIds, dropped };
+}
+
+/**
+ * Strip any stories whose UI platform falls outside a feature's own declared platform
+ * scope (epic_features' optional `platforms` field on a feature). This is the backstop
+ * for the case where sibling features split the same functional area by platform — e.g.
+ * one feature owns the iOS/Android UI, another owns the Web UI — and the model drafts
+ * stories for a platform outside the one this specific feature was scoped to. Backend is
+ * always allowed since a UI-scoped feature can still need its own backend work. Returns
+ * the backlog unchanged when the feature declared no platform restriction.
+ */
+export function filterBacklogStoriesByFeaturePlatforms(
+  backlog: string,
+  featurePlatforms: string[] | undefined
+): { backlog: string; dropped: number } {
+  if (!Array.isArray(featurePlatforms) || featurePlatforms.length === 0) return { backlog, dropped: 0 };
+
+  const allowed = new Set<string>(['backend', ...featurePlatforms.map(p => p.toLowerCase())]);
+  const { backlog: filtered, dropped } = filterStoriesByAllowedPlatforms(backlog, allowed);
+  if (dropped > 0) {
+    logger.warn(`[MULTI-AGENT] Feature platform scope [${featurePlatforms.join(', ')}] — stripped ${dropped} out-of-scope story/stories from the backlog`);
+  }
+  return { backlog: filtered, dropped };
 }
 
 /**
@@ -360,6 +419,8 @@ export async function runMultiAgentRefinement(
   }
 
   const platformScopeSection = buildPlatformScopeSection(platformScope);
+  const featurePlatforms: string[] | undefined = Array.isArray(targetFeature.platforms) ? targetFeature.platforms : undefined;
+  const featurePlatformScopeSection = buildFeaturePlatformScopeSection(featurePlatforms);
 
   const featureBrief = `
 # Feature Refinement Session
@@ -370,6 +431,7 @@ ${epicContext ? `**Initiative:** ${epicContext.title || ''}
 **Business Value:** ${epicContext.businessValue || epicContext.business_value || ''}` : ''}
 ${outOfScope.length ? `**Out of Scope (do NOT build these):** ${outOfScope.join('; ')}` : ''}
 ${platformScopeSection}
+${featurePlatformScopeSection}
 
 ## Phase Context
 ${phaseContext ? `**Phase:** ${phaseContext.label}${phaseContext.epicTitle ? ` — ${phaseContext.epicTitle}` : ''}
@@ -427,8 +489,11 @@ Any story whose UI surfaces one of these screens must cite the screen's frame_ur
     `Phase 3: Synthesize — merging final backlog...`);
 
   const rawBacklog = await synthesizeFinalArtifact(workflowId, stage, featureBrief, refined2);
-  // Platform-scope backstop: drop any out-of-scope stories the model included despite the brief.
-  const { backlog } = filterBacklogStoriesByScope(rawBacklog, platformScope);
+  // Platform-scope backstops: drop any out-of-scope stories the model included despite the
+  // brief — first against the initiative-wide scope, then against this feature's own
+  // narrower platform declaration (e.g. a sibling feature already owns the other platform).
+  const { backlog: itemScoped } = filterBacklogStoriesByScope(rawBacklog, platformScope);
+  const { backlog } = filterBacklogStoriesByFeaturePlatforms(itemScoped, featurePlatforms);
 
   logger.info(`[MULTI-AGENT] Feature ${featureNum} refinement complete — backlog: ${backlog.length} chars`);
   return { backlog };
@@ -534,6 +599,7 @@ function buildDraftPrompts(
 5. Don't add technical details yet — that's what the engineers will contribute in the next round
 6. **CRITICAL — One stream per ticket:** Each story must belong to exactly ONE platform stream: \`backend\`, \`web\`, \`ios\`, or \`android\`. If a piece of work spans multiple platforms (e.g., an API + a UI), write a separate story for each platform. Name them descriptively: e.g. "Set Up Alert API [Backend]" and "Alert Creation Form [Web]".
 7. Do not write accessibility-specific acceptance criteria or stories (screen reader support, TalkBack, VoiceOver, voice control, etc.) — this product does not target those use cases unless the PRD explicitly calls for them.
+8. Never write a story whose persona is a QA/test engineer (e.g. "As a QA engineer, I want to test..."). Test coverage is owned entirely by the dedicated test-case creation stage — don't duplicate it as a backlog story.
 
 **Output Format:**
 Return a JSON structure (use F${featureNum} for all story IDs):

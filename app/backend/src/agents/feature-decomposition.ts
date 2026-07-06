@@ -8,6 +8,7 @@
 import db, { getPolicies } from '../data/database';
 import { stmts, insertEvent, logger } from './workflow-db';
 import { loadLatestArtifactContent } from './artifact-helpers';
+import { deriveAiEstimateDev, ensureStreamPrefix } from '../integrations/azure-devops-format';
 import { featureLocalKey, storyLocalKey } from '@pap/shared';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -858,10 +859,11 @@ export async function pushFeatureToADO(
 
     const story = await client.createWorkItem({
       type: client['workItemTypes'].story as any,
-      title: `[${storyLocalKey(featureKey, si)}] ${storyData.title}`,
+      title: `[${storyLocalKey(featureKey, si)}] ${ensureStreamPrefix(storyData.title, storyData.platform)}`,
       description,
       acceptanceCriteria: allAcceptanceCriteria,
       effort,
+      aiEstimateDevHours: deriveAiEstimateDev(effort),
       tags,
       parentId: featureId,
     });
