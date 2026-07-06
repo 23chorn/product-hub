@@ -398,7 +398,11 @@ export function validateBacklogJson(input: Record<string, unknown>): string {
       if (ac.length > 5) issues.push(`${p}: too many acceptance criteria (${ac.length}) — maximum 5`);
       ac.forEach((c: any, i: number) => {
         if (typeof c === 'string' && !GWT_RE.test(c)) {
-          issues.push(`${p}.acceptance_criteria[${i}]: must start with Given / When / Then`);
+          // Most common cause: a scenario's And-clause got split into its own array entry
+          // instead of staying appended to the scenario it belongs to (see
+          // ACCEPTANCE_CRITERIA_FORMAT_RULE in multi-agent-refinement.ts) — call that out
+          // directly since "must start with Given/When/Then" alone doesn't say what to do.
+          issues.push(`${p}.acceptance_criteria[${i}]: must start with Given / When / Then — if this is a continuation of the previous entry's scenario (e.g. an "And" clause), merge it back into acceptance_criteria[${i - 1}] instead of listing it separately`);
         }
       });
     }

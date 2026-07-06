@@ -569,6 +569,22 @@ async function runPhaseInParallel(
 }
 
 /**
+ * Shared rule for how a single acceptance_criteria array entry must be shaped — reused by
+ * the initial draft prompt below and by the surgical revision directive in
+ * feature-stage-runner.ts (STORY_REVISION_SPEC), since a revision asking for more detail on
+ * an existing AC is just as likely to trigger the same over-splitting as the first draft.
+ * Written from an observed failure mode: as an AC accumulates more And-clauses (edge cases,
+ * localization, network states), the model drifts into emitting one array entry per clause
+ * instead of one entry per scenario — which then renders as a wall of disconnected "AC N"
+ * blocks in ADO instead of one coherent scenario.
+ */
+export const ACCEPTANCE_CRITERIA_FORMAT_RULE =
+  `**Acceptance criteria structure — read carefully:** each \`acceptance_criteria\` array entry is ONE complete, self-contained scenario as a SINGLE string. A scenario's Given/When/Then/And chain must stay inside that one string, no matter how many And-clauses it needs (extra conditions, edge cases, localization) — never split it across multiple array entries.\n` +
+  `- CORRECT (one array entry): "Given I am on the Referral Code Share screen\\nWhen I view my code\\nThen it is displayed in a distinct container\\nAnd if the network is unavailable but a cached code exists, the cached code is shown with a \\'last updated\\' subtitle\\nAnd if no cached code exists, an error message with a Retry button is shown"\n` +
+  `- WRONG (never do this — same scenario fragmented across entries): ["Given I am on the Referral Code Share screen", "And my code is displayed", "When I tap Share", "Then the share sheet opens", "And the message is pre-populated"]\n` +
+  `- A new array entry is only for a genuinely different scenario (different trigger or different starting state) — not a continuation of the one you're already writing.`;
+
+/**
  * Phase 1: Build draft prompts for each agent.
  */
 function buildDraftPrompts(
@@ -593,6 +609,9 @@ function buildDraftPrompts(
    - Each story must be independently deliverable and testable in isolation
    - Together the stories must fully cover the Feature Acceptance Criteria listed in the brief above
 2. Add product acceptance criteria (Given/When/Then format) to each story
+
+${ACCEPTANCE_CRITERIA_FORMAT_RULE}
+
 3. Map each story to the Functional Requirements it satisfies (see PRD Traceability in the brief)
 4. Estimate story points (1-2-3-5 scale) based on scope — prefer smaller estimates for atomic tasks
 5. Don't add technical details yet — that's what the engineers will contribute in the next round

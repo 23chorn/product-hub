@@ -34,6 +34,7 @@ import {
   filterBacklogStoriesByScope,
   filterBacklogStoriesByFeaturePlatforms,
   filterQaTestCasesByStoryIds,
+  ACCEPTANCE_CRITERIA_FORMAT_RULE,
   type ProductAreaScope,
 } from './multi-agent-refinement';
 // workflow-router is imported dynamically throughout this module: it reaches back here
@@ -455,7 +456,8 @@ const STORY_REVISION_SPEC: SurgicalRevisionSpec = {
       `- Do NOT add new stories unless the feedback explicitly requests it.\n` +
       `- Do NOT restructure, reorder, rename, or rewrite any field not mentioned in the feedback.\n` +
       `- Preserve the exact JSON schema: every story must have story_id, title, as_a, i_want, so_that, acceptance_criteria, technical_acceptance_criteria, platform, depends_on.\n` +
-      `- Return the complete Feature ${featureNum} JSON (epic + this one feature + all its stories) — only the flagged stories will differ from the prior draft.${platformScopeSection ? '\n- Stay within the Platform Scope above — drop any existing story that falls outside it even if the feedback didn\'t mention it.' : ''}`
+      `- Return the complete Feature ${featureNum} JSON (epic + this one feature + all its stories) — only the flagged stories will differ from the prior draft.${platformScopeSection ? '\n- Stay within the Platform Scope above — drop any existing story that falls outside it even if the feedback didn\'t mention it.' : ''}\n\n` +
+      `${ACCEPTANCE_CRITERIA_FORMAT_RULE}`
     );
   },
 
