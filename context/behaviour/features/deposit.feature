@@ -27,6 +27,12 @@ Feature: Deposit Screen
     And Subtitle: "Deposit using your Debit Card"
     And Behaviour: → Card Entry / Payment Gateway
 
+  Scenario: 4. Credit Card
+    Then Icon: Credit card
+    And Title: Credit Card
+    And Subtitle: "Deposit using your Credit Card"
+    And Behaviour: → Card Entry / Payment Gateway
+
   #################################################
   # USER FLOW: Saved Cards Section (Conditional – Top of List)
   #################################################
