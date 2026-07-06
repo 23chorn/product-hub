@@ -259,16 +259,15 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
 
   // story_decomposition_F*_qa is never a literal stage_sequence member (it's a synthetic
   // sub-stage tracked only via its checkpoint), so it has no entry in `statuses`. Derive its
-  // status from the checkpoint directly, falling back to "in-progress" while its parent
-  // feature stage is active and revising/regenerating — otherwise a QA revision in flight
-  // has no checkpoint yet and no recognizable status, so it silently reads as 'pending' and
-  // can vanish from the list entirely.
+  // status from the checkpoint directly. Per-feature refinement no longer produces its own
+  // QA checkpoint at all (QA is generated once, at epic level, after every feature is
+  // approved — see runMultiAgentFeatureStage) — this only still matches a real checkpoint
+  // for workflows that started before that change, via the branches below or the
+  // eventsByStage fallback in the injection loop.
   const deriveQaSubStageStatus = (qaStage: string): StageStatus => {
     if (checkpoints.some(c => c.stage === qaStage && c.status === 'pending')) return 'at-checkpoint';
     if (checkpoints.some(c => c.stage === qaStage && c.status === 'approved')) return 'complete';
-    const baseStage = qaStage.replace(/_qa$/, '');
-    const baseInProgress = (inProgressStages.includes(baseStage) || currentStage === baseStage) && activeWorkflow.status === 'active';
-    return baseInProgress ? 'in-progress' : 'pending';
+    return 'pending';
   };
 
   // Inject QA checkpoint stages after refinement stages — QA sub-stages only exist
@@ -526,15 +525,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                 {msgs.map((msg, i) => (
                   <EventRow key={i} msg={msg} />
                 ))}
-                {/* A QA sub-stage has no events of its own — it rides on its parent
-                    feature stage. Don't leave it stuck on "initialising…" while the
-                    parent streams; show a placeholder and the "processing…" indicator. */}
-                {status === 'in-progress' && msgs.length === 0 && isQaSubStage && (
-                  <div className="px-4 py-1 text-[10px] text-surface-400 dark:text-surface-600 italic">
-                    Tests will be generated once the feature’s stories are finalised…
-                  </div>
-                )}
-                {status === 'in-progress' && msgs.length === 0 && !isQaSubStage && (
+                {status === 'in-progress' && msgs.length === 0 && (
                   <div className="flex items-center gap-2 px-4 py-1.5 text-[10px] text-surface-500 dark:text-surface-600">
                     <svg className="w-2.5 h-2.5 animate-spin" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -543,7 +534,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                     initialising…
                   </div>
                 )}
-                {status === 'in-progress' && (msgs.length > 0 || isQaSubStage) && (
+                {status === 'in-progress' && msgs.length > 0 && (
                   <div className="flex items-center gap-2 px-4 py-1 text-[10px] text-brand-600 animate-pulse">
                     <span className="w-1 h-1 rounded-full bg-brand-600" />
                     processing…
