@@ -297,6 +297,13 @@ async function* streamWithAnthropic(
       }
     }
 
+    // Record this turn's assistant blocks unconditionally — including the terminating
+    // turn — so the post-loop fallback below (which reconstructs "what text was already
+    // produced" from internalMessages) can actually see the final answer. Previously this
+    // only ran on the "continue the loop" path, so the last turn's text never made it into
+    // internalMessages and the fallback always saw it as missing, even on a clean success.
+    internalMessages = [...internalMessages, { role: 'assistant' as const, content: builtBlocks }];
+
     // If the model stopped for a reason other than tool_use, we are done
     if (stopReason !== 'tool_use') break;
 
@@ -322,12 +329,8 @@ async function* streamWithAnthropic(
       toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: result });
     }
 
-    // Append assistant turn + tool results and loop
-    internalMessages = [
-      ...internalMessages,
-      { role: 'assistant' as const, content: builtBlocks },
-      { role: 'user' as const, content: toolResults },
-    ];
+    // Append tool results and loop
+    internalMessages = [...internalMessages, { role: 'user' as const, content: toolResults }];
   }
 
   // ── Fallback: prefer the last validator tool call's JSON when final text is insufficient ──
@@ -559,6 +562,13 @@ async function* streamWithBedrock(
     // Flush any remaining text block
     if (currentText) assistantBlocks.push({ text: currentText });
 
+    // Record this turn's assistant blocks unconditionally — including the terminating
+    // turn — so the post-loop fallback below (which reconstructs "what text was already
+    // produced" from bedrockMessages) can actually see the final answer. Previously this
+    // only ran on the "continue the loop" path, so the last turn's text never made it into
+    // bedrockMessages and the fallback always saw it as missing, even on a clean success.
+    bedrockMessages = [...bedrockMessages, { role: 'assistant', content: assistantBlocks }];
+
     // Break out of tool loop if we hit an error on a retry
     if (shouldBreakToolLoop) break;
 
@@ -588,10 +598,9 @@ async function* streamWithBedrock(
       } as any);
     }
 
-    // Append assistant turn + tool results and loop
+    // Append tool results and loop
     bedrockMessages = [
       ...bedrockMessages,
-      { role: 'assistant', content: assistantBlocks },
       { role: 'user', content: toolResultBlocks },
     ];
   }
