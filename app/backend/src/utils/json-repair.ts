@@ -86,33 +86,67 @@ export function parseJsonLoose(raw: string): any | null {
 }
 
 /**
+ * Return every complete, brace-balanced top-level JSON object found in `s`, in order.
+ * String/escape aware — a stray `{` or `}` inside a quoted value (e.g. a field describing
+ * template syntax) won't throw off the brace count. Stops at the first unbalanced object
+ * (truncated mid-generation) rather than scanning past it.
+ */
+function findTopLevelJsonObjects(s: string): string[] {
+  const objects: string[] = [];
+  let searchFrom = 0;
+
+  while (searchFrom < s.length) {
+    const start = s.indexOf('{', searchFrom);
+    if (start === -1) break;
+
+    let braceCount = 0;
+    let inString = false;
+    let escaped = false;
+    let end = -1;
+    for (let i = start; i < s.length; i++) {
+      const ch = s[i];
+      if (escaped) { escaped = false; continue; }
+      if (ch === '\\' && inString) { escaped = true; continue; }
+      if (ch === '"') { inString = !inString; continue; }
+      if (inString) continue;
+      if (ch === '{') braceCount++;
+      else if (ch === '}') {
+        braceCount--;
+        if (braceCount === 0) { end = i; break; }
+      }
+    }
+    if (end === -1) break; // never balanced — input was truncated mid-object
+    objects.push(s.slice(start, end + 1));
+    searchFrom = end + 1;
+  }
+
+  return objects;
+}
+
+/**
  * Return the first complete, brace-balanced top-level JSON object in `s`, or null if the
- * input contains no balanced object. String/escape aware — a stray `{` or `}` inside a
- * quoted value (e.g. a field describing template syntax) won't throw off the brace count.
+ * input contains no balanced object.
  *
  * Use when a model appends trailing prose after an otherwise-valid object (which makes
  * JSON.parse throw "... after JSON ..."), to recover just the object.
  */
 export function extractFirstJsonObject(s: string): string | null {
-  const start = s.indexOf('{');
-  if (start === -1) return null;
+  const objects = findTopLevelJsonObjects(s);
+  return objects.length > 0 ? objects[0] : null;
+}
 
-  let braceCount = 0;
-  let inString = false;
-  let escaped = false;
-  for (let i = start; i < s.length; i++) {
-    const ch = s[i];
-    if (escaped) { escaped = false; continue; }
-    if (ch === '\\' && inString) { escaped = true; continue; }
-    if (ch === '"') { inString = !inString; continue; }
-    if (inString) continue;
-    if (ch === '{') braceCount++;
-    else if (ch === '}') {
-      braceCount--;
-      if (braceCount === 0) return s.slice(start, i + 1);
-    }
-  }
-  return null; // never returned to balance — input was truncated mid-object
+/**
+ * Return the last complete, brace-balanced top-level JSON object in `s`, or null if the
+ * input contains no balanced object.
+ *
+ * Use when a model's raw output contains two full drafts concatenated (e.g. a tool-loop
+ * turn where it wrote the draft as visible text before calling a validation tool, then
+ * produced a corrected full draft as its real answer after seeing the tool's feedback) —
+ * the later object is the model's final, corrected answer.
+ */
+export function extractLastJsonObject(s: string): string | null {
+  const objects = findTopLevelJsonObjects(s);
+  return objects.length > 0 ? objects[objects.length - 1] : null;
 }
 
 // ── JSON repair (for truncated model output) ───────────────────────────────────

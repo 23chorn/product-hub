@@ -3,6 +3,7 @@ import {
   stripJsonFence,
   parseJsonLoose,
   extractFirstJsonObject,
+  extractLastJsonObject,
   repairTruncatedJson,
 } from '../../app/backend/src/utils/json-repair';
 
@@ -69,6 +70,29 @@ describe('extractFirstJsonObject', () => {
 
   it('returns null when the object is truncated mid-stream', () => {
     expect(extractFirstJsonObject('{"a":1')).toBeNull();
+  });
+});
+
+describe('extractLastJsonObject', () => {
+  it('extracts an object and ignores trailing prose', () => {
+    expect(extractLastJsonObject('{"a":1} and then some commentary')).toBe('{"a":1}');
+  });
+
+  it('picks the second object when two complete objects are concatenated', () => {
+    // The tool-loop case this exists for: a stale draft followed by the corrected final one.
+    expect(extractLastJsonObject('{"a":1}{"a":2}')).toBe('{"a":2}');
+  });
+
+  it('is string-aware — braces inside quoted values do not break balancing', () => {
+    expect(extractLastJsonObject('prefix {"tpl":"use {{ x }} here"} tail')).toBe('{"tpl":"use {{ x }} here"}');
+  });
+
+  it('returns null when there is no object', () => {
+    expect(extractLastJsonObject('no braces at all')).toBeNull();
+  });
+
+  it('returns null when the only object is truncated mid-stream', () => {
+    expect(extractLastJsonObject('{"a":1')).toBeNull();
   });
 });
 

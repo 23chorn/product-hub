@@ -11,7 +11,7 @@
  * on the runner.
  */
 
-import { repairTruncatedJson, stripJsonFence, extractFirstJsonObject } from '../utils/json-repair';
+import { repairTruncatedJson, stripJsonFence, extractLastJsonObject } from '../utils/json-repair';
 import { logger } from './workflow-db';
 
 /**
@@ -73,14 +73,17 @@ export function cleanStageArtifactJson(stage: string, fullResponse: string): str
   try {
     return JSON.stringify(JSON.parse(jsonContent), null, 2);
   } catch (firstErr: any) {
-    // If parse failed because the model appended trailing content after a valid object
-    // (or echoed its answer twice), recover just the first complete object. Falls back to
-    // the raw content for any other parse error.
+    // If parse failed because the model appended trailing content after a valid object,
+    // recover just one complete object. Prefer the LAST one — the most common cause is a
+    // tool-loop turn where the model wrote its draft as visible text before calling a
+    // validation tool, then produced a corrected full draft as its real answer after seeing
+    // the tool's feedback; the earlier draft is stale. Falls back to the raw content for
+    // any other parse error.
     const jsonOnly = firstErr.message?.includes('after JSON')
-      ? extractFirstJsonObject(jsonContent)
+      ? extractLastJsonObject(jsonContent)
       : null;
     if (jsonOnly) {
-      logger.warn(`Extra content after JSON detected in stage "${stage}", extracting first complete object`);
+      logger.warn(`Extra content after JSON detected in stage "${stage}", extracting last complete object`);
       try {
         const extracted = JSON.stringify(JSON.parse(jsonOnly), null, 2);
         logger.info(`Successfully extracted and parsed JSON object (${jsonOnly.length} chars)`);
