@@ -130,6 +130,41 @@ function TechnicalNotes({ notes }: { notes?: BacklogStory['technical_notes'] }) 
   );
 }
 
+/** Feature-level rationale + acceptance criteria + FR/NFR/Journey badges, sourced from the
+ *  epic_features planning artifact (epicMatch) — shown on expand next to a feature's stories.
+ *  Shared by the merged multi-feature overview and the single-feature refinement preview so
+ *  both get the same context instead of the preview silently omitting it. */
+function FeatureDetailPanel({ epicMatch, acceptanceCriteria, frMap, nfrMap }: {
+  epicMatch?: EpicFeature;
+  acceptanceCriteria?: string[];
+  frMap?: Record<string, string>;
+  nfrMap?: Record<string, string>;
+}) {
+  const hasDetail = !!epicMatch?.rationale || (acceptanceCriteria?.length ?? 0) > 0 || !!epicMatch?.prdRef;
+  if (!hasDetail) return null;
+  return (
+    <div className="px-4 py-3 space-y-2 bg-surface-50/60 dark:bg-surface-900/30 border-t border-surface-200 dark:border-surface-700">
+      {epicMatch?.rationale && (
+        <p className="text-xs text-surface-600 dark:text-surface-400 italic">{epicMatch.rationale}</p>
+      )}
+      {(acceptanceCriteria?.length ?? 0) > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-1">Feature Acceptance Criteria</p>
+          <ul className="space-y-1">
+            {acceptanceCriteria!.map((ac, ai) => (
+              <li key={ai} className="text-xs text-surface-700 dark:text-surface-300 flex items-start gap-1.5">
+                <span className="text-brand-400 dark:text-brand-500 mt-0.5 flex-shrink-0">•</span>
+                <span>{ac}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {epicMatch?.prdRef && <PrdRefTags prdRef={epicMatch.prdRef} frMap={frMap} nfrMap={nfrMap} />}
+    </div>
+  );
+}
+
 /** Render aggregate hours with optional AI savings line. */
 function AggregateHours({ hours, traditionalHours, aiAssisted }: { hours: number; traditionalHours?: number; aiAssisted: boolean }) {
   if (hours <= 0) return null;
@@ -393,7 +428,6 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
     const featureKey = featureLocalKey(fi);
     const ev = sprintMeta?.effectiveVelocity;
     const featureAcceptanceCriteria = feature.acceptance_criteria ?? epicMatch?.acceptanceCriteria;
-    const hasExpandedDetail = !!epicMatch?.rationale || (featureAcceptanceCriteria?.length ?? 0) > 0 || !!epicMatch?.prdRef;
     return (
       <div key={fi} className="rounded-lg border border-surface-200 dark:border-surface-700 overflow-hidden">
         <button
@@ -445,27 +479,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
         </button>
         {isExpanded && (
           <>
-            {hasExpandedDetail && (
-              <div className="px-4 py-3 space-y-2 bg-surface-50/60 dark:bg-surface-900/30 border-t border-surface-200 dark:border-surface-700">
-                {epicMatch?.rationale && (
-                  <p className="text-xs text-surface-600 dark:text-surface-400 italic">{epicMatch.rationale}</p>
-                )}
-                {(featureAcceptanceCriteria?.length ?? 0) > 0 && (
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-1">Feature Acceptance Criteria</p>
-                    <ul className="space-y-1">
-                      {featureAcceptanceCriteria!.map((ac, ai) => (
-                        <li key={ai} className="text-xs text-surface-700 dark:text-surface-300 flex items-start gap-1.5">
-                          <span className="text-brand-400 dark:text-brand-500 mt-0.5 flex-shrink-0">•</span>
-                          <span>{ac}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {epicMatch?.prdRef && <PrdRefTags prdRef={epicMatch.prdRef} frMap={frMap} nfrMap={nfrMap} />}
-              </div>
-            )}
+            <FeatureDetailPanel epicMatch={epicMatch} acceptanceCriteria={featureAcceptanceCriteria} frMap={frMap} nfrMap={nfrMap} />
             <div className="divide-y divide-surface-100 dark:divide-surface-700 border-t border-surface-200 dark:border-surface-700">
               {feature.stories.map((story, si) => renderStory(story, si, `${fi + 1}`, stateByLocalKey?.get(storyLocalKey(featureKey, si))))}
             </div>
@@ -504,27 +518,49 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
                 </p>
               )}
             </div>
-            {feature && (
-              <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/60 px-4 py-3">
-                <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-brand-500 dark:text-brand-400">Feature</span>
-                  {totalEffort > 0 && (
-                    <span className="text-xs text-surface-400 dark:text-surface-500">
-                      {totalEffort} pts
-                      <AggregateHours hours={totalHours} traditionalHours={totalTraditionalHours} aiAssisted={aiAssisted} />
-                      {sprintMeta?.sprintsRequired != null && <> · {sprintMeta.sprintsRequired} sprints</>}
-                    </span>
+            {feature && (() => {
+              // Same title→phase→epicMatch resolution as the merged overview's renderFeatureRow
+              // (buildEpicFeatureLookup below) — a single feature checkpoint still needs its
+              // planning-stage AC/FR/NFR/Journey context, not just its own restated description.
+              const phaseLabel = buildTitleToPhaseLabel(epicFeatures).get(feature.title) ?? feature.phase ?? DEFAULT_PHASE_LABEL;
+              const epicMatch = epicFeatureLookup.get(`${phaseLabel}::${feature.title}`);
+              const featureAcceptanceCriteria = feature.acceptance_criteria ?? epicMatch?.acceptanceCriteria;
+              const hasDetail = !!epicMatch?.rationale || (featureAcceptanceCriteria?.length ?? 0) > 0 || !!epicMatch?.prdRef;
+              const isExpanded = expandedFeatures.has(0);
+              return (
+                <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/60 overflow-hidden">
+                  <button
+                    onClick={() => hasDetail && toggleFeature(0)}
+                    disabled={!hasDetail}
+                    className="w-full text-left flex items-start gap-2 px-4 py-3 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors disabled:cursor-default disabled:hover:bg-transparent dark:disabled:hover:bg-transparent"
+                  >
+                    {hasDetail && <Chevron expanded={isExpanded} className="w-3.5 h-3.5 mt-0.5 text-surface-400 flex-shrink-0" />}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-brand-500 dark:text-brand-400">Feature</span>
+                        {totalEffort > 0 && (
+                          <span className="text-xs text-surface-400 dark:text-surface-500">
+                            {totalEffort} pts
+                            <AggregateHours hours={totalHours} traditionalHours={totalTraditionalHours} aiAssisted={aiAssisted} />
+                            {sprintMeta?.sprintsRequired != null && <> · {sprintMeta.sprintsRequired} sprints</>}
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="text-base font-semibold text-surface-900 dark:text-surface-100">{feature.title}</h4>
+                      {feature.description && (
+                        <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">{feature.description}</p>
+                      )}
+                      <p className="text-xs text-surface-400 dark:text-surface-500 mt-1">
+                        {totalStories} stor{totalStories !== 1 ? 'ies' : 'y'}
+                      </p>
+                    </div>
+                  </button>
+                  {isExpanded && (
+                    <FeatureDetailPanel epicMatch={epicMatch} acceptanceCriteria={featureAcceptanceCriteria} frMap={frMap} nfrMap={nfrMap} />
                   )}
                 </div>
-                <h4 className="text-base font-semibold text-surface-900 dark:text-surface-100">{feature.title}</h4>
-                {feature.description && (
-                  <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">{feature.description}</p>
-                )}
-                <p className="text-xs text-surface-400 dark:text-surface-500 mt-1">
-                  {totalStories} stor{totalStories !== 1 ? 'ies' : 'y'}
-                </p>
-              </div>
-            )}
+              );
+            })()}
           </div>
         );
       })()}

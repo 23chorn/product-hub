@@ -11,6 +11,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import Logger from '../utils/logger';
 import { findRepoRoot } from '../utils/find-repo-root';
+import { tokenize } from '../utils/text-tokens';
 
 const logger = new Logger('BEHAVIOUR-CONTEXT');
 
@@ -22,16 +23,7 @@ const FEATURE_MAP_PATH = path.join(BEHAVIOUR_DIR, 'feature-map.json');
 interface FeatureMapIndexEntry { feature: string; file: string; category: string; keywords: string[] }
 interface FeatureMap { index: FeatureMapIndexEntry[] }
 
-const STOPWORDS = new Set([
-  'the', 'a', 'an', 'and', 'or', 'for', 'to', 'of', 'in', 'on', 'with', 'is', 'are', 'as',
-  'this', 'that', 'we', 'our', 'new', 'add', 'feature', 'build', 'create', 'support', 'user', 'users',
-]);
-
-function tokenize(text: string): Set<string> {
-  return new Set(
-    text.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2 && !STOPWORDS.has(w))
-  );
-}
+const EXTRA_STOPWORDS = ['new', 'add', 'feature', 'build', 'create', 'support', 'user', 'users'];
 
 /**
  * Find behaviour docs relevant to a free-text query (e.g. the initiative goal + research
@@ -53,7 +45,7 @@ export async function loadRelevantBehaviourDocs(query: string, maxDocs = 4): Pro
     return '';
   }
 
-  const queryWords = tokenize(query);
+  const queryWords = tokenize(query, EXTRA_STOPWORDS);
   if (queryWords.size === 0) {
     logger.info('No behaviour docs loaded — query produced no searchable keywords');
     return '';

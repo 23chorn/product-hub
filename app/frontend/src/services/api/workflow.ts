@@ -227,4 +227,39 @@ export const workflowApi = {
     const response = await axios.get(`${API_BASE_URL}/api/workflow/list/all${params}`);
     return response.data;
   },
+
+  /**
+   * GET /api/workflow/:workflowId/backlog-overlaps — deterministic cross-feature
+   * scope-overlap candidates flagged at the backlog_merge stage, for human review.
+   */
+  async getBacklogOverlaps(workflowId: string): Promise<{ flags: BacklogOverlapFlag[] }> {
+    const response = await axios.get(`${API_BASE_URL}/api/workflow/${workflowId}/backlog-overlaps`);
+    return response.data;
+  },
+
+  async resolveBacklogOverlap(id: number, status: 'confirmed' | 'dismissed', notes?: string): Promise<void> {
+    await axios.patch(`${API_BASE_URL}/api/workflow/backlog-overlaps/${id}`, { status, notes });
+  },
 };
+
+export interface BacklogOverlapStory {
+  story_id: string;
+  featureKey: string;
+  featureTitle?: string;
+  title?: string;
+  as_a?: string;
+  i_want?: string;
+  so_that?: string;
+}
+
+export interface BacklogOverlapFlag {
+  id: number;
+  status: 'pending' | 'confirmed' | 'dismissed';
+  score: number;
+  matchedTerms: string[];
+  notes: string | null;
+  storyA: BacklogOverlapStory;
+  storyB: BacklogOverlapStory;
+  createdAt: number;
+  resolvedAt: number | null;
+}

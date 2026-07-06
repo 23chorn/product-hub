@@ -21,6 +21,7 @@ import { progressHeartbeatLine, collectStreamWithHeartbeat, STAGE_MAX_OUTPUT_TOK
 import { stripJsonFence, repairTruncatedJson } from '../utils/json-repair';
 import { computeRevisionDiff } from '../utils/revision-diff';
 import { loadEpicFeatures } from './feature-decomposition';
+import { detectBacklogOverlaps } from './backlog-overlap';
 import { loadLatestArtifactContent, saveLocalArtifact, saveDiffArtifact } from './artifact-helpers';
 import { SpecialistAgent } from './specialist-agent';
 import { summarizeRevisionDiff } from './revision-diff-summary';
@@ -156,6 +157,29 @@ export async function runBacklogMerge(
       logger.info(`[BACKLOG MERGE] Back-filled phase="${f.phase}" for feature ${i + 1} (was missing)`);
     }
   });
+
+  // Deterministic cross-feature scope-overlap check — flags candidate duplicate stories
+  // for human review at the checkpoint below; never blocks the merge itself.
+  db.prepare('DELETE FROM backlog_overlap_flags WHERE workflow_id = ?').run(workflowId);
+  const overlaps = detectBacklogOverlaps(featureArtifacts);
+  if (overlaps.length > 0) {
+    const insertFlag = db.prepare(`
+      INSERT INTO backlog_overlap_flags
+        (workflow_id, item_id, feature_key_a, story_id_a, feature_key_b, story_id_b, score, matched_terms, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+    `);
+    const flaggedAt = Date.now();
+    for (const overlap of overlaps) {
+      insertFlag.run(
+        workflowId, itemId, overlap.featureKeyA, overlap.storyIdA, overlap.featureKeyB, overlap.storyIdB,
+        overlap.score, JSON.stringify(overlap.matchedTerms), flaggedAt
+      );
+    }
+    logger.info(`[BACKLOG MERGE] Flagged ${overlaps.length} possible cross-feature overlap(s) for review`);
+    insertEvent(workflowId, 'validation_warning', 'backlog_merge',
+      `Detected ${overlaps.length} possible scope overlap${overlaps.length !== 1 ? 's' : ''} across features — review before approving`,
+      { overlap_count: overlaps.length });
+  }
 
   // Build final merged backlog
   const mergedBacklog = {

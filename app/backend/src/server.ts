@@ -23,6 +23,7 @@ import { workflowRoutes } from './routes/workflow-routes';
 import { workflowExportRoutes } from './routes/workflow-export-routes';
 import { workflowCoordinatorRoutes } from './routes/workflow-coordinator-routes';
 import { workflowQueryRoutes } from './routes/workflow-query-routes';
+import { backlogOverlapRoutes } from './routes/backlog-overlap-routes';
 import { changeRequestRoutes } from './routes/change-request-routes';
 import { contextDiffRouter } from './routes/context-diff-routes';
 import { contextFileRouter } from './routes/context-file-routes';
@@ -160,6 +161,7 @@ if (appConfig.features.workflowModeEnabled) {
   app.use('/api/workflow', workflowExportRoutes);
   app.use('/api/workflow', workflowCoordinatorRoutes);
   app.use('/api/workflow', workflowQueryRoutes);
+  app.use('/api/workflow', backlogOverlapRoutes);
 } else {
   app.use('/api/workflow', (_req, res) => {
     res.status(404).json({ error: 'Workflow mode is not enabled' });

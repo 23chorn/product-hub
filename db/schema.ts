@@ -145,6 +145,28 @@ export const checkpoints = sqliteTable('checkpoints', {
   index('idx_checkpoints_workflow').on(t.workflow_id),
 ]);
 
+// Deterministic cross-feature scope-overlap candidates surfaced at the backlog_merge
+// stage — see detectBacklogOverlaps() in agents/backlog-overlap.ts. Human reviews each
+// pair and marks it confirmed (real duplicate) or dismissed (false positive).
+export const backlogOverlapFlags = sqliteTable('backlog_overlap_flags', {
+  id:                  integer('id').primaryKey({ autoIncrement: true }),
+  workflow_id:         text('workflow_id').notNull().references(() => workflows.id, { onDelete: 'cascade' }),
+  item_id:             text('item_id').notNull().references(() => items.id),
+  feature_key_a:       text('feature_key_a').notNull(),
+  story_id_a:          text('story_id_a').notNull(),
+  feature_key_b:       text('feature_key_b').notNull(),
+  story_id_b:          text('story_id_b').notNull(),
+  score:               real('score').notNull(),
+  matched_terms:       text('matched_terms').notNull().default('[]'),   // JSON string[]
+  status:              text('status', { enum: ['pending', 'confirmed', 'dismissed'] }).notNull().default('pending'),
+  resolved_by_user_id: integer('resolved_by_user_id').references(() => users.id),
+  resolved_at:         integer('resolved_at'),
+  notes:               text('notes'),
+  created_at:          integer('created_at').notNull(),
+}, (t) => [
+  index('idx_backlog_overlap_flags_workflow').on(t.workflow_id),
+]);
+
 export const checkpointAudit = sqliteTable('checkpoint_audit', {
   id:            integer('id').primaryKey({ autoIncrement: true }),
   checkpoint_id: integer('checkpoint_id').notNull().references(() => checkpoints.id),

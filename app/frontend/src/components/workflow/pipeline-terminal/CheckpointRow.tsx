@@ -1,7 +1,10 @@
+import { useState, useEffect } from 'react';
 import { useWorkflowStore } from '../../../stores/workflowStore';
 import { InlineCheckpointActions } from '../../coordinator/InlineCheckpointActions';
 import { parseRequiredRoles, ROLE_LABELS } from '../../../stores/authStore';
 import { STAGE_SHORT_LABELS } from '../../../constants/stage-labels';
+import { api } from '../../../services/api';
+import { BacklogOverlapPanel } from './BacklogOverlapPanel';
 
 export function isStaleRecoveryCheckpoint(coordinatorAction: string | null): boolean {
   try { return !!JSON.parse(coordinatorAction ?? '{}').stale_recovery; } catch { return false; }
@@ -20,11 +23,28 @@ export function CheckpointRow({
   stageName: string;
   onResolved: (result: any) => void;
 }) {
-  const { checkpoints, setViewingArtifactId } = useWorkflowStore();
+  const { checkpoints, activeWorkflow, setViewingArtifactId } = useWorkflowStore();
+  const [overlapCount, setOverlapCount] = useState(0);
+  const [showOverlapPanel, setShowOverlapPanel] = useState(false);
 
   // checkpoints is ordered oldest-first — take the most recent match so a stale
   // revised/dismissed checkpoint never shadows the current pending one.
   const checkpoint = [...checkpoints].reverse().find(c => c.stage === stageName);
+  const workflowId = activeWorkflow?.id;
+
+  // backlog_merge is the only stage with deterministic cross-feature overlap flags —
+  // see detectBacklogOverlaps() in agents/backlog-overlap.ts. Informational only, never
+  // blocks approval, so this just surfaces a count + review button alongside it.
+  useEffect(() => {
+    if (stageName !== 'backlog_merge' || !workflowId || checkpoint?.status !== 'pending') {
+      setOverlapCount(0);
+      return;
+    }
+    api.getBacklogOverlaps(workflowId)
+      .then(({ flags }) => setOverlapCount(flags.filter(f => f.status === 'pending').length))
+      .catch(() => setOverlapCount(0));
+  }, [stageName, workflowId, checkpoint?.status]);
+
   if (!checkpoint || checkpoint.status !== 'pending') return null;
 
   const safeArtifactId = isStaleRecoveryCheckpoint(checkpoint.coordinator_action)
@@ -60,11 +80,32 @@ export function CheckpointRow({
             review output →
           </button>
         )}
+        {overlapCount > 0 && (
+          <button
+            onClick={() => setShowOverlapPanel(true)}
+            className="text-[10px] text-amber-700 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-200 font-mono border border-amber-300 hover:border-amber-500 dark:border-amber-700/40 dark:hover:border-amber-500 px-1.5 py-0.5 rounded transition-colors"
+          >
+            ⚠ {overlapCount} possible overlap{overlapCount !== 1 ? 's' : ''} — review →
+          </button>
+        )}
       </div>
       <InlineCheckpointActions
         checkpoint={checkpoint}
         onResolved={onResolved}
       />
+      {showOverlapPanel && workflowId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 dark:bg-black/50">
+          <BacklogOverlapPanel
+            workflowId={workflowId}
+            onClose={() => {
+              setShowOverlapPanel(false);
+              api.getBacklogOverlaps(workflowId)
+                .then(({ flags }) => setOverlapCount(flags.filter(f => f.status === 'pending').length))
+                .catch(() => {});
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

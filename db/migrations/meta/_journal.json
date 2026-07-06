@@ -148,6 +148,13 @@
       "when": 1782612800000,
       "tag": "0020_quick_feature_pushes",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1783342275679,
+      "tag": "0021_fresh_zeigeist",
+      "breakpoints": true
     }
   ]
 }

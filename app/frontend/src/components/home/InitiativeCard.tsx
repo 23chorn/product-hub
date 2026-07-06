@@ -351,8 +351,15 @@ export function InitiativeCard({
                   const isCurrent = idx === currentStageIdx;
                   // 'complete' is a virtual dot appended locally, not a real workflow stage.
                   const shortName = stage === 'complete' ? 'Done' : (STAGE_SHORT_LABELS[stage] ?? stage);
+                  // First/last dots sit flush with the bar's edges (justify-between) — centering
+                  // their labels like the middle dots makes the text overhang past the bar edge
+                  // toward the card border. Align those two labels to their dot's edge instead,
+                  // so they start/end inline with the card's own margin.
+                  const isFirst = idx === 0;
+                  const isLast = idx === stagesWithComplete.length - 1;
+                  const edgeAlign = isFirst ? 'items-start' : isLast ? 'items-end' : 'items-center';
                   return (
-                    <div key={stage} className="relative flex flex-col items-center">
+                    <div key={stage} className={`relative flex flex-col ${edgeAlign}`}>
                       <div className={`w-2 h-2 rounded-full border-2 transition-all ${
                         isCompleted || (isCurrent && stage === 'complete')
                           ? 'bg-brand-500 border-brand-500'
