@@ -1,24 +1,15 @@
 import type { RefObject } from 'react';
 
-const SAMPLE_TITLE = 'Price Alerts & Watchlist — TradeEasy';
-const SAMPLE_DESCRIPTION = `Build a price alert and notification system for retail investors on the TradeEasy mobile trading app.
+/** Fixed product-area options for the New Initiative form's dropdown. */
+const PRODUCT_AREA_OPTIONS = ['Mobile App', 'Web App'];
 
-Who it's for: Retail investors (ages 25–45) who actively monitor 5–20 positions and miss entry/exit opportunities because they can't watch prices throughout the day.
-
-Core problem: Users currently set limit orders as a price-watching workaround, but those orders execute unintentionally. There is no way to be notified when a price threshold is crossed without committing to a trade.
-
-Key outcomes:
-- Users can set price alerts (above/below threshold) on any tradable instrument
-- Push notifications delivered within 30 seconds of the trigger price being hit
-- Reduce unintended limit order executions by 25%
-
-Scope: MVP — iOS and Android push notifications for equities and ETFs only. No options, no recurring alerts. Alert history retained for 30 days.
-
-Constraints:
-- Notification copy must not imply investment advice (regulatory requirement)
-- Real-time price feed available via internal WebSocket market data service
-- Max 30-second delivery latency from trigger to device
-- Team: 2 iOS, 2 Android, 2 backend engineers`;
+/** Fixed strategic-theme options for the New Initiative form's dropdown. */
+const STRATEGIC_THEME_OPTIONS = [
+  'CX & Product Value',
+  'Assets & Market Share',
+  'Platform & Scalability',
+  'Risk, Compliance & Trust',
+];
 
 interface NewInitiativeFormProps {
   title: string;
@@ -35,7 +26,7 @@ interface NewInitiativeFormProps {
   titleInputRef: RefObject<HTMLInputElement>;
 }
 
-/** Inline form for creating a new initiative, with a "load demo sample" shortcut. */
+/** Inline form for creating a new initiative. */
 export function NewInitiativeForm({
   title,
   description,
@@ -70,20 +61,22 @@ export function NewInitiativeForm({
         className="w-full px-3 py-2 text-sm border border-brand-300 dark:border-brand-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 placeholder-surface-400"
       />
       <div className="grid grid-cols-2 gap-2">
-        <input
-          type="text"
+        <select
           value={productArea}
           onChange={e => onProductAreaChange(e.target.value)}
-          placeholder="Product area (optional)"
-          className="w-full px-3 py-2 text-sm border border-brand-300 dark:border-brand-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 placeholder-surface-400"
-        />
-        <input
-          type="text"
+          className="w-full px-3 py-2 text-sm border border-brand-300 dark:border-brand-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100"
+        >
+          <option value="" disabled>Product area</option>
+          {PRODUCT_AREA_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+        </select>
+        <select
           value={strategicTheme}
           onChange={e => onStrategicThemeChange(e.target.value)}
-          placeholder="Strategic theme (optional)"
-          className="w-full px-3 py-2 text-sm border border-brand-300 dark:border-brand-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 placeholder-surface-400"
-        />
+          className="w-full px-3 py-2 text-sm border border-brand-300 dark:border-brand-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100"
+        >
+          <option value="" disabled>Strategic theme</option>
+          {STRATEGIC_THEME_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+        </select>
       </div>
       <textarea
         value={description}
@@ -92,17 +85,10 @@ export function NewInitiativeForm({
         rows={6}
         className="w-full px-3 py-2 text-sm border border-brand-300 dark:border-brand-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 placeholder-surface-400 resize-none"
       />
-      <button
-        type="button"
-        onClick={() => { onTitleChange(SAMPLE_TITLE); onDescriptionChange(SAMPLE_DESCRIPTION); }}
-        className="text-[10px] text-brand-600 dark:text-brand-400 hover:underline"
-      >
-        Load demo sample
-      </button>
       <div className="flex gap-2">
         <button
           onClick={onCreate}
-          disabled={!title.trim() || saving}
+          disabled={!title.trim() || !productArea || !strategicTheme || saving}
           className="flex-1 py-2 text-xs font-medium bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
         >
           {saving ? 'Creating…' : 'Create'}
