@@ -93,6 +93,9 @@ export function CompletedInitiativesPage({ initialSelection, onInitialSelectionC
 
                 <div className="flex gap-1.5 flex-wrap mt-2">
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-400">
+                    {item.epicCount} phase{item.epicCount !== 1 ? 's' : ''}
+                  </span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-400">
                     {item.featureCount} feature{item.featureCount !== 1 ? 's' : ''}
                   </span>
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-400">
