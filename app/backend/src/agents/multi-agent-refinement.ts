@@ -582,7 +582,22 @@ export const ACCEPTANCE_CRITERIA_FORMAT_RULE =
   `**Acceptance criteria structure — read carefully:** each \`acceptance_criteria\` array entry is ONE complete, self-contained scenario as a SINGLE string. A scenario's Given/When/Then/And chain must stay inside that one string, no matter how many And-clauses it needs (extra conditions, edge cases, localization) — never split it across multiple array entries.\n` +
   `- CORRECT (one array entry): "Given I am on the Referral Code Share screen\\nWhen I view my code\\nThen it is displayed in a distinct container\\nAnd if the network is unavailable but a cached code exists, the cached code is shown with a \\'last updated\\' subtitle\\nAnd if no cached code exists, an error message with a Retry button is shown"\n` +
   `- WRONG (never do this — same scenario fragmented across entries): ["Given I am on the Referral Code Share screen", "And my code is displayed", "When I tap Share", "Then the share sheet opens", "And the message is pre-populated"]\n` +
-  `- A new array entry is only for a genuinely different scenario (different trigger or different starting state) — not a continuation of the one you're already writing.`;
+  `- A new array entry is only for a genuinely different scenario (different trigger or different starting state) — not a continuation of the one you're already writing.\n` +
+  `- **Don't over-correct the other way.** One response producing one outcome (plus a directly-related fallback, like a cached-value or empty state) is still one scenario — keep it in one entry. But when the SAME trigger can produce several genuinely distinct outcomes (different HTTP status/error codes, success vs. each distinct failure mode), each outcome is its OWN scenario — write one array entry per outcome. Don't chain repeated "When X... Then Y... When Z... Then W..." pairs inside a single entry just because they share a triggering action.\n` +
+  `- WRONG (4 distinct response-code branches merged into 1 entry): "When the app calls POST /ValidateCode and receives 200 Then it stores the code... When it receives 400 ATTRIBUTION_EXISTS Then it shows an error... When it receives 404 Then it shows a different error... When it receives 500 Then it shows a generic error" — this is 4 scenarios (success + 3 distinct failure modes), not 1.\n` +
+  `- CORRECT (same case, split by outcome): a separate entry for the 200/success path, and a separate entry for each of the 400/404/500 failure paths — each a complete, self-contained Given/When/Then string.`;
+
+/**
+ * Guardrail against analytics/tracking instrumentation leaking into a functional story's
+ * acceptance criteria (e.g. an AC for "create a record" quietly also requiring a CleverTap
+ * event fire). Mirrors the separation dedicated analytics features already get (see the
+ * "Analytics/logging/monitoring features" draft-prompt rule below) at the story level too —
+ * every ticket is either building the thing or instrumenting the thing, never both blended
+ * into one AC list. Reused across the draft, technical-direction, and synthesis prompts so
+ * the rule holds no matter which phase would otherwise introduce the leak.
+ */
+export const ANALYTICS_SEPARATION_RULE =
+  `**Keep analytics/tracking out of functional stories:** unless a story exists specifically to add instrumentation (event firing, logging, tracking pixels), do not add acceptance criteria, technical acceptance criteria, or technical notes for firing an analytics/tracking event (e.g. "fires a CleverTap \`record_created\` event", "logs an analytics event to Segment/Mixpanel/Amplitude"). If new tracking is genuinely needed alongside this story's functionality, write it as its own separate story (e.g. "Track Record Creation Event [Backend]") rather than folding it into the AC of the story that builds the underlying functionality.`;
 
 /**
  * Phase 1: Build draft prompts for each agent.
@@ -619,6 +634,7 @@ ${ACCEPTANCE_CRITERIA_FORMAT_RULE}
 7. Do not write accessibility-specific acceptance criteria or stories (screen reader support, TalkBack, VoiceOver, voice control, etc.) — this product does not target those use cases unless the PRD explicitly calls for them.
 8. Never write a story whose persona is a QA/test engineer (e.g. "As a QA engineer, I want to test..."). Test coverage is owned entirely by the dedicated test-case creation stage — don't duplicate it as a backlog story.
 9. **Analytics/logging/monitoring features:** if this feature's purpose is to instrument, track, log, or measure an existing or already-planned capability (e.g. "Referral Funnel Analytics", "Checkout Error Logging", "Trading Activity Dashboard"), every story must be about the instrumentation itself — event schema/taxonomy, event firing at the right trigger points, the data pipeline/aggregation, dashboards, alerting thresholds. Do not write stories that (re)build the underlying feature being measured (the referral flow, the checkout flow, the trading screen, etc.) — that's already in scope elsewhere unless the Feature Acceptance Criteria in the brief above explicitly says this feature includes building it.
+10. ${ANALYTICS_SEPARATION_RULE}
 
 **Output Format:**
 Return a JSON structure (use F${featureNum} for all story IDs):
@@ -749,6 +765,7 @@ Plain text per-story feedback. Example:
 2. For each story that touches your platform, add a brief technical direction note — what needs to be built and any constraint worth flagging now, not a full implementation spec. Exact endpoints, schemas, and component names can be worked out later during technical refinement.
 3. **CRITICAL — One stream per ticket:** If any story covers work on YOUR platform but is not already split into its own ticket, propose a new platform-specific story for it. Every story must belong to exactly ONE stream: \`backend\`, \`web\`, \`ios\`, or \`android\`. Shared logic (e.g. "user sees X") must be split into separate stories if it requires distinct implementation on each platform.
 4. Flag dependencies (e.g., "Web story F?.S3 depends on Backend story F?.S2 being complete first")
+5. ${ANALYTICS_SEPARATION_RULE}
 
 **Output Format:**
 Plain text mapping of story_id → technical direction, plus any proposed new platform-specific stories. Example:
@@ -872,9 +889,12 @@ Merge all contributions into a single JSON artifact following the backlog templa
 }
 \`\`\`
 
+${ACCEPTANCE_CRITERIA_FORMAT_RULE}
+
 **Important:**
 - Include ONLY the JSON artifact in your response (no explanatory text before or after)
 - Carry forward epic fields (definition_of_done) and feature fields (phase, acceptance_criteria) from the Feature Brief at the top of this prompt — do not drop or weaken them
+- ${ANALYTICS_SEPARATION_RULE}
 - The feature acceptance_criteria array must match the Feature Acceptance Criteria from the brief verbatim — these are approved conditions, not suggestions
 - The feature phase must match the Phase label from the brief
 - Every story must include prd_ref with functional_requirements (the FR IDs from the PRD this story satisfies) and non_functional_requirements (the NFR IDs that constrain this story). Copy from the feature's prdRef where applicable and refine per story. Use [] for non_functional_requirements only if no NFR genuinely applies to this specific story.

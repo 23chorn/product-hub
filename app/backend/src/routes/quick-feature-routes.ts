@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { initSSE, sseSend } from '../utils/sse';
 import { streamAI, resolveAgentModel } from '../utils/ai-provider';
+import { buildAcceptanceCriteriaHtml } from '../integrations/azure-devops-format';
 import Logger from '../utils/logger';
 import db from '../data/database';
 
@@ -218,21 +219,7 @@ quickFeatureRoutes.post('/quick-feature/push', async (req: Request, res: Respons
           story.benefit ? `<b>So that</b> ${story.benefit}` : '',
         ].filter(Boolean).join('<br>');
 
-        let acHtml: string | undefined;
-        if (Array.isArray(story.acceptanceCriteria) && story.acceptanceCriteria.length > 0) {
-          acHtml = story.acceptanceCriteria
-            .map((ac: string, i: number) => {
-              const formatted = ac
-                .replace(/\b(Given|When|Then|And|But)\b/gi, '\n$1')
-                .trim()
-                .split('\n')
-                .filter((l: string) => l.trim())
-                .map((l: string) => l.trim().replace(/^(Given|When|Then|And|But)\b/i, '<b>$1</b>'))
-                .join('<br>');
-              return `<b>AC ${i + 1}</b><br>${formatted}`;
-            })
-            .join('<br><br>');
-        }
+        const acHtml = buildAcceptanceCriteriaHtml(story.acceptanceCriteria);
 
         const platformLabel = story.platform ? (STREAM_LABELS[story.platform] ?? story.platform) : '';
         const storyTags = [fr.id, platformLabel].filter(Boolean).join('; ');
