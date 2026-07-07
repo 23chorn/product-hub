@@ -152,8 +152,10 @@ export function normalizePrdId(id: string): string {
 /** Collapse the drifting journey id spellings the model has produced across runs
  *  ("J1", "Journey 1", "Journey_1", "journey1", ...) to one compact "J<n>" form, so
  *  the same journey renders the same badge label across every feature that references
- *  it. Falls back to the trimmed original for free-text journey names with no numeric id. */
-function normalizeJourneyId(id: string): string {
+ *  it. Falls back to the trimmed original for free-text journey names with no numeric id.
+ *  Exported so FigmaDesignActions can apply the same id/description split to a screen's
+ *  "Covers journeys" pills instead of re-deriving its own id scheme. */
+export function normalizeJourneyId(id: string): string {
   const match = id.trim().match(/^j(?:ourney)?[\s_-]*(\d+)$/i);
   return match ? `J${match[1]}` : id.trim();
 }

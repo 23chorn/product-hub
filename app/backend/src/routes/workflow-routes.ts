@@ -619,7 +619,8 @@ workflowRoutes.post('/checkpoint/figma-complete', async (req: AuthRequest, res: 
     }
     const { waveComplete } = resolveCheckpoint(cpId, 'approved', 'Figma design marked complete by designer');
 
-    insertEvent(cp.workflow_id, 'stage_complete', 'figma_design', `Designer ${auditor.name} marked Figma mockups as complete`);
+    insertEvent(cp.workflow_id, 'stage_complete', 'figma_design',
+      `${checkpointArtifactLabel('figma_design')} approved by ${auditor.name}`);
 
     if (waveComplete) {
       advanceStage(cp.workflow_id)
@@ -873,8 +874,9 @@ workflowRoutes.put('/artifact/:id/content', async (req: AuthRequest, res: Respon
   }
 
   if (workflowId) {
+    const artifactLabel = checkpointArtifactLabel(stage ?? row.type);
     insertEvent(workflowId, 'human_edit', stage,
-      'Human edited artifact directly.',
+      `${artifactLabel} edited directly by ${req.user?.name ?? 'System'}`,
       { artifact_id: id, artifact_type: row.type });
   }
 

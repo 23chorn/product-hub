@@ -1,24 +1,9 @@
 import { useState } from 'react';
 import type { FigmaScreenRef, ParsedFigmaDesign } from '../../utils/figma-design';
 import { DeleteItemButton } from '../common/DeleteItemButton';
+import { normalizeJourneyId } from './EpicFeaturesView';
 
 const FALLBACK_KEY = '__file__';
-
-/** Assigns a stable "J<n>" short id to each unique journey string across all screens in this
- *  figma_design artifact (first-seen order), so a screen's "Covers journeys" pills can show a
- *  compact badge with the full sentence on hover — same hover-to-review UX as the "J1"/"J2"
- *  PRD journey badges in EpicFeaturesView, whose ids the model already provides inline. Here
- *  there's no id in the source data, so one is assigned locally from the screens actually
- *  present in this artifact. */
-function buildJourneyIdMap(screens: FigmaScreenRef[]): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const s of screens) {
-    for (const j of s.prd_journeys ?? []) {
-      if (!map.has(j)) map.set(j, `J${map.size + 1}`);
-    }
-  }
-  return map;
-}
 
 function FigmaLogo({ size }: { size: number }) {
   return (
@@ -54,7 +39,6 @@ export function FigmaScreenPreviewer({
 }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const { screens, figmaFileUrl, designGaps, navigationFlow, notes } = figmaDesign;
-  const journeyIdMap = buildJourneyIdMap(screens);
 
   const inputClass = 'w-full text-sm rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 px-3 py-2 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-rose-500';
   const sectionLabel = 'text-[11px] font-medium text-surface-500 dark:text-surface-400 uppercase tracking-wide mb-1';
@@ -218,11 +202,20 @@ export function FigmaScreenPreviewer({
               <div>
                 <p className={sectionLabel}>Covers journeys</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {screen.prd_journeys.map((j, i) => (
-                    <span key={i} title={j} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-200 dark:border-brand-700 cursor-help">
-                      {journeyIdMap.get(j) ?? j}
-                    </span>
-                  ))}
+                  {screen.prd_journeys.map((j, i) => {
+                    // Real model output embeds the id in the string itself, e.g.
+                    // "Journey 1: Informed Limit Order Placement (Happy Path)" — split off the
+                    // id for the badge and keep the description for the tooltip so hovering
+                    // doesn't just repeat "Journey 1" back.
+                    const colonIdx = j.indexOf(': ');
+                    const jId = normalizeJourneyId(colonIdx !== -1 ? j.slice(0, colonIdx) : j);
+                    const tip = colonIdx !== -1 ? j.slice(colonIdx + 2) : undefined;
+                    return (
+                      <span key={i} title={tip} className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-200 dark:border-brand-700 ${tip ? 'cursor-help' : ''}`}>
+                        {jId}
+                      </span>
+                    );
+                  })}
                 </div>
               </div>
             )}
