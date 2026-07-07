@@ -197,6 +197,37 @@ export async function retryCurrentStage(
   }
 
   const stage = workflow.current_stage;
+
+  // "curator" and "critic" are fully-automated stages with no specialist session of their
+  // own — their logic runs inline in advanceStageCore (workflow-router.ts), not through
+  // runAutonomousStage. Retrying them the normal way spins up a bogus specialist session
+  // (stageSession() falls back to 'analyst') and calls runAutonomousStage, which has no
+  // stage map entry for either and silently no-ops — leaving the workflow stuck forever
+  // with no way to recover from the UI. Instead, rewind current_stage to the preceding
+  // stage and re-advance — the exact same code path that ran it the first time.
+  if (stage === 'curator' || stage === 'critic') {
+    const sequence: string[] = JSON.parse(workflow.stage_sequence);
+    const idx = sequence.indexOf(stage);
+    const prevStage = idx > 0 ? sequence[idx - 1] : null;
+
+    logger.info(`Retrying automated stage "${stage}" for workflow ${workflowId} — rewinding to "${prevStage}" and re-advancing`);
+    insertEvent(workflowId, 'stage_retried', stage,
+      `Stage manually retried${triggeredBy ? ` by ${triggeredBy.name}` : ''}`,
+      triggeredBy ? { userId: triggeredBy.id, name: triggeredBy.name, username: triggeredBy.username } : undefined);
+
+    db.prepare(`UPDATE workflows SET current_stage = ?, status = 'active', updated_at = ? WHERE id = ?`)
+      .run(prevStage, Date.now(), workflowId);
+
+    workflowOps.advanceStage(workflowId).catch(err => {
+      if (!err.message?.startsWith('WORKFLOW_COMPLETE:')) {
+        logger.error(`Retry re-run for stage "${stage}" failed: ${err.message}`);
+        createSafetyNetCheckpoint(workflowId, stage, undefined, err.message);
+      }
+    });
+
+    return { stage };
+  }
+
   const decompMeta = parseDecompositionMetadata(workflow.decomposition_metadata);
   const wave = findWaveForStage(decompMeta, stage) ?? [stage];
 

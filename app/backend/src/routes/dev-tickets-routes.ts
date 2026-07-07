@@ -709,7 +709,8 @@ router.get('/:seqNum/tickets', async (req: Request, res: Response) => {
       const storyPlatforms = buildStoryPlatformMap(backlog);
       const testCases = (merged?.test_cases ?? []).filter((tc: TestCase) => {
         const ref = tc.story_ref ?? tc.linkedStory;
-        const platforms = ref ? storyPlatforms.get(ref) ?? [] : [];
+        const refs = Array.isArray(ref) ? ref : ref ? [ref] : [];
+        const platforms = refs.flatMap(r => storyPlatforms.get(r) ?? []);
         return matchesStream(platforms, streamFilter);
       });
 
