@@ -337,7 +337,7 @@ router.patch('/:id', (req: Request, res: Response) => {
  * Delete a local initiative and all associated sessions/workflows/files.
  * If the item was created by a demo workflow, clean up external ADO resources first.
  */
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
   const { id } = req.params;
   const row = stmts.get.get(id) as InitiativeRow | undefined;
   if (!row) return res.status(404).json({ error: 'Initiative not found' });

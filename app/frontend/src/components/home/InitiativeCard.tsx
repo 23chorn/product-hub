@@ -63,9 +63,10 @@ function normalizeCurrentStage(currentStage: string | null, stages: string[]): s
   return null;
 }
 
-/** Card for one initiative in the HomeScreen grid: title, status, tags, and launch/resume/delete actions.
+/** Card for one initiative in the HomeScreen grid: title, status, tags, and launch/resume actions.
  *  Right-click menu: any authenticated user can assign/unassign themselves; admins can also
- *  archive/unarchive and open the user-assign flyout. */
+ *  archive/unarchive (any workflow state), delete (local, non-demo items only), and open the
+ *  user-assign flyout. */
 export function InitiativeCard({
   item, isDeleting, isConfirmingDelete, isAnalysing,
   isArchiving, isConfirmingArchive,
@@ -104,15 +105,20 @@ export function InitiativeCard({
   const pendingApprovals = needsReview ? wf?.pendingApprovals ?? [] : [];
 
   const isArchived = item.status === 'archived';
-  const canArchive = isAdmin && !isArchived && (isComplete || !wf);
+  // Archiving is a soft, reversible move to the Archived filter — allowed from any
+  // workflow state (unlike the old restriction to complete/no-workflow items).
+  const canArchive = isAdmin && !isArchived;
   const canUnarchive = isAdmin && isArchived;
   const canShowAssign = !noAuth && !!user;
   const assignedUsers = item.assignedUsers ?? [];
   const isAssignedToMe = canShowAssign && assignedUsers.some(u => u.id === user!.id);
+  // Delete is a hard, permanent removal — local (non-Airtable) items only, admin-only,
+  // and not for demo workflows (mirrors the backend's DELETE /api/initiatives/:id gating).
+  const canDelete = isAdmin && item.source !== 'airtable' && !isDemo;
 
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const handleContextMenu = (e: React.MouseEvent) => {
-    if (!canArchive && !canUnarchive && !canShowAssign) return;
+    if (!canArchive && !canUnarchive && !canShowAssign && !canDelete) return;
     e.preventDefault();
     setMenuPos({ x: e.clientX, y: e.clientY });
   };
@@ -139,7 +145,7 @@ export function InitiativeCard({
   return (
     <div
       onContextMenu={handleContextMenu}
-      className={`relative group rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/80 hover:border-surface-300 dark:hover:border-surface-600 hover:shadow-sm transition-all p-5 flex flex-col ${isExpanded ? 'h-auto' : 'h-64'}`}
+      className={`relative group rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/80 hover:border-surface-300 dark:hover:border-surface-600 hover:shadow-sm transition-all p-5 flex flex-col ${isExpanded ? 'h-auto' : 'h-64'} ${isComplete ? 'opacity-50 hover:opacity-100' : ''}`}
     >
       {menuPos && (() => {
         const items = [];
@@ -150,6 +156,7 @@ export function InitiativeCard({
           else items.push({ label: 'Assign to me', danger: false, onClick: onAssignToMe });
           if (isAdmin) items.push({ label: 'Assign to user…', danger: false, onClick: onOpenAssignFlyout });
         }
+        if (canDelete) items.push({ label: 'Delete Initiative', danger: true, onClick: onRequestDelete });
         return (
           <CardContextMenu
             x={menuPos.x}
@@ -167,6 +174,16 @@ export function InitiativeCard({
           loading={isArchiving}
           onCancel={onCancelArchive}
           onConfirm={onConfirmArchive}
+        />
+      )}
+
+      {isConfirmingDelete && (
+        <ArchiveConfirmModal
+          mode="delete"
+          itemTitle={item.initiative}
+          loading={isDeleting}
+          onCancel={onCancelDelete}
+          onConfirm={onConfirmDelete}
         />
       )}
 
@@ -222,29 +239,6 @@ export function InitiativeCard({
                 ) : 'Launch →'}
               </button>
             )}
-
-          {/* Delete controls (local items only) */}
-          {item.source !== 'airtable' && !isDemo && (
-            isConfirmingDelete ? (
-              <div className="flex items-center gap-1.5">
-                <button onClick={onConfirmDelete} disabled={isDeleting}
-                  className="text-[10px] px-2 py-1 rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 hover:bg-red-200 font-medium">
-                  Delete
-                </button>
-                <button onClick={onCancelDelete}
-                  className="text-[10px] px-2 py-1 rounded bg-surface-100 dark:bg-surface-700 text-surface-500">
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              <button onClick={(e) => { e.stopPropagation(); onRequestDelete(); }} disabled={isDeleting}
-                className="opacity-0 group-hover:opacity-100 p-1 text-surface-300 dark:text-surface-600 hover:text-red-400 dark:hover:text-red-500 transition-all">
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            )
-          )}
         </div>
       </div>
 
