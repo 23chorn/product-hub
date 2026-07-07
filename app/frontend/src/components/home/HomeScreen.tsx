@@ -378,7 +378,7 @@ export function HomeScreen() {
 
   const filteredLocalItems = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    return visibleItems.filter(item => {
+    const filtered = visibleItems.filter(item => {
       const isArchived = item.status === 'archived';
       const s = item.workflow ? effectiveStatus(item.workflow) : undefined;
 
@@ -406,6 +406,16 @@ export function HomeScreen() {
       return item.initiative.toLowerCase().includes(q)
         || (item.description?.toLowerCase().includes(q) ?? false)
         || (qId.length > 0 && item.seqNum != null && String(item.seqNum).includes(qId));
+    });
+
+    // Done initiatives always sink to the bottom of the list, regardless of which status
+    // filter is active — active/needs-review/not-started ones stay on top where they're
+    // actionable. Stable sort (partition, not a full reorder) so relative order within
+    // each group — e.g. whatever the backend's default ordering is — is preserved.
+    return [...filtered].sort((a, b) => {
+      const aDone = a.workflow ? effectiveStatus(a.workflow) === 'complete' : false;
+      const bDone = b.workflow ? effectiveStatus(b.workflow) === 'complete' : false;
+      return Number(aDone) - Number(bDone);
     });
   }, [visibleItems, statusFilter, searchQuery, mineWorkflowIds, productAreaFilter]);
 

@@ -17,6 +17,8 @@ import { EventRow } from './pipeline-terminal/EventRow';
 import { CheckpointRow, isStaleRecoveryCheckpoint } from './pipeline-terminal/CheckpointRow';
 import { AuditTrailPanel } from './AuditTrailPanel';
 import { RestartConfirmModal } from './RestartConfirmModal';
+import { RetryConfirmModal } from './RetryConfirmModal';
+import { StopConfirmModal } from './StopConfirmModal';
 import { BacklogOverviewModal } from '../artifact/BacklogOverviewModal';
 import { PageHeaderTitle } from '../common/PageHeaderTitle';
 import { PageHeaderActions } from '../common/PageHeaderActions';
@@ -66,7 +68,10 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   };
   const [stopping, setStopping] = useState(false);
   const [restarting, setRestarting] = useState(false);
+  const [retryingStage, setRetryingStage] = useState(false);
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
+  const [showRetryConfirm, setShowRetryConfirm] = useState(false);
+  const [showStopConfirm, setShowStopConfirm] = useState(false);
   const [generalExpanded, setGeneralExpanded] = useState(false);
   const [crExpanded, setCrExpanded] = useState(false);
   const [showAudit, setShowAudit] = useState(false);
@@ -188,6 +193,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
     setStopping(true);
     try {
       await api.cancelWorkflow(activeWorkflow.id);
+      setShowStopConfirm(false);
     } catch {
       // Ignore transient failures; restore the button state immediately.
     } finally {
@@ -212,12 +218,16 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   };
 
   const handleRetryStage = async () => {
-    if (!activeWorkflow) return;
+    if (!activeWorkflow || retryingStage) return;
+    setRetryingStage(true);
     try {
       const status = await api.retryWorkflowStage(activeWorkflow.id);
       applyWorkflowStatus(status);
+      setShowRetryConfirm(false);
     } catch (err) {
       console.error('Failed to retry stage:', err);
+    } finally {
+      setRetryingStage(false);
     }
   };
 
@@ -416,7 +426,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
         <PageHeaderActions>
           {isAdmin && isWorkflowActive && !isComplete && (
             <button
-              onClick={handleRetryStage}
+              onClick={() => setShowRetryConfirm(true)}
               title="Retry current stage from the beginning"
               className="flex items-center gap-1 text-[11px] font-mono px-2 py-1 rounded border border-surface-300 dark:border-surface-700/50 text-surface-500 dark:text-surface-400 hover:text-amber-600 dark:hover:text-amber-500 hover:border-amber-400 dark:hover:border-amber-700 transition-colors"
             >
@@ -448,7 +458,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
           </button>
           {isWorkflowActive && (
             <button
-              onClick={handleStop}
+              onClick={() => setShowStopConfirm(true)}
               disabled={stopping}
               title="Stop workflow"
               className="flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-1 rounded border border-red-300 dark:border-red-700/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -740,6 +750,23 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
           loading={restarting}
           onCancel={() => setShowRestartConfirm(false)}
           onConfirm={handleRestart}
+        />
+      )}
+
+      {showRetryConfirm && (
+        <RetryConfirmModal
+          isWave={inProgressStages.length > 1}
+          loading={retryingStage}
+          onCancel={() => setShowRetryConfirm(false)}
+          onConfirm={handleRetryStage}
+        />
+      )}
+
+      {showStopConfirm && (
+        <StopConfirmModal
+          loading={stopping}
+          onCancel={() => setShowStopConfirm(false)}
+          onConfirm={handleStop}
         />
       )}
 
