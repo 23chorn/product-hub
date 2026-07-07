@@ -697,7 +697,7 @@ Requirements:
   - At least 25% of user-facing cases must be negative or edge type.
   - Cross-feature integration scenarios should be called out with two or more entries in the \`features\` array.
 - **ID format:** TC-E-NNN for user-facing cases (three-digit counter, E = Epic)${apiSpecContent ? '; TC-API-NNN for technical cases (three-digit counter, API = technical/contract layer).' : '.'}
-- **story_ref:** a real story_id from the merged backlog (e.g. "F1.S3"), or an array for multi-story scenarios. Never invent a placeholder.
+- **story_ref:** a real story_id from the merged backlog (e.g. "F1.S3"). When a scenario legitimately spans multiple stories (an end-to-end flow, the iOS+Android combined case above), \`story_ref\` MUST be a JSON array of the individual story_ids (e.g. \`["F1.S3", "F1.S4", "F1.S5"]\`) — never concatenate multiple story_ids into one string (e.g. \`"F1.S3F1.S4F1.S5"\` is WRONG). Never invent a placeholder.
 - **features:** list the feature keys this test exercises (["F1"], ["F2", "F3"], etc.).
 - **prd_ref:** list the FR IDs from the referenced story's prd_ref.
 - **layer:** exactly one of: user_facing, technical.

@@ -66,6 +66,16 @@ function testCaseSortKey(tc: TestCase): [number, number] {
   return [featureNum, caseNum];
 }
 
+/** Split a story_ref (or linkedStory) value into individual "Fx.Sy" badges. Handles the
+ *  normal array form and a single clean ref, and defensively un-mangles artifacts
+ *  generated before the array-based story_ref prompt guidance, where the model
+ *  concatenated multiple refs into one string with no delimiter (e.g. "F1.S3F1.S4F1.S5")
+ *  — without this, that string renders as one unreadable badge instead of several. */
+function splitStoryRefs(value: string | string[] | undefined): string[] {
+  const raw = Array.isArray(value) ? value : value ? [value] : [];
+  return raw.flatMap(v => v.match(/F\d+\.S\d+/g) ?? [v]);
+}
+
 /** Sort test cases by feature number then test case number, so each category section
  *  reads in a stable, predictable order rather than raw artifact/merge order. */
 function sortTestCases(testCases: TestCase[]): TestCase[] {
@@ -131,7 +141,7 @@ function TestCaseCard({ tc, frMap, onDelete }: { tc: TestCase; frMap?: Record<st
                 </span>
               );
             })}
-            {(Array.isArray(tc.story_ref) ? tc.story_ref : tc.story_ref ? [tc.story_ref] : tc.linkedStory ? [tc.linkedStory] : []).map(ref => (
+            {splitStoryRefs(tc.story_ref ?? tc.linkedStory).map(ref => (
               <span
                 key={ref}
                 className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400"
