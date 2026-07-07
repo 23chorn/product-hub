@@ -17,6 +17,7 @@ import { stripJsonFence } from '../utils/json-repair';
 import { loadPrdForItem, buildEpicEnrichment, buildFeatureEnrichment } from '../utils/prd-enrichment';
 import { insertEvent } from './workflow-db';
 import { featureLocalKey, storyLocalKey } from '@pap/shared';
+import { groupTestCasesByEpic } from '../integrations/azure-devops-format';
 import Logger from '../utils/logger';
 
 const logger = new Logger('ADO-PUSH');
@@ -133,37 +134,37 @@ export async function pushBacklogToAdo(workflowId: string, itemId: string): Prom
         INSERT OR REPLACE INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, parent_local_key, title, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
+      // parent_local_key now comes straight from updateBacklog (it knows each new mapping's
+      // true phase-epic parent) instead of being re-derived here with a fragile guess.
       for (const m of updateResult.newMappings) {
-        // features -> 'epic'; stories -> parent feature key (e.g. 'F1.S3' -> 'F1'); epics -> null
-        const parentLocalKey = m.ado_type === 'feature' ? 'epic'
-          : m.ado_type === 'story' ? m.local_key.split('.')[0]
-          : null;
-        insertMapping.run(workflowId, artifactId, m.ado_id, m.ado_type, m.ado_url, m.local_key, parentLocalKey, m.title, now);
+        insertMapping.run(workflowId, artifactId, m.ado_id, m.ado_type, m.ado_url, m.local_key, m.parent_local_key, m.title, now);
       }
       topId = updateResult.epicId;
       topUrl = client.getEpicUrl(topId);
     } else {
       const createResult = await client.createBacklog(backlog);
-      topUrl = client.getEpicUrl(createResult.epicId);
-      topId = createResult.epicId;
-      featureCount = createResult.featureIds.length;
-      storyCount = createResult.storyIds.length;
+      const mainEpic = createResult.epics.find((e: { localKey: string }) => e.localKey === 'epic');
+      topId = mainEpic.adoId;
+      topUrl = client.getEpicUrl(topId);
+      featureCount = createResult.features.length;
+      storyCount = createResult.features.reduce((n: number, f: { storyAdoIds: number[] }) => n + f.storyAdoIds.length, 0);
 
       const insertMapping = db.prepare(`
         INSERT OR REPLACE INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, parent_local_key, title, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
-      insertMapping.run(workflowId, artifactId, topId, 'epic', topUrl, 'epic', null, backlog.epic.title, now);
-      let featureIdx = 0, storyIdx = 0;
-      for (let fi = 0; fi < backlog.features.length; fi++) {
-        const featureKey = featureLocalKey(fi);
-        const featureAdoId = createResult.featureIds[featureIdx++];
-        insertMapping.run(workflowId, artifactId, featureAdoId, 'feature', client.getEpicUrl(featureAdoId), featureKey, 'epic', backlog.features[fi].title, now);
-        for (let si = 0; si < backlog.features[fi].stories.length; si++) {
+      // Map every epic (main + any phase epics) before features/stories, so their local_keys
+      // exist for the feature rows below to reference as parent_local_key.
+      for (const e of createResult.epics) {
+        insertMapping.run(workflowId, artifactId, e.adoId, 'epic', client.getEpicUrl(e.adoId), e.localKey, null, e.title, now);
+      }
+      for (const f of createResult.features) {
+        const featureKey = featureLocalKey(f.index);
+        insertMapping.run(workflowId, artifactId, f.adoId, 'feature', client.getEpicUrl(f.adoId), featureKey, f.epicLocalKey, backlog.features[f.index].title, now);
+        f.storyAdoIds.forEach((storyAdoId: number, si: number) => {
           const storyKey = storyLocalKey(featureKey, si);
-          const storyAdoId = createResult.storyIds[storyIdx++];
-          insertMapping.run(workflowId, artifactId, storyAdoId, 'story', client.getEpicUrl(storyAdoId), storyKey, featureKey, backlog.features[fi].stories[si].title, now);
-        }
+          insertMapping.run(workflowId, artifactId, storyAdoId, 'story', client.getEpicUrl(storyAdoId), storyKey, featureKey, backlog.features[f.index].stories[si].title, now);
+        });
       }
     }
 
@@ -238,48 +239,78 @@ export async function pushTestPlanToAdo(workflowId: string, itemId: string): Pro
       logger.warn('Test plan push: no story mappings found — test cases will be created without TestedBy links');
     }
 
-    // Look up by item, not just this workflow_id — a change request, retry, or any other
-    // path that re-runs epic_qa under a different workflow row for the same item must still
-    // find and reuse the item's one Test Plan instead of creating a second one in ADO.
-    const existingMap = db.prepare<[string], { plan_id: number; plan_url: string; suite_ids: string; test_case_ids: string; root_suite_id?: number }>(`
-      SELECT q.plan_id, q.plan_url, q.suite_ids, q.test_case_ids, q.root_suite_id
-      FROM qa_test_plan_map q
-      JOIN workflows w ON w.id = q.workflow_id
-      WHERE w.item_id = ?
-      ORDER BY q.created_at DESC LIMIT 1
-    `).get(itemId);
+    // Which epic (phase) each feature belongs to, so every test case can be routed to that
+    // phase's own Test Plan via its story_ref's owning feature.
+    const featureMappings = db.prepare<[string], { local_key: string; parent_local_key: string | null }>(
+      `SELECT local_key, parent_local_key FROM ado_work_item_map WHERE workflow_id = ? AND ado_type = 'feature'`
+    ).all(workflowId);
+    const featureKeyToEpicLocalKey = new Map(featureMappings.map(f => [f.local_key, f.parent_local_key ?? 'epic']));
 
-    const existing = existingMap ? {
-      planId: existingMap.plan_id,
-      rootSuiteId: existingMap.root_suite_id,
-      suiteIds: JSON.parse(existingMap.suite_ids ?? '{}'),
-      testCaseIds: JSON.parse(existingMap.test_case_ids ?? '{}'),
-    } : undefined;
+    const epicMappings = db.prepare<[string], { local_key: string; title: string }>(
+      `SELECT local_key, title FROM ado_work_item_map WHERE workflow_id = ? AND ado_type = 'epic'`
+    ).all(workflowId);
+    const epicTitleByLocalKey = new Map(epicMappings.map(e => [e.local_key, e.title]));
+
+    const { groups, warnings } = groupTestCasesByEpic(testCases, featureKeyToEpicLocalKey);
+    for (const warning of warnings) {
+      insertEvent(workflowId, 'validation_warning', 'qa_engineer', `Test plan push: ${warning}`);
+    }
 
     const workflow = db.prepare<[string], { summary: string | null; goal: string }>(
       'SELECT summary, goal FROM workflows WHERE id = ?'
     ).get(workflowId);
-    const planName = (workflow?.summary ?? workflow?.goal.split('\n')[0] ?? 'Test Plan').slice(0, 60);
+    const fallbackPlanName = (workflow?.summary ?? workflow?.goal.split('\n')[0] ?? 'Test Plan').slice(0, 60);
 
     const { getAzureDevOpsClient } = require('../integrations/azure-devops');
     const client = getAzureDevOpsClient();
-    const result = await client.pushQATestPlan({ planName, testCases, storyMap, existing });
 
+    let mainPlanUrl: string | null = null;
     const now = Date.now();
-    db.prepare(`
-      INSERT OR REPLACE INTO qa_test_plan_map
-        (workflow_id, artifact_id, plan_id, root_suite_id, plan_url, suite_ids, test_case_ids, test_case_count, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(workflowId, qaArtifact.id, result.planId, result.rootSuiteId, result.planUrl,
-       JSON.stringify(result.suiteIds), JSON.stringify(result.testCaseIds), testCases.length, now);
 
-    const itemRow = db.prepare<[string], { airtable_id: string | null }>('SELECT airtable_id FROM items WHERE id = ?').get(itemId);
-    if (itemRow?.airtable_id) {
-      pushLinksToAirtable(itemRow.airtable_id, { testPlanLink: result.planUrl }).catch(() => {});
+    for (const [epicLocalKey, groupTestCases] of groups) {
+      // Look up by item, not just this workflow_id — a change request, retry, or any other
+      // path that re-runs epic_qa under a different workflow row for the same item must still
+      // find and reuse that phase's one Test Plan instead of creating a second one in ADO.
+      const existingMap = db.prepare<[string, string], { plan_id: number; plan_url: string; suite_ids: string; test_case_ids: string; root_suite_id?: number }>(`
+        SELECT q.plan_id, q.plan_url, q.suite_ids, q.test_case_ids, q.root_suite_id
+        FROM qa_test_plan_map q
+        JOIN workflows w ON w.id = q.workflow_id
+        WHERE w.item_id = ? AND q.epic_local_key = ?
+        ORDER BY q.created_at DESC LIMIT 1
+      `).get(itemId, epicLocalKey);
+
+      const existing = existingMap ? {
+        planId: existingMap.plan_id,
+        rootSuiteId: existingMap.root_suite_id,
+        suiteIds: JSON.parse(existingMap.suite_ids ?? '{}'),
+        testCaseIds: JSON.parse(existingMap.test_case_ids ?? '{}'),
+      } : undefined;
+
+      const planName = (epicTitleByLocalKey.get(epicLocalKey) ?? fallbackPlanName).slice(0, 60);
+      const result = await client.pushQATestPlan({ planName, testCases: groupTestCases, storyMap, existing });
+
+      db.prepare(`
+        INSERT OR REPLACE INTO qa_test_plan_map
+          (workflow_id, artifact_id, epic_local_key, plan_id, root_suite_id, plan_url, suite_ids, test_case_ids, test_case_count, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(workflowId, qaArtifact.id, epicLocalKey, result.planId, result.rootSuiteId, result.planUrl,
+         JSON.stringify(result.suiteIds), JSON.stringify(result.testCaseIds), groupTestCases.length, now);
+
+      const planLabel = epicLocalKey === 'epic' ? 'main' : (epicTitleByLocalKey.get(epicLocalKey) ?? epicLocalKey);
+      insertEvent(workflowId, 'ado_pushed', 'qa_engineer',
+        `${groupTestCases.length} test case(s) pushed to the ${planLabel} Test Plan at ${result.planUrl}`,
+        { ado_url: result.planUrl });
+
+      if (epicLocalKey === 'epic') mainPlanUrl = result.planUrl;
     }
 
-    logger.info(`Test plan push complete for workflow ${workflowId} — Plan #${result.planId} at ${result.planUrl}`);
-    return result.planUrl;
+    const itemRow = db.prepare<[string], { airtable_id: string | null }>('SELECT airtable_id FROM items WHERE id = ?').get(itemId);
+    if (itemRow?.airtable_id && mainPlanUrl) {
+      pushLinksToAirtable(itemRow.airtable_id, { testPlanLink: mainPlanUrl }).catch(() => {});
+    }
+
+    logger.info(`Test plan push complete for workflow ${workflowId} — ${groups.size} plan(s) updated`);
+    return mainPlanUrl;
   } catch (err: any) {
     logger.error(`Test plan push failed for workflow ${workflowId}: ${err.message}`);
     insertEvent(workflowId, 'error', 'qa_engineer', `Test plan push failed: ${err.message}`, { error: err.message });

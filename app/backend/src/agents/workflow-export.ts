@@ -151,12 +151,12 @@ export async function pushBacklogToBoard(workflowId: string): Promise<PushToBoar
 
       // Persist new mappings
       const insertMapping = db.prepare(`
-        INSERT OR REPLACE INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, title, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, parent_local_key, title, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       const now = Date.now();
       for (const m of updateResult.newMappings) {
-        insertMapping.run(workflowId, artifactId, m.ado_id, m.ado_type, m.ado_url, m.local_key, m.title, now);
+        insertMapping.run(workflowId, artifactId, m.ado_id, m.ado_type, m.ado_url, m.local_key, m.parent_local_key, m.title, now);
       }
 
       logger.info(`Synced backlog to ADO: ${updateResult.updated} updated, ${updateResult.created} created`);
@@ -171,44 +171,44 @@ export async function pushBacklogToBoard(workflowId: string): Promise<PushToBoar
 
     // CREATE path — first push
     const result = await client.createBacklog(backlog);
-    const epicUrl = client.getEpicUrl(result.epicId);
-    const extraEpicUrls = (result.extraEpicIds ?? []).map((id: number) => ({
-      id,
-      url: client.getEpicUrl(id),
-    }));
+    const mainEpic = result.epics.find((e: { localKey: string }) => e.localKey === 'epic')!;
+    const epicUrl = client.getEpicUrl(mainEpic.adoId);
+    const extraEpicUrls = result.epics
+      .filter((e: { localKey: string }) => e.localKey !== 'epic')
+      .map((e: { adoId: number }) => ({ id: e.adoId, url: client.getEpicUrl(e.adoId) }));
 
     // Persist ADO mappings for future sync
     const insertMapping = db.prepare(`
-      INSERT OR REPLACE INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, title, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, parent_local_key, title, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const now = Date.now();
 
-    // Map epic
-    insertMapping.run(workflowId, artifactId, result.epicId, 'epic', epicUrl, 'epic', backlog.epic.title, now);
-
-    // Map features and stories
-    let featureIdx = 0;
-    let storyIdx = 0;
-    for (let fi = 0; fi < backlog.features.length; fi++) {
-      const featureKey = `F${fi + 1}`;
-      const featureAdoId = result.featureIds[featureIdx++];
-      insertMapping.run(workflowId, artifactId, featureAdoId, 'feature', client.getEpicUrl(featureAdoId), featureKey, backlog.features[fi].title, now);
-
-      for (let si = 0; si < backlog.features[fi].stories.length; si++) {
-        const storyKey = `${featureKey}.S${si + 1}`;
-        const storyAdoId = result.storyIds[storyIdx++];
-        insertMapping.run(workflowId, artifactId, storyAdoId, 'story', client.getEpicUrl(storyAdoId), storyKey, backlog.features[fi].stories[si].title, now);
-      }
+    // Map every epic (main + any phase epics)
+    for (const e of result.epics) {
+      insertMapping.run(workflowId, artifactId, e.adoId, 'epic', client.getEpicUrl(e.adoId), e.localKey, null, e.title, now);
     }
 
-    logger.info(`Pushed backlog to ADO: Epic #${result.epicId}${result.extraEpicIds?.length ? ` + ${result.extraEpicIds.length} phase epic(s)` : ''}, ${result.featureIds.length} features, ${result.storyIds.length} stories`);
+    // Map features and stories under the epic each feature actually landed under
+    let storyCount = 0;
+    for (const f of result.features) {
+      const featureKey = `F${f.index + 1}`;
+      insertMapping.run(workflowId, artifactId, f.adoId, 'feature', client.getEpicUrl(f.adoId), featureKey, f.epicLocalKey, backlog.features[f.index].title, now);
+
+      f.storyAdoIds.forEach((storyAdoId: number, si: number) => {
+        const storyKey = `${featureKey}.S${si + 1}`;
+        insertMapping.run(workflowId, artifactId, storyAdoId, 'story', client.getEpicUrl(storyAdoId), storyKey, featureKey, backlog.features[f.index].stories[si].title, now);
+        storyCount++;
+      });
+    }
+
+    logger.info(`Pushed backlog to ADO: Epic #${mainEpic.adoId}${extraEpicUrls.length ? ` + ${extraEpicUrls.length} phase epic(s)` : ''}, ${result.features.length} features, ${storyCount} stories`);
     return {
-      epicId: result.epicId,
+      epicId: mainEpic.adoId,
       epicUrl,
       extraEpics: extraEpicUrls,
-      featureCount: result.featureIds.length,
-      storyCount: result.storyIds.length,
+      featureCount: result.features.length,
+      storyCount,
     };
   }
 

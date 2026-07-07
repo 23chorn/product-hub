@@ -101,6 +101,21 @@ export function BacklogStoriesTests({ featureButtons, initiativeTitle, epicFeatu
   const totalStories = backlog?.features?.reduce((sum, f) => sum + (f.stories?.length ?? 0), 0) ?? 0;
   const totalTests = qa?.test_cases.length ?? 0;
 
+  // Feature -> phase label, from epicFeatures' consecutive per-phase feature counts (each
+  // phase owns N features by position, same convention CompletedInitiativeDetail uses).
+  // Powers QATestsView's "Phase" grouping toggle for this pre-approval preview.
+  const phaseByFeatureKey: Record<string, string> = (() => {
+    const map: Record<string, string> = {};
+    if (!epicFeatures?.phases?.length) return map;
+    let featureIdx = 0;
+    for (const phase of epicFeatures.phases) {
+      const count = phase.features?.length ?? 0;
+      for (let i = featureIdx; i < featureIdx + count; i++) map[`F${i + 1}`] = phase.label;
+      featureIdx += count;
+    }
+    return map;
+  })();
+
   const tabs = [
     { id: 'stories', label: 'Stories', count: totalStories > 0 ? totalStories : undefined },
     { id: 'tests', label: 'Tests', count: totalTests > 0 ? totalTests : undefined },
@@ -117,7 +132,7 @@ export function BacklogStoriesTests({ featureButtons, initiativeTitle, epicFeatu
           <p className="text-sm text-surface-400 italic">No features approved yet.</p>
         )
       ) : qa && qa.test_cases.length > 0 ? (
-        <QATestsView data={qa} frMap={frMap} />
+        <QATestsView data={qa} frMap={frMap} phaseByFeatureKey={phaseByFeatureKey} phaseOrder={epicFeatures?.phases?.map(p => p.label) ?? []} />
       ) : (
         <p className="text-sm text-surface-400 italic">No QA tests approved yet.</p>
       )}

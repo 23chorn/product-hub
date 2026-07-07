@@ -275,9 +275,10 @@ describe('createBacklog', () => {
 
     const result = await client.createBacklog(structure);
 
-    expect(result.extraEpicIds).toEqual([]);
-    expect(result.featureIds).toHaveLength(2);
-    expect(result.storyIds).toHaveLength(2);
+    expect(result.epics).toEqual([{ localKey: 'epic', adoId: 1, title: 'My Epic' }]);
+    expect(result.features).toHaveLength(2);
+    expect(result.features.every(f => f.epicLocalKey === 'epic')).toBe(true);
+    expect(result.features.reduce((n, f) => n + f.storyAdoIds.length, 0)).toBe(2);
     // 1 epic + 2 features + 2 stories = 5 createWorkItem calls.
     expect(http.instance.post).toHaveBeenCalledTimes(5);
   });
@@ -295,9 +296,14 @@ describe('createBacklog', () => {
 
     const result = await client.createBacklog(structure);
 
-    expect(result.extraEpicIds).toHaveLength(1);
-    expect(result.featureIds).toHaveLength(2);
-    // The phase epic title is prefixed with the phase name.
+    expect(result.epics).toHaveLength(2);
+    expect(result.features).toHaveLength(2);
+    // The phase epic gets its own local_key, distinct from the main 'epic', and its title
+    // is prefixed with the phase name.
+    const phaseEpic = result.epics.find(e => e.localKey !== 'epic');
+    expect(phaseEpic?.title).toBe('[Phase 2] My Epic');
+    const phaseFeature = result.features.find(f => f.epicLocalKey === phaseEpic?.localKey);
+    expect(phaseFeature).toBeTruthy();
     const phaseEpicOp = http.instance.post.mock.calls
       .map(c => c[1])
       .find(ops => opFor(ops, '/fields/System.Title')?.value === '[Phase 2] My Epic');

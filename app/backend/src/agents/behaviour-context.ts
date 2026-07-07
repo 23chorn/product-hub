@@ -10,15 +10,10 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import Logger from '../utils/logger';
-import { findRepoRoot } from '../utils/find-repo-root';
 import { tokenize } from '../utils/text-tokens';
+import { FEATURES_DIR, FEATURE_MAP_PATH } from './behaviour-files';
 
 const logger = new Logger('BEHAVIOUR-CONTEXT');
-
-const PROJECT_ROOT = findRepoRoot(__dirname);
-const BEHAVIOUR_DIR = path.join(PROJECT_ROOT, 'context', 'behaviour');
-const FEATURES_DIR = path.join(BEHAVIOUR_DIR, 'features');
-const FEATURE_MAP_PATH = path.join(BEHAVIOUR_DIR, 'feature-map.json');
 
 interface FeatureMapIndexEntry { feature: string; file: string; category: string; keywords: string[] }
 interface FeatureMap { index: FeatureMapIndexEntry[] }

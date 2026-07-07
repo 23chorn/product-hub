@@ -12,7 +12,7 @@ import { BacklogView } from '../artifact/BacklogView';
 import { tryParseEpicFeatures, type EpicFeaturesData } from '../artifact/EpicFeaturesView';
 import { PageHeaderTitle } from '../common/PageHeaderTitle';
 import { PageHeaderActions } from '../common/PageHeaderActions';
-import { QATestsView, groupByType, typeMeta } from '../artifact/QATestsView';
+import { QATestsView, groupByType, typeMeta, splitStoryRefs } from '../artifact/QATestsView';
 import { MarkdownContent } from '../common/MarkdownContent';
 import { ArchiveConfirmModal } from '../common/ArchiveConfirmModal';
 import { WorkItemManagePanel } from './WorkItemManagePanel';
@@ -486,6 +486,57 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
     );
   })());
 
+  // Every feature's phase label, regardless of the current selectedPhase filter — mirrors
+  // phaseFeatureKeys' two branches above, just not scoped to one phase. Powers QATestsView's
+  // "Phase" grouping toggle and the cross-phase badge on individual test cases.
+  const phaseByFeatureKey: Record<string, string> = (() => {
+    const map: Record<string, string> = {};
+    if (epicFeatures?.phases?.length) {
+      let epicIdx = 0;
+      for (const phase of epicFeatures.phases) {
+        const count = phase.features?.length ?? 0;
+        for (let i = epicIdx; i < epicIdx + count; i++) {
+          if (activeFeatureIndices.size === 0 || activeFeatureIndices.has(i)) {
+            map[`F${i + 1}`] = phase.label;
+          }
+        }
+        epicIdx += count;
+      }
+      return map;
+    }
+    (filteredBacklog?.features ?? []).forEach((f, j) => { if (f.phase) map[filteredFeatureKeys[j]] = f.phase; });
+    return map;
+  })();
+
+  // Feature -> epic local_key (from ado_work_item_map, via detail.workItems), and epic
+  // local_key -> its Test Plan URL / title (from qa_test_plan_map, via detail.testPlans) —
+  // composed into feature -> Test Plan URL so each test case can link straight to the plan
+  // that actually contains it, and the selected phase's own plan can be singled out below.
+  const featureKeyToEpicLocalKey: Record<string, string> = Object.fromEntries(
+    (detail?.workItems ?? [])
+      .filter(w => w.adoType === 'feature' && w.parentLocalKey)
+      .map(w => [w.localKey, w.parentLocalKey as string])
+  );
+  const epicTitleByLocalKey: Record<string, string> = Object.fromEntries(
+    (detail?.workItems ?? []).filter(w => w.adoType === 'epic').map(w => [w.localKey, w.title])
+  );
+  const planUrlByEpicLocalKey: Record<string, string> = Object.fromEntries(
+    (detail?.testPlans ?? []).map(tp => [tp.epicLocalKey, tp.planUrl])
+  );
+  const planUrlByFeatureKey: Record<string, string> = Object.fromEntries(
+    Object.entries(featureKeyToEpicLocalKey)
+      .filter(([, epicLocalKey]) => planUrlByEpicLocalKey[epicLocalKey])
+      .map(([featureKey, epicLocalKey]) => [featureKey, planUrlByEpicLocalKey[epicLocalKey]])
+  );
+  // Test Plan(s) to show below the test case list: just the selected phase's own plan when
+  // one is selected, every plan when viewing all phases.
+  const selectedPhaseEpicLocalKey = selectedPhase != null
+    ? featureKeyToEpicLocalKey[[...phaseFeatureKeys][0] ?? '']
+    : null;
+  const visibleTestPlans = selectedPhaseEpicLocalKey != null
+    ? (detail?.testPlans ?? []).filter(tp => tp.epicLocalKey === selectedPhaseEpicLocalKey)
+    : (detail?.testPlans ?? []);
+
   // Phase-scoped backlog (filter by feature key position, not by the backlog's phase field).
   const phaseBacklog: BacklogData | null = filteredBacklog && selectedPhase != null
     ? { ...filteredBacklog, features: (filteredBacklog.features ?? []).filter((_, j) => phaseFeatureKeys.has(filteredFeatureKeys[j])) }
@@ -494,12 +545,13 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
   // Phase-scoped ticket breakdown.
   const phaseTicketBreakdown = phaseBacklog ? countTicketsByPlatform(getAllStories(phaseBacklog)) : null;
 
-  // Phase-scoped QA tests (filter by story_ref prefix matching phase feature keys).
+  // Phase-scoped QA tests (filter by story_ref prefix matching phase feature keys). story_ref
+  // is commonly an array (cross-feature/cross-platform cases), not just a plain string — a
+  // test case matches the phase if ANY of its referenced stories' feature keys belong to it.
   const phaseQa = qa && selectedPhase != null
-    ? { ...qa, test_cases: qa.test_cases.filter(tc => {
-        const prefix = typeof tc.story_ref === 'string' ? tc.story_ref.split('.')[0] : null;
-        return prefix != null && phaseFeatureKeys.has(prefix);
-      }) }
+    ? { ...qa, test_cases: qa.test_cases.filter(tc =>
+        splitStoryRefs(tc.story_ref ?? tc.linkedStory).some(ref => phaseFeatureKeys.has(ref.split('.')[0]))
+      ) }
     : qa;
 
   // Phase-scoped test type breakdown.
@@ -707,14 +759,22 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
                 {tab === 'tests' && (
                   <div className="max-w-4xl mx-auto space-y-4">
                     {phaseQa && phaseQa.test_cases.length > 0 ? (
-                      <QATestsView data={phaseQa} frMap={frMap} />
+                      <QATestsView
+                        data={phaseQa}
+                        frMap={frMap}
+                        phaseByFeatureKey={phaseByFeatureKey}
+                        planUrlByFeatureKey={planUrlByFeatureKey}
+                        phaseOrder={phaseLabels}
+                      />
                     ) : (
                       <p className="text-sm text-surface-400 italic">No test case content found for this initiative.</p>
                     )}
-                    {detail && detail.testPlans.length > 0 && (
+                    {visibleTestPlans.length > 0 && (
                       <div className="border-t border-surface-200 dark:border-surface-700 pt-3 space-y-1">
-                        <p className="text-xs font-medium text-surface-500 dark:text-surface-400 mb-1">Test Plan</p>
-                        {detail.testPlans.map(plan => (
+                        <p className="text-xs font-medium text-surface-500 dark:text-surface-400 mb-1">
+                          Test Plan{visibleTestPlans.length > 1 ? 's' : ''}
+                        </p>
+                        {visibleTestPlans.map(plan => (
                           <a
                             key={plan.planId}
                             href={plan.planUrl}
@@ -722,7 +782,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
                             rel="noreferrer"
                             className="block text-xs text-brand-600 dark:text-brand-400 hover:underline"
                           >
-                            Plan #{plan.planId} ↗
+                            {epicTitleByLocalKey[plan.epicLocalKey] ?? `Plan #${plan.planId}`} ↗
                           </a>
                         ))}
                       </div>

@@ -572,6 +572,10 @@ export interface CompletedInitiativeTestPlanRow {
   /** The qa_tests artifact pushed to build this plan — lets the detail page render the
    *  underlying test cases (type/priority breakdown), not just the ADO count. */
   artifactId: number | null;
+  /** ado_work_item_map local_key of the Epic this plan belongs to ('epic' for the main/MVP
+   *  epic, 'epic-phase-2' etc. for later phases) — joins against a feature row's
+   *  parentLocalKey so the UI can show each phase's own Test Plan link. */
+  epicLocalKey: string;
 }
 
 export interface CompletedInitiativeDetail extends CompletedInitiativeSummary {

@@ -78,11 +78,17 @@ export function ContextDiffPanel({ onClose }: Props) {
     }
   }
 
+  // Behaviour-doc diffs confirm a feature is live in production — that's a deliberate,
+  // individually-reviewed action, so they're excluded from the bulk "Approve All" button
+  // (which only ever touches plain .md context diffs).
+  const isBehaviourDiff = (diff: ContextDiff) => diff.file_name.startsWith('behaviour/');
+  const bulkApprovable = diffs.filter((d) => !isBehaviourDiff(d));
+
   async function approveAll() {
     setApprovingAll(true);
     setError(null);
     let count = 0;
-    for (const diff of [...diffs]) {
+    for (const diff of bulkApprovable) {
       try {
         await api.approveContextDiff(diff.id);
         setDiffs((prev) => prev.filter((d) => d.id !== diff.id));
@@ -117,7 +123,7 @@ export function ContextDiffPanel({ onClose }: Props) {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {diffs.length > 1 && (
+          {bulkApprovable.length > 1 && (
             <button
               onClick={approveAll}
               disabled={approvingAll || actioning !== null}
@@ -172,6 +178,7 @@ export function ContextDiffPanel({ onClose }: Props) {
         {diffs.map((diff) => {
           const spec = parseDiffSpec(diff.diff_content);
           const busy = actioning === diff.id || approvingAll;
+          const isBehaviour = isBehaviourDiff(diff);
 
           return (
             <div
@@ -187,7 +194,7 @@ export function ContextDiffPanel({ onClose }: Props) {
                   </span>
                   {spec?.section && (
                     <span className="text-xs text-surface-400 dark:text-surface-500">
-                      § {spec.section}
+                      {isBehaviour ? `Scenario: ${spec.section}` : `§ ${spec.section}`}
                     </span>
                   )}
                 </div>
@@ -195,9 +202,10 @@ export function ContextDiffPanel({ onClose }: Props) {
                   <button
                     onClick={() => approve(diff.id)}
                     disabled={busy}
+                    title={isBehaviour ? 'Confirms this behaviour is now live in production' : undefined}
                     className="text-xs px-2 py-1 bg-green-100 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/50 text-green-700 dark:text-green-400 rounded transition-colors disabled:opacity-50"
                   >
-                    {actioning === diff.id ? '…' : 'Approve'}
+                    {actioning === diff.id ? '…' : isBehaviour ? 'Confirm Live' : 'Approve'}
                   </button>
                   <button
                     onClick={() => reject(diff.id)}
@@ -215,7 +223,7 @@ export function ContextDiffPanel({ onClose }: Props) {
                   <p className="text-xs text-green-700 dark:text-green-500 font-medium mb-1">
                     {spec.action === 'add' ? 'Add' : 'Replace with'}
                   </p>
-                  <p className="text-xs text-surface-700 dark:text-surface-300 whitespace-pre-wrap leading-relaxed">
+                  <p className={`text-xs text-surface-700 dark:text-surface-300 whitespace-pre-wrap leading-relaxed ${isBehaviour ? 'font-mono' : ''}`}>
                     {spec.content}
                   </p>
                 </div>
@@ -224,7 +232,7 @@ export function ContextDiffPanel({ onClose }: Props) {
               {spec?.action === 'remove' && (
                 <div className="px-3 py-2 bg-red-50 dark:bg-red-900/10">
                   <p className="text-xs text-red-600 dark:text-red-400">
-                    Remove section "§ {spec.section}"
+                    {isBehaviour ? `Remove scenario "${spec.section}"` : `Remove section "§ ${spec.section}"`}
                   </p>
                 </div>
               )}

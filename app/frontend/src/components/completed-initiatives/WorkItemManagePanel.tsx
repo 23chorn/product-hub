@@ -473,7 +473,7 @@ function buildTcGroups(cases: TestCase[]): TcGroup[] {
   const ungrouped: TestCase[] = [];
 
   for (const tc of cases) {
-    if (!tc.id || tc.id.startsWith('TC-E-') || tc.id.startsWith('TC-M-')) {
+    if (!tc.id || tc.id.startsWith('TC-UI-') || tc.id.startsWith('TC-E-') || tc.id.startsWith('TC-M-')) {
       epicCases.push(tc);
       continue;
     }

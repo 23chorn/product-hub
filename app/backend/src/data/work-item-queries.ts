@@ -27,6 +27,7 @@ export interface QaTestPlanRow {
   plan_url: string;
   test_case_count: number | null;
   artifact_id: number | null;
+  epic_local_key: string;
 }
 
 /** All ado_work_item_map rows across every workflow of each item, grouped by item id. */
@@ -51,7 +52,7 @@ export function getTestPlanRowsByItem(itemIds: string[]): Map<string, QaTestPlan
   const map = new Map<string, QaTestPlanRow[]>();
   if (itemIds.length === 0) return map;
   const rows = db.prepare(`
-    SELECT w.item_id as itemId, q.plan_id, q.plan_url, q.test_case_count, q.artifact_id
+    SELECT w.item_id as itemId, q.plan_id, q.plan_url, q.test_case_count, q.artifact_id, q.epic_local_key
     FROM qa_test_plan_map q
     JOIN workflows w ON w.id = q.workflow_id
     WHERE w.item_id IN (${itemIds.map(() => '?').join(',')})

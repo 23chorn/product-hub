@@ -7,6 +7,7 @@ import {
   buildStoryDescriptionHtml,
   buildAcceptanceCriteriaHtml,
   deriveTeamTags,
+  deriveEpicLocalKey,
   type StoryHtmlInput,
 } from './azure-devops-format';
 import {
@@ -326,41 +327,42 @@ export class AzureDevOpsClient {
    * Phase 2 / Post-launch features are grouped by phase and each phase gets its own epic.
    */
   async createBacklog(structure: BacklogStructure): Promise<{
-    epicId: number;
-    extraEpicIds: number[];
-    featureIds: number[];
-    storyIds: number[];
+    epics: Array<{ localKey: string; adoId: number; title: string }>;
+    features: Array<{ index: number; adoId: number; epicLocalKey: string; storyAdoIds: number[] }>;
   }> {
     logger.info(`Creating backlog structure: ${structure.epic.title}`);
 
-    const featureIds: number[] = [];
-    const storyIds: number[] = [];
-    const extraEpicIds: number[] = [];
+    type IndexedFeature = { index: number; data: BacklogStructure['features'][number] };
+    const epics: Array<{ localKey: string; adoId: number; title: string }> = [];
+    const features: Array<{ index: number; adoId: number; epicLocalKey: string; storyAdoIds: number[] }> = [];
 
-    /** Create ADO features + stories under a given parent epic ID */
-    const createFeaturesUnderEpic = async (features: BacklogStructure['features'], parentId: number) => {
-      for (const featureData of features) {
+    /** Create ADO features + stories under a given parent epic, recording each feature's
+     *  original structure.features index (not creation order) and the epic it landed under —
+     *  the caller needs both to correctly re-associate ADO ids back to local F#/S# keys. */
+    const createFeaturesUnderEpic = async (indexed: IndexedFeature[], parentId: number, epicLocalKey: string) => {
+      for (const { index, data: featureData } of indexed) {
         const feature = await this.createWorkItem({
           type: this.workItemTypes.feature as any,
           title: featureData.title,
           description: featureData.description,
           parentId,
         });
-        featureIds.push(feature.id!);
-        storyIds.push(...await this.createStoriesUnderFeature(feature.id!, featureData.stories));
+        const storyAdoIds = await this.createStoriesUnderFeature(feature.id!, featureData.stories);
+        features.push({ index, adoId: feature.id!, epicLocalKey, storyAdoIds });
       }
     };
 
     try {
-      // Split features by phase
-      const mvpFeatures = structure.features.filter(f => f.phase?.toLowerCase() === 'mvp');
-      const laterPhases = new Map<string, typeof structure.features>();
-      for (const f of structure.features) {
-        if (f.phase?.toLowerCase() !== 'mvp') {
-          const key = f.phase || 'Phase 2';
-          if (!laterPhases.has(key)) laterPhases.set(key, []);
-          laterPhases.get(key)!.push(f);
-        }
+      // Split features by phase, keyed by the same epicLocalKey pushTestPlanToAdo will later
+      // use to route test cases — so epic creation and test-plan routing never disagree.
+      const indexedFeatures: IndexedFeature[] = structure.features.map((data, index) => ({ index, data }));
+      const mvpFeatures = indexedFeatures.filter(f => deriveEpicLocalKey(f.data.phase) === 'epic');
+      const laterPhases = new Map<string, { label: string; features: IndexedFeature[] }>();
+      for (const f of indexedFeatures) {
+        const epicLocalKey = deriveEpicLocalKey(f.data.phase);
+        if (epicLocalKey === 'epic') continue;
+        if (!laterPhases.has(epicLocalKey)) laterPhases.set(epicLocalKey, { label: f.data.phase || 'Phase 2', features: [] });
+        laterPhases.get(epicLocalKey)!.features.push(f);
       }
 
       // If there are no MVP features, skip the phase split — everything goes under one epic
@@ -378,27 +380,29 @@ export class AzureDevOpsClient {
         description: structure.epic.description,
         effort: totalEffort || undefined,
       });
-      await createFeaturesUnderEpic(splitByPhase ? mvpFeatures : structure.features, epic.id!);
+      epics.push({ localKey: 'epic', adoId: epic.id!, title: structure.epic.title });
+      await createFeaturesUnderEpic(splitByPhase ? mvpFeatures : indexedFeatures, epic.id!, 'epic');
 
       // 2. One extra epic per non-MVP phase (only when there's also an MVP epic)
       if (splitByPhase) {
-        for (const [phase, features] of laterPhases) {
+        for (const [epicLocalKey, { label, features: phaseFeatures }] of laterPhases) {
+          const phaseTitle = `[${label}] ${structure.epic.title}`;
           const phaseEpic = await this.createWorkItem({
             type: this.workItemTypes.epic as any,
-            title: `[${phase}] ${structure.epic.title}`,
-            description: `${phase} scope for: ${structure.epic.description}`,
+            title: phaseTitle,
+            description: `${label} scope for: ${structure.epic.description}`,
           });
-          extraEpicIds.push(phaseEpic.id!);
-          await createFeaturesUnderEpic(features, phaseEpic.id!);
-          logger.info(`Created ${phase} epic #${phaseEpic.id} with ${features.length} feature(s)`);
+          epics.push({ localKey: epicLocalKey, adoId: phaseEpic.id!, title: phaseTitle });
+          await createFeaturesUnderEpic(phaseFeatures, phaseEpic.id!, epicLocalKey);
+          logger.info(`Created ${label} epic #${phaseEpic.id} with ${phaseFeatures.length} feature(s)`);
         }
       }
 
       logger.info(
-        `Created backlog: Epic #${epic.id}${extraEpicIds.length ? ` + ${extraEpicIds.length} phase epic(s)` : ''}, ${featureIds.length} features, ${storyIds.length} stories`
+        `Created backlog: Epic #${epic.id}${epics.length > 1 ? ` + ${epics.length - 1} phase epic(s)` : ''}, ${features.length} features, ${features.reduce((n, f) => n + f.storyAdoIds.length, 0)} stories`
       );
 
-      return { epicId: epic.id!, extraEpicIds, featureIds, storyIds };
+      return { epics, features };
     } catch (error: any) {
       logger.error('Failed to create backlog structure', error);
       throw error;
@@ -522,11 +526,11 @@ export class AzureDevOpsClient {
     epicId: number;
     created: number;
     updated: number;
-    newMappings: Array<{ local_key: string; ado_id: number; ado_type: string; title: string; ado_url: string }>;
+    newMappings: Array<{ local_key: string; ado_id: number; ado_type: string; title: string; ado_url: string; parent_local_key: string | null }>;
   }> {
     let created = 0;
     let updated = 0;
-    const newMappings: Array<{ local_key: string; ado_id: number; ado_type: string; title: string; ado_url: string }> = [];
+    const newMappings: Array<{ local_key: string; ado_id: number; ado_type: string; title: string; ado_url: string; parent_local_key: string | null }> = [];
 
     const epicMapping = existingMap.get('epic');
     if (!epicMapping) {
@@ -547,6 +551,39 @@ export class AzureDevOpsClient {
     });
     if (epicTitleChanged) updated++;
 
+    // Resolve (or lazily create) the phase Epic a new feature belongs to — needed when a later
+    // phase (e.g. "Phase 2") is added incrementally to a backlog that was first pushed with only
+    // MVP features, so its epic doesn't exist in existingMap yet. Epics created earlier in this
+    // same call are cached here so later features in the same phase reuse them.
+    const resolvedPhaseEpicIds = new Map<string, number>([['epic', epicId]]);
+    const resolvePhaseEpicId = async (phase: string): Promise<number> => {
+      const epicLocalKey = deriveEpicLocalKey(phase);
+      if (resolvedPhaseEpicIds.has(epicLocalKey)) return resolvedPhaseEpicIds.get(epicLocalKey)!;
+      const existing = existingMap.get(epicLocalKey);
+      if (existing) {
+        resolvedPhaseEpicIds.set(epicLocalKey, existing.ado_id);
+        return existing.ado_id;
+      }
+      const label = phase || 'Phase 2';
+      const phaseTitle = `[${label}] ${structure.epic.title}`;
+      const phaseEpic = await this.createWorkItem({
+        type: this.workItemTypes.epic as any,
+        title: phaseTitle,
+        description: `${label} scope for: ${structure.epic.description}`,
+      });
+      resolvedPhaseEpicIds.set(epicLocalKey, phaseEpic.id!);
+      newMappings.push({
+        local_key: epicLocalKey,
+        ado_id: phaseEpic.id!,
+        ado_type: 'epic',
+        title: phaseTitle,
+        ado_url: this.getEpicUrl(phaseEpic.id!),
+        parent_local_key: null,
+      });
+      logger.info(`Created ${label} epic #${phaseEpic.id} for incremental backlog update`);
+      return phaseEpic.id!;
+    };
+
     // Process features and stories
     for (let fi = 0; fi < structure.features.length; fi++) {
       const featureData = structure.features[fi];
@@ -564,12 +601,15 @@ export class AzureDevOpsClient {
         if (featureTitleChanged) updated++;
         featureAdoId = featureMapping.ado_id;
       } else {
-        // Create new feature
+        // Create new feature under the epic for its phase (creating that phase's epic on
+        // first use if a later phase is being added to an already-pushed backlog).
+        const epicLocalKey = deriveEpicLocalKey(featureData.phase);
+        const parentEpicId = await resolvePhaseEpicId(featureData.phase);
         const feature = await this.createWorkItem({
           type: this.workItemTypes.feature as any,
           title: featureData.title,
           description: featureData.description,
-          parentId: epicId,
+          parentId: parentEpicId,
         });
         featureAdoId = feature.id!;
         created++;
@@ -579,6 +619,7 @@ export class AzureDevOpsClient {
           ado_type: 'feature',
           title: featureData.title,
           ado_url: this.getEpicUrl(featureAdoId),
+          parent_local_key: epicLocalKey,
         });
       }
 
@@ -623,6 +664,7 @@ export class AzureDevOpsClient {
             ado_type: 'story',
             title: storyData.title,
             ado_url: this.getEpicUrl(story.id!),
+            parent_local_key: featureKey,
           });
         }
       }

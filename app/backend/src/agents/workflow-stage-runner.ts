@@ -197,7 +197,7 @@ export async function runAutonomousStage(
 
   // ── Epic QA Stage ─────────────────────────────────────────────────────────────
   // Runs once after backlog_merge. Vera synthesises a single unified test suite from the
-  // full merged backlog; TC-E-NNN IDs cover all features with cross-feature integration.
+  // full merged backlog; TC-UI-NNN IDs cover all features with cross-feature integration.
   if (stage === 'epic_qa') {
     if (priorDraftContent) {
       await runEpicQaRevision(sessionId, workflowId, itemId, priorDraftContent, brief);

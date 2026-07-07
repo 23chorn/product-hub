@@ -645,7 +645,7 @@ Focus areas for the technical layer (in priority order):
   },
   "test_cases": [
     {
-      "id": "TC-E-001",
+      "id": "TC-UI-001",
       "title": "<what is being verified>",
       "description": "<why this scenario matters>",
       "type": "happy_path | negative | edge | boundary | security | performance",
@@ -696,7 +696,7 @@ Requirements:
   - Every feature with user-facing stories must have at least one @smoke happy-path case.
   - At least 25% of user-facing cases must be negative or edge type.
   - Cross-feature integration scenarios should be called out with two or more entries in the \`features\` array.
-- **ID format:** TC-E-NNN for user-facing cases (three-digit counter, E = Epic)${apiSpecContent ? '; TC-API-NNN for technical cases (three-digit counter, API = technical/contract layer).' : '.'}
+- **ID format:** TC-UI-NNN for user-facing cases (three-digit counter, UI = user-facing/UI layer)${apiSpecContent ? '; TC-API-NNN for technical cases (three-digit counter, API = technical/contract layer).' : '.'}
 - **story_ref:** a real story_id from the merged backlog (e.g. "F1.S3"). When a scenario legitimately spans multiple stories (an end-to-end flow, the iOS+Android combined case above), \`story_ref\` MUST be a JSON array of the individual story_ids (e.g. \`["F1.S3", "F1.S4", "F1.S5"]\`) — never concatenate multiple story_ids into one string (e.g. \`"F1.S3F1.S4F1.S5"\` is WRONG). Never invent a placeholder.
 - **features:** list the feature keys this test exercises (["F1"], ["F2", "F3"], etc.).
 - **prd_ref:** list the FR IDs from the referenced story's prd_ref.
@@ -821,7 +821,7 @@ export async function runEpicQaRevision(
   const directive =
     'You are performing a SURGICAL EDIT of the Epic QA test suite above. Apply ONLY the targeted changes described in the revision brief at the top of this conversation.\n\n' +
     'Rules — apply strictly:\n' +
-    '- Modify ONLY the test cases (TC-E-* or TC-API-*) explicitly mentioned in the feedback.\n' +
+    '- Modify ONLY the test cases (TC-UI-* or TC-API-*) explicitly mentioned in the feedback.\n' +
     '- Copy all other test cases EXACTLY as-is.\n' +
     '- Do NOT add new test cases unless the feedback explicitly requests it.\n' +
     '- Do NOT restructure, reorder, or rewrite any field not mentioned in the feedback.\n' +

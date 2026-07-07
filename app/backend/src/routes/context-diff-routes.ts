@@ -6,6 +6,13 @@ import db from '../data/database';
 import { invalidateContextCache } from '../agents/specialist-agent';
 import Logger from '../utils/logger';
 import { findRepoRoot } from '../utils/find-repo-root';
+import {
+  FEATURES_DIR,
+  applyBehaviourDiff,
+  recordBehaviourFileVersion,
+  regenerateFeatureMap,
+  type BehaviourDiffSpec,
+} from '../agents/behaviour-files';
 
 const logger = new Logger('CONTEXT-DIFF-ROUTES');
 export const contextDiffRouter = Router();
@@ -69,12 +76,44 @@ contextDiffRouter.post('/:id/approve', (req: Request, res: Response) => {
       return res.status(400).json({ error: `Diff ${id} is not pending (current: ${diff.status})` });
     }
 
+    const isBehaviourDoc = diff.file_name.startsWith('behaviour/');
+
     // Parse diff spec
-    let spec: DiffSpec;
+    let spec: DiffSpec | BehaviourDiffSpec;
     try {
       spec = JSON.parse(diff.diff_content) as DiffSpec;
     } catch {
       return res.status(422).json({ error: 'diff_content is not valid JSON' });
+    }
+
+    if (isBehaviourDoc) {
+      // Approving a behaviour-doc diff is the "confirm this feature is live" action —
+      // nothing here happens until a human explicitly does this, so it's the point where
+      // the drafted scenario actually joins the corpus loadRelevantBehaviourDocs() treats
+      // as current production behavior.
+      const strippedName = diff.file_name.slice('behaviour/'.length);
+      const filePath = path.join(FEATURES_DIR, strippedName);
+
+      let fileContent: string | null = null;
+      try {
+        fileContent = fs.readFileSync(filePath, 'utf-8');
+      } catch {
+        // New file — will be created
+      }
+
+      const updated = applyBehaviourDiff(fileContent, spec as BehaviourDiffSpec);
+
+      const tmpPath = path.join(os.tmpdir(), `pap-bhv-${id}-${Date.now()}.feature`);
+      fs.writeFileSync(tmpPath, updated, 'utf-8');
+      fs.mkdirSync(FEATURES_DIR, { recursive: true });
+      fs.renameSync(tmpPath, filePath);
+
+      recordBehaviourFileVersion(strippedName, updated);
+      regenerateFeatureMap();
+
+      logger.info(`Confirmed live: behaviour diff ${id} (${spec.action}) on ${strippedName}`);
+      stmts.updateStatus.run('approved', approvedBy, id);
+      return res.json({ ok: true, fileName: diff.file_name, content: updated });
     }
 
     const filePath = path.join(CONTEXT_ROOT, diff.file_name);
@@ -87,7 +126,7 @@ contextDiffRouter.post('/:id/approve', (req: Request, res: Response) => {
       // New file — will be created
     }
 
-    const updated = applyDiff(fileContent, spec);
+    const updated = applyDiff(fileContent, spec as DiffSpec);
 
     // ── Atomic write: temp file → rename ────────────────────────────────────
     const tmpPath = path.join(os.tmpdir(), `pap-ctx-${id}-${Date.now()}.md`);

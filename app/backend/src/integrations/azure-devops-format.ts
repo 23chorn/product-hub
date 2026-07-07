@@ -202,6 +202,18 @@ export function deriveTeamTags(notes: { ios?: string | null; android?: string | 
   return tags.length ? tags.join('; ') : undefined;
 }
 
+/**
+ * Derive the ado_work_item_map local_key for a phase's Epic work item from its phase label.
+ * MVP (or an unset/blank phase) is always the main 'epic'; every later phase (e.g. "Phase 2")
+ * gets its own slugged key so createBacklog/updateBacklog and pushTestPlanToAdo all agree on
+ * which Epic — and therefore which Test Plan — a phase's features/test cases belong to.
+ */
+export function deriveEpicLocalKey(phase: string | null | undefined): string {
+  const normalized = (phase ?? '').trim().toLowerCase();
+  if (!normalized || normalized === 'mvp') return 'epic';
+  return `epic-${normalized.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}`;
+}
+
 /** Canonical display labels for the single-platform `platform` field on story-decomposition stories. */
 const PLATFORM_STREAM_LABELS: Record<string, string> = { backend: 'Backend', web: 'Web', ios: 'iOS', android: 'Android' };
 
@@ -262,6 +274,55 @@ export interface TestCaseInput {
 export function parseStoryRefs(storyRef: string | string[]): string[] {
   const refs = Array.isArray(storyRef) ? storyRef : [storyRef];
   return refs.flatMap(ref => ref.match(/F\d+\.S\d+/g) ?? [ref.trim()]);
+}
+
+/**
+ * Resolve which Epic (phase) Test Plan a single test case belongs to, via its story_ref's
+ * owning feature. Falls back to the main epic ('epic') when story_ref is missing/unresolvable,
+ * or when the referenced stories span more than one epic (rare — phases are a broader grouping
+ * than features) — the first resolved epic wins in that case. Either fallback returns a
+ * `warning` string the caller should surface, so a coverage gap or a cross-phase case is never
+ * silently dropped.
+ */
+export function resolveEpicLocalKeyForTestCase(
+  tc: { id?: string; story_ref?: string | string[] | null; linkedStory?: string | string[] | null },
+  featureKeyToEpicLocalKey: Map<string, string>,
+): { epicLocalKey: string; warning?: string } {
+  const ref = tc.story_ref ?? tc.linkedStory;
+  const label = tc.id ?? '(no id)';
+  if (!ref) {
+    return { epicLocalKey: 'epic', warning: `test case ${label} has no story_ref — defaulting to the main epic's Test Plan` };
+  }
+
+  const storyKeys = parseStoryRefs(ref);
+  const epicLocalKeys = [...new Set(
+    storyKeys.map(key => featureKeyToEpicLocalKey.get(key.split('.')[0])).filter((k): k is string => !!k)
+  )];
+
+  if (epicLocalKeys.length === 0) {
+    return { epicLocalKey: 'epic', warning: `test case ${label} references unresolvable stor(y/ies) "${storyKeys.join(', ')}" — defaulting to the main epic's Test Plan` };
+  }
+  if (epicLocalKeys.length > 1) {
+    return { epicLocalKey: epicLocalKeys[0], warning: `test case ${label} spans multiple epics (${epicLocalKeys.join(', ')}) — assigned to ${epicLocalKeys[0]}` };
+  }
+  return { epicLocalKey: epicLocalKeys[0] };
+}
+
+/** Group test cases by resolved epicLocalKey (see resolveEpicLocalKeyForTestCase), collecting
+ *  every warning raised along the way so the caller can log them without re-deriving them. */
+export function groupTestCasesByEpic<T extends { id?: string; story_ref?: string | string[] | null; linkedStory?: string | string[] | null }>(
+  testCases: T[],
+  featureKeyToEpicLocalKey: Map<string, string>,
+): { groups: Map<string, T[]>; warnings: string[] } {
+  const groups = new Map<string, T[]>();
+  const warnings: string[] = [];
+  for (const tc of testCases) {
+    const { epicLocalKey, warning } = resolveEpicLocalKeyForTestCase(tc, featureKeyToEpicLocalKey);
+    if (warning) warnings.push(warning);
+    if (!groups.has(epicLocalKey)) groups.set(epicLocalKey, []);
+    groups.get(epicLocalKey)!.push(tc);
+  }
+  return { groups, warnings };
 }
 
 /**
@@ -335,17 +396,17 @@ export function buildTestStepsXml(tc: TestCaseInput): string {
     const then = tc.scenario.then ?? [];
     for (const s of given) stepItems.push({ type: 'ActionStep', action: s, expected: '' });
     for (const s of when)  stepItems.push({ type: 'ActionStep', action: s, expected: '' });
-    for (let i = 0; i < then.length; i++) {
-      stepItems.push({
-        type: 'ValidateStep',
-        action: then[i],
-        expected: i === then.length - 1 ? then[i] : '',
-      });
-    }
+    // Every Then is itself an expected outcome, not just the last one — put each in
+    // both columns so the Expected Result column is populated for every assertion.
+    for (const s of then) stepItems.push({ type: 'ValidateStep', action: s, expected: s });
   } else if (tc.steps && tc.steps.length > 0) {
-    for (const s of tc.steps) stepItems.push({ type: 'ActionStep', action: s, expected: '' });
+    // Attach the overall expected result to the last real step rather than appending
+    // a synthetic extra step whose Action column would just repeat the Expected Result text.
     const expected = tc.expectedResult ?? 'Verify expected behaviour';
-    stepItems.push({ type: 'ValidateStep', action: expected, expected });
+    tc.steps.forEach((s, i) => {
+      const isLast = i === tc.steps!.length - 1;
+      stepItems.push(isLast ? { type: 'ValidateStep', action: s, expected } : { type: 'ActionStep', action: s, expected: '' });
+    });
   } else {
     const expected = tc.expectedResult ?? 'Verify expected behaviour';
     // `action` is escaped by the step renderer below — don't pre-escape here or the title double-escapes.

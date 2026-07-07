@@ -17,6 +17,9 @@ import {
   TC_PRIORITY_MAP,
   getStateBucketMap,
   bucketWorkItemState,
+  deriveEpicLocalKey,
+  resolveEpicLocalKeyForTestCase,
+  groupTestCasesByEpic,
 } from '../../app/backend/src/integrations/azure-devops-format';
 
 describe('adoErrorMessage', () => {
@@ -238,10 +241,16 @@ describe('buildTestStepsXml', () => {
     // exactly 3 steps
     expect((xml.match(/<step /g) || []).length).toBe(3);
   });
-  it('maps procedural steps + a trailing validate step', () => {
+  it('attaches the expected result to the last procedural step rather than adding a synthetic one', () => {
     const xml = buildTestStepsXml({ title: 'x', steps: ['a', 'b'], expectedResult: 'done' });
-    expect((xml.match(/<step /g) || []).length).toBe(3);
-    expect(xml).toContain('<steps id="0" last="3">');
+    expect((xml.match(/<step /g) || []).length).toBe(2);
+    expect(xml).toContain('<steps id="0" last="2">');
+    expect(xml).toContain('type="ValidateStep"');
+    // The last step's action is still "b", and "done" appears as its expected result — not duplicated as an action.
+    const lastStep = xml.match(/<step id="2"[^>]*>.*?<\/step>/)![0];
+    expect(lastStep).toContain('type="ValidateStep"');
+    expect(lastStep).toContain('<parameterizedString isformatted="true">b</parameterizedString>');
+    expect(lastStep).toContain('<parameterizedString isformatted="true">done</parameterizedString>');
   });
   it('synthesises steps when neither scenario nor steps provided', () => {
     const xml = buildTestStepsXml({ title: 'Run <it>' });
@@ -279,5 +288,70 @@ describe('getStateBucketMap / bucketWorkItemState', () => {
     expect(bucketWorkItemState('New')).toBe('not_started');
     expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();
+  });
+});
+
+describe('deriveEpicLocalKey', () => {
+  it('maps MVP, and unset/blank phase, to the main epic', () => {
+    expect(deriveEpicLocalKey('MVP')).toBe('epic');
+    expect(deriveEpicLocalKey('mvp')).toBe('epic');
+    expect(deriveEpicLocalKey(undefined)).toBe('epic');
+    expect(deriveEpicLocalKey(null)).toBe('epic');
+    expect(deriveEpicLocalKey('  ')).toBe('epic');
+  });
+
+  it('slugs later phases into a distinct, stable key', () => {
+    expect(deriveEpicLocalKey('Phase 2')).toBe('epic-phase-2');
+    expect(deriveEpicLocalKey('Phase 3')).toBe('epic-phase-3');
+  });
+});
+
+describe('resolveEpicLocalKeyForTestCase / groupTestCasesByEpic', () => {
+  const featureKeyToEpicLocalKey = new Map([
+    ['F1', 'epic'],
+    ['F2', 'epic'],
+    ['F3', 'epic-phase-2'],
+  ]);
+
+  it('resolves a single-story test case to its feature\'s epic', () => {
+    expect(resolveEpicLocalKeyForTestCase({ id: 'TC-UI-001', story_ref: 'F3.S1' }, featureKeyToEpicLocalKey))
+      .toEqual({ epicLocalKey: 'epic-phase-2' });
+  });
+
+  it('resolves a multi-story test case within one epic without a warning', () => {
+    expect(resolveEpicLocalKeyForTestCase({ id: 'TC-UI-002', story_ref: ['F1.S1', 'F2.S1'] }, featureKeyToEpicLocalKey))
+      .toEqual({ epicLocalKey: 'epic' });
+  });
+
+  it('falls back to the main epic with a warning when story_ref is missing', () => {
+    const result = resolveEpicLocalKeyForTestCase({ id: 'TC-API-001' }, featureKeyToEpicLocalKey);
+    expect(result.epicLocalKey).toBe('epic');
+    expect(result.warning).toMatch(/no story_ref/);
+  });
+
+  it('falls back to the main epic with a warning when the story is unresolvable', () => {
+    const result = resolveEpicLocalKeyForTestCase({ id: 'TC-UI-003', story_ref: 'F9.S1' }, featureKeyToEpicLocalKey);
+    expect(result.epicLocalKey).toBe('epic');
+    expect(result.warning).toMatch(/unresolvable/);
+  });
+
+  it('assigns the first resolved epic with a warning when a case spans multiple epics', () => {
+    const result = resolveEpicLocalKeyForTestCase({ id: 'TC-UI-004', story_ref: ['F1.S1', 'F3.S1'] }, featureKeyToEpicLocalKey);
+    expect(result.epicLocalKey).toBe('epic');
+    expect(result.warning).toMatch(/spans multiple epics/);
+  });
+
+  it('groups test cases by resolved epic and collects every warning', () => {
+    const { groups, warnings } = groupTestCasesByEpic([
+      { id: 'TC-UI-001', story_ref: 'F1.S1' },
+      { id: 'TC-UI-002', story_ref: 'F3.S1' },
+      { id: 'TC-API-001' },
+    ], featureKeyToEpicLocalKey);
+
+    expect([...groups.keys()].sort()).toEqual(['epic', 'epic-phase-2']);
+    expect(groups.get('epic')!.map(tc => tc.id)).toEqual(['TC-UI-001', 'TC-API-001']);
+    expect(groups.get('epic-phase-2')!.map(tc => tc.id)).toEqual(['TC-UI-002']);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/no story_ref/);
   });
 });

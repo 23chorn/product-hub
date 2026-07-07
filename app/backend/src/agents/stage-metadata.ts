@@ -24,7 +24,7 @@ export const STAGE_MAX_OUTPUT_TOKENS: Record<string, number> = {
   solution_architect:   20_000,  // data model, API surface, infra, repo impact, new dependencies, open questions
   story_decomposition:  24_000,  // single feature backlog — up to the validator's 12-story limit with full prd_ref/technical detail; 16k was observed hitting the ceiling on a dense feature
   qa_engineer:          14_000,  // 10-15 test cases per feature with full test detail
-  epic_qa:              28_000,  // cross-epic suite: all features × TC-E-NNN cases; more context than per-feature
+  epic_qa:              28_000,  // cross-epic suite: all features × TC-UI-NNN cases; more context than per-feature
   prototype:            64_000,
   figma_design:         16_000,
   api_spec:             12_000,  // 10-20 endpoints with schemas; full OpenAPI 3.0 JSON

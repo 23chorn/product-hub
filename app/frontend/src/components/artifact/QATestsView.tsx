@@ -52,11 +52,21 @@ function priorityMeta(priority: string): { label: string; color: string; dot: st
   };
 }
 
+/** Display metadata for a phase label — phases have no fixed palette (unlike type/priority),
+ *  so every phase renders with the same neutral style; only the label varies. */
+function phaseMeta(phase: string): { label: string; color: string; dot: string } {
+  return {
+    label: phase,
+    color: 'bg-surface-100 dark:bg-surface-800 text-surface-600 dark:text-surface-400',
+    dot: 'bg-surface-400',
+  };
+}
+
 /** Extract [feature number, test case number] from a test case for sort ordering.
  *  Feature number comes from story_ref (e.g. "F1.S3" -> 1), since epic-level ids
- *  (TC-E-NNN / TC-API-NNN) don't encode it; falls back to the legacy TC-F<n>-NNN id
+ *  (TC-UI-NNN / TC-API-NNN) don't encode it; falls back to the legacy TC-F<n>-NNN id
  *  format when story_ref is absent or not a plain string. Test case number is the
- *  trailing counter in the id (e.g. TC-E-007 -> 7). Missing pieces sort last. */
+ *  trailing counter in the id (e.g. TC-UI-007 -> 7). Missing pieces sort last. */
 function testCaseSortKey(tc: TestCase): [number, number] {
   const ref = typeof tc.story_ref === 'string' ? tc.story_ref : undefined;
   const featureMatch = ref?.match(/^F(\d+)/) ?? tc.id.match(/^TC-F(\d+)-/);
@@ -71,7 +81,7 @@ function testCaseSortKey(tc: TestCase): [number, number] {
  *  generated before the array-based story_ref prompt guidance, where the model
  *  concatenated multiple refs into one string with no delimiter (e.g. "F1.S3F1.S4F1.S5")
  *  — without this, that string renders as one unreadable badge instead of several. */
-function splitStoryRefs(value: string | string[] | undefined): string[] {
+export function splitStoryRefs(value: string | string[] | undefined): string[] {
   const raw = Array.isArray(value) ? value : value ? [value] : [];
   return raw.flatMap(v => v.match(/F\d+\.S\d+/g) ?? [v]);
 }
@@ -105,13 +115,61 @@ function groupByPriority(testCases: TestCase[]): Array<[string, TestCase[]]> {
   return ordered.map(priority => [priority, sortTestCases(testCases.filter(tc => tc.priority === priority))]);
 }
 
-function TestCaseCard({ tc, frMap, onDelete }: { tc: TestCase; frMap?: Record<string, string>; onDelete?: () => void }) {
+/** Feature key ("F1") a story_ref token ("F1.S3") or bare feature ref belongs to. */
+function featureKeyOf(ref: string): string {
+  return ref.match(/^(F\d+)/)?.[1] ?? ref;
+}
+
+/** Every distinct phase label a test case's story refs touch, via phaseByFeatureKey. Empty
+ *  when none of its referenced features resolve to a known phase. */
+export function phasesForTestCase(tc: TestCase, phaseByFeatureKey: Record<string, string>): string[] {
+  const featureKeys = new Set(splitStoryRefs(tc.story_ref ?? tc.linkedStory).map(featureKeyOf));
+  return [...new Set([...featureKeys].map(fk => phaseByFeatureKey[fk]).filter((p): p is string => !!p))];
+}
+
+/** Group test cases by phase (via phaseByFeatureKey), mirroring groupByType/groupByPriority.
+ *  A case whose story refs span more than one phase appears under every phase it touches —
+ *  intentionally not deduped — so a reviewer scanning one phase's coverage still sees it, and
+ *  the cross-phase badge (see TestCaseCard) makes clear it's a deliberate shared flow rather
+ *  than an accidental duplicate written separately in another phase. */
+export function groupByPhase(testCases: TestCase[], phaseByFeatureKey: Record<string, string>, phaseOrder: string[]): Array<[string, TestCase[]]> {
+  const byPhase = new Map<string, TestCase[]>();
+  for (const tc of testCases) {
+    const phases = phasesForTestCase(tc, phaseByFeatureKey);
+    for (const phase of phases.length > 0 ? phases : ['Unassigned']) {
+      if (!byPhase.has(phase)) byPhase.set(phase, []);
+      byPhase.get(phase)!.push(tc);
+    }
+  }
+  const present = [...byPhase.keys()];
+  const ordered = [...phaseOrder.filter(p => present.includes(p)), ...present.filter(p => !phaseOrder.includes(p))];
+  return ordered.map(phase => [phase, sortTestCases(byPhase.get(phase)!)]);
+}
+
+/** The ADO Test Plan URL for whichever phase a test case's story refs resolve to first. */
+function planUrlForTestCase(tc: TestCase, planUrlByFeatureKey: Record<string, string>): string | undefined {
+  const featureKeys = new Set(splitStoryRefs(tc.story_ref ?? tc.linkedStory).map(featureKeyOf));
+  for (const fk of featureKeys) {
+    if (planUrlByFeatureKey[fk]) return planUrlByFeatureKey[fk];
+  }
+  return undefined;
+}
+
+function TestCaseCard({ tc, frMap, phaseByFeatureKey, planUrlByFeatureKey, onDelete }: {
+  tc: TestCase;
+  frMap?: Record<string, string>;
+  phaseByFeatureKey?: Record<string, string>;
+  planUrlByFeatureKey?: Record<string, string>;
+  onDelete?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const typeConf = typeMeta(tc.type);
   const prioConf = priorityMeta(tc.priority);
 
   const hasScenario = tc.scenario && (tc.scenario.given?.length || tc.scenario.when?.length || tc.scenario.then?.length);
   const hasSteps = tc.steps && tc.steps.length > 0;
+  const isCrossPhase = !!phaseByFeatureKey && phasesForTestCase(tc, phaseByFeatureKey).length > 1;
+  const planUrl = planUrlByFeatureKey ? planUrlForTestCase(tc, planUrlByFeatureKey) : undefined;
 
   return (
     <div className="border border-surface-200 dark:border-surface-700 rounded-lg overflow-hidden">
@@ -149,6 +207,14 @@ function TestCaseCard({ tc, frMap, onDelete }: { tc: TestCase; frMap?: Record<st
                 {ref}
               </span>
             ))}
+            {isCrossPhase && (
+              <span
+                title="This test case's stories span more than one phase — a deliberate shared flow, not a duplicate."
+                className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 font-medium cursor-help"
+              >
+                Cross-phase
+              </span>
+            )}
           </div>
           <p className="text-base text-surface-800 dark:text-surface-200 mt-0.5 leading-snug">{tc.title}</p>
           {tc.endpoint && (
@@ -160,6 +226,20 @@ function TestCaseCard({ tc, frMap, onDelete }: { tc: TestCase; frMap?: Record<st
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
+      {planUrl && (
+        <a
+          href={planUrl}
+          target="_blank"
+          rel="noreferrer"
+          onClick={e => e.stopPropagation()}
+          title="Open this test case's ADO Test Plan"
+          className="flex items-center px-2 text-surface-400 hover:text-brand-600 dark:hover:text-brand-400 transition-colors"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+          </svg>
+        </a>
+      )}
       {onDelete && (
         <div className="flex items-center pr-2">
           <DeleteItemButton onDelete={onDelete} label="Delete test case" />
@@ -257,15 +337,29 @@ function TestCaseCard({ tc, frMap, onDelete }: { tc: TestCase; frMap?: Record<st
   );
 }
 
-export function QATestsView({ data, frMap, onDeleteTestCase }: { data: QATestSuite; frMap?: Record<string, string>; onDeleteTestCase?: (index: number) => void }) {
+export function QATestsView({ data, frMap, phaseByFeatureKey, planUrlByFeatureKey, phaseOrder, onDeleteTestCase }: {
+  data: QATestSuite;
+  frMap?: Record<string, string>;
+  /** Feature key ("F1") -> phase label ("MVP", "Phase 2", ...), enabling the "Phase" grouping
+   *  toggle below. Omit where phase data isn't available (e.g. no epic_feature_planner run). */
+  phaseByFeatureKey?: Record<string, string>;
+  /** Feature key -> that phase's ADO Test Plan URL, shown as a per-test-case link. */
+  planUrlByFeatureKey?: Record<string, string>;
+  /** Canonical phase display order (e.g. epicFeatures.phases labels); falls back to first-seen order. */
+  phaseOrder?: string[];
+  onDeleteTestCase?: (index: number) => void;
+}) {
   // Counts (and the test case groups below) are derived from the test cases themselves rather
   // than the artifact's separate `coverage` field — that field is frequently absent (current
   // multi-agent QA artifacts don't populate it) or stale (a merged/filtered test_cases list
   // doesn't recompute it), so test_cases is the only count that's always correct.
   const totalCount = data.test_cases.length;
-  const [groupMode, setGroupMode] = useState<'type' | 'priority'>('type');
-  const groupedCases = groupMode === 'type' ? groupByType(data.test_cases) : groupByPriority(data.test_cases);
-  const groupMeta = groupMode === 'type' ? typeMeta : priorityMeta;
+  const [groupMode, setGroupMode] = useState<'type' | 'priority' | 'phase'>('type');
+  const effectiveGroupMode = groupMode === 'phase' && !phaseByFeatureKey ? 'type' : groupMode;
+  const groupedCases = effectiveGroupMode === 'type' ? groupByType(data.test_cases)
+    : effectiveGroupMode === 'priority' ? groupByPriority(data.test_cases)
+    : groupByPhase(data.test_cases, phaseByFeatureKey!, phaseOrder ?? []);
+  const groupMeta = effectiveGroupMode === 'type' ? typeMeta : effectiveGroupMode === 'priority' ? priorityMeta : phaseMeta;
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const toggleGroup = (key: string) => {
     setExpandedGroups(prev => {
@@ -304,25 +398,25 @@ export function QATestsView({ data, frMap, onDeleteTestCase }: { data: QATestSui
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500">
-                By {groupMode === 'type' ? 'Type' : 'Priority'}
+                By {effectiveGroupMode === 'type' ? 'Type' : effectiveGroupMode === 'priority' ? 'Priority' : 'Phase'}
               </p>
               <div className="inline-flex rounded-md border border-surface-200 dark:border-surface-700 overflow-hidden">
-                {(['type', 'priority'] as const).map(mode => (
+                {(phaseByFeatureKey ? (['type', 'priority', 'phase'] as const) : (['type', 'priority'] as const)).map((mode, i) => (
                   <button
                     key={mode}
                     onClick={() => setGroupMode(mode)}
                     className={`px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide transition-colors ${
-                      groupMode === mode
+                      effectiveGroupMode === mode
                         ? 'bg-brand-600 text-white'
                         : 'bg-surface-50 dark:bg-surface-800 text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700'
-                    } ${mode === 'priority' ? 'border-l border-surface-200 dark:border-surface-700' : ''}`}
+                    } ${i > 0 ? 'border-l border-surface-200 dark:border-surface-700' : ''}`}
                   >
                     {mode}
                   </button>
                 ))}
               </div>
             </div>
-            <div className={`grid gap-1.5 ${groupMode === 'type' ? 'grid-cols-3 sm:grid-cols-6' : 'grid-cols-2 sm:grid-cols-4'}`}>
+            <div className={`grid gap-1.5 ${effectiveGroupMode === 'type' ? 'grid-cols-3 sm:grid-cols-6' : 'grid-cols-2 sm:grid-cols-4'}`}>
               {groupedCases.map(([key, cases]) => {
                 const meta = groupMeta(key);
                 return (
@@ -361,6 +455,8 @@ export function QATestsView({ data, frMap, onDeleteTestCase }: { data: QATestSui
                     key={tc.id}
                     tc={tc}
                     frMap={frMap}
+                    phaseByFeatureKey={phaseByFeatureKey}
+                    planUrlByFeatureKey={planUrlByFeatureKey}
                     onDelete={onDeleteTestCase ? () => onDeleteTestCase(data.test_cases.indexOf(tc)) : undefined}
                   />
                 ))}

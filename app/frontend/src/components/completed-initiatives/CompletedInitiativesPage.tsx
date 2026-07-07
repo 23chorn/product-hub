@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { CompletedInitiativeSummary } from '@pap/shared';
 import { api } from '../../services/api';
-import { useAuthStore } from '../../stores/authStore';
 import { relativeTime } from '../../utils/relative-time';
 import { WORK_ITEM_STATE_BUCKETS, WORK_ITEM_STATE_BUCKET_LABELS, WORK_ITEM_STATE_BUCKET_COLORS } from '../../utils/work-item-state-bucket';
 import { CompletedInitiativeDetail } from './CompletedInitiativeDetail';
 import { PageHeaderTitle } from '../common/PageHeaderTitle';
-import { formatAssignedLabel } from '../../utils/assigned-users';
 
 type View = 'active' | 'archived';
 
@@ -24,14 +22,12 @@ interface Props {
  * Opening an initiative replaces this grid in place with CompletedInitiativeDetail — a full
  * page, not a side-panel previewer — and "Back" returns here.
  *
- * Admins additionally get an "Archived" toggle to review and unarchive initiatives that
- * were manually archived off the default ("active") list below.
+ * Always shows the active list — viewing/unarchiving archived initiatives happens from the
+ * Initiatives view's own "Archived" filter, not a separate toggle here. A shared link
+ * (initialSelection.archived) can still open one specific archived initiative directly.
  */
 export function CompletedInitiativesPage({ initialSelection, onInitialSelectionConsumed }: Props) {
-  const { user, noAuth } = useAuthStore();
-  const isAdmin = noAuth || !!user?.is_admin;
-
-  const [view, setView] = useState<View>(initialSelection?.archived ? 'archived' : 'active');
+  const view: View = initialSelection?.archived ? 'archived' : 'active';
   const [items, setItems] = useState<CompletedInitiativeSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(initialSelection?.itemId ?? null);
@@ -67,23 +63,6 @@ export function CompletedInitiativesPage({ initialSelection, onInitialSelectionC
         <p className="text-xs text-surface-500 dark:text-surface-400 truncate">Track ADO progress across completed initiatives</p>
       </PageHeaderTitle>
       <div className="flex-1 overflow-y-auto px-6 py-4">
-        {isAdmin && (
-          <div className="flex items-center gap-1 mb-4">
-            {(['active', 'archived'] as View[]).map(v => (
-              <button
-                key={v}
-                onClick={() => setView(v)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors capitalize ${
-                  view === v
-                    ? 'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300'
-                    : 'text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700'
-                }`}
-              >
-                {v === 'archived' ? 'Archived Initiatives' : 'Active'}
-              </button>
-            ))}
-          </div>
-        )}
         {loading ? (
           <p className="text-sm text-surface-400 animate-pulse">Loading...</p>
         ) : items.length === 0 ? (
@@ -113,14 +92,6 @@ export function CompletedInitiativesPage({ initialSelection, onInitialSelectionC
                 </div>
 
                 <div className="flex gap-1.5 flex-wrap mt-2">
-                  {item.assignedUsers.length > 0 && (
-                    <span
-                      className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 font-medium"
-                      title={item.assignedUsers.map(u => u.name).join(', ')}
-                    >
-                      {formatAssignedLabel(item.assignedUsers, user?.id)}
-                    </span>
-                  )}
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-400">
                     {item.featureCount} feature{item.featureCount !== 1 ? 's' : ''}
                   </span>

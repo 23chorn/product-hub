@@ -14,6 +14,8 @@ import { streamAI, resolveModelId, type TokenUsage } from '../utils/ai-provider'
 import db from '../data/database';
 import Logger from '../utils/logger';
 import { findRepoRoot } from '../utils/find-repo-root';
+import { loadRelevantBehaviourDocs } from './behaviour-context';
+import { SAFE_FEATURE_FILENAME } from './behaviour-files';
 
 const logger = new Logger('CURATOR');
 
@@ -123,6 +125,9 @@ export class ContextCuratorAgent {
       ? contextSections.join('\n\n---\n\n')
       : '(no context files exist yet — do not propose any changes)';
 
+    // ── Read relevant existing behaviour docs (for the Behaviour Doc Proposals section) ──
+    const behaviourBlock = await loadRelevantBehaviourDocs(workflow.goal);
+
     // ── Build prompt ────────────────────────────────────────────────────────
     // Plain string — curator runs once per workflow so there's no subsequent cache
     // read to recoup the cache_write surcharge. Split prompt not beneficial here.
@@ -134,9 +139,10 @@ export class ContextCuratorAgent {
       `**Available context files:** ${contextFileNames.length > 0 ? contextFileNames.join(', ') : '(none)'}\n\n` +
       `## Current Context Files\n\n${contextBlock}\n\n` +
       `---\n\n` +
+      (behaviourBlock ? `${behaviourBlock}\n\n---\n\n` : '') +
       `## Workflow Artifacts\n\n${artifactSections.join('\n\n---\n\n')}\n\n` +
       `---\n\n` +
-      `Review the artifacts above. Identify any facts that should update the context files.\n\n` +
+      `Review the artifacts above. Identify any facts that should update the context files, and any user-facing scenario/flow changes that should update the behaviour docs (see "Behaviour Doc Proposals" in your instructions).\n\n` +
       `Respond in two clearly separated sections:\n\n` +
       `**Section 1 — REASONING** (between <reasoning> tags):\n` +
       `Walk through your thought process. For each context file, note what you checked, what questions you considered, and why you decided to propose (or skip) changes. Be specific about what evidence from the artifacts supports each decision.\n\n` +
@@ -188,7 +194,9 @@ export class ContextCuratorAgent {
         logger.warn(`Curator: skipping malformed diff: ${JSON.stringify(diff).slice(0, 80)}`);
         continue;
       }
-      if (contextFileNames.length > 0 && !validFileNames.has(diff.fileName)) {
+      const isNewBehaviourFile = diff.fileName.startsWith('behaviour/')
+        && SAFE_FEATURE_FILENAME.test(diff.fileName.slice('behaviour/'.length));
+      if (contextFileNames.length > 0 && !validFileNames.has(diff.fileName) && !isNewBehaviourFile) {
         logger.warn(`Curator: skipping diff for unknown file "${diff.fileName}"`);
         continue;
       }

@@ -246,7 +246,7 @@ async function buildDetail(item: CandidateRow): Promise<CompletedInitiativeDetai
   return {
     ...summary,
     workItems: workItemRows.map(toWorkItemRow),
-    testPlans: testPlanRows.map(r => ({ planId: r.plan_id, planUrl: r.plan_url, testCaseCount: r.test_case_count, artifactId: r.artifact_id })),
+    testPlans: testPlanRows.map(r => ({ planId: r.plan_id, planUrl: r.plan_url, testCaseCount: r.test_case_count, artifactId: r.artifact_id, epicLocalKey: r.epic_local_key })),
     ...getDocumentArtifactIds(item.id),
   };
 }

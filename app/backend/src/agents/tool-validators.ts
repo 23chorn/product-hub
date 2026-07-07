@@ -663,9 +663,10 @@ export function validateEpicFeaturesJson(input: Record<string, unknown>): string
 
 // ── validate_qa_tests_json ────────────────────────────────────────────────────
 
-// TC-E-NNN (epic-level user-facing), TC-API-NNN (epic-level technical/endpoint), or the
-// legacy per-feature TC-F<n>-NNN format from the retired qa_engineer_F* stage.
-const TC_ID_RE = /^TC-(E|API|F\d+)-\d{3}$/;
+// TC-UI-NNN (epic-level user-facing), TC-API-NNN (epic-level technical/endpoint), or the
+// legacy per-feature TC-F<n>-NNN format from the retired qa_engineer_F* stage. TC-E is
+// accepted too — the old prefix for TC-UI, kept so already-saved artifacts still validate.
+const TC_ID_RE = /^TC-(UI|E|API|F\d+)-\d{3}$/;
 const VALID_TEST_TYPES = new Set(['happy_path', 'negative', 'edge', 'boundary', 'security', 'performance']);
 const VALID_PRIORITIES = new Set(['critical', 'high', 'medium', 'low']);
 const VALID_LAYERS = new Set(['technical', 'user_facing']);
