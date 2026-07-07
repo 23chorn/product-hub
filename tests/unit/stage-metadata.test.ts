@@ -9,6 +9,7 @@ import {
   progressHeartbeatLine,
   airtableStatusForStage,
   stageNotDecide,
+  resolveMaxOutputTokens,
 } from '../../app/backend/src/agents/stage-metadata';
 
 const GOAL = 'Build price alerts';
@@ -23,6 +24,15 @@ describe('stageGoal', () => {
     const g = stageGoal('mystery_stage', GOAL);
     expect(g).toContain(GOAL);
     expect(g).toContain('mystery_stage');
+  });
+});
+
+describe('resolveMaxOutputTokens', () => {
+  it('returns the base ceiling unchanged for a fresh generation', () => {
+    expect(resolveMaxOutputTokens(12_000, false)).toBe(12_000);
+  });
+  it('boosts the ceiling for a revision call, since it must reproduce the full prior draft plus the edit', () => {
+    expect(resolveMaxOutputTokens(12_000, true)).toBe(18_000);
   });
 });
 

@@ -18,7 +18,7 @@ import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { useCheckpointActions } from '../../hooks/useCheckpointActions';
 import { renderStructuredArtifact } from './ArtifactContentView';
 import { FigmaDesignActions, FigmaScreenPreviewer } from './FigmaDesignActions';
-import { parseFigmaDesignContent } from '../../utils/figma-design';
+import { parseFigmaDesignContent, removeFigmaScreen } from '../../utils/figma-design';
 import { copyToClipboard, printArtifact } from '../../utils/markdown';
 import { buildPrdMaps } from '../../utils/artifact-to-markdown';
 
@@ -179,6 +179,10 @@ export function ArtifactViewer() {
   const requestDelete = useCallback((itemLabel: string, computeNewContent: () => string) => {
     setPendingDelete({ itemLabel, run: computeNewContent });
   }, []);
+
+  // Delete buttons only render while actively reviewing a pending checkpoint with approve
+  // permission — undefined here hides them for read-only/historical/no-permission views.
+  const requestDeleteIfAllowed = (pendingCheckpoint && hasApprovePermission) ? requestDelete : undefined;
 
   const handleConfirmDelete = useCallback(async () => {
     if (!pendingDelete || !viewingArtifactId) return;
@@ -537,6 +541,11 @@ export function ArtifactViewer() {
                         links={figmaLinks}
                         onLinkChange={setFigmaLink}
                         readonly={pendingCheckpoint?.stage !== 'figma_design'}
+                        onDeleteScreen={requestDeleteIfAllowed ? (screenIndex) => {
+                          const screen = figmaDesign.screens[screenIndex];
+                          if (!screen) return;
+                          requestDeleteIfAllowed(`screen "${screen.name}"`, () => removeFigmaScreen(content, screenIndex));
+                        } : undefined}
                       />
                     ) : content ? <div ref={printRef}>{renderStructuredArtifact(content, {
                       artifactType,
@@ -549,7 +558,7 @@ export function ArtifactViewer() {
                       nfrMap,
                       rerunStage,
                       onClose: () => setViewingArtifactId(null),
-                      requestDelete: (pendingCheckpoint && hasApprovePermission) ? requestDelete : undefined,
+                      requestDelete: requestDeleteIfAllowed,
                     })}</div> : error ? (
                       <p className="text-sm text-red-500">{error}</p>
                     ) : pendingCheckpoint ? (

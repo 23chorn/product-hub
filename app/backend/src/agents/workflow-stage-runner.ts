@@ -16,8 +16,8 @@ import { resolveAgentModel, getActiveProvider, type TokenUsage } from '../utils/
 import { computeRevisionDiff } from '../utils/revision-diff';
 import { summarizeRevisionDiff } from './revision-diff-summary';
 import {
-  STAGE_SESSION_MAP, STAGE_MAX_OUTPUT_TOKENS, STAGE_ARTIFACT_TYPE,
-  STAGE_ARTIFACT_LABEL, STAGE_TOOL_DEFINITIONS, stageProgressHeartbeat, stageProgressReview, stageProgressReviewComplete, stageProgressRevision, stageProgressSection, stageProgressWorking,
+  STAGE_SESSION_MAP, STAGE_MAX_OUTPUT_TOKENS, resolveMaxOutputTokens, STAGE_ARTIFACT_TYPE,
+  STAGE_ARTIFACT_LABEL, STAGE_TOOL_DEFINITIONS, STAGE_REVISION_DELETABLE_ARRAY, stageProgressHeartbeat, stageProgressReview, stageProgressReviewComplete, stageProgressRevision, stageProgressSection, stageProgressWorking,
 } from './stage-metadata';
 import {
   saveCriticArtifact, saveDiffArtifact, saveLocalArtifact, loadLatestArtifactContent, syncArtifactToWiki,
@@ -364,13 +364,16 @@ export async function runAutonomousStage(
           const issueLines = priorCriticIssues && priorCriticIssues.length > 0
             ? `\n\nThe specific issues to address:\n${priorCriticIssues.map((issue, i) => `${i + 1}. ${issue}`).join('\n')}`
             : '';
+          const deletableArray = STAGE_REVISION_DELETABLE_ARRAY[stage];
           const revisionDirective =
             `You are performing a SURGICAL EDIT of the ${artifactLabel} above.${issueLines}\n\n` +
             `Rules — apply strictly:\n` +
             `- Identify the exact field, sentence, or JSON value that each issue refers to.\n` +
             `- Fix ONLY that specific location — leave everything else byte-for-byte identical to your prior draft.\n` +
             `- Do NOT rewrite, reorganise, or "improve" any section adjacent to the problem.\n` +
-            `- Do NOT add new sections, remove existing sections, or change headings.\n` +
+            (deletableArray
+              ? `- Do NOT add new sections or change headings. Removing ${deletableArray} IS allowed when an issue explicitly asks for it to be removed — delete that array entry outright rather than editing it in place or leaving a placeholder.\n`
+              : `- Do NOT add new sections, remove existing sections, or change headings.\n`) +
             `- Do NOT reorder array items or object keys that were not mentioned in the issues.\n` +
             `- Return the complete ${artifactLabel} with every section present — only the flagged locations will differ.`;
           // Wrap JSON artifacts in code fences for the assistant turn
@@ -404,7 +407,8 @@ export async function runAutonomousStage(
       let lastReportedSection = '';
       let lastProgressTime = startTime;
 
-      for await (const chunk of agent.streamResponse(systemPrompt, messages, stageModel, specialistTokenCallback, STAGE_MAX_OUTPUT_TOKENS[stage], skillTools, abortController.signal)) {
+      const maxOutputTokens = resolveMaxOutputTokens(STAGE_MAX_OUTPUT_TOKENS[stage], !!priorDraftContent);
+      for await (const chunk of agent.streamResponse(systemPrompt, messages, stageModel, specialistTokenCallback, maxOutputTokens, skillTools, abortController.signal)) {
         fullResponse += chunk;
 
         // Detect progress and emit events

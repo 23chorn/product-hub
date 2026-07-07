@@ -17,6 +17,10 @@ export interface ParsedFigmaDesign {
   notes?: string;
 }
 
+function stripFigmaDesignFence(content: string): string {
+  return content.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+}
+
 /**
  * Parses a figma_design artifact's content (raw JSON, optionally fenced in
  * ```json) into the file-level URL and per-screen frame refs. Shared by every
@@ -26,7 +30,7 @@ export interface ParsedFigmaDesign {
 export function parseFigmaDesignContent(content: string | null | undefined): ParsedFigmaDesign {
   if (!content) return { figmaFileUrl: null, screens: [] };
   try {
-    const cleaned = content.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+    const cleaned = stripFigmaDesignFence(content);
     const parsed = JSON.parse(cleaned);
     const screens: FigmaScreenRef[] = Array.isArray(parsed.screens_created)
       ? parsed.screens_created
@@ -51,4 +55,33 @@ export function parseFigmaDesignContent(content: string | null | undefined): Par
   } catch {
     return { figmaFileUrl: null, screens: [] };
   }
+}
+
+/**
+ * Remove one screen from a figma_design artifact's `screens_created` array by index, and
+ * drop any `interactions` entry on a remaining screen that pointed at the removed screen's
+ * name — mirroring the dangling-reference repair `removeFeaturesAndFixDependencies` does for
+ * feature `dependsOn` in EpicFeaturesView.
+ *
+ * Operates on the raw artifact JSON rather than `ParsedFigmaDesign`: the parsed shape above
+ * drops fields the frontend never renders (figma_write_status, figma_snapshot,
+ * designer_notes, ...), so reserializing from it would silently lose them on save.
+ * Returns the content unchanged if it doesn't parse or the index is out of range.
+ */
+export function removeFigmaScreen(content: string, screenIndex: number): string {
+  let parsed: any;
+  try {
+    parsed = JSON.parse(stripFigmaDesignFence(content));
+  } catch {
+    return content;
+  }
+  const screens: any[] = Array.isArray(parsed.screens_created) ? parsed.screens_created : [];
+  const removed = screens[screenIndex];
+  if (!removed || typeof removed.name !== 'string') return content;
+  parsed.screens_created = screens
+    .filter((_, i) => i !== screenIndex)
+    .map(s => Array.isArray(s.interactions)
+      ? { ...s, interactions: s.interactions.filter((ix: any) => ix?.target_screen !== removed.name) }
+      : s);
+  return JSON.stringify(parsed, null, 2);
 }

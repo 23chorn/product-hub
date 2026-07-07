@@ -17,7 +17,7 @@ import { logger, insertEvent } from './workflow-db';
 import { validateBacklogJson, validateQaTestsJson } from './tool-validators';
 import { isCancelRequested } from './workflow-cancel';
 import { resolveAgentModel } from '../utils/ai-provider';
-import { progressHeartbeatLine, collectStreamWithHeartbeat, STAGE_MAX_OUTPUT_TOKENS } from './stage-metadata';
+import { progressHeartbeatLine, collectStreamWithHeartbeat, STAGE_MAX_OUTPUT_TOKENS, resolveMaxOutputTokens } from './stage-metadata';
 import { stripJsonFence, repairTruncatedJson } from '../utils/json-repair';
 import { computeRevisionDiff } from '../utils/revision-diff';
 import { loadEpicFeatures } from './feature-decomposition';
@@ -350,9 +350,10 @@ async function runFeatureSurgicalRevision(
     { role: 'user', content: spec.buildDirective(featureNum, platformScopeSection) },
   ];
 
-  // Match the initial synthesis ceiling (multi-agent-refinement.ts) so revisions don't
-  // truncate where drafts don't.
-  const maxTokens = STAGE_MAX_OUTPUT_TOKENS[spec.tokenKey] ?? spec.fallbackTokens;
+  // Boosted beyond the initial synthesis ceiling (multi-agent-refinement.ts) — a revision
+  // must reproduce the entire prior draft verbatim plus the edit, so it needs more headroom
+  // than a fresh generation of the same document (see resolveMaxOutputTokens).
+  const maxTokens = resolveMaxOutputTokens(STAGE_MAX_OUTPUT_TOKENS[spec.tokenKey] ?? spec.fallbackTokens, true);
 
   const fullResponse = await collectStreamWithHeartbeat(
     agent.streamResponse(systemPrompt, messages, resolveAgentModel(spec.agentType), undefined, maxTokens),
@@ -583,12 +584,14 @@ async function loadEpicQaInputs(
   return { mergedBacklogContent, prdContent, epicFeaturesContent, apiSpecContent: rawApiSpecContent?.trim() || null };
 }
 
-/** Vera configured for the epic QA stage — her persona is registered under the 'story_decomposition' stage tag. */
-async function buildEpicQaAgent(itemContext?: string) {
+/** Vera configured for the epic QA stage — her persona is registered under the 'story_decomposition' stage tag.
+ *  isRevision boosts the token ceiling (see resolveMaxOutputTokens) since a revision call must
+ *  reproduce the entire prior test suite verbatim plus the edit. */
+async function buildEpicQaAgent(itemContext?: string, isRevision = false) {
   const vera = new SpecialistAgent('qa-engineer');
   const persona = await vera.loadPersona('story_decomposition');
   const systemPrompt = await vera.buildSystemPrompt(persona, undefined, itemContext, true, 'story_decomposition');
-  const maxTokens = STAGE_MAX_OUTPUT_TOKENS['epic_qa'] ?? 28_000;
+  const maxTokens = resolveMaxOutputTokens(STAGE_MAX_OUTPUT_TOKENS['epic_qa'] ?? 28_000, isRevision);
   return { vera, systemPrompt, maxTokens };
 }
 
@@ -835,7 +838,7 @@ export async function runEpicQaRevision(
     { role: 'user', content: directive },
   ];
 
-  const { vera, systemPrompt, maxTokens } = await buildEpicQaAgent(itemContext);
+  const { vera, systemPrompt, maxTokens } = await buildEpicQaAgent(itemContext, true);
 
   const rawOutput = await collectStreamWithHeartbeat(
     vera.streamResponse(systemPrompt, messages, resolveAgentModel('qa-engineer'), undefined, maxTokens),

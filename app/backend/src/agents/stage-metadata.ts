@@ -30,6 +30,19 @@ export const STAGE_MAX_OUTPUT_TOKENS: Record<string, number> = {
   api_spec:             12_000,  // 10-20 endpoints with schemas; full OpenAPI 3.0 JSON
 };
 
+// A revision directive requires the model to reproduce the ENTIRE prior document verbatim
+// (not a diff) plus apply the requested edit — so it needs more headroom than a fresh
+// generation of the same document, not just the same ceiling. Reusing the fresh-generation
+// ceiling for revisions risks the model silently compressing/truncating content to fit,
+// which reads as the document being gutted rather than surgically edited.
+const REVISION_TOKEN_MULTIPLIER = 1.5;
+
+/** Output-token ceiling for a stage call, boosted for revisions (see REVISION_TOKEN_MULTIPLIER
+ *  above) so reproducing the full prior document plus the edit doesn't require compression. */
+export function resolveMaxOutputTokens(baseTokens: number, isRevision: boolean): number {
+  return isRevision ? Math.round(baseTokens * REVISION_TOKEN_MULTIPLIER) : baseTokens;
+}
+
 // Maps stage name to the artifact.type value stored in the DB.
 // Must match what getLatestPrdArtifact / getLatestAnalystArtifact query for.
 export const STAGE_ARTIFACT_TYPE: Record<string, string> = {
@@ -59,6 +72,17 @@ export const STAGE_ARTIFACT_LABEL: Record<string, string> = {
   tech_refinement: 'Tech Refinement',
   critic: 'Critic Review',
   api_spec: 'API Contract',
+};
+
+// Stages whose artifact is a list of independent items (screens, endpoints, ...) where a
+// revision may need to delete one outright, not just edit it in place. The generic surgical-
+// edit directive below ("do not remove existing sections") is written for prose documents and
+// otherwise gives the model no permission to actually drop an item the feedback asks to remove
+// — see runFeatureSurgicalRevision's stage-specific specs for the equivalent problem solved via
+// deterministic postProcess on story_decomposition/epic_qa; figma_design has no such spec, so
+// the carve-out lives in the revision directive text instead.
+export const STAGE_REVISION_DELETABLE_ARRAY: Record<string, string> = {
+  figma_design: 'a screen in `screens_created`',
 };
 
 /**

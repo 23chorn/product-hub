@@ -1,7 +1,24 @@
 import { useState } from 'react';
 import type { FigmaScreenRef, ParsedFigmaDesign } from '../../utils/figma-design';
+import { DeleteItemButton } from '../common/DeleteItemButton';
 
 const FALLBACK_KEY = '__file__';
+
+/** Assigns a stable "J<n>" short id to each unique journey string across all screens in this
+ *  figma_design artifact (first-seen order), so a screen's "Covers journeys" pills can show a
+ *  compact badge with the full sentence on hover — same hover-to-review UX as the "J1"/"J2"
+ *  PRD journey badges in EpicFeaturesView, whose ids the model already provides inline. Here
+ *  there's no id in the source data, so one is assigned locally from the screens actually
+ *  present in this artifact. */
+function buildJourneyIdMap(screens: FigmaScreenRef[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const s of screens) {
+    for (const j of s.prd_journeys ?? []) {
+      if (!map.has(j)) map.set(j, `J${map.size + 1}`);
+    }
+  }
+  return map;
+}
 
 function FigmaLogo({ size }: { size: number }) {
   return (
@@ -25,14 +42,19 @@ export function FigmaScreenPreviewer({
   links,
   onLinkChange,
   readonly = false,
+  onDeleteScreen,
 }: {
   figmaDesign: ParsedFigmaDesign;
   links: Record<string, string>;
   onLinkChange: (key: string, value: string) => void;
   readonly?: boolean;
+  /** Delete a screen directly (no LLM revision) — omitted when the caller doesn't allow it
+   *  (read-only views, or no pending figma_design checkpoint). */
+  onDeleteScreen?: (screenIndex: number) => void;
 }) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const { screens, figmaFileUrl, designGaps, navigationFlow, notes } = figmaDesign;
+  const journeyIdMap = buildJourneyIdMap(screens);
 
   const inputClass = 'w-full text-sm rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 px-3 py-2 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-rose-500';
   const sectionLabel = 'text-[11px] font-medium text-surface-500 dark:text-surface-400 uppercase tracking-wide mb-1';
@@ -181,7 +203,12 @@ export function FigmaScreenPreviewer({
           </>
         ) : screen && (
           <>
-            <h3 className="text-base font-semibold text-surface-900 dark:text-surface-100">{screen.name}</h3>
+            <div className="flex items-start justify-between gap-2">
+              <h3 className="text-base font-semibold text-surface-900 dark:text-surface-100">{screen.name}</h3>
+              {!readonly && onDeleteScreen && (
+                <DeleteItemButton onDelete={() => onDeleteScreen(screenIdx)} label={`Delete screen "${screen.name}"`} />
+              )}
+            </div>
 
             {screen.description && (
               <p className="text-sm text-surface-700 dark:text-surface-300 leading-relaxed">{screen.description}</p>
@@ -192,8 +219,8 @@ export function FigmaScreenPreviewer({
                 <p className={sectionLabel}>Covers journeys</p>
                 <div className="flex flex-wrap gap-1.5">
                   {screen.prd_journeys.map((j, i) => (
-                    <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-200 dark:border-brand-700">
-                      {j}
+                    <span key={i} title={j} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 border border-brand-200 dark:border-brand-700 cursor-help">
+                      {journeyIdMap.get(j) ?? j}
                     </span>
                   ))}
                 </div>
