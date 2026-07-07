@@ -16,7 +16,7 @@ import {
 } from './stage-metadata';
 import { loadArtifactContentById, loadLatestArtifactContent, resolveArtifactPath, isJsonArtifactContent } from './artifact-helpers';
 import {
-  logger, stmts, insertEvent, workflowOps, createSafetyNetCheckpoint,
+  logger, stmts, insertEvent, workflowOps, createSafetyNetCheckpoint, resolveStageSequenceMember,
 } from './workflow-db';
 import {
   runAutonomousStage, getCoordinator, SILENT_STAGES, clearCancelFlag,
@@ -79,10 +79,8 @@ export async function propagateFeedback(checkpointId: number, feedback: string, 
   );
 
   // Set current_stage to this stage and status to active — a new run is starting.
-  // Use the base stage (strip a "_qa" checkpoint suffix) — current_stage must always be
-  // a literal stage_sequence member, or advanceStage()'s indexOf() lookup returns -1 and
-  // the workflow gets bounced back to stage 0 (sequence[-1 + 1]) once the wave completes.
-  const baseStageForCurrent = checkpoint.stage.replace(/_qa$/, '');
+  const sequence: string[] = JSON.parse(workflow.stage_sequence);
+  const baseStageForCurrent = resolveStageSequenceMember(checkpoint.stage, sequence);
   stmts.updateWorkflowStageAndStatus.run(baseStageForCurrent, 'active', now, checkpoint.workflow_id);
 
   // Create a fresh specialist session and fire an autonomous re-run.

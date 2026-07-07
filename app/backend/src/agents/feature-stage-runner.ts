@@ -661,7 +661,6 @@ Focus areas for the technical layer (in priority order):
         "then": ["<expected outcome>"]
       },
       "preconditions": ["<required system state>"],
-      "test_data": {},
       "tags": ["@smoke", "@regression"]
     }${apiSpecContent ? `,
     {
@@ -682,7 +681,6 @@ Focus areas for the technical layer (in priority order):
         "then": ["<expected status code and response shape>"]
       },
       "preconditions": ["<required system state>"],
-      "test_data": {},
       "tags": ["@smoke", "@regression"]
     }` : ''}
   ]

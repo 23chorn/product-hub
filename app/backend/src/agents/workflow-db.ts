@@ -156,6 +156,24 @@ export function normalizeStageForRoles(stage: string): string {
   return stage.replace(/_F\d+/, '');
 }
 
+/**
+ * Resolve the literal stage_sequence member a checkpoint's stage name refers to.
+ * Most checkpoint stage names ARE the sequence member (e.g. "epic_qa" is its own
+ * entry, injected standalone by injectFeatureDecompositionStages). A few legacy
+ * checkpoints are named "<stage>_qa" as a paired sibling of "<stage>" itself
+ * (e.g. "story_decomposition_F1_qa" pairs with "story_decomposition_F1") — for
+ * those, strip the suffix to get back to the sequence member.
+ *
+ * current_stage must always be set to a value in stage_sequence, or
+ * advanceStage()'s sequence.indexOf() lookup returns -1 and the workflow gets
+ * bounced back to stage 0 (sequence[-1 + 1]) on the next advance.
+ */
+export function resolveStageSequenceMember(stage: string, sequence: string[]): string {
+  if (sequence.includes(stage)) return stage;
+  const stripped = stage.replace(/_qa$/, '');
+  return sequence.includes(stripped) ? stripped : stage;
+}
+
 export function getStageRoles(stage: string): string[] {
   return db.prepare<[string], { role_name: string }>(
     'SELECT role_name FROM stage_roles WHERE stage = ?'

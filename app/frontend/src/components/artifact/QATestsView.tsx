@@ -131,7 +131,14 @@ function TestCaseCard({ tc, frMap, onDelete }: { tc: TestCase; frMap?: Record<st
                 </span>
               );
             })}
-            {(tc.story_ref || tc.linkedStory) && <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400">{tc.story_ref ?? tc.linkedStory}</span>}
+            {(Array.isArray(tc.story_ref) ? tc.story_ref : tc.story_ref ? [tc.story_ref] : tc.linkedStory ? [tc.linkedStory] : []).map(ref => (
+              <span
+                key={ref}
+                className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400"
+              >
+                {ref}
+              </span>
+            ))}
           </div>
           <p className="text-base text-surface-800 dark:text-surface-200 mt-0.5 leading-snug">{tc.title}</p>
           {tc.endpoint && (

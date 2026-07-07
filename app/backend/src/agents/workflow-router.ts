@@ -37,7 +37,7 @@ export { propagateFeedback, reiterateFromStage, retryCurrentStage, restartWorkfl
 export { deleteWorkflow } from './workflow-lifecycle';
 import Logger from '../utils/logger';
 import { getCoordinator, getCritic, getCurator } from './workflow-agents';
-import { workflowOps, rolesJson, createSafetyNetCheckpoint } from './workflow-db';
+import { workflowOps, rolesJson, createSafetyNetCheckpoint, resolveStageSequenceMember } from './workflow-db';
 import { findRepoRoot } from '../utils/find-repo-root';
 import { getEnabledStages } from '../config/settings-store';
 
@@ -753,7 +753,7 @@ export function resolveCheckpoint(
     // Roll current_stage back to the stage before this one so advanceStage re-enters it
     const workflow = stmts.getWorkflow.get(checkpoint.workflow_id)!;
     const sequence: string[] = JSON.parse(workflow.stage_sequence);
-    const baseStage = getBaseStage(checkpoint.stage);
+    const baseStage = resolveStageSequenceMember(checkpoint.stage, sequence);
     const stageIdx = sequence.indexOf(baseStage);
     const prevStage = stageIdx > 0 ? sequence[stageIdx - 1] : null;
 
