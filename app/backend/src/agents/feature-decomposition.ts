@@ -8,6 +8,7 @@
 import db, { getPolicies } from '../data/database';
 import { stmts, insertEvent, logger } from './workflow-db';
 import { loadLatestArtifactContent, loadLatestArtifactWikiUrl } from './artifact-helpers';
+import { detectBacklogOverlaps, AUTO_RESOLVE_THRESHOLD, recordOverlapFlags } from './backlog-overlap';
 import { stripJsonFence } from '../utils/json-repair';
 import { getAzureDevOpsClient } from '../integrations/azure-devops';
 import { deriveAiEstimateDev, ensureStreamPrefix, buildAcceptanceCriteriaHtml } from '../integrations/azure-devops-format';
@@ -800,6 +801,61 @@ export async function pushFeatureToADO(
   if (existingStories.length > 0) {
     logger.info(`[STORY PUSH] Feature ${featureKey} already has ${existingStories.length} stories in ADO — skipping duplicate creation`);
     return { epicId, featureId, storyIds: existingStories.map(s => s.ado_id) };
+  }
+
+  // ── Cross-feature duplicate check ───────────────────────────────────────────
+  // Compare this feature's stories against every OTHER feature already approved (and
+  // therefore already pushed to ADO above) in this workflow, before ANY of this feature's
+  // stories reach ADO. A high-confidence match is dropped from THIS feature — the prior
+  // feature's story is already immutable in ADO, so this is the only point in the pipeline
+  // where a duplicate can still be stopped before it becomes two real tickets. Same-wave
+  // races (two features whose generation overlapped, so neither could see this) fall
+  // through to the backlog_merge backstop instead. See backlog-overlap.ts.
+  const priorApprovedStages = db.prepare<[string, string], { stage: string }>(`
+    SELECT stage FROM checkpoints
+    WHERE workflow_id = ? AND stage LIKE 'story_decomposition_F%' AND stage != ? AND status = 'approved'
+  `).all(workflowId, `story_decomposition_F${featureIndex + 1}`);
+
+  const priorFeatures: { key: string; stories: any[] }[] = [];
+  for (const { stage } of priorApprovedStages) {
+    const priorIndex = parseFeatureStage(stage);
+    if (priorIndex === null) continue;
+    const priorContent = await loadLatestArtifactContent(workflow.item_id, `backlog_F${priorIndex + 1}`);
+    if (!priorContent) continue;
+    try {
+      const priorFeature = flattenFeatures(JSON.parse(stripJsonFence(priorContent)))[0];
+      if (priorFeature) priorFeatures.push({ key: featureLocalKey(priorIndex), stories: priorFeature.stories ?? [] });
+    } catch (err: any) {
+      logger.warn(`[STORY PUSH] Failed to parse backlog_F${priorIndex + 1} for duplicate check: ${err.message}`);
+    }
+  }
+
+  if (priorFeatures.length > 0) {
+    // thisFeature is appended last, so detectBacklogOverlaps' i<j pairing always puts it
+    // on the "B" side against every prior feature — filtering on that is enough to isolate
+    // this-vs-prior pairs without also re-comparing prior features against each other
+    // (already resolved when each of those was itself pushed).
+    const candidates = detectBacklogOverlaps([...priorFeatures, { key: featureKey, stories: targetFeature.stories ?? [] }])
+      .filter(c => c.featureKeyB === featureKey && c.score >= AUTO_RESOLVE_THRESHOLD);
+
+    if (candidates.length > 0) {
+      const dropIds = new Set(candidates.map(c => c.storyIdB));
+      targetFeature.stories = (targetFeature.stories ?? []).filter((s: any) => !dropIds.has(s.story_id));
+
+      recordOverlapFlags(candidates.map(c => ({
+        workflowId, itemId: workflow.item_id,
+        featureKeyA: c.featureKeyA, storyIdA: c.storyIdA,
+        featureKeyB: c.featureKeyB, storyIdB: c.storyIdB,
+        score: c.score, matchedTerms: c.matchedTerms,
+        status: 'auto_resolved' as const,
+      })));
+
+      const summary = candidates.map(c => `${c.storyIdB} (duplicates ${c.featureKeyA}/${c.storyIdA})`).join(', ');
+      logger.info(`[STORY PUSH] Feature ${featureKey}: auto-dropped ${candidates.length} duplicate stor${candidates.length === 1 ? 'y' : 'ies'} before ADO push — ${summary}`);
+      insertEvent(workflowId, 'validation_warning', `story_decomposition_F${featureIndex + 1}`,
+        `Auto-dropped ${candidates.length} duplicate stor${candidates.length === 1 ? 'y' : 'ies'} before pushing to ADO — already covered by an earlier feature: ${summary}`,
+        { auto_resolved: candidates });
+    }
   }
 
   // Create stories under the existing feature

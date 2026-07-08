@@ -21,7 +21,7 @@ import { progressHeartbeatLine, collectStreamWithHeartbeat, STAGE_MAX_OUTPUT_TOK
 import { stripJsonFence, repairTruncatedJson } from '../utils/json-repair';
 import { computeRevisionDiff } from '../utils/revision-diff';
 import { loadEpicFeatures } from './feature-decomposition';
-import { detectBacklogOverlaps } from './backlog-overlap';
+import { detectBacklogOverlaps, recordOverlapFlags, loadAutoResolvedStoryKeys, excludeAutoResolvedStories } from './backlog-overlap';
 import { loadLatestArtifactContent, saveLocalArtifact, saveDiffArtifact } from './artifact-helpers';
 import { SpecialistAgent } from './specialist-agent';
 import { summarizeRevisionDiff } from './revision-diff-summary';
@@ -159,23 +159,30 @@ export async function runBacklogMerge(
     }
   });
 
-  // Deterministic cross-feature scope-overlap check — flags candidate duplicate stories
-  // for human review at the checkpoint below; never blocks the merge itself.
-  db.prepare('DELETE FROM backlog_overlap_flags WHERE workflow_id = ?').run(workflowId);
+  // Drop any story already auto-resolved out at pushFeatureToADO time (see that function
+  // and backlog-overlap.ts) so the merged backlog / epic QA generation matches what
+  // actually reached ADO, without needing to mutate any already-approved artifact.
+  const autoResolvedKeys = loadAutoResolvedStoryKeys(workflowId);
+  featureArtifacts.forEach((f: any, i: number) => {
+    const featureKey = f.key || `F${i + 1}`;
+    f.stories = excludeAutoResolvedStories(featureKey, f.stories ?? [], autoResolvedKeys);
+  });
+
+  // Deterministic cross-feature scope-overlap check — backstop for whatever pushFeatureToADO
+  // couldn't already resolve (same-wave races between concurrently-generated features, plus
+  // anything below the auto-resolve confidence bar). Flags candidates for human review at
+  // the checkpoint below; never blocks the merge itself. Only 'pending' rows are cleared
+  // before re-scanning — auto_resolved history (and any human confirm/dismiss) survives.
+  db.prepare(`DELETE FROM backlog_overlap_flags WHERE workflow_id = ? AND status = 'pending'`).run(workflowId);
   const overlaps = detectBacklogOverlaps(featureArtifacts);
   if (overlaps.length > 0) {
-    const insertFlag = db.prepare(`
-      INSERT INTO backlog_overlap_flags
-        (workflow_id, item_id, feature_key_a, story_id_a, feature_key_b, story_id_b, score, matched_terms, status, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
-    `);
-    const flaggedAt = Date.now();
-    for (const overlap of overlaps) {
-      insertFlag.run(
-        workflowId, itemId, overlap.featureKeyA, overlap.storyIdA, overlap.featureKeyB, overlap.storyIdB,
-        overlap.score, JSON.stringify(overlap.matchedTerms), flaggedAt
-      );
-    }
+    recordOverlapFlags(overlaps.map(o => ({
+      workflowId, itemId,
+      featureKeyA: o.featureKeyA, storyIdA: o.storyIdA,
+      featureKeyB: o.featureKeyB, storyIdB: o.storyIdB,
+      score: o.score, matchedTerms: o.matchedTerms,
+      status: 'pending' as const,
+    })));
     logger.info(`[BACKLOG MERGE] Flagged ${overlaps.length} possible cross-feature overlap(s) for review`);
     insertEvent(workflowId, 'validation_warning', 'backlog_merge',
       `Detected ${overlaps.length} possible scope overlap${overlaps.length !== 1 ? 's' : ''} across features — review before approving`,

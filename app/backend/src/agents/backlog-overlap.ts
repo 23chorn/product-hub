@@ -1,14 +1,31 @@
 /**
- * Deterministic cross-feature scope-overlap detection, run at the backlog_merge stage
- * (see runBacklogMerge in feature-stage-runner.ts). Each story_decomposition_F* stage
+ * Deterministic cross-feature scope-overlap detection. Each story_decomposition_F* stage
  * refines its feature in isolation — nothing stops two features from independently
- * producing stories that cover the same capability. This does a cheap token-overlap
- * pass across every cross-feature story pair and flags candidates for human review;
- * it never blocks the merge or auto-removes anything.
+ * producing stories that cover the same capability. This does a cheap token-overlap pass
+ * across every cross-feature story pair.
+ *
+ * Two call sites use it:
+ *  - pushFeatureToADO (feature-decomposition.ts) — runs THIS feature against every
+ *    already-approved (already-in-ADO) prior feature, right before its own stories are
+ *    pushed. High-confidence matches (>= AUTO_RESOLVE_THRESHOLD) are dropped from this
+ *    feature before anything is created, since the prior feature's story is already
+ *    immutable in ADO — this is the only point in the pipeline before a duplicate would
+ *    otherwise become two real ADO tickets.
+ *  - runBacklogMerge (feature-stage-runner.ts) — the backstop, run once over the full
+ *    merged backlog after every feature is approved. Catches same-wave races (two
+ *    features approved from concurrent generation, so neither could see the other's
+ *    output at push time) and anything below the auto-resolve bar; flags those for
+ *    human review — it never blocks the merge or auto-removes anything itself.
  */
+import db from '../data/database';
 import { tokenize } from '../utils/text-tokens';
 
 const OVERLAP_THRESHOLD = 0.35;
+/** Score at/above which a match is treated as certain enough to auto-drop instead of
+ * flagging for human review. Deliberately high — a false-positive drop silently loses a
+ * real story with no ADO ticket ever created for it, which is worse than a false-positive
+ * flag (which just costs a human one extra look). */
+export const AUTO_RESOLVE_THRESHOLD = 0.75;
 const MAX_MATCHED_TERMS = 8;
 
 // Gherkin/story scaffolding words that would otherwise dominate token overlap across
@@ -90,4 +107,63 @@ export function detectBacklogOverlaps(features: FeatureLike[]): OverlapCandidate
   }
 
   return candidates.sort((x, y) => y.score - x.score);
+}
+
+// ── Persistence ────────────────────────────────────────────────────────────────
+
+export interface OverlapFlagRecord {
+  workflowId: string;
+  itemId: string;
+  featureKeyA: string;
+  storyIdA: string;
+  featureKeyB: string;
+  storyIdB: string;
+  score: number;
+  matchedTerms: string[];
+  status: 'pending' | 'auto_resolved';
+}
+
+/**
+ * Persist overlap candidates as backlog_overlap_flags rows. For 'auto_resolved' records,
+ * side A is the story that was kept (already immutable — already in ADO) and side B is
+ * the one dropped — see the module doc comment above for why B is always the just-pushed
+ * feature's story when this is called from pushFeatureToADO.
+ */
+export function recordOverlapFlags(records: OverlapFlagRecord[]): void {
+  if (records.length === 0) return;
+  const insert = db.prepare(`
+    INSERT INTO backlog_overlap_flags
+      (workflow_id, item_id, feature_key_a, story_id_a, feature_key_b, story_id_b, score, matched_terms, status, resolved_at, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const now = Date.now();
+  for (const r of records) {
+    insert.run(
+      r.workflowId, r.itemId, r.featureKeyA, r.storyIdA, r.featureKeyB, r.storyIdB,
+      r.score, JSON.stringify(r.matchedTerms), r.status,
+      r.status === 'auto_resolved' ? now : null, now
+    );
+  }
+}
+
+/**
+ * (featureKey, story_id) pairs already dropped by an earlier auto-resolution in this
+ * workflow — keyed by the DROPPED side (feature_key_b/story_id_b, see recordOverlapFlags).
+ * Consulted at backlog_merge time so the merged backlog / epic QA generation match what
+ * actually reached ADO, without needing to mutate any already-approved artifact.
+ */
+export function loadAutoResolvedStoryKeys(workflowId: string): Set<string> {
+  const rows = db.prepare<[string], { feature_key_b: string; story_id_b: string }>(
+    `SELECT feature_key_b, story_id_b FROM backlog_overlap_flags WHERE workflow_id = ? AND status = 'auto_resolved'`
+  ).all(workflowId);
+  return new Set(rows.map(r => `${r.feature_key_b}::${r.story_id_b}`));
+}
+
+/** Filter a feature's stories against a previously-loaded auto-resolved key set. */
+export function excludeAutoResolvedStories<T extends { story_id?: string }>(
+  featureKey: string,
+  stories: T[],
+  autoResolvedKeys: Set<string>
+): T[] {
+  return stories.filter(s => !s.story_id || !autoResolvedKeys.has(`${featureKey}::${s.story_id}`));
 }

@@ -22,7 +22,7 @@ interface OverlapFlagRow {
   story_id_b: string;
   score: number;
   matched_terms: string;
-  status: 'pending' | 'confirmed' | 'dismissed';
+  status: 'pending' | 'confirmed' | 'dismissed' | 'auto_resolved';
   resolved_by_user_id: number | null;
   resolved_at: number | null;
   notes: string | null;

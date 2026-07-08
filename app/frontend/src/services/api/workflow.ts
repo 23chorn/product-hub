@@ -254,7 +254,7 @@ export interface BacklogOverlapStory {
 
 export interface BacklogOverlapFlag {
   id: number;
-  status: 'pending' | 'confirmed' | 'dismissed';
+  status: 'pending' | 'confirmed' | 'dismissed' | 'auto_resolved';
   score: number;
   matchedTerms: string[];
   notes: string | null;
