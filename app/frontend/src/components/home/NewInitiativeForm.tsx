@@ -1,7 +1,15 @@
 import type { RefObject } from 'react';
+import { splitProductAreas } from '../../utils/product-area';
 
-/** Fixed product-area options for the New Initiative form's dropdown. */
+/** Fixed product-area options for the New Initiative form's checkboxes. */
 const PRODUCT_AREA_OPTIONS = ['Mobile App', 'Web App'];
+
+/** Toggle `option` in the comma-joined productArea string, keeping PRODUCT_AREA_OPTIONS order. */
+function toggleProductArea(current: string, option: string): string {
+  const selected = new Set(splitProductAreas(current));
+  if (selected.has(option)) selected.delete(option); else selected.add(option);
+  return PRODUCT_AREA_OPTIONS.filter(o => selected.has(o)).join(', ');
+}
 
 /** Fixed strategic-theme options for the New Initiative form's dropdown. */
 const STRATEGIC_THEME_OPTIONS = [
@@ -61,14 +69,22 @@ export function NewInitiativeForm({
         className="w-full px-3 py-2 text-sm border border-brand-300 dark:border-brand-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 placeholder-surface-400"
       />
       <div className="grid grid-cols-2 gap-2">
-        <select
-          value={productArea}
-          onChange={e => onProductAreaChange(e.target.value)}
-          className="w-full px-3 py-2 text-sm border border-brand-300 dark:border-brand-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100"
-        >
-          <option value="" disabled>Product area</option>
-          {PRODUCT_AREA_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-        </select>
+        <div className="flex items-center gap-2 px-3 py-2 border border-brand-300 dark:border-brand-600 rounded-lg bg-white dark:bg-surface-800">
+          {PRODUCT_AREA_OPTIONS.map(opt => {
+            const checked = splitProductAreas(productArea).includes(opt);
+            return (
+              <label key={opt} className="flex items-center gap-1.5 text-sm text-surface-900 dark:text-surface-100 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => onProductAreaChange(toggleProductArea(productArea, opt))}
+                  className="rounded border-brand-300 dark:border-brand-600 text-brand-600 focus:ring-brand-500"
+                />
+                {opt}
+              </label>
+            );
+          })}
+        </div>
         <select
           value={strategicTheme}
           onChange={e => onStrategicThemeChange(e.target.value)}
