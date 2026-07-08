@@ -17,10 +17,12 @@ import type {
   CompletedInitiativeWorkItemRow,
   AssignedUser,
 } from '@pap/shared';
-import { bucketWorkItemState, workItemStatePercent, parseStoryRefs } from '../integrations/azure-devops-format';
+import { bucketWorkItemState, workItemStatePercent } from '../integrations/azure-devops-format';
 import { refreshItemAdoState } from '../integrations/ado-state-sync';
 import { getAzureDevOpsClient } from '../integrations/azure-devops';
 import { loadArtifactContentById, updateArtifactContent } from '../agents/artifact-helpers';
+import { recalculateEffortRollupChain, recalculateEpicEffort } from '../agents/effort-rollup';
+import { cascadeDeleteTestCases, pruneMergedBacklogArtifact } from '../agents/story-removal';
 import { stripJsonFence } from '../utils/json-repair';
 import {
   getWorkItemRowsByItem, getTestPlanRowsByItem, getDocumentArtifactIds,
@@ -292,71 +294,6 @@ const getShippedAt = db.prepare(`SELECT shipped_at FROM items WHERE id = ?`);
  * local keys, then remove them from the qa_test_plan_map tracking row.
  * Non-throwing — caller should wrap in try/catch if failure must be non-fatal.
  */
-async function cascadeDeleteTestCases(
-  workflowId: string,
-  itemId: string,
-  affectedStoryKeys: Set<string>,
-): Promise<void> {
-  if (affectedStoryKeys.size === 0) return;
-
-  const planRow = db.prepare<[string], { plan_id: number; test_case_ids: string; test_case_count: number }>(
-    `SELECT plan_id, test_case_ids, test_case_count FROM qa_test_plan_map WHERE workflow_id = ?`
-  ).get(workflowId);
-  if (!planRow) return;
-
-  const testCaseIds: Record<string, number> = JSON.parse(planRow.test_case_ids ?? '{}');
-  if (Object.keys(testCaseIds).length === 0) return;
-
-  // Find qa_tests artifact IDs for this item via approved QA checkpoints (epic-level and/or
-  // legacy per-feature — same resolution buildDetail/computeLiveTestCaseCount use).
-  const qaArtifactIds = getDocumentArtifactIds(itemId).testArtifactIds;
-
-  // Collect local test case IDs whose story_ref mentions an affected story.
-  const toDeleteLocalIds = new Set<string>();
-  for (const artifactId of qaArtifactIds) {
-    const content = await loadArtifactContentById(artifactId);
-    if (!content) continue;
-    let qa: any;
-    try { qa = JSON.parse(stripJsonFence(content)); } catch { continue; }
-    for (const tc of (qa.test_cases ?? qa.testCases ?? []) as any[]) {
-      if (!tc.id) continue;
-      const storyRef = tc.story_ref ?? tc.linkedStory ?? null;
-      if (!storyRef) continue;
-      if (parseStoryRefs(storyRef).some(r => affectedStoryKeys.has(r))) {
-        toDeleteLocalIds.add(String(tc.id));
-      }
-    }
-  }
-
-  if (toDeleteLocalIds.size === 0) return;
-
-  const localIdByAdoId = new Map<number, string>();
-  for (const lid of toDeleteLocalIds) {
-    const adoId = testCaseIds[lid];
-    if (adoId !== undefined) localIdByAdoId.set(adoId, lid);
-  }
-  if (localIdByAdoId.size === 0) return;
-
-  // Test Case work items reject the generic work item destroy call — delete each one via
-  // the Test Management API instead. Best-effort: a failure on one doesn't stop the rest,
-  // and only the ids ADO actually confirmed deleted are cleared from the mapping.
-  const deletedAdoIds: number[] = [];
-  for (const adoId of localIdByAdoId.keys()) {
-    try {
-      await getAzureDevOpsClient().deleteTestCase(adoId);
-      deletedAdoIds.push(adoId);
-    } catch (err: any) {
-      logger.warn(`Failed to delete test case (ado #${adoId}) during cascade delete: ${err.message}`);
-    }
-  }
-  for (const adoId of deletedAdoIds) delete testCaseIds[localIdByAdoId.get(adoId)!];
-
-  db.prepare(`UPDATE qa_test_plan_map SET test_case_ids = ?, test_case_count = ? WHERE plan_id = ?`)
-    .run(JSON.stringify(testCaseIds), Math.max(0, planRow.test_case_count - deletedAdoIds.length), planRow.plan_id);
-
-  logger.info(`Cascade deleted ${deletedAdoIds.length}/${localIdByAdoId.size} test case(s) linked to ${affectedStoryKeys.size} deleted story/stories in workflow ${workflowId}`);
-}
-
 /**
  * GET /api/completed-initiatives
  * List every completed, ADO-pushed initiative with rollup counts and state buckets.
@@ -480,19 +417,22 @@ router.delete('/:itemId/work-items/:adoId', async (req: Request, res: Response) 
     const adoId = parseInt(req.params.adoId, 10);
     if (!Number.isFinite(adoId)) return res.status(400).json({ error: 'Invalid ADO ID' });
 
-    const row = db.prepare<[string, number], { id: number; local_key: string; ado_type: string; workflow_id: string }>(
-      `SELECT m.id, m.local_key, m.ado_type, m.workflow_id
+    const row = db.prepare<[string, number], { id: number; local_key: string; ado_type: string; workflow_id: string; parent_local_key: string | null }>(
+      `SELECT m.id, m.local_key, m.ado_type, m.workflow_id, m.parent_local_key
        FROM ado_work_item_map m
        JOIN workflows w ON w.id = m.workflow_id
        WHERE w.item_id = ? AND m.ado_id = ?`
     ).get(item.id, adoId);
     if (!row) return res.status(404).json({ error: `Work item ${adoId} not found for this initiative` });
 
-    // Collect affected story local keys before any deletes (needed for test case cascade)
+    // Collect affected story local keys before any deletes (needed for test case cascade),
+    // and whole feature keys being removed entirely (needed to prune the merged backlog artifact).
     const affectedStoryKeys = new Set<string>();
+    const affectedFeatureKeys = new Set<string>();
     if (row.ado_type === 'story') {
       affectedStoryKeys.add(row.local_key);
     } else if (row.ado_type === 'feature') {
+      affectedFeatureKeys.add(row.local_key);
       for (const s of db.prepare<[string, string], { local_key: string }>(
         `SELECT local_key FROM ado_work_item_map WHERE workflow_id = ? AND parent_local_key = ?`
       ).all(row.workflow_id, row.local_key)) affectedStoryKeys.add(s.local_key);
@@ -500,6 +440,7 @@ router.delete('/:itemId/work-items/:adoId', async (req: Request, res: Response) 
       for (const f of db.prepare<[string, string], { local_key: string }>(
         `SELECT local_key FROM ado_work_item_map WHERE workflow_id = ? AND parent_local_key = ?`
       ).all(row.workflow_id, row.local_key)) {
+        affectedFeatureKeys.add(f.local_key);
         for (const s of db.prepare<[string, string], { local_key: string }>(
           `SELECT local_key FROM ado_work_item_map WHERE workflow_id = ? AND parent_local_key = ?`
         ).all(row.workflow_id, f.local_key)) affectedStoryKeys.add(s.local_key);
@@ -536,6 +477,27 @@ router.delete('/:itemId/work-items/:adoId', async (req: Request, res: Response) 
     })();
 
     logger.info(`Deleted ${row.ado_type} ADO #${adoId} (${row.local_key}) from initiative ${item.id}`);
+
+    // Prune the deleted story/feature(s) from the merged backlog artifact too — otherwise
+    // computeLiveTestCaseCount / the Stories-Tickets stat cards (which read the artifact, not
+    // ado_work_item_map) keep showing pre-delete counts.
+    try {
+      await pruneMergedBacklogArtifact(item.id, affectedFeatureKeys, affectedStoryKeys);
+    } catch (err: any) {
+      logger.warn(`Backlog artifact prune after delete failed (non-fatal): ${err.message}`);
+    }
+
+    // Keep the parent feature's/epic's Effort rollup in sync with the story set that remains.
+    try {
+      if (row.ado_type === 'story' && row.parent_local_key) {
+        await recalculateEffortRollupChain(row.workflow_id, row.parent_local_key);
+      } else if (row.ado_type === 'feature' && row.parent_local_key) {
+        await recalculateEpicEffort(row.workflow_id, row.parent_local_key);
+      }
+    } catch (err: any) {
+      logger.warn(`Effort rollup after delete failed (non-fatal): ${err.message}`);
+    }
+
     res.json(await buildDetail(item));
   } catch (error: any) {
     logger.error('Failed to delete work item', error);

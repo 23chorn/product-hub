@@ -13,6 +13,8 @@ import {
   buildTestCaseDescription,
   buildTestStepsXml,
   parseStoryRefs,
+  sumStoryPoints,
+  buildEffortRollupHtml,
   SUITE_TYPE_LABELS,
   TC_PRIORITY_MAP,
   getStateBucketMap,
@@ -50,6 +52,36 @@ describe('toNearestFibonacci', () => {
     for (const n of [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144]) {
       expect(toNearestFibonacci(n)).toBe(n);
     }
+  });
+});
+
+describe('sumStoryPoints', () => {
+  it('sums the live estimated_points field', () => {
+    expect(sumStoryPoints([{ estimated_points: 3 }, { estimated_points: 5 }])).toBe(8);
+  });
+  it('falls back to the legacy storyPoints field', () => {
+    expect(sumStoryPoints([{ storyPoints: 2 }, { estimated_points: 3 }])).toBe(5);
+  });
+  it('treats a story with neither field as 0', () => {
+    expect(sumStoryPoints([{}, { estimated_points: 1 }])).toBe(1);
+  });
+  it('returns 0 for an empty list', () => {
+    expect(sumStoryPoints([])).toBe(0);
+  });
+});
+
+describe('buildEffortRollupHtml', () => {
+  it('returns empty string when there are no stories yet', () => {
+    expect(buildEffortRollupHtml(0, 0)).toBe('');
+  });
+  it('renders a feature-level rollup without a feature count', () => {
+    expect(buildEffortRollupHtml(8, 3)).toBe('<h4>Estimated Effort</h4><p>8 points across 3 stories</p>');
+  });
+  it('renders an epic-level rollup including feature count', () => {
+    expect(buildEffortRollupHtml(13, 5, 2)).toBe('<h4>Estimated Effort</h4><p>13 points across 5 stories, 2 features</p>');
+  });
+  it('uses singular units for a count of 1', () => {
+    expect(buildEffortRollupHtml(1, 1, 1)).toBe('<h4>Estimated Effort</h4><p>1 point across 1 story, 1 feature</p>');
   });
 });
 

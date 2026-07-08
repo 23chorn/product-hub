@@ -162,6 +162,20 @@
       "when": 1783416802406,
       "tag": "0022_qa_test_plan_per_epic",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1783493939688,
+      "tag": "0023_daily_jack_power",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1783496143197,
+      "tag": "0024_easy_lenny_balinger",
+      "breakpoints": true
     }
   ]
 }

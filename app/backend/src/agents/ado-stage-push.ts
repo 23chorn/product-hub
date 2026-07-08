@@ -1,10 +1,10 @@
 /**
  * ADO auto-push helpers for stage completion.
  *
- * Called directly after story_decomposition, tech_refinement, and qa_engineer stages
+ * Called directly after story_decomposition and qa_engineer/epic_qa stages
  * save their artifacts. Pushes content to the appropriate ADO destination:
- *   story_decomposition / tech_refinement → Azure Boards (Epic + Features + Stories)
- *   qa_engineer                  → Azure Test Plans
+ *   story_decomposition → Azure Boards (Epic + Features + Stories)
+ *   qa_engineer / epic_qa → Azure Test Plans
  *
  * Returns the top-level ADO URL on success, null if ADO is not configured or
  * the push fails (errors are logged but not thrown — a failed ADO push should
@@ -12,12 +12,13 @@
  */
 
 import db from '../data/database';
-import { loadArtifactContentById } from './artifact-helpers';
+import { loadArtifactContentById, buildReferenceLinks } from './artifact-helpers';
 import { stripJsonFence } from '../utils/json-repair';
-import { loadPrdForItem, buildEpicEnrichment, buildFeatureEnrichment } from '../utils/prd-enrichment';
+import { loadPrdForItem, buildEpicEnrichment, buildFeatureEnrichment, collectFeaturePrdRefs } from '../utils/prd-enrichment';
 import { insertEvent } from './workflow-db';
+import { recalculateEffortRollupChain } from './effort-rollup';
 import { featureLocalKey, storyLocalKey } from '@pap/shared';
-import { groupTestCasesByEpic } from '../integrations/azure-devops-format';
+import { groupTestCasesByEpic, sumStoryPoints, buildEffortRollupHtml } from '../integrations/azure-devops-format';
 import Logger from '../utils/logger';
 
 const logger = new Logger('ADO-PUSH');
@@ -33,7 +34,7 @@ function isAdoConfigured(): boolean {
 
 /**
  * Push the latest backlog artifact for itemId to Azure Boards.
- * Used for both story_decomposition (first push) and tech_refinement (sync/update).
+ * Used for the story_decomposition backlog push.
  * Returns the epic URL or null.
  */
 export async function pushBacklogToAdo(workflowId: string, itemId: string): Promise<string | null> {
@@ -91,16 +92,26 @@ export async function pushBacklogToAdo(workflowId: string, itemId: string): Prom
       const epicHtml = buildEpicEnrichment(prdContent);
       if (epicHtml) backlog.epic.description = `${backlog.epic.description || ''}<hr>${epicHtml}`;
       for (const feature of backlog.features as any[]) {
-        const frIds = new Set<string>();
-        const journeyRefs = new Set<string>();
-        for (const story of (feature.stories ?? []) as any[]) {
-          for (const fr of (story.prdRef?.functionalRequirements ?? []) as string[]) frIds.add(fr);
-          if (story.prdRef?.userJourney) journeyRefs.add(story.prdRef.userJourney as string);
-        }
-        const featureHtml = buildFeatureEnrichment(prdContent, frIds, journeyRefs);
+        const { frIds, nfrIds } = collectFeaturePrdRefs(feature);
+        const featureHtml = buildFeatureEnrichment(prdContent, frIds, nfrIds);
         if (featureHtml) feature.description = `${feature.description || ''}<hr>${featureHtml}`;
       }
     }
+
+    // Rollup estimated effort (story points) per feature and for the epic as a whole — a quick
+    // scope signal for comparing initiatives/features when prioritising, without opening the backlog.
+    let epicPoints = 0;
+    let epicStoryCount = 0;
+    for (const feature of backlog.features as any[]) {
+      const stories = (feature.stories ?? []) as any[];
+      const featurePoints = sumStoryPoints(stories);
+      epicPoints += featurePoints;
+      epicStoryCount += stories.length;
+      const effortHtml = buildEffortRollupHtml(featurePoints, stories.length);
+      if (effortHtml) feature.description = `${feature.description || ''}<hr>${effortHtml}`;
+    }
+    const epicEffortHtml = buildEffortRollupHtml(epicPoints, epicStoryCount, backlog.features.length);
+    if (epicEffortHtml) backlog.epic.description = `${backlog.epic.description || ''}<hr>${epicEffortHtml}`;
 
     // Stamp each feature/story title with its local F#/S# key so the ADO ticket itself
     // shows implementation order — same numbering used for ado_work_item_map.local_key below.
@@ -149,6 +160,20 @@ export async function pushBacklogToAdo(workflowId: string, itemId: string): Prom
       featureCount = createResult.features.length;
       storyCount = createResult.features.reduce((n: number, f: { storyAdoIds: number[] }) => n + f.storyAdoIds.length, 0);
 
+      // This branch only runs when no epic/feature mapping exists yet — i.e. epic_feature_planner
+      // was skipped and this is the first time the epic is created (normally pushEpicAndFeaturesToADO
+      // already attached these). Attach the same reference links here so the epic isn't left without them.
+      const referenceLinks = await buildReferenceLinks(itemId);
+      for (const epic of createResult.epics as Array<{ adoId: number; localKey: string }>) {
+        for (const link of referenceLinks) {
+          try {
+            await client.addHyperlinkToWorkItem(epic.adoId, link.url, link.comment);
+          } catch (err: any) {
+            logger.warn(`Board push: failed to attach "${link.comment}" link to epic #${epic.adoId}: ${err.message}`);
+          }
+        }
+      }
+
       const insertMapping = db.prepare(`
         INSERT OR REPLACE INTO ado_work_item_map (workflow_id, artifact_id, ado_id, ado_type, ado_url, local_key, parent_local_key, title, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -166,6 +191,14 @@ export async function pushBacklogToAdo(workflowId: string, itemId: string): Prom
           insertMapping.run(workflowId, artifactId, storyAdoId, 'story', client.getEpicUrl(storyAdoId), storyKey, featureKey, backlog.features[f.index].stories[si].title, now);
         });
       }
+    }
+
+    // Sync each feature's and epic's Effort field with the current live story set in ADO.
+    // Read from ADO rather than local backlog data so this stays correct even when the
+    // duplicate-story auto-resolve above (or an earlier per-feature push) already dropped
+    // some stories before they ever reached this point.
+    for (let fi = 0; fi < backlog.features.length; fi++) {
+      await recalculateEffortRollupChain(workflowId, featureLocalKey(fi));
     }
 
     // Push epic URL back to Airtable if item originated there

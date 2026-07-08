@@ -21,6 +21,8 @@ import { FigmaDesignActions, FigmaScreenPreviewer } from './FigmaDesignActions';
 import { parseFigmaDesignContent, removeFigmaScreen } from '../../utils/figma-design';
 import { copyToClipboard, printArtifact } from '../../utils/markdown';
 import { buildPrdMaps } from '../../utils/artifact-to-markdown';
+import { deriveEpicFeaturesArtifactId } from '../../utils/feature-artifacts';
+import { tryParseEpicFeatures, toPhases } from './EpicFeaturesView';
 
 export function ArtifactViewer() {
   const { viewingArtifactId, setViewingArtifactId, checkpoints, activeWorkflow, applyWorkflowStatus, addCoordinatorMessage } = useWorkflowStore();
@@ -46,6 +48,8 @@ export function ArtifactViewer() {
   const [figmaLinks, setFigmaLinks] = useState<Record<string, string>>({});
   const [frMap, setFrMap] = useState<Record<string, string>>({});
   const [nfrMap, setNfrMap] = useState<Record<string, string>>({});
+  const [phaseByFeatureKey, setPhaseByFeatureKey] = useState<Record<string, string>>({});
+  const [phaseOrder, setPhaseOrder] = useState<string[]>([]);
   const setFigmaLink = (key: string, value: string) => setFigmaLinks(prev => ({ ...prev, [key]: value }));
 
   const { user, noAuth } = useAuthStore();
@@ -81,6 +85,8 @@ export function ArtifactViewer() {
     setFigmaLinks({});
     setFrMap({});
     setNfrMap({});
+    setPhaseByFeatureKey({});
+    setPhaseOrder([]);
 
     // Load PRD artifact in parallel (non-blocking) to populate FR/NFR tooltip maps.
     const prdCheckpoint = checkpoints.find(c => c.stage === 'pm_prd' && c.artifact_id != null);
@@ -90,6 +96,28 @@ export function ArtifactViewer() {
         const { frMap: frs, nfrMap: nfrs } = buildPrdMaps(prdContent);
         setFrMap(frs);
         setNfrMap(nfrs);
+      }).catch(() => {});
+    }
+
+    // Load epic_features artifact in parallel (non-blocking) to power the QA tests view's
+    // "Phase" grouping toggle — otherwise a direct qa_tests artifact view has no way to know
+    // which phase each feature's test cases belong to.
+    const epicFeaturesArtifactId = deriveEpicFeaturesArtifactId(checkpoints);
+    if (epicFeaturesArtifactId) {
+      api.getArtifactContent(epicFeaturesArtifactId).then(({ content: epicFeaturesContent }) => {
+        if (stale) return;
+        const epicFeatures = tryParseEpicFeatures(epicFeaturesContent);
+        if (!epicFeatures) return;
+        const map: Record<string, string> = {};
+        let featureIdx = 0;
+        const phases = toPhases(epicFeatures);
+        for (const phase of phases) {
+          const count = phase.features?.length ?? 0;
+          for (let i = featureIdx; i < featureIdx + count; i++) map[`F${i + 1}`] = phase.label;
+          featureIdx += count;
+        }
+        setPhaseByFeatureKey(map);
+        setPhaseOrder(phases.map(p => p.label));
       }).catch(() => {});
     }
 
@@ -556,6 +584,8 @@ export function ArtifactViewer() {
                       resolveLoading,
                       frMap,
                       nfrMap,
+                      phaseByFeatureKey,
+                      phaseOrder,
                       rerunStage,
                       onClose: () => setViewingArtifactId(null),
                       requestDelete: requestDeleteIfAllowed,

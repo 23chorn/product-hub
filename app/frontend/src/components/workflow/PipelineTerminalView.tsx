@@ -5,7 +5,7 @@ import { useModelStore } from '../../stores/modelStore';
 import { useAuthStore } from '../../stores/authStore';
 import { api } from '../../services/api';
 import { deriveStageStatus } from '../../utils/stage-tracker-helpers';
-import { deriveFeatureButtons } from '../../utils/feature-artifacts';
+import { deriveFeatureButtons, deriveEpicQaArtifactId } from '../../utils/feature-artifacts';
 import { splitProductAreas } from '../../utils/product-area';
 import { StageRow } from './StageRow';
 import { tryParseEpicFeatures, toPhases } from '../artifact/EpicFeaturesView';
@@ -308,6 +308,8 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   // Per-feature artifact ids (ticket + QA), shared by the bottom-bar "Stories/Tests" button
   // and the merged overview it opens.
   const featureButtons = deriveFeatureButtons(checkpoints);
+  // Unified whole-backlog QA suite (current architecture) — see deriveEpicQaArtifactId.
+  const epicQaArtifactId = deriveEpicQaArtifactId(checkpoints);
 
   return (
     <div className="flex h-full overflow-hidden bg-white dark:bg-[#0d1117] font-mono">
@@ -739,6 +741,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
           featureButtons={featureButtons}
           initiativeTitle={activeWorkflow.summary ?? activeWorkflow.goal.split('\n')[0]}
           epicFeaturesArtifactId={epicFeaturesArtifactId}
+          epicQaArtifactId={epicQaArtifactId}
           workflowId={activeWorkflow.id}
           onClose={() => setShowBacklogOverview(false)}
         />

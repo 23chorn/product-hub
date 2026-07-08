@@ -35,12 +35,27 @@ export function deriveFeatureButtons(checkpoints: WorkflowCheckpoint[]): Feature
 }
 
 /**
- * Latest approved epic_feature_planner artifact id, if any — checkpoint-derived so it's
+ * Latest approved artifact id for a given stage, if any — checkpoint-derived so it's
  * available anywhere checkpoints are (e.g. the artifact viewer) without a separate
  * workflow-artifacts fetch.
  */
-export function deriveEpicFeaturesArtifactId(checkpoints: WorkflowCheckpoint[]): number | null {
-  const approved = checkpoints.filter(c => c.stage === 'epic_feature_planner' && c.status === 'approved' && c.artifact_id);
+function deriveLatestApprovedArtifactId(checkpoints: WorkflowCheckpoint[], stage: string): number | null {
+  const approved = checkpoints.filter(c => c.stage === stage && c.status === 'approved' && c.artifact_id);
   if (approved.length === 0) return null;
   return approved.reduce((latest, c) => (c.created_at > latest.created_at ? c : latest), approved[0]).artifact_id!;
+}
+
+/** Latest approved epic_feature_planner artifact id, if any. */
+export function deriveEpicFeaturesArtifactId(checkpoints: WorkflowCheckpoint[]): number | null {
+  return deriveLatestApprovedArtifactId(checkpoints, 'epic_feature_planner');
+}
+
+/**
+ * Latest approved epic_qa artifact id, if any — the current architecture generates one unified
+ * QA test suite for the whole backlog at this stage, rather than the legacy per-feature
+ * `story_decomposition_F<n>_qa` checkpoints deriveFeatureButtons still recognizes above (kept
+ * for workflows that started before that restructure).
+ */
+export function deriveEpicQaArtifactId(checkpoints: WorkflowCheckpoint[]): number | null {
+  return deriveLatestApprovedArtifactId(checkpoints, 'epic_qa');
 }

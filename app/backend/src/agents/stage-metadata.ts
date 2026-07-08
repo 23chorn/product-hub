@@ -69,7 +69,6 @@ export const STAGE_ARTIFACT_LABEL: Record<string, string> = {
   epic_qa: 'Epic QA Tests',
   qa_engineer: 'QA Tests',
   curator: 'Context Update',
-  tech_refinement: 'Tech Refinement',
   critic: 'Critic Review',
   api_spec: 'API Contract',
 };

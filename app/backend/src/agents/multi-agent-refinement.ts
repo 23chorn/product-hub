@@ -429,8 +429,22 @@ export async function runMultiAgentRefinement(
   // reinvented under two features. This is a prompt-only guardrail (cheap, no extra LLM
   // calls); the deterministic backstop that catches whatever still slips through is
   // detectBacklogOverlaps() in backlog-overlap.ts.
+  //
+  // FR ownership (not just the description) is included per sibling because description text
+  // alone is too soft a boundary for a specific failure pattern: a feature that SETS a value
+  // also writing the story that DISPLAYS that value elsewhere (e.g. a confirmation screen, a
+  // list view), because showing the result feels like a natural way to "complete" the feature.
+  // That downstream display is legitimate scope only if this feature's own FR ownership below
+  // actually covers it — otherwise it belongs to whichever sibling feature owns that FR, even
+  // though the wording of the two tickets won't look alike.
   const siblingFeaturesSection = siblingFeatures.length > 0
-    ? `## Other Features in This Initiative (owned elsewhere — do NOT duplicate their scope)\n${siblingFeatures.map((f: any) => `- **${f.title}**${f.phase ? ` (${f.phase})` : ''}: ${f.description || '(no description)'}`).join('\n')}\n\nIf this feature genuinely needs the same capability another feature already owns, reference it (e.g. "reuses the notification settings screen from Feature 2") instead of redefining it as a new story.`
+    ? `## Other Features in This Initiative (owned elsewhere — do NOT duplicate their scope)\n${siblingFeatures.map((f: any) => {
+        const siblingPrdRef = f.prdRef ?? f.prd_ref;
+        const siblingFrIds: string[] = siblingPrdRef?.functionalRequirements ?? siblingPrdRef?.functional_requirements ?? [];
+        return `- **${f.title}**${f.phase ? ` (${f.phase})` : ''}${siblingFrIds.length ? ` [owns ${siblingFrIds.join(', ')}]` : ''}: ${f.description || '(no description)'}`;
+      }).join('\n')}\n\n` +
+      `If this feature genuinely needs the same capability another feature already owns, reference it (e.g. "reuses the notification settings screen from Feature 2") instead of redefining it as a new story.\n\n` +
+      `**Do not write a story just because it feels like a natural extension of this feature's flow.** A common mistake: a feature that lets the user SET a value also writes the story that DISPLAYS that value somewhere else (a confirmation screen, a summary list, another screen) — even though that display behavior traces to a different FR owned by a sibling feature above. Before writing a story, check it against THIS feature's own FR ownership (see PRD Traceability below) — if it doesn't trace to one of those FRs, it isn't this feature's story to write, no matter how related it feels.`
     : '';
 
   const featureBrief = `
@@ -935,6 +949,7 @@ ${ACCEPTANCE_CRITERIA_FORMAT_RULE}
 - Ensure all story_id references are consistent (F?.S1, F?.S2, etc.)
 - **CRITICAL — One stream per ticket:** Each story's \`platform\` field MUST be a single string — exactly one of: \`"backend"\`, \`"web"\`, \`"ios"\`, \`"android"\`. Never use an array. If an engineer proposed work on your behalf that spans multiple platforms, split it into separate stories — one per platform. Each story's technical_acceptance_criteria must be specific to that one platform only. Stories that require work on multiple platforms must appear as multiple separate stories (e.g. "Create Alert API [Backend]" and "Create Alert Form [Web]"). Title each story to make the platform clear.
 - **CRITICAL — Platform coverage:** Every in-scope mobile platform must be represented. If both ios and android appear in the Platform Scope section, every user-facing scenario must produce a separate story for each — do not write only iOS stories and skip Android (or vice versa). The iOS engineer and Android engineer each contributed separately; synthesize their work as separate stories. A mobile feature with 3 user scenarios must produce at minimum 3 ios stories AND 3 android stories.
+- **CRITICAL — Feature boundary discipline:** Before including any draft story in the final artifact, verify it traces to one of THIS feature's own FR(s) (see PRD Traceability in the brief), not a sibling feature's. A story that a participant proposed because it felt like a natural continuation of the flow — e.g. this feature lets the user set/change a value, and the draft story shows that value on a different screen (confirmation, summary, list view) — is scope creep if that display behavior is a sibling feature's own FR (see "Other Features in This Initiative" in the brief). Drop or hand those back rather than including them; if genuinely unsure whether it belongs here, leave it out rather than duplicating a sibling's future ticket.
 - Do NOT include a test_cases field — the QA engineer stage owns the full test suite as a separate artifact
 - Keep technical_acceptance_criteria and technical_notes to meaningful direction only — what needs to be built and any constraint worth flagging now. Do not write exhaustive implementation specs (exact endpoint signatures, full schemas, function names) — that level of detail gets filled in later as the work is picked up.
 - Do not write accessibility-specific acceptance criteria, stories, or technical notes (screen reader support, TalkBack, VoiceOver, voice control, etc.) — this product does not target those use cases unless the PRD explicitly requires them.

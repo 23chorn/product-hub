@@ -186,14 +186,14 @@ export async function retryCurrentStage(
 
   const stage = workflow.current_stage;
 
-  // "curator" and "critic" are fully-automated stages with no specialist session of their
-  // own — their logic runs inline in advanceStageCore (workflow-router.ts), not through
-  // runAutonomousStage. Retrying them the normal way spins up a bogus specialist session
+  // "curator" is a fully-automated stage with no specialist session of its own — its
+  // logic runs inline in advanceStageCore (workflow-router.ts), not through
+  // runAutonomousStage. Retrying it the normal way spins up a bogus specialist session
   // (stageSession() falls back to 'analyst') and calls runAutonomousStage, which has no
-  // stage map entry for either and silently no-ops — leaving the workflow stuck forever
+  // stage map entry for it and silently no-ops — leaving the workflow stuck forever
   // with no way to recover from the UI. Instead, rewind current_stage to the preceding
   // stage and re-advance — the exact same code path that ran it the first time.
-  if (stage === 'curator' || stage === 'critic') {
+  if (stage === 'curator') {
     const sequence: string[] = JSON.parse(workflow.stage_sequence);
     const idx = sequence.indexOf(stage);
     const prevStage = idx > 0 ? sequence[idx - 1] : null;

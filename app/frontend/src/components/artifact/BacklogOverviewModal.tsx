@@ -19,6 +19,10 @@ interface StoriesTestsProps {
   epicFeaturesArtifactId?: number | null;
   /** PRD artifact id — used to load FR/NFR text for hover tooltips on prdRef badges. */
   prdArtifactId?: number | null;
+  /** Unified whole-backlog QA suite artifact ("epic_qa" stage) — the current architecture's
+   *  single test-suite source, preferred over merging the legacy per-feature qaArtifactId
+   *  entries in featureButtons when present. */
+  epicQaArtifactId?: number | null;
 }
 
 interface Props extends StoriesTestsProps {
@@ -43,7 +47,7 @@ export function mergeBacklogs(parsed: Array<{ num: number; data: BacklogData }>)
  * artifact viewer's read of the final backlog_merge artifact (the same merge, rendered the
  * same way wherever it's viewed).
  */
-export function BacklogStoriesTests({ featureButtons, initiativeTitle, epicFeaturesArtifactId, prdArtifactId }: StoriesTestsProps) {
+export function BacklogStoriesTests({ featureButtons, initiativeTitle, epicFeaturesArtifactId, prdArtifactId, epicQaArtifactId }: StoriesTestsProps) {
   const [tab, setTab] = useState<'stories' | 'tests'>('stories');
   const [backlog, setBacklog] = useState<BacklogData | null>(null);
   const [qa, setQa] = useState<QATestSuite | null>(null);
@@ -81,12 +85,17 @@ export function BacklogStoriesTests({ featureButtons, initiativeTitle, epicFeatu
       prdArtifactId
         ? api.getArtifactContent(prdArtifactId).then(({ content }) => content).catch(() => null)
         : Promise.resolve(null),
-    ]).then(([ticketResults, qaResults, epicFeaturesResult, prdContent]) => {
+      // Current architecture: one unified QA suite for the whole backlog, not per feature.
+      // Preferred over the legacy per-feature qaTargets merge below when both exist.
+      epicQaArtifactId
+        ? api.getArtifactContent(epicQaArtifactId).then(({ content }) => tryParseQATests(content)).catch(() => null)
+        : Promise.resolve(null),
+    ]).then(([ticketResults, qaResults, epicFeaturesResult, prdContent, epicQaResult]) => {
       if (stale) return;
       const validTickets = ticketResults.filter((r): r is { num: number; data: BacklogData } => !!r?.data);
       const validQa = qaResults.filter((r): r is { num: number; data: QATestSuite } => !!r?.data);
       setBacklog(mergeBacklogs(validTickets));
-      setQa(mergeQaTests(validQa));
+      setQa(epicQaResult ?? mergeQaTests(validQa));
       setEpicFeatures(epicFeaturesResult);
       if (prdContent) {
         const { frMap: frs, nfrMap: nfrs } = buildPrdMaps(prdContent);
@@ -96,7 +105,7 @@ export function BacklogStoriesTests({ featureButtons, initiativeTitle, epicFeatu
     }).finally(() => { if (!stale) setLoading(false); });
 
     return () => { stale = true; };
-  }, [ticketKey, qaKey, epicFeaturesArtifactId, prdArtifactId]);
+  }, [ticketKey, qaKey, epicFeaturesArtifactId, prdArtifactId, epicQaArtifactId]);
 
   const totalStories = backlog?.features?.reduce((sum, f) => sum + (f.stories?.length ?? 0), 0) ?? 0;
   const totalTests = qa?.test_cases.length ?? 0;

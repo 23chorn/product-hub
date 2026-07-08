@@ -40,7 +40,7 @@ The output is displayed in two views:
 - `figma_file_url`: Use the file URL from the **Target Figma File** section of your context if provided. Leave as an empty string if no target file was specified or this stage is running in bypass mode.
 - `frame_url`: Link to the Figma frame for this screen. If the screen has multiple states (empty state, loading, error, modal open, etc.), group all state frames inside a **Figma Section** and link to the Section — the API contract stage fetches the full subtree, so all states are captured in one link.
 - `figma_write_status`: Always set to `"planned"` — later steps stamp this to `"annotated"`, `"created"`, or `"reviewed"` automatically.
-- `screens_created`: Minimum 3, maximum 8. Each screen must correspond to a named user journey from the PRD.
+- `screens_created`: No fixed minimum — the count must match the number of journeys the PRD actually names for this feature (a feature touching 2 journeys gets 2 screens, not padded higher). Maximum 8. Each screen must correspond to a named user journey from the PRD; do not split one journey across multiple screens just to raise the count.
 - `description`: **One sentence only.** This is shown in the Summary page alongside every other screen — it must be brief enough to scan. Save detail for `layout_notes`.
 - `layout_notes`: The few things a designer needs to know to build the screen correctly. Shown on the per-screen detail page, so a few sentences is fine. Do not enumerate tokens or pixel values — the designer has the design system open already.
 - `navigation_flow`: ASCII diagram showing how screens connect — shown on the Summary page. Example: `ChannelList → ChannelDetail → Compose → ChannelDetail`

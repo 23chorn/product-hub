@@ -165,6 +165,11 @@ export const backlogOverlapFlags = sqliteTable('backlog_overlap_flags', {
   resolved_at:         integer('resolved_at'),
   notes:               text('notes'),
   created_at:          integer('created_at').notNull(),
+  // 'overlap': wording-similarity match between two real stories (story_id_a is a real story).
+  // 'scope_violation': story_id_b traces to an FR owned by feature_key_a, per epic_features —
+  // deterministic, not fuzzy — so story_id_a is a placeholder (no comparable "other" story;
+  // the owning feature just hasn't necessarily written its own version of it yet).
+  flag_type:           text('flag_type', { enum: ['overlap', 'scope_violation'] }).notNull().default('overlap'),
 }, (t) => [
   index('idx_backlog_overlap_flags_workflow').on(t.workflow_id),
 ]);
@@ -261,6 +266,7 @@ export const adoWorkItemMap = sqliteTable('ado_work_item_map', {
   state:           text('state'),            // raw ADO System.State, null until first refresh
   state_synced_at: integer('state_synced_at'), // epoch ms of last successful refresh
   created_at:      integer('created_at').notNull(),
+  parent_local_key: text('parent_local_key'), // local_key of the immediate parent (feature's epic, story's feature); null for epics
 }, (t) => [
   uniqueIndex('idx_ado_map_key').on(t.workflow_id, t.local_key),
 ]);

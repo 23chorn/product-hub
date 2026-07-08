@@ -10,7 +10,6 @@ export const STAGE_WIKI_LABELS: Record<string, string> = {
   solution_architect: 'Architecture',
   story_decomposition:'Backlog',
   qa_engineer:        'QA Test Plan',
-  tech_refinement:    'Technical Refinement',
 };
 
 const BASE_PATH = '/Product Documentation/Features';

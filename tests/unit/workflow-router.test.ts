@@ -25,13 +25,6 @@ function seedItem(id: string): void {
   ).run(id, `Item ${id}`, now, now);
 }
 
-function setGlobalPolicy(key: string, value: string): void {
-  db.prepare(
-    `INSERT INTO policies (scope, rule_key, rule_value, created_at)
-     VALUES ('global', ?, ?, ?)`
-  ).run(key, value, Date.now());
-}
-
 function seedActiveWorkflow(id: string, itemId: string, stage: string): void {
   const now = Date.now();
   db.prepare(
@@ -55,31 +48,18 @@ describe('createWorkflow', () => {
 
   it('persists the stage sequence, policy overrides, and item link', () => {
     seedItem('itm-1');
-    const wf = createWorkflow('itm-1', 'Build a thing', ['analyst', 'pm_prd', 'critic'], {
+    const wf = createWorkflow('itm-1', 'Build a thing', ['analyst', 'pm_prd', 'solution_architect'], {
       'model:analyst': 'claude-opus-4-8',
     });
 
     expect(wf.item_id).toBe('itm-1');
     expect(wf.goal).toBe('Build a thing');
     expect(wf.status).toBe('active');
-    expect(JSON.parse(wf.stage_sequence)).toEqual(['analyst', 'pm_prd', 'critic']);
+    expect(JSON.parse(wf.stage_sequence)).toEqual(['analyst', 'pm_prd', 'solution_architect']);
     expect(JSON.parse(wf.policy_overrides)).toEqual({ 'model:analyst': 'claude-opus-4-8' });
 
     const row = db.prepare('SELECT id FROM workflows WHERE id = ?').get(wf.id) as { id: string };
     expect(row.id).toBe(wf.id);
-  });
-
-  it('keeps the critic stage when no policy disables it', () => {
-    seedItem('itm-2');
-    const wf = createWorkflow('itm-2', 'goal', ['analyst', 'critic']);
-    expect(JSON.parse(wf.stage_sequence)).toContain('critic');
-  });
-
-  it('removes the critic stage when require_critic_review is false', () => {
-    seedItem('itm-3');
-    setGlobalPolicy('require_critic_review', 'false');
-    const wf = createWorkflow('itm-3', 'goal', ['analyst', 'critic', 'pm_prd']);
-    expect(JSON.parse(wf.stage_sequence)).toEqual(['analyst', 'pm_prd']);
   });
 
   it('defaults policy overrides to an empty object when none are given', () => {

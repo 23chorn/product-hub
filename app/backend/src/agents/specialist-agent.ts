@@ -23,7 +23,6 @@ const STAGE_TEMPLATE_MAP: Record<string, string> = {
   epic_feature_planner: 'epic-features.template.md',
   solution_architect:   'architecture.template.md',
   story_decomposition:  'backlog.template.md',
-  tech_refinement:      'tech-refinement.template.md',
   prototype:            'prototype.template.md',
   figma_design:         'figma-design.template.md',
   qa_engineer:          'qa-tests.template.md',

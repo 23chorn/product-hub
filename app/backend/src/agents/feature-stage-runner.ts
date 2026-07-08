@@ -21,7 +21,7 @@ import { progressHeartbeatLine, collectStreamWithHeartbeat, STAGE_MAX_OUTPUT_TOK
 import { stripJsonFence, repairTruncatedJson } from '../utils/json-repair';
 import { computeRevisionDiff } from '../utils/revision-diff';
 import { loadEpicFeatures } from './feature-decomposition';
-import { detectBacklogOverlaps, recordOverlapFlags, loadAutoResolvedStoryKeys, excludeAutoResolvedStories } from './backlog-overlap';
+import { detectBacklogOverlaps, recordOverlapFlags, loadAutoResolvedStoryKeys, excludeAutoResolvedStories, buildFrOwnershipMap, detectOutOfScopeFrReferences } from './backlog-overlap';
 import { loadLatestArtifactContent, saveLocalArtifact, saveDiffArtifact } from './artifact-helpers';
 import { SpecialistAgent } from './specialist-agent';
 import { summarizeRevisionDiff } from './revision-diff-summary';
@@ -187,6 +187,31 @@ export async function runBacklogMerge(
     insertEvent(workflowId, 'validation_warning', 'backlog_merge',
       `Detected ${overlaps.length} possible scope overlap${overlaps.length !== 1 ? 's' : ''} across features — review before approving`,
       { overlap_count: overlaps.length });
+  }
+
+  // Feature-boundary scope check backstop — same FR-ownership logic pushFeatureToADO already
+  // ran per-feature, re-run here across the final merged set in case epic_features wasn't
+  // available yet at push time, or ownership was edited afterward. authoritativeFeatures is
+  // already loaded above and carries each feature's own prdRef.functionalRequirements.
+  if (authoritativeFeatures.length > 0) {
+    const frOwnership = buildFrOwnershipMap(authoritativeFeatures);
+    const violations = featureArtifacts.flatMap((f: any, i: number) =>
+      detectOutOfScopeFrReferences(f.key || `F${i + 1}`, f.stories ?? [], frOwnership)
+    );
+    if (violations.length > 0) {
+      recordOverlapFlags(violations.map(v => ({
+        workflowId, itemId,
+        featureKeyA: v.owningFeatureKey, storyIdA: '',
+        featureKeyB: v.featureKey, storyIdB: v.storyId,
+        score: 1, matchedTerms: [v.frId],
+        status: 'pending' as const,
+        flagType: 'scope_violation' as const,
+      })));
+      logger.info(`[BACKLOG MERGE] Flagged ${violations.length} feature-boundary scope violation(s) for review`);
+      insertEvent(workflowId, 'validation_warning', 'backlog_merge',
+        `${violations.length} stor${violations.length !== 1 ? 'ies trace' : 'y traces'} to a sibling feature's FR — flagged for review`,
+        { scope_violation_count: violations.length });
+    }
   }
 
   // Build final merged backlog

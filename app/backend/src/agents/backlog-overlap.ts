@@ -19,6 +19,8 @@
  */
 import db from '../data/database';
 import { tokenize } from '../utils/text-tokens';
+import { normalizeReqId } from '../utils/prd-enrichment';
+import { featureLocalKey } from '@pap/shared';
 
 const OVERLAP_THRESHOLD = 0.35;
 /** Score at/above which a match is treated as certain enough to auto-drop instead of
@@ -39,6 +41,7 @@ interface StoryLike {
   i_want?: string;
   so_that?: string;
   acceptance_criteria?: string[];
+  platform?: string;
 }
 
 interface FeatureLike {
@@ -73,6 +76,11 @@ function jaccard(a: Set<string>, b: Set<string>): { score: number; matched: stri
  * Compare every story pair across different features (same-feature pairs are ignored —
  * this is about cross-feature scope bleed, not intra-feature duplicates) and return
  * candidates whose token overlap clears OVERLAP_THRESHOLD, highest score first.
+ *
+ * Platform-tagged stories on different platforms are never compared, even if the wording
+ * is near-identical — a "Confirmation Screen" story for iOS and one for Android are expected
+ * parallel tickets (see the story-decomposition "one platform per ticket" rule), not a
+ * duplicate. Only same-platform (or platform-untagged, for older artifacts) pairs are scored.
  */
 export function detectBacklogOverlaps(features: FeatureLike[]): OverlapCandidate[] {
   const entries = features.flatMap((f, i) => {
@@ -80,6 +88,7 @@ export function detectBacklogOverlaps(features: FeatureLike[]): OverlapCandidate
     return (f.stories ?? []).map(story => ({
       featureKey,
       story,
+      platform: story.platform,
       tokens: tokenize(storyText(story), EXTRA_STOPWORDS),
     }));
   });
@@ -91,6 +100,7 @@ export function detectBacklogOverlaps(features: FeatureLike[]): OverlapCandidate
       const b = entries[j];
       if (a.featureKey === b.featureKey) continue;
       if (a.tokens.size === 0 || b.tokens.size === 0) continue;
+      if (a.platform && b.platform && a.platform !== b.platform) continue;
 
       const { score, matched } = jaccard(a.tokens, b.tokens);
       if (score >= OVERLAP_THRESHOLD) {
@@ -109,6 +119,66 @@ export function detectBacklogOverlaps(features: FeatureLike[]): OverlapCandidate
   return candidates.sort((x, y) => y.score - x.score);
 }
 
+// ── FR-ownership scope-boundary check ────────────────────────────────────────
+//
+// detectBacklogOverlaps above catches two DIFFERENTLY-scoped stories that happen to read as
+// near-duplicates. It can't catch a feature writing a story that's actually a sibling
+// feature's job but worded nothing like it — e.g. a "set the expiry date" feature also
+// writing "display the expiry date in the confirmation screen", which traces to a different
+// FR than the one this feature owns. epic_feature_planner assigns each feature explicit FR
+// ownership up front (see epic-features.template.md's prdRef.functionalRequirements), before
+// any feature is even decomposed — so this check needs no wording similarity and no push
+// order; it's a straight lookup against a boundary the epic plan already drew.
+
+export interface FrOwnershipViolation {
+  /** The feature the out-of-scope story currently lives under. */
+  featureKey: string;
+  storyId: string;
+  /** The feature epic_feature_planner actually assigned this FR to. */
+  owningFeatureKey: string;
+  frId: string;
+}
+
+/** Build a normalized FR id -> owning feature key map from the epic_features artifact's
+ *  flattened feature list. Feature key is positional (featureLocalKey(index)), matching the
+ *  convention every other push-time/backlog-merge key derivation in this codebase uses. */
+export function buildFrOwnershipMap(epicFeatures: Array<{ prdRef?: any; prd_ref?: any }>): Map<string, string> {
+  const map = new Map<string, string>();
+  epicFeatures.forEach((f, i) => {
+    const featureKey = featureLocalKey(i);
+    const ref = f.prdRef ?? f.prd_ref;
+    const frIds: string[] = ref?.functionalRequirements ?? ref?.functional_requirements ?? [];
+    for (const frId of frIds) map.set(normalizeReqId(frId), featureKey);
+  });
+  return map;
+}
+
+/**
+ * Check one feature's stories against the FR-ownership map: a story whose prd_ref traces to
+ * an FR owned by a DIFFERENT feature is scope creep, regardless of how differently worded it
+ * is from anything that feature owns. An FR with no owner in the map (e.g. epic_features wasn't
+ * available, or the FR genuinely isn't assigned to any feature) is silently skipped — this
+ * check only fires on a positive, known ownership conflict, never on missing data.
+ */
+export function detectOutOfScopeFrReferences(
+  featureKey: string,
+  stories: StoryLike[],
+  frOwnerByFrId: Map<string, string>,
+): FrOwnershipViolation[] {
+  const violations: FrOwnershipViolation[] = [];
+  for (const story of stories) {
+    const ref = (story as any).prd_ref ?? (story as any).prdRef;
+    const frIds: string[] = ref?.functional_requirements ?? ref?.functionalRequirements ?? [];
+    for (const frId of frIds) {
+      const owner = frOwnerByFrId.get(normalizeReqId(frId));
+      if (owner && owner !== featureKey) {
+        violations.push({ featureKey, storyId: story.story_id ?? '', owningFeatureKey: owner, frId });
+      }
+    }
+  }
+  return violations;
+}
+
 // ── Persistence ────────────────────────────────────────────────────────────────
 
 export interface OverlapFlagRecord {
@@ -121,6 +191,10 @@ export interface OverlapFlagRecord {
   score: number;
   matchedTerms: string[];
   status: 'pending' | 'auto_resolved';
+  /** 'overlap' (default): wording-similarity match, storyIdA is a real story.
+   *  'scope_violation': storyIdB traces to an FR owned by featureKeyA — storyIdA is a
+   *  placeholder since there's no specific "other" story to compare against. */
+  flagType?: 'overlap' | 'scope_violation';
 }
 
 /**
@@ -133,15 +207,15 @@ export function recordOverlapFlags(records: OverlapFlagRecord[]): void {
   if (records.length === 0) return;
   const insert = db.prepare(`
     INSERT INTO backlog_overlap_flags
-      (workflow_id, item_id, feature_key_a, story_id_a, feature_key_b, story_id_b, score, matched_terms, status, resolved_at, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (workflow_id, item_id, feature_key_a, story_id_a, feature_key_b, story_id_b, score, matched_terms, status, resolved_at, created_at, flag_type)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const now = Date.now();
   for (const r of records) {
     insert.run(
       r.workflowId, r.itemId, r.featureKeyA, r.storyIdA, r.featureKeyB, r.storyIdB,
       r.score, JSON.stringify(r.matchedTerms), r.status,
-      r.status === 'auto_resolved' ? now : null, now
+      r.status === 'auto_resolved' ? now : null, now, r.flagType ?? 'overlap'
     );
   }
 }

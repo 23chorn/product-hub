@@ -15,6 +15,8 @@ import {
   recordOverlapFlags,
   loadAutoResolvedStoryKeys,
   AUTO_RESOLVE_THRESHOLD,
+  buildFrOwnershipMap,
+  detectOutOfScopeFrReferences,
 } from '../../app/backend/src/agents/backlog-overlap';
 
 function seedWorkflowAndItem(workflowId: string, itemId: string): void {
@@ -60,6 +62,30 @@ describe('detectBacklogOverlaps', () => {
       { key: 'F2', stories: [{ story_id: 'F2-S1', title: 'Dark mode', i_want: 'to toggle dark mode', so_that: 'I can use the app at night' }] },
     ];
     expect(detectBacklogOverlaps(features)).toHaveLength(0);
+  });
+
+  it('does not flag near-identical stories that are tagged for different platforms', () => {
+    const features = [
+      { key: 'F1', stories: [{ story_id: 'F1-S1', title: 'Confirmation Screen', i_want: 'to see a confirmation after submitting', so_that: 'I know it succeeded', platform: 'ios' }] },
+      { key: 'F2', stories: [{ story_id: 'F2-S1', title: 'Confirmation Screen', i_want: 'to see a confirmation after submitting', so_that: 'I know it succeeded', platform: 'android' }] },
+    ];
+    expect(detectBacklogOverlaps(features)).toHaveLength(0);
+  });
+
+  it('still flags near-identical stories tagged for the same platform', () => {
+    const features = [
+      { key: 'F1', stories: [{ story_id: 'F1-S1', title: 'Confirmation Screen', i_want: 'to see a confirmation after submitting', so_that: 'I know it succeeded', platform: 'ios' }] },
+      { key: 'F2', stories: [{ story_id: 'F2-S1', title: 'Confirmation Screen', i_want: 'to see a confirmation after submitting', so_that: 'I know it succeeded', platform: 'ios' }] },
+    ];
+    expect(detectBacklogOverlaps(features)).toHaveLength(1);
+  });
+
+  it('still flags near-identical stories when platform is untagged on either side (legacy data)', () => {
+    const features = [
+      { key: 'F1', stories: [{ story_id: 'F1-S1', title: 'Reset password', i_want: 'to reset my password via email link', so_that: 'I can regain access' }] },
+      { key: 'F2', stories: [{ story_id: 'F2-S1', title: 'Reset password', i_want: 'to reset my password via email link', so_that: 'I can regain access', platform: 'web' }] },
+    ];
+    expect(detectBacklogOverlaps(features)).toHaveLength(1);
   });
 
   it('puts a later-positioned feature on the B side of every candidate (ordering guarantee relied on by pushFeatureToADO)', () => {
@@ -122,6 +148,65 @@ describe('recordOverlapFlags + loadAutoResolvedStoryKeys', () => {
     ]);
 
     expect(loadAutoResolvedStoryKeys('wf-1').size).toBe(0);
+  });
+});
+
+describe('buildFrOwnershipMap', () => {
+  it('maps each FR id to its owning feature by position', () => {
+    const map = buildFrOwnershipMap([
+      { prdRef: { functionalRequirements: ['FR-01', 'FR-02'] } },
+      { prdRef: { functionalRequirements: ['FR-03'] } },
+    ]);
+    expect(map.get('FR1')).toBe('F1');
+    expect(map.get('FR2')).toBe('F1');
+    expect(map.get('FR3')).toBe('F2');
+  });
+
+  it('handles snake_case field names from older artifacts', () => {
+    const map = buildFrOwnershipMap([{ prd_ref: { functional_requirements: ['FR1'] } }]);
+    expect(map.get('FR1')).toBe('F1');
+  });
+
+  it('returns an empty map when no feature has FR ownership', () => {
+    expect(buildFrOwnershipMap([{}, {}]).size).toBe(0);
+  });
+});
+
+describe('detectOutOfScopeFrReferences', () => {
+  it('flags a story that traces to an FR owned by a different feature', () => {
+    const frOwnership = buildFrOwnershipMap([
+      { prdRef: { functionalRequirements: ['FR1'] } },
+      { prdRef: { functionalRequirements: ['FR2'] } },
+    ]);
+    const stories = [{ story_id: 'F1.S1', prd_ref: { functional_requirements: ['FR2'] } }];
+    const violations = detectOutOfScopeFrReferences('F1', stories, frOwnership);
+    expect(violations).toEqual([{ featureKey: 'F1', storyId: 'F1.S1', owningFeatureKey: 'F2', frId: 'FR2' }]);
+  });
+
+  it('does not flag a story that traces only to its own feature\'s FRs', () => {
+    const frOwnership = buildFrOwnershipMap([{ prdRef: { functionalRequirements: ['FR1', 'FR2'] } }]);
+    const stories = [{ story_id: 'F1.S1', prd_ref: { functional_requirements: ['FR1', 'FR2'] } }];
+    expect(detectOutOfScopeFrReferences('F1', stories, frOwnership)).toEqual([]);
+  });
+
+  it('does not flag an FR with no known owner (missing data, not a violation)', () => {
+    const frOwnership = buildFrOwnershipMap([{ prdRef: { functionalRequirements: ['FR1'] } }]);
+    const stories = [{ story_id: 'F1.S1', prd_ref: { functional_requirements: ['FR9'] } }];
+    expect(detectOutOfScopeFrReferences('F1', stories, frOwnership)).toEqual([]);
+  });
+
+  it('matches FR id format variants (FR-02 vs FR2)', () => {
+    const frOwnership = buildFrOwnershipMap([{ prdRef: { functionalRequirements: ['FR1'] } }, { prdRef: { functionalRequirements: ['FR-02'] } }]);
+    const stories = [{ story_id: 'F1.S1', prd_ref: { functional_requirements: ['FR2'] } }];
+    const violations = detectOutOfScopeFrReferences('F1', stories, frOwnership);
+    expect(violations[0].owningFeatureKey).toBe('F2');
+  });
+
+  it('handles legacy camelCase prdRef on stories', () => {
+    const frOwnership = buildFrOwnershipMap([{ prdRef: { functionalRequirements: ['FR1'] } }, { prdRef: { functionalRequirements: ['FR2'] } }]);
+    const stories = [{ story_id: 'F1.S1', prdRef: { functionalRequirements: ['FR2'] } }];
+    const violations = detectOutOfScopeFrReferences('F1', stories, frOwnership);
+    expect(violations).toHaveLength(1);
   });
 });
 

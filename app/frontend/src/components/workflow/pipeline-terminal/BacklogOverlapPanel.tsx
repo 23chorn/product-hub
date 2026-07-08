@@ -7,9 +7,14 @@ interface Props {
   onClose: () => void;
 }
 
-function StoryCard({ story }: { story: BacklogOverlapStory }) {
+function StoryCard({ story, onKeep, keeping, keepLabel }: {
+  story: BacklogOverlapStory;
+  onKeep: () => void;
+  keeping: boolean;
+  keepLabel: string;
+}) {
   return (
-    <div className="flex-1 min-w-0 px-3 py-2 bg-surface-50 dark:bg-surface-800 rounded-lg border border-surface-200 dark:border-surface-700">
+    <div className="flex-1 min-w-0 px-3 py-2 bg-surface-50 dark:bg-surface-800 rounded-lg border border-surface-200 dark:border-surface-700 flex flex-col">
       <div className="flex items-center gap-1.5 flex-wrap mb-1">
         <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-surface-200 dark:bg-surface-700 text-surface-600 dark:text-surface-300">
           {story.featureKey}
@@ -22,6 +27,13 @@ function StoryCard({ story }: { story: BacklogOverlapStory }) {
           <span className="text-surface-400 dark:text-surface-500">wants to</span> {story.i_want}
         </p>
       )}
+      <button
+        onClick={onKeep}
+        disabled={keeping}
+        className="mt-2 self-start text-xs px-2 py-1 bg-green-100 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/50 text-green-700 dark:text-green-400 rounded transition-colors disabled:opacity-50"
+      >
+        {keeping ? '…' : keepLabel}
+      </button>
     </div>
   );
 }
@@ -55,19 +67,26 @@ export function BacklogOverlapPanel({ workflowId, onClose }: Props) {
     }
   }
 
-  async function resolve(id: number, status: 'confirmed' | 'dismissed') {
+  /** keep: which side survives — the other side's story (and its ADO ticket/test cases, if
+   *  already pushed) is deleted. Omitted for a dismiss (not a real duplicate — nothing deleted).
+   *  For a scope_violation flag, side A is always a placeholder (no real "other" story), so
+   *  callers always pass 'A' there — it just means "remove side B". */
+  async function resolve(id: number, status: 'confirmed' | 'dismissed', keep?: 'A' | 'B', successMessage?: string) {
     setActioning(id);
     setError(null);
     try {
-      await api.resolveBacklogOverlap(id, status);
+      await api.resolveBacklogOverlap(id, status, { keep });
       setFlags((prev) => prev.filter((f) => f.id !== id));
-      setToast(status === 'confirmed' ? 'Marked as a real overlap.' : 'Dismissed as false positive.');
+      setToast(successMessage ?? (status === 'confirmed' ? 'Resolved.' : 'Dismissed as false positive.'));
     } catch (err: any) {
       setError(err.response?.data?.error ?? err.message ?? 'Failed to update overlap flag');
     } finally {
       setActioning(null);
     }
   }
+
+  const overlapCount = flags.filter(f => f.flagType !== 'scope_violation').length;
+  const violationCount = flags.filter(f => f.flagType === 'scope_violation').length;
 
   return (
     <div className="bg-white dark:bg-surface-900 rounded-xl shadow-2xl border border-surface-200 dark:border-surface-700 w-full max-w-3xl max-h-[80vh] flex flex-col">
@@ -78,7 +97,11 @@ export function BacklogOverlapPanel({ workflowId, onClose }: Props) {
             Possible Scope Overlaps
           </h2>
           <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
-            {flags.length} pair{flags.length !== 1 ? 's' : ''} of tickets across features share overlapping scope — confirm or dismiss each
+            {overlapCount > 0 && `${overlapCount} overlapping pair${overlapCount !== 1 ? 's' : ''}`}
+            {overlapCount > 0 && violationCount > 0 && ', '}
+            {violationCount > 0 && `${violationCount} out-of-scope ticket${violationCount !== 1 ? 's' : ''}`}
+            {overlapCount === 0 && violationCount === 0 && 'Nothing pending'}
+            {' '}— keep/remove or dismiss each
           </p>
         </div>
         <button
@@ -126,6 +149,37 @@ export function BacklogOverlapPanel({ workflowId, onClose }: Props) {
         {flags.map((flag) => {
           const busy = actioning === flag.id;
 
+          if (flag.flagType === 'scope_violation') {
+            const frId = flag.matchedTerms[0] ?? '(unknown FR)';
+            return (
+              <div
+                key={flag.id}
+                className="border border-amber-200 dark:border-amber-800 rounded-lg overflow-hidden"
+              >
+                <div className="px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800 flex items-center justify-between">
+                  <span className="text-xs text-amber-700 dark:text-amber-400">
+                    Traces to <span className="font-medium">{frId}</span>, which belongs to feature <span className="font-mono font-medium">{flag.owningFeatureKey}</span> — not this one
+                  </span>
+                  <button
+                    onClick={() => resolve(flag.id, 'dismissed', undefined, 'Dismissed as not out of scope.')}
+                    disabled={busy}
+                    className="text-xs px-2 py-1 bg-surface-100 dark:bg-surface-700 hover:bg-surface-200 dark:hover:bg-surface-600 text-surface-600 dark:text-surface-300 rounded transition-colors disabled:opacity-50 flex-shrink-0 ml-3"
+                  >
+                    Not out of scope
+                  </button>
+                </div>
+                <div className="p-3">
+                  <StoryCard
+                    story={flag.storyB}
+                    onKeep={() => resolve(flag.id, 'confirmed', 'A', `Removed from ${flag.storyB.featureKey} — belongs to ${flag.owningFeatureKey}.`)}
+                    keeping={busy}
+                    keepLabel="Remove this ticket"
+                  />
+                </div>
+              </div>
+            );
+          }
+
           return (
             <div
               key={flag.id}
@@ -140,28 +194,29 @@ export function BacklogOverlapPanel({ workflowId, onClose }: Props) {
                     </span>
                   )}
                 </span>
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <button
-                    onClick={() => resolve(flag.id, 'confirmed')}
-                    disabled={busy}
-                    className="text-xs px-2 py-1 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 rounded transition-colors disabled:opacity-50"
-                  >
-                    {actioning === flag.id ? '…' : 'Confirm overlap'}
-                  </button>
-                  <button
-                    onClick={() => resolve(flag.id, 'dismissed')}
-                    disabled={busy}
-                    className="text-xs px-2 py-1 bg-surface-100 dark:bg-surface-700 hover:bg-surface-200 dark:hover:bg-surface-600 text-surface-600 dark:text-surface-300 rounded transition-colors disabled:opacity-50"
-                  >
-                    Not a duplicate
-                  </button>
-                </div>
+                <button
+                  onClick={() => resolve(flag.id, 'dismissed')}
+                  disabled={busy}
+                  className="text-xs px-2 py-1 bg-surface-100 dark:bg-surface-700 hover:bg-surface-200 dark:hover:bg-surface-600 text-surface-600 dark:text-surface-300 rounded transition-colors disabled:opacity-50"
+                >
+                  Not a duplicate
+                </button>
               </div>
 
               <div className="p-3 flex items-stretch gap-3">
-                <StoryCard story={flag.storyA} />
+                <StoryCard
+                  story={flag.storyA}
+                  onKeep={() => resolve(flag.id, 'confirmed', 'A', 'Kept the first ticket, deleted the other.')}
+                  keeping={busy}
+                  keepLabel="Keep this, delete the other"
+                />
                 <div className="flex items-center text-surface-300 dark:text-surface-600 text-xs">vs</div>
-                <StoryCard story={flag.storyB} />
+                <StoryCard
+                  story={flag.storyB}
+                  onKeep={() => resolve(flag.id, 'confirmed', 'B', 'Kept the second ticket, deleted the other.')}
+                  keeping={busy}
+                  keepLabel="Keep this, delete the other"
+                />
               </div>
             </div>
           );

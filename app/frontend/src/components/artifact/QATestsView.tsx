@@ -354,8 +354,9 @@ export function QATestsView({ data, frMap, phaseByFeatureKey, planUrlByFeatureKe
   // multi-agent QA artifacts don't populate it) or stale (a merged/filtered test_cases list
   // doesn't recompute it), so test_cases is the only count that's always correct.
   const totalCount = data.test_cases.length;
+  const hasPhaseData = !!phaseByFeatureKey && Object.keys(phaseByFeatureKey).length > 0;
   const [groupMode, setGroupMode] = useState<'type' | 'priority' | 'phase'>('type');
-  const effectiveGroupMode = groupMode === 'phase' && !phaseByFeatureKey ? 'type' : groupMode;
+  const effectiveGroupMode = groupMode === 'phase' && !hasPhaseData ? 'type' : groupMode;
   const groupedCases = effectiveGroupMode === 'type' ? groupByType(data.test_cases)
     : effectiveGroupMode === 'priority' ? groupByPriority(data.test_cases)
     : groupByPhase(data.test_cases, phaseByFeatureKey!, phaseOrder ?? []);
@@ -401,7 +402,7 @@ export function QATestsView({ data, frMap, phaseByFeatureKey, planUrlByFeatureKe
                 By {effectiveGroupMode === 'type' ? 'Type' : effectiveGroupMode === 'priority' ? 'Priority' : 'Phase'}
               </p>
               <div className="inline-flex rounded-md border border-surface-200 dark:border-surface-700 overflow-hidden">
-                {(phaseByFeatureKey ? (['type', 'priority', 'phase'] as const) : (['type', 'priority'] as const)).map((mode, i) => (
+                {(hasPhaseData ? (['type', 'priority', 'phase'] as const) : (['type', 'priority'] as const)).map((mode, i) => (
                   <button
                     key={mode}
                     onClick={() => setGroupMode(mode)}

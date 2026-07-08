@@ -421,47 +421,6 @@ ${policyLines}`;
     yield* streamAI(resolvedModel, this.buildPlanningSystemPrompt(), messages, undefined, { onTokens });
   }
 
-  // ── Streaming ─────────────────────────────────────────────────────────────
-
-  /**
-   * Stream the Coordinator's goal decomposition before a workflow exists.
-   * The Coordinator analyses the goal and emits its reasoning followed by a
-   * ```stages JSON array block that the caller extracts to build the stage sequence.
-   */
-  async *streamGoalDecomposition(
-    goal: string,
-    model?: string,
-    onTokens?: (usage: TokenUsage) => void
-  ): AsyncGenerator<string, void, unknown> {
-    const resolvedModel = resolveAgentModel('coordinator');
-    const systemPrompt  = this.buildStablePrompt();
-
-    const userMessage =
-      `You are planning a new product workflow. Analyse the goal below and decide which stages are needed.\n\n` +
-      `**Goal:** ${goal}\n\n` +
-      `Available stages (in typical order):\n` +
-      `- analyst              — Sage, research & problem space analysis\n` +
-      `- pm_prd               — Rex, Product Requirements Document\n` +
-      `- prototype            — Nova, interactive React prototype of key user journeys\n` +
-      `- figma_design         — Bora, Figma screen mockups from design tokens and PRD journeys\n` +
-      `- solution_architect   — Atlas, system architecture, tech decisions, data model, API design\n` +
-      `- epic_feature_planner — Apex, epic and feature breakdown with phase labels\n` +
-      `- story_decomposition  — Shard - Product Owner, multi-agent backlog of epics/stories\n` +
-      `- curator              — Ivy, update project context files with learnings\n\n` +
-      `Explain your reasoning briefly, then output the chosen stage sequence as a JSON array in a \`\`\`stages code block.\n\n` +
-      `Example:\n\`\`\`stages\n["analyst", "pm_prd", "prototype", "figma_design", "solution_architect", "epic_feature_planner", "story_decomposition", "curator"]\n\`\`\``;
-
-    logger.info(`Coordinator decomposing goal: "${goal.slice(0, 80)}…"`);
-
-    yield* streamAI(
-      resolvedModel,
-      systemPrompt,
-      [{ role: 'user', content: userMessage }],
-      undefined,
-      { onTokens }
-    );
-  }
-
   // ── Critic verdict filter ────────────────────────────────────────────────
 
   /**

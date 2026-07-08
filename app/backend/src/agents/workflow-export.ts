@@ -14,7 +14,7 @@ import { appConfig } from '../config/app-config';
 import db from '../data/database';
 import { insertEvent } from './workflow-db';
 import { loadArtifactContentById } from './artifact-helpers';
-import { loadPrdForItem, buildEpicEnrichment, buildFeatureEnrichment } from '../utils/prd-enrichment';
+import { loadPrdForItem, buildEpicEnrichment, buildFeatureEnrichment, collectFeaturePrdRefs } from '../utils/prd-enrichment';
 import { convertArtifactToMarkdown } from '../utils/artifact-to-markdown';
 import { getAzureDevOpsClient } from '../integrations/azure-devops';
 import Logger from '../utils/logger';
@@ -111,15 +111,10 @@ export async function pushBacklogToBoard(workflowId: string): Promise<PushToBoar
       backlog.epic.description = `${backlog.epic.description || ''}<hr>${epicHtml}`;
     }
 
-    // Features: referenced FRs + referenced Key User Journeys
+    // Features: full FR/NFR detail for the requirements this feature's stories trace to
     for (const feature of backlog.features as any[]) {
-      const frIds = new Set<string>();
-      const journeyRefs = new Set<string>();
-      for (const story of (feature.stories ?? []) as any[]) {
-        for (const fr of (story.prdRef?.functionalRequirements ?? []) as string[]) frIds.add(fr);
-        if (story.prdRef?.userJourney) journeyRefs.add(story.prdRef.userJourney as string);
-      }
-      const featureHtml = buildFeatureEnrichment(prdContent, frIds, journeyRefs);
+      const { frIds, nfrIds } = collectFeaturePrdRefs(feature);
+      const featureHtml = buildFeatureEnrichment(prdContent, frIds, nfrIds);
       if (featureHtml) {
         feature.description = `${feature.description || ''}<hr>${featureHtml}`;
       }

@@ -1,0 +1,1 @@
+ALTER TABLE `ado_work_item_map` ADD `parent_local_key` text;

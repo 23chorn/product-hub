@@ -758,6 +758,22 @@ export class AzureDevOpsClient {
   }
 
   /**
+   * Sum the effort estimate across a set of work items — stories carry their estimate in the
+   * custom AI Estimate Dev field, features/epics carry a previously-written rollup in the
+   * standard Effort field, so each item is read from whichever one is populated.
+   * Reads live from ADO (not local state) so it reflects manual edits or deletions made
+   * directly in ADO, not just through this app.
+   */
+  async sumEffortFields(ids: number[]): Promise<number> {
+    if (ids.length === 0) return 0;
+    const items = await this.getWorkItemsBatch(ids, [this.customFields.aiEstimateDev, 'Microsoft.VSTS.Scheduling.Effort']);
+    return items.reduce((sum, item) => {
+      const value = item.fields[this.customFields.aiEstimateDev] ?? item.fields['Microsoft.VSTS.Scheduling.Effort'] ?? 0;
+      return sum + (typeof value === 'number' ? value : 0);
+    }, 0);
+  }
+
+  /**
    * Add an external hyperlink relation to a work item.
    * Shows up in the work item's Links tab as "Hyperlink".
    * Safe to call multiple times — ADO deduplicates by URL.

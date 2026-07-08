@@ -1,0 +1,1 @@
+ALTER TABLE `backlog_overlap_flags` ADD `flag_type` text DEFAULT 'overlap' NOT NULL;

@@ -12,7 +12,7 @@ import { CoordinatorAgent } from '../agents/coordinator-agent';
 // The curator runs at the end to update project context files.
 export const DEFAULT_STAGES = ['analyst', 'pm_prd', 'prototype', 'figma_design', 'solution_architect', 'api_spec', 'epic_feature_planner', 'story_decomposition', 'curator'];
 
-export const KNOWN_STAGES = new Set(['analyst', 'pm_prd', 'epic_feature_planner', 'solution_architect', 'api_spec', 'story_decomposition', 'prototype', 'figma_design', 'critic', 'curator']);
+export const KNOWN_STAGES = new Set(['analyst', 'pm_prd', 'epic_feature_planner', 'solution_architect', 'api_spec', 'story_decomposition', 'prototype', 'figma_design', 'curator']);
 
 // ── Coordinator planning sessions (DB-backed) ─────────────────────────────────
 

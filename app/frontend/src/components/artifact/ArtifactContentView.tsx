@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { tryParseBacklog, isBacklogArtifactType } from '@pap/shared';
 import { removeStoryFromBacklog, removeTestCaseFromStory } from '../../utils/backlog-helpers';
-import { deriveFeatureButtons, deriveEpicFeaturesArtifactId } from '../../utils/feature-artifacts';
+import { deriveFeatureButtons, deriveEpicFeaturesArtifactId, deriveEpicQaArtifactId } from '../../utils/feature-artifacts';
 import { BacklogView } from './BacklogView';
 import { BacklogStoriesTests } from './BacklogOverviewModal';
 import { EpicFeaturesView, tryParseEpicFeatures, removePhase, removeFeatureFromPhase } from './EpicFeaturesView';
@@ -24,6 +24,11 @@ export interface ArtifactViewContext {
   /** FR id→text and NFR id→text maps from the PRD artifact — used for hover tooltips on prdRef badges. */
   frMap?: Record<string, string>;
   nfrMap?: Record<string, string>;
+  /** Feature key ("F1") -> phase label, from the epic_features artifact — powers QATestsView's
+   *  "Phase" grouping toggle when viewing a qa_tests artifact directly. Empty when no
+   *  epic_feature_planner run exists for this workflow. */
+  phaseByFeatureKey?: Record<string, string>;
+  phaseOrder?: string[];
   /** Rerun the current stage (used by the incomplete-artifact recovery prompt). */
   rerunStage: () => void;
   /** Close the artifact drawer. */
@@ -43,10 +48,11 @@ export interface ArtifactViewContext {
  * finally a raw-markdown fallback.
  */
 export function renderStructuredArtifact(content: string, ctx: ArtifactViewContext): ReactNode {
-  const { artifactType, activeWorkflow, checkpoints, pendingCheckpoint, hasApprovePermission, resolveLoading, frMap, nfrMap, rerunStage, onClose, requestDelete } = ctx;
+  const { artifactType, activeWorkflow, checkpoints, pendingCheckpoint, hasApprovePermission, resolveLoading, frMap, nfrMap, phaseByFeatureKey, phaseOrder, rerunStage, onClose, requestDelete } = ctx;
 
   const initiativeTitle = activeWorkflow?.summary ?? activeWorkflow?.goal?.split('\n')[0];
   const epicFeaturesArtifactId = deriveEpicFeaturesArtifactId(checkpoints);
+  const epicQaArtifactId = deriveEpicQaArtifactId(checkpoints);
   const prdArtifactId = checkpoints.find(c => c.stage === 'pm_prd' && c.artifact_id != null)?.artifact_id ?? null;
 
   // The final cross-feature merge ('backlog' exactly, not the per-feature 'backlog_F<n>'
@@ -60,6 +66,7 @@ export function renderStructuredArtifact(content: string, ctx: ArtifactViewConte
         initiativeTitle={initiativeTitle}
         epicFeaturesArtifactId={epicFeaturesArtifactId}
         prdArtifactId={prdArtifactId}
+        epicQaArtifactId={epicQaArtifactId}
       />
     );
   }
@@ -151,6 +158,8 @@ export function renderStructuredArtifact(content: string, ctx: ArtifactViewConte
     <QATestsView
       data={qaData}
       frMap={frMap}
+      phaseByFeatureKey={phaseByFeatureKey}
+      phaseOrder={phaseOrder}
       onDeleteTestCase={requestDelete ? (index) => {
         const tc = qaData.test_cases[index];
         if (!tc) return;

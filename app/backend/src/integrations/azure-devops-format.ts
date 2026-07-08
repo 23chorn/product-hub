@@ -41,6 +41,25 @@ export function deriveAiEstimateDev(effort: number | undefined | null): number |
   return effort !== undefined && effort !== null ? toNearestFibonacci(effort, DEV_COMPLEXITY_FIBONACCI) : undefined;
 }
 
+/** Sum a list of stories' point estimates, handling both the live (`estimated_points`) and legacy (`storyPoints`) field names. */
+export function sumStoryPoints(stories: Array<{ estimated_points?: number; storyPoints?: number }>): number {
+  return stories.reduce((total, s) => total + (s.estimated_points ?? s.storyPoints ?? 0), 0);
+}
+
+/**
+ * Build the "Estimated Effort" HTML block for a feature or epic description — a rough
+ * scope signal (total story points, story count) so competing initiatives/features can be
+ * compared for size without opening the backlog. Returns '' when there's nothing to show yet
+ * (e.g. epic_feature_planner has just run and no stories exist).
+ */
+export function buildEffortRollupHtml(totalPoints: number, storyCount: number, featureCount?: number): string {
+  if (storyCount === 0) return '';
+  const scope = featureCount !== undefined
+    ? `${totalPoints} point${totalPoints === 1 ? '' : 's'} across ${storyCount} stor${storyCount === 1 ? 'y' : 'ies'}, ${featureCount} feature${featureCount === 1 ? '' : 's'}`
+    : `${totalPoints} point${totalPoints === 1 ? '' : 's'} across ${storyCount} stor${storyCount === 1 ? 'y' : 'ies'}`;
+  return `<h4>Estimated Effort</h4><p>${scope}</p>`;
+}
+
 /** Strip leading user-story prefixes that the model may have included in the JSON fields. */
 export function stripStoryPrefix(text: string, prefix: RegExp): string {
   return text.replace(prefix, '').trim();
@@ -112,7 +131,7 @@ export function buildTechnicalSuggestions(technical: { constraints?: string[]; a
 }
 
 /**
- * Format per-platform technical notes from tech_refinement into an HTML section.
+ * Format per-platform technical notes from the multi-agent story refinement into an HTML section.
  * technical_notes: { ios, android, backend } — each is a free-text string.
  * Returns an empty string when no meaningful notes are present.
  */
@@ -184,7 +203,7 @@ export function buildAcceptanceCriteriaHtml(
 /**
  * Derive team tags from per-platform technical_notes.
  * A platform is tagged when its notes field is present and non-trivial.
- * Future streams (web) can be added here once the tech_refinement agent supports them.
+ * Future streams (web) can be added here once the story refinement agents support them.
  * Returns a semicolon-separated ADO tag string, or undefined when no tags apply.
  */
 export function deriveTeamTags(notes: { ios?: string | null; android?: string | null; backend?: string | null; web?: string | null } | undefined): string | undefined {

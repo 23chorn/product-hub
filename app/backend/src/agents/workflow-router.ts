@@ -23,7 +23,7 @@ import {
   stageStartedNarration,
 } from './stage-metadata';
 import {
-  saveCriticArtifact, loadLatestArtifactForItem, loadPriorDraftForStage,
+  loadPriorDraftForStage,
 } from './artifact-helpers';
 import { deleteWorkflow as deleteWorkflowImpl, recoverStaleWorkflows as recoverStaleWorkflowsImpl, startStaleRecoveryTimer } from './workflow-lifecycle';
 import { isDemoMode, isDemoWorkflow, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
@@ -36,7 +36,7 @@ import { parseDecompositionMetadata, findWaveForStage, type DecompositionMetadat
 export { propagateFeedback, reiterateFromStage, retryCurrentStage, restartWorkflow } from './workflow-mutations';
 export { deleteWorkflow } from './workflow-lifecycle';
 import Logger from '../utils/logger';
-import { getCoordinator, getCritic, getCurator } from './workflow-agents';
+import { getCoordinator, getCurator } from './workflow-agents';
 import { workflowOps, rolesJson, createSafetyNetCheckpoint, resolveStageSequenceMember } from './workflow-db';
 import { findRepoRoot } from '../utils/find-repo-root';
 import { getEnabledStages } from '../config/settings-store';
@@ -170,18 +170,7 @@ export function createWorkflow(
   stageSequence: string[],
   policyOverrides?: Record<string, string>
 ): import('./workflow-db').WorkflowRow {
-  const policies = loadGlobalPolicies();
-
   let sequence = [...stageSequence];
-
-  const requireCritic = policies.get('require_critic_review');
-  if (requireCritic === 'false' || requireCritic === false as any) {
-    const before = sequence.length;
-    sequence = sequence.filter(s => s !== 'critic');
-    if (sequence.length < before) {
-      logger.info('[POLICY] require_critic_review=false — removed critic from stage sequence');
-    }
-  }
 
   // Hard kill switch: a stage disabled in Settings can never enter a new workflow,
   // even if the caller (UI or a direct API request) still requests it.
@@ -339,98 +328,6 @@ async function advanceStageCore(workflowId: string): Promise<{ stage: string; se
   // Move to next stage
   stmts.updateWorkflowStage.run(nextStage, now, workflowId);
   logger.info(`Workflow ${workflowId} advancing: "${workflow.current_stage ?? '(start)'}" → "${nextStage}" (step ${nextIndex + 1}/${sequence.length})`);
-
-  // ── Critic stage: automated single-shot review ────────────────────────────
-  if (nextStage === 'critic') {
-    insertEvent(workflowId, 'stage_started', 'critic', 'Running quality review on the current stage output...');
-
-    const { content: artifactContent, type: artifactType } = loadLatestArtifactForItem(workflow.item_id);
-    const review = await getCritic().review(artifactContent, artifactType, resolveAgentModel('critic'), undefined, workflow.current_stage ?? undefined);
-
-    // Save full critic review as artifact .md file
-    const criticArtifactId = await saveCriticArtifact(workflow.item_id, 'critic', review.fullText);
-
-    const criticDetails = {
-      critic_verdict: review.verdict,
-      issue_count: review.issues.length,
-      critical_issues: review.issues.filter(i => i.severity === 'critical').length,
-      major_issues:    review.issues.filter(i => i.severity === 'major').length,
-      questions:       review.questions.slice(0, 3),
-      issues_summary:  review.issues.slice(0, 5).map(i => `[${i.severity.toUpperCase()}] ${i.description}`).join('; '),
-      auto_reviewed:   true,
-      critic_artifact_id: criticArtifactId,
-    };
-    const coordinatorAction = JSON.stringify(criticDetails);
-
-    // Check auto_approve_critic policy
-    const policies = loadGlobalPolicies();
-    const autoApproveCritic = policies.get('auto_approve_critic') === 'true' || policies.get('auto_approve_critic') === true as any;
-
-    if (autoApproveCritic && review.verdict === 'approve') {
-      // Auto-approve: no human gate needed
-      stmts.insertCheckpoint.run(workflowId, nextStage, null, 'approved', coordinatorAction, null, now);
-      insertEvent(workflowId, 'critic_verdict', 'critic',
-        'Quality review passed — no issues found. Auto-approved.',
-        criticDetails);
-      logger.info(`Critic auto-approved for workflow ${workflowId}`);
-
-      // Continue to next stage. Calls the core directly (not the exported advanceStage)
-      // since this is a synchronous continuation of the current call, not a new concurrent
-      // request — going through the queue would deadlock waiting on itself.
-      return advanceStageCore(workflowId);
-    }
-
-    if (autoApproveCritic && review.verdict === 'revise') {
-      // Auto-revise: roll back and rerun with critic feedback (max 2 retries)
-      const revisionCount = (review as any)._revisionCount ?? 0;
-      if (revisionCount < 2) {
-        stmts.insertCheckpoint.run(workflowId, nextStage, null, 'revised', coordinatorAction, null, now);
-        insertEvent(workflowId, 'critic_verdict', 'critic',
-          `Quality review flagged issues. Auto-revising (attempt ${revisionCount + 1}/2).`,
-          criticDetails);
-
-        // Roll back to the stage before critic and rerun
-        const criticIdx = sequence.indexOf('critic');
-        const prevStage = criticIdx > 0 ? sequence[criticIdx - 1] : null;
-        stmts.updateWorkflowStageAndStatus.run(prevStage, 'active', now, workflowId);
-
-        // Propagate critic feedback as a revision
-        const feedbackText = review.issues.map(i => `[${i.severity.toUpperCase()}] ${i.description}`).join('\n');
-        const brief = await getCoordinator().generateStageBrief(workflowId, prevStage!, feedbackText);
-        const stageMap = STAGE_SESSION_MAP[prevStage!] ?? { mode: 'analyst' as AppMode, agentType: 'analyst' as AgentType };
-        const session = sessionManager.createSpecialistSession(workflow.item_id, stageMap.mode, stageMap.agentType);
-        sessionManager.updateWorkflow(session.id, workflowId, brief);
-
-        workflowOps.runAutonomousStage(session.id, workflowId, prevStage!, workflow.item_id, brief, true)
-          .catch(err => logger.error(`Auto-revision after critic failed: ${err.message}`));
-
-        logger.info(`Critic auto-revise for workflow ${workflowId} — rerunning ${prevStage}`);
-        return { stage: nextStage, sessionId: null };
-      }
-      // Max retries exceeded — fall through to human gate
-    }
-
-    // Default: pause at checkpoint for human review
-    stmts.insertCheckpoint.run(workflowId, nextStage, null, 'pending', coordinatorAction, rolesJson(nextStage), now);
-    stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
-
-    if (review.verdict === 'approve') {
-      insertEvent(workflowId, 'critic_verdict', 'critic',
-        'Quality review passed — no issues found. Approve to proceed.',
-        criticDetails);
-    } else {
-      const issuesSummary = review.issues.slice(0, 3).map(i => `[${i.severity.toUpperCase()}] ${i.description}`).join('; ');
-      insertEvent(workflowId, 'critic_verdict', 'critic',
-        `Quality review flagged issues: ${issuesSummary}. How would you like to proceed?`,
-        criticDetails);
-    }
-
-    const criticTitleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(workflow.item_id);
-    if (criticTitleRow) notifyCheckpointPending(criticTitleRow.title, nextStage, workflowId);
-
-    logger.info(`Critic completed for workflow ${workflowId} — verdict: ${review.verdict}`);
-    return { stage: nextStage, sessionId: null };
-  }
 
   // ── Curator stage: automated curation, auto-completes workflow ────────────
   if (nextStage === 'curator') {

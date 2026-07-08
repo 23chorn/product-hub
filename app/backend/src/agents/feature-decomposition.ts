@@ -7,8 +7,10 @@
 
 import db, { getPolicies } from '../data/database';
 import { stmts, insertEvent, logger } from './workflow-db';
-import { loadLatestArtifactContent, loadLatestArtifactWikiUrl } from './artifact-helpers';
-import { detectBacklogOverlaps, AUTO_RESOLVE_THRESHOLD, recordOverlapFlags } from './backlog-overlap';
+import { loadLatestArtifactContent, buildReferenceLinks } from './artifact-helpers';
+import { loadPrdForItem, buildFeatureEnrichment } from '../utils/prd-enrichment';
+import { recalculateEffortRollupChain } from './effort-rollup';
+import { detectBacklogOverlaps, AUTO_RESOLVE_THRESHOLD, recordOverlapFlags, buildFrOwnershipMap, detectOutOfScopeFrReferences } from './backlog-overlap';
 import { stripJsonFence } from '../utils/json-repair';
 import { getAzureDevOpsClient } from '../integrations/azure-devops';
 import { deriveAiEstimateDev, ensureStreamPrefix, buildAcceptanceCriteriaHtml } from '../integrations/azure-devops-format';
@@ -502,7 +504,7 @@ function insertAdoMapping(m: {
   `).run(m.workflowId, m.adoId, m.adoType, m.adoUrl, m.localKey, m.parentLocalKey ?? null, m.title, m.createdAt);
 }
 
-export function buildFeatureDescription(featureData: any): string {
+export function buildFeatureDescription(featureData: any, prdContent: string): string {
   const parts: string[] = [];
   if (featureData.description) parts.push(featureData.description);
   if (featureData.rationale) parts.push(`<strong>Why this phase:</strong> ${featureData.rationale}`);
@@ -513,16 +515,16 @@ export function buildFeatureDescription(featureData: any): string {
   }
 
   const prdRef = featureData.prdRef ?? featureData.prd_ref;
-  const frRefs: string[] = prdRef?.functionalRequirements ?? prdRef?.functional_requirements ?? [];
-  const nfrRefs: string[] = prdRef?.nonFunctionalRequirements ?? prdRef?.non_functional_requirements ?? [];
+  const frIds = new Set<string>(prdRef?.functionalRequirements ?? prdRef?.functional_requirements ?? []);
+  const nfrIds = new Set<string>(prdRef?.nonFunctionalRequirements ?? prdRef?.non_functional_requirements ?? []);
   const journeys: string[] = prdRef?.userJourneys ?? prdRef?.user_journeys ?? [];
-  if (frRefs.length > 0 || nfrRefs.length > 0 || journeys.length > 0) {
-    const refLines: string[] = [];
-    if (frRefs.length > 0) refLines.push(`Functional: ${frRefs.join(', ')}`);
-    if (nfrRefs.length > 0) refLines.push(`Non-Functional: ${nfrRefs.join(', ')}`);
-    if (journeys.length > 0) refLines.push(`User Journeys: ${journeys.join('; ')}`);
-    parts.push(`<strong>PRD Traceability:</strong><br>${refLines.join('<br>')}`);
-  }
+
+  // Full FR/NFR detail (not just IDs) so the ticket is reviewable without opening the PRD.
+  // No stories exist yet at this point (this runs right after epic_feature_planner), so the
+  // feature's own prdRef is the only traceability source available.
+  const traceabilityHtml = prdContent ? buildFeatureEnrichment(prdContent, frIds, nfrIds) : '';
+  if (traceabilityHtml) parts.push(traceabilityHtml);
+  if (journeys.length > 0) parts.push(`<strong>User Journeys:</strong> ${journeys.join('; ')}`);
 
   if (featureData.deferredTo) {
     parts.push(`<strong>Deferred to:</strong> ${featureData.deferredTo}`);
@@ -599,22 +601,8 @@ export async function pushEpicAndFeaturesToADO(
   // Reference links back to the docs this epic was built from (Research, PRD, Solution
   // Architecture wiki pages + the Figma file) — already produced earlier in the pipeline,
   // so they're available now and get attached to every epic created below for easy reference.
-  const referenceLinks: Array<{ url: string; comment: string }> = [];
-  const researchWikiUrl = loadLatestArtifactWikiUrl(workflow.item_id, 'analyst');
-  if (researchWikiUrl) referenceLinks.push({ url: researchWikiUrl, comment: 'Research Brief' });
-  const prdWikiUrl = loadLatestArtifactWikiUrl(workflow.item_id, 'prd');
-  if (prdWikiUrl) referenceLinks.push({ url: prdWikiUrl, comment: 'PRD' });
-  const architectureWikiUrl = loadLatestArtifactWikiUrl(workflow.item_id, 'architecture');
-  if (architectureWikiUrl) referenceLinks.push({ url: architectureWikiUrl, comment: 'Solution Architecture' });
-  const figmaDesignContent = await loadLatestArtifactContent(workflow.item_id, 'figma_design');
-  if (figmaDesignContent) {
-    try {
-      const figmaFileUrl = JSON.parse(stripJsonFence(figmaDesignContent)).figma_file_url;
-      if (figmaFileUrl) referenceLinks.push({ url: figmaFileUrl, comment: 'Figma Mockups' });
-    } catch {
-      logger.warn('[EPIC PUSH] figma_design artifact present but not parseable for figma_file_url — skipping link');
-    }
-  }
+  const prdContent = loadPrdForItem(workflow.item_id);
+  const referenceLinks = await buildReferenceLinks(workflow.item_id);
 
   const attachReferenceLinks = async (epicId: number): Promise<void> => {
     for (const link of referenceLinks) {
@@ -668,7 +656,7 @@ export async function pushEpicAndFeaturesToADO(
         const featureTitle = `[${featureKey}] ${featureData.title}`;
         const feature = await client.createFeature({
           title: featureTitle,
-          description: buildFeatureDescription(featureData),
+          description: buildFeatureDescription(featureData, prdContent),
           parentId: phaseEpicId,
           tags: initiativeTag,
         });
@@ -708,7 +696,7 @@ export async function pushEpicAndFeaturesToADO(
       const featureTitle = `[${featureKey}] ${featureData.title}`;
       const feature = await client.createFeature({
         title: featureTitle,
-        description: buildFeatureDescription(featureData),
+        description: buildFeatureDescription(featureData, prdContent),
         parentId: firstEpicId,
         tags: initiativeTag,
       });
@@ -801,6 +789,37 @@ export async function pushFeatureToADO(
   if (existingStories.length > 0) {
     logger.info(`[STORY PUSH] Feature ${featureKey} already has ${existingStories.length} stories in ADO — skipping duplicate creation`);
     return { epicId, featureId, storyIds: existingStories.map(s => s.ado_id) };
+  }
+
+  // ── Feature-boundary scope check ────────────────────────────────────────────
+  // Unlike the token-overlap check below, this doesn't need any sibling feature to have been
+  // decomposed yet — epic_feature_planner assigns FR ownership to every feature up front, so
+  // it can catch a story that traces to a sibling's FR (scope creep worded nothing like
+  // anything that sibling has written) the moment THIS feature is pushed. Always flagged for
+  // human review, never auto-dropped — see backlog-overlap.ts's FrOwnershipViolation doc.
+  try {
+    const epicFeaturesForScopeCheck = await loadEpicFeatures(workflow.item_id);
+    if (epicFeaturesForScopeCheck) {
+      const frOwnership = buildFrOwnershipMap(epicFeaturesForScopeCheck.features);
+      const violations = detectOutOfScopeFrReferences(featureKey, targetFeature.stories ?? [], frOwnership);
+      if (violations.length > 0) {
+        recordOverlapFlags(violations.map(v => ({
+          workflowId, itemId: workflow.item_id,
+          featureKeyA: v.owningFeatureKey, storyIdA: '',
+          featureKeyB: v.featureKey, storyIdB: v.storyId,
+          score: 1, matchedTerms: [v.frId],
+          status: 'pending' as const,
+          flagType: 'scope_violation' as const,
+        })));
+        const summary = violations.map(v => `${v.storyId} traces to ${v.frId} (owned by ${v.owningFeatureKey})`).join(', ');
+        logger.warn(`[STORY PUSH] Feature ${featureKey}: ${violations.length} stor${violations.length === 1 ? 'y traces' : 'ies trace'} to a sibling feature's FR — ${summary}`);
+        insertEvent(workflowId, 'validation_warning', `story_decomposition_F${featureIndex + 1}`,
+          `${violations.length} stor${violations.length === 1 ? 'y' : 'ies'} may be out of this feature's scope — flagged for review: ${summary}`,
+          { fr_ownership_violations: violations });
+      }
+    }
+  } catch (err: any) {
+    logger.warn(`[STORY PUSH] Feature boundary scope check failed (non-fatal): ${err.message}`);
   }
 
   // ── Cross-feature duplicate check ───────────────────────────────────────────
@@ -928,6 +947,8 @@ export async function pushFeatureToADO(
   logger.info(`[STORY PUSH] Added ${storyIds.length} stories to feature #${featureId}`);
   // QA test cases are no longer pushed here — they are generated once at epic level
   // (epic_qa stage, after backlog_merge is approved) and pushed via pushTestPlanToAdo.
+
+  await recalculateEffortRollupChain(workflowId, featureKey);
 
   return { epicId, featureId, storyIds };
 }

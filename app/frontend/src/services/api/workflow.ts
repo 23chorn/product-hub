@@ -237,8 +237,13 @@ export const workflowApi = {
     return response.data;
   },
 
-  async resolveBacklogOverlap(id: number, status: 'confirmed' | 'dismissed', notes?: string): Promise<void> {
-    await axios.patch(`${API_BASE_URL}/api/workflow/backlog-overlaps/${id}`, { status, notes });
+  /**
+   * status 'dismissed' just marks the flag as not a real duplicate. status 'confirmed'
+   * requires `keep` ('A' or 'B') — the OTHER side's story is deleted (backlog artifact, plus
+   * its ADO ticket + test cases if already pushed) so the human picks which ticket survives.
+   */
+  async resolveBacklogOverlap(id: number, status: 'confirmed' | 'dismissed', opts?: { keep?: 'A' | 'B'; notes?: string }): Promise<void> {
+    await axios.patch(`${API_BASE_URL}/api/workflow/backlog-overlaps/${id}`, { status, keep: opts?.keep, notes: opts?.notes });
   },
 };
 
@@ -255,6 +260,11 @@ export interface BacklogOverlapStory {
 export interface BacklogOverlapFlag {
   id: number;
   status: 'pending' | 'confirmed' | 'dismissed' | 'auto_resolved';
+  /** 'overlap': two real stories read as near-duplicates. 'scope_violation': storyB traces to
+   *  an FR owned by owningFeatureKey — deterministic, not wording-based; storyA is a placeholder. */
+  flagType: 'overlap' | 'scope_violation';
+  /** Feature that actually owns the FR storyB references (scope_violation only). */
+  owningFeatureKey: string;
   score: number;
   matchedTerms: string[];
   notes: string | null;

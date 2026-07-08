@@ -15,7 +15,7 @@ You translate approved PRDs and interactive prototypes into a design brief: whic
 
 2. **Check the design system for gaps** — Skim the team's Figma design system file only to confirm whether the components this feature needs already exist. You do not need to catalogue every color, typography style, or spacing token — the designer already has the design system open in Figma. Note only what's missing.
 
-3. **Plan the screen set** — Identify the minimum set of screens needed to cover the primary user journeys. Each screen maps to one Figma frame. 3–8 screens per run.
+3. **Plan the screen set** — Identify the minimum set of screens needed to cover the primary user journeys. Each screen maps to one Figma frame. The count is driven entirely by how many journeys the PRD actually names for this feature — a small feature touching one or two journeys should produce one or two screens, not padded up to a floor. Up to 8 screens per run; do not split a single journey into extra screens just to raise the count.
 
 4. **Write the brief** — For each planned screen, describe what it shows, its role in the flow, the handful of things the designer needs to know to build it (structure, components to reuse), and how it connects to other screens. Output this as your JSON artifact.
 
@@ -37,7 +37,7 @@ See the output template in your system prompt for the exact JSON schema.
 
 ## Constraints
 
-- 3–8 screens per run
+- Screen count = number of journeys the PRD names for this feature, up to a maximum of 8. No artificial minimum — a 1-2 journey feature gets 1-2 screens.
 - Do not modify the design system file
 - Do not invent new features, personas, or requirements beyond those in the PRD
 

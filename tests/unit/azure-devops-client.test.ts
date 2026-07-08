@@ -310,3 +310,39 @@ describe('createBacklog', () => {
     expect(phaseEpicOp).toBeTruthy();
   });
 });
+
+describe('sumEffortFields', () => {
+  it('sums each item\'s AI Estimate Dev field', async () => {
+    const client = makeClient();
+    http.instance.post.mockResolvedValueOnce({
+      data: { value: [
+        { id: 1, fields: { 'Custom.AIEstimateDev': 3 } },
+        { id: 2, fields: { 'Custom.AIEstimateDev': 5 } },
+      ] },
+    });
+    expect(await client.sumEffortFields([1, 2])).toBe(8);
+  });
+
+  it('falls back to the standard Effort field when AI Estimate Dev is absent (features/epics)', async () => {
+    const client = makeClient();
+    http.instance.post.mockResolvedValueOnce({
+      data: { value: [
+        { id: 1, fields: { 'Microsoft.VSTS.Scheduling.Effort': 8 } },
+        { id: 2, fields: { 'Microsoft.VSTS.Scheduling.Effort': 13 } },
+      ] },
+    });
+    expect(await client.sumEffortFields([1, 2])).toBe(21);
+  });
+
+  it('treats an item with neither field as 0', async () => {
+    const client = makeClient();
+    http.instance.post.mockResolvedValueOnce({ data: { value: [{ id: 1, fields: {} }] } });
+    expect(await client.sumEffortFields([1])).toBe(0);
+  });
+
+  it('returns 0 without a network call for an empty id list', async () => {
+    const client = makeClient();
+    expect(await client.sumEffortFields([])).toBe(0);
+    expect(http.instance.post).not.toHaveBeenCalled();
+  });
+});

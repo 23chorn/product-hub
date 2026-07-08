@@ -303,6 +303,26 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
   const [showExportModal, setShowExportModal] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
 
+  // Re-fetches and re-parses the ticket (backlog) and QA artifact content that the "Total
+  // Tickets"/"Test Cases" stat cards and the Stories/Tests tabs are computed from. Split out
+  // from the mount effect below so it can also run after a Manage-tab delete/edit — onUpdate
+  // refreshes `detail` (storyCount/testCaseCount, the Manage tab's own row list) but the stat
+  // cards prefer the artifact-derived ticketBreakdown/phaseQa over those counts, so without
+  // this the stat cards keep showing pre-delete numbers until the page is reloaded.
+  const refreshTicketAndQaContent = async (data: CompletedInitiativeDetailData) => {
+    const [ticketResult, testResults] = await Promise.all([
+      data.ticketArtifactId != null
+        ? api.getArtifactContent(data.ticketArtifactId).then(({ content }) => tryParseBacklog(content)).catch(() => null)
+        : Promise.resolve(null),
+      Promise.all(data.testArtifactIds.map((id, num) =>
+        api.getArtifactContent(id).then(({ content }) => ({ num, data: tryParseQATests(content) })).catch(() => null)
+      )),
+    ]);
+    setBacklog(ticketResult);
+    const validTests = testResults.filter((p): p is { num: number; data: QATestSuite } => !!p?.data);
+    setQa(mergeQaTests(validTests));
+  };
+
   useEffect(() => {
     let stale = false;
     setLoading(true);
@@ -322,25 +342,17 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
             .find(k => visible.has(k)) ?? 'manage';
       setTab(firstTab);
 
-      const [ticketResult, epicFeaturesResult, testResults, prdContent] = await Promise.all([
-        data.ticketArtifactId != null
-          ? api.getArtifactContent(data.ticketArtifactId).then(({ content }) => tryParseBacklog(content)).catch(() => null)
-          : Promise.resolve(null),
+      const [, epicFeaturesResult, prdContent] = await Promise.all([
+        refreshTicketAndQaContent(data),
         data.epicFeaturesArtifactId != null
           ? api.getArtifactContent(data.epicFeaturesArtifactId).then(({ content }) => tryParseEpicFeatures(content)).catch(() => null)
           : Promise.resolve(null),
-        Promise.all(data.testArtifactIds.map((id, num) =>
-          api.getArtifactContent(id).then(({ content }) => ({ num, data: tryParseQATests(content) })).catch(() => null)
-        )),
         data.prdArtifactId != null
           ? api.getArtifactContent(data.prdArtifactId).then(({ content }) => content).catch(() => null)
           : Promise.resolve(null),
       ]);
       if (stale) return;
-      setBacklog(ticketResult);
       setEpicFeatures(epicFeaturesResult);
-      const validTests = testResults.filter((p): p is { num: number; data: QATestSuite } => !!p?.data);
-      setQa(mergeQaTests(validTests));
       if (prdContent) {
         const { frMap: frs, nfrMap: nfrs } = buildPrdMaps(prdContent);
         setFrMap(frs);
@@ -797,7 +809,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
                     items={detail.workItems}
                     itemId={itemId}
                     archived={archived}
-                    onUpdate={updated => { setDetail(updated); setEverRefreshed(true); }}
+                    onUpdate={updated => { setDetail(updated); setEverRefreshed(true); refreshTicketAndQaContent(updated); }}
                     testCases={qa?.test_cases ?? null}
                   />
                 )}

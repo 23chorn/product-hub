@@ -7,6 +7,7 @@ import { itemSessionDir } from './item-metadata';
 import { STAGE_ARTIFACT_TYPE } from './stage-metadata';
 import { saveToWiki, loadFromWiki, updateInWiki, wikiPathForArtifact } from '../integrations/document-store/azure-wiki-store';
 import { convertArtifactToMarkdown } from '../utils/artifact-to-markdown';
+import { stripJsonFence } from '../utils/json-repair';
 import Logger from '../utils/logger';
 import { findRepoRoot } from '../utils/find-repo-root';
 
@@ -199,12 +200,10 @@ export async function saveLocalArtifact(
   content: string,
   itemId: string
 ): Promise<number> {
-  const isFeatureStage             = /^story_decomposition_F\d+$/.test(stage);
-  const isQaFeatureStage           = /^qa_engineer_F\d+$/.test(stage);
-  const isTechRefinementFeatureStage = /^tech_refinement_F\d+$/.test(stage);
+  const isFeatureStage   = /^story_decomposition_F\d+$/.test(stage);
+  const isQaFeatureStage = /^qa_engineer_F\d+$/.test(stage);
   const artifactType = isFeatureStage ? 'backlog'
     : isQaFeatureStage ? 'qa_tests'
-    : isTechRefinementFeatureStage ? 'backlog'
     : (STAGE_ARTIFACT_TYPE[stage] ?? stage);
 
   const artifactDir = stageArtifactDir(itemId, stage);
@@ -404,6 +403,37 @@ export function loadLatestArtifactWikiUrl(itemId: string, artifactType: string):
     ORDER BY a.created_at DESC LIMIT 1
   `).get(itemId, artifactType);
   return row?.wiki_url ?? null;
+}
+
+/**
+ * Build the "reference links" attached to every epic created for an item: wiki pages for
+ * Research/PRD/Solution Architecture (whichever ran) plus the Figma mockup file, when present.
+ * Single source of truth so every ADO epic-creation path (epic_feature_planner push, and the
+ * story_decomposition fallback when epic_feature_planner was skipped) attaches the same links.
+ */
+export async function buildReferenceLinks(itemId: string): Promise<Array<{ url: string; comment: string }>> {
+  const links: Array<{ url: string; comment: string }> = [];
+
+  const researchWikiUrl = loadLatestArtifactWikiUrl(itemId, 'analyst');
+  if (researchWikiUrl) links.push({ url: researchWikiUrl, comment: 'Research Brief' });
+
+  const prdWikiUrl = loadLatestArtifactWikiUrl(itemId, 'prd');
+  if (prdWikiUrl) links.push({ url: prdWikiUrl, comment: 'PRD' });
+
+  const architectureWikiUrl = loadLatestArtifactWikiUrl(itemId, 'architecture');
+  if (architectureWikiUrl) links.push({ url: architectureWikiUrl, comment: 'Solution Architecture' });
+
+  const figmaDesignContent = await loadLatestArtifactContent(itemId, 'figma_design');
+  if (figmaDesignContent) {
+    try {
+      const figmaFileUrl = JSON.parse(stripJsonFence(figmaDesignContent)).figma_file_url;
+      if (figmaFileUrl) links.push({ url: figmaFileUrl, comment: 'Figma Mockups' });
+    } catch {
+      logger.warn(`[REFERENCE LINKS] figma_design artifact present but not parseable for figma_file_url (item ${itemId}) — skipping link`);
+    }
+  }
+
+  return links;
 }
 
 /**
