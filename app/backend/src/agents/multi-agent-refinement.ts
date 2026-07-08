@@ -19,6 +19,7 @@ import { progressHeartbeatLine, collectStreamWithHeartbeat, STAGE_MAX_OUTPUT_TOK
 import { stripJsonFence, parseJsonLoose } from '../utils/json-repair';
 import { loadEpicFeatures } from './feature-decomposition';
 import { readProductArea } from './item-metadata';
+import { buildFrOwnershipMap, detectOutOfScopeFrReferences, type FrOwnershipViolation } from './backlog-overlap';
 import { featureLocalKey, type AgentType } from '@pap/shared';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -224,6 +225,41 @@ export function filterBacklogStoriesByFeaturePlatforms(
     logger.warn(`[MULTI-AGENT] Feature platform scope [${featurePlatforms.join(', ')}] — stripped ${dropped} out-of-scope story/stories from the backlog`);
   }
   return { backlog: filtered, dropped };
+}
+
+/**
+ * Strip any story whose prd_ref traces to an FR owned by a DIFFERENT feature (per
+ * epic_feature_planner's FR ownership — see buildFrOwnershipMap/detectOutOfScopeFrReferences
+ * in backlog-overlap.ts). This is the enforcement point for the feature-boundary guardrail
+ * described in the brief (see siblingFeaturesSection above): a human reviewing this feature's
+ * checkpoint should never see a story that was never this feature's to write, rather than
+ * discovering it later as a push-time/backlog-merge flag after they've already approved it.
+ * The push-time and backlog-merge checks remain as backstops for whatever this can't catch
+ * (epic_features unavailable at refinement time, ownership edited afterward).
+ */
+export function filterBacklogStoriesByFrOwnership(
+  backlog: string,
+  featureKey: string,
+  frOwnership: Map<string, string>
+): { backlog: string; dropped: number; violations: FrOwnershipViolation[] } {
+  if (frOwnership.size === 0) return { backlog, dropped: 0, violations: [] };
+
+  const backlogJson = parseJsonLoose(backlog);
+  if (!backlogJson || !Array.isArray(backlogJson.features)) return { backlog, dropped: 0, violations: [] };
+
+  const violations: FrOwnershipViolation[] = [];
+  for (const feature of backlogJson.features) {
+    if (!Array.isArray(feature.stories)) continue;
+    const featureViolations = detectOutOfScopeFrReferences(featureKey, feature.stories, frOwnership);
+    if (featureViolations.length === 0) continue;
+    const violatingIds = new Set(featureViolations.map(v => v.storyId));
+    feature.stories = feature.stories.filter((s: any) => !violatingIds.has(s.story_id));
+    violations.push(...featureViolations);
+  }
+
+  if (violations.length === 0) return { backlog, dropped: 0, violations: [] };
+  logger.warn(`[MULTI-AGENT] Feature ${featureKey}: stripped ${violations.length} out-of-scope stor${violations.length === 1 ? 'y' : 'ies'} tracing to a sibling feature's FR`);
+  return { backlog: JSON.stringify(backlogJson, null, 2), dropped: violations.length, violations };
 }
 
 /**
@@ -520,7 +556,21 @@ Any story whose UI surfaces one of these screens must cite the screen's frame_ur
   // brief — first against the initiative-wide scope, then against this feature's own
   // narrower platform declaration (e.g. a sibling feature already owns the other platform).
   const { backlog: itemScoped } = filterBacklogStoriesByScope(rawBacklog, platformScope);
-  const { backlog } = filterBacklogStoriesByFeaturePlatforms(itemScoped, featurePlatforms);
+  const { backlog: platformScoped } = filterBacklogStoriesByFeaturePlatforms(itemScoped, featurePlatforms);
+
+  // Feature-boundary backstop: strip any story that traces to a sibling feature's own FR
+  // before this checkpoint is even created, so a human approving it never sees the scope
+  // creep in the first place. epicFeaturesLoaded.features carries every feature's own FR
+  // ownership (this feature's own entry included — harmless, since a story tracing to its
+  // own feature's FR is never a violation).
+  const frOwnership = buildFrOwnershipMap(epicFeaturesLoaded?.features ?? []);
+  const { backlog, violations } = filterBacklogStoriesByFrOwnership(platformScoped, featureLocalKey(featureIndex), frOwnership);
+  if (violations.length > 0) {
+    const summary = violations.map(v => `${v.storyId} → ${v.frId} (owned by ${v.owningFeatureKey})`).join(', ');
+    insertEvent(workflowId, 'validation_warning', stage,
+      `Removed ${violations.length} stor${violations.length === 1 ? 'y' : 'ies'} that traced to a sibling feature's FR before this checkpoint — ${summary}. Confirm that feature's own refinement covers it.`,
+      { fr_ownership_violations: violations });
+  }
 
   logger.info(`[MULTI-AGENT] Feature ${featureNum} refinement complete — backlog: ${backlog.length} chars`);
   return { backlog };
