@@ -160,6 +160,28 @@ export function normalizeJourneyId(id: string): string {
   return match ? `J${match[1]}` : id.trim();
 }
 
+/** FR-only badges — the foundation every downstream stage traces back to, so these are
+ *  surfaced prominently (next to titles, always visible) rather than gated behind expand
+ *  like NFR/journey badges. Exported standalone so feature/story rows across every view
+ *  (epic/feature preview, backlog, completed-initiative) render the same badge instead of
+ *  each re-deriving its own FR markup. */
+export function FrTags({ frs, frMap, className }: {
+  frs: string[];
+  frMap?: Record<string, string>;
+  className?: string;
+}) {
+  if (frs.length === 0) return null;
+  return (
+    <div className={className ?? 'flex flex-wrap gap-1'}>
+      {frs.map(fr => {
+        const key = normalizePrdId(fr);
+        const tip = frMap?.[key];
+        return <span key={fr} title={tip} className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 ${tip ? 'cursor-help' : ''}`}>{key}</span>;
+      })}
+    </div>
+  );
+}
+
 export function PrdRefTags({ prdRef, frMap, nfrMap }: {
   prdRef: PrdRef;
   frMap?: Record<string, string>;
@@ -171,11 +193,7 @@ export function PrdRefTags({ prdRef, frMap, nfrMap }: {
   if (frs.length === 0 && nfrs.length === 0 && journeys.length === 0) return null;
   return (
     <div className="mt-3 flex flex-wrap gap-1.5">
-      {frs.map(fr => {
-        const key = normalizePrdId(fr);
-        const tip = frMap?.[key];
-        return <span key={fr} title={tip} className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 ${tip ? 'cursor-help' : ''}`}>{key}</span>;
-      })}
+      <FrTags frs={frs} frMap={frMap} className="contents" />
       {nfrs.map(nfr => {
         const key = normalizePrdId(nfr);
         const tip = nfrMap?.[key];
@@ -225,7 +243,10 @@ function FeatureCard({ feature, idx, phaseIndex, frMap, nfrMap, onDeleteFeature 
                 </span>
               )}
             </div>
-            <h4 className="text-base font-semibold text-surface-900 dark:text-surface-100">{feature.title}</h4>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h4 className="text-base font-semibold text-surface-900 dark:text-surface-100">{feature.title}</h4>
+              <FrTags frs={feature.prdRef?.functionalRequirements ?? []} frMap={frMap} />
+            </div>
             {feature.description && (
               <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">{feature.description}</p>
             )}

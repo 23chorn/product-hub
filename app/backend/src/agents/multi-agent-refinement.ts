@@ -345,12 +345,14 @@ export async function runMultiAgentRefinement(
   let targetFeature: any = null;
   let epicContext: any = null;
   let phaseContext: { label: string; deliverable?: string; epicTitle?: string } | null = null;
+  let siblingFeatures: any[] = [];
 
   if (epicFeaturesLoaded) {
     const { raw: epicFeatures, features: allFeatures } = epicFeaturesLoaded;
     if (allFeatures[featureIndex]) {
       targetFeature = allFeatures[featureIndex];
     }
+    siblingFeatures = allFeatures.filter((_: any, i: number) => i !== featureIndex);
 
     epicContext = epicFeatures.epic || null;
 
@@ -421,6 +423,16 @@ export async function runMultiAgentRefinement(
   const featurePlatforms: string[] | undefined = Array.isArray(targetFeature.platforms) ? targetFeature.platforms : undefined;
   const featurePlatformScopeSection = buildFeaturePlatformScopeSection(featurePlatforms);
 
+  // Every other feature is refined in complete isolation from this one (in parallel, in a
+  // separate session) — without this, nothing tells the model another feature already owns
+  // a capability, so the same login/notification/settings-style story gets independently
+  // reinvented under two features. This is a prompt-only guardrail (cheap, no extra LLM
+  // calls); the deterministic backstop that catches whatever still slips through is
+  // detectBacklogOverlaps() in backlog-overlap.ts.
+  const siblingFeaturesSection = siblingFeatures.length > 0
+    ? `## Other Features in This Initiative (owned elsewhere — do NOT duplicate their scope)\n${siblingFeatures.map((f: any) => `- **${f.title}**${f.phase ? ` (${f.phase})` : ''}: ${f.description || '(no description)'}`).join('\n')}\n\nIf this feature genuinely needs the same capability another feature already owns, reference it (e.g. "reuses the notification settings screen from Feature 2") instead of redefining it as a new story.`
+    : '';
+
   const featureBrief = `
 # Feature Refinement Session
 
@@ -431,6 +443,8 @@ ${epicContext ? `**Initiative:** ${epicContext.title || ''}
 ${outOfScope.length ? `**Out of Scope (do NOT build these):** ${outOfScope.join('; ')}` : ''}
 ${platformScopeSection}
 ${featurePlatformScopeSection}
+
+${siblingFeaturesSection}
 
 ## Phase Context
 ${phaseContext ? `**Phase:** ${phaseContext.label}${phaseContext.epicTitle ? ` — ${phaseContext.epicTitle}` : ''}
@@ -600,6 +614,18 @@ export const ANALYTICS_SEPARATION_RULE =
   `**Keep analytics/tracking out of functional stories:** unless a story exists specifically to add instrumentation (event firing, logging, tracking pixels), do not add acceptance criteria, technical acceptance criteria, or technical notes for firing an analytics/tracking event (e.g. "fires a CleverTap \`record_created\` event", "logs an analytics event to Segment/Mixpanel/Amplitude"). If new tracking is genuinely needed alongside this story's functionality, write it as its own separate story (e.g. "Track Record Creation Event [Backend]") rather than folding it into the AC of the story that builds the underlying functionality.`;
 
 /**
+ * Guardrail against the backlog drifting into engineering-facing "verify the logic"
+ * tickets (e.g. "As a developer, I want unit tests for the pricing calculator") instead
+ * of user-facing feature work. Automated test coverage — unit, integration, or otherwise
+ * — is never a backlog story; it's an engineering task that ships as part of implementing
+ * the real story, and end-to-end test *cases* are owned entirely by the dedicated QA
+ * test-case stage. Reused across every round (draft, technical-direction, synthesis) so a
+ * test-writing story can't sneak in via an engineer's "propose a new story" suggestion.
+ */
+export const NO_TEST_WRITING_STORIES_RULE =
+  `**Every story's persona must be a real user of the product, and its goal must be a capability they gain — never a developer, engineer, QA/test engineer, or "the system" writing or checking code.** Do not write a story whose purpose is to add unit tests, integration tests, automated test coverage, or otherwise "verify the logic" of a feature (e.g. "As a developer, I want unit tests for the pricing calculator, so that regressions are caught early"). That work is either (a) implicit in implementing the real user-facing story, or (b) owned entirely by the dedicated QA test-case stage — never a separate backlog story either way.`;
+
+/**
  * Phase 1: Build draft prompts for each agent.
  */
 function buildDraftPrompts(
@@ -619,10 +645,11 @@ function buildDraftPrompts(
 **Your Role:** You are the **Product Lead and Facilitator** of this refinement session.
 
 **Phase 1 Task — Draft Stories:**
-1. Break this feature into **6-8 user stories maximum** (format: "As a [persona], I want [capability], so that [benefit]")
-   - Target 6-8. Never exceed 8. If you think you need more, the feature scope is too wide — scope down to the most valuable 8.
+1. Break this feature into as many user stories as its FR(s) genuinely require (format: "As a [persona], I want [capability], so that [benefit]")
+   - The FR(s) this feature owns (see PRD Traceability in the brief) define its scope — not a story count. A feature covering complex FRs needing 15+ stories is fine; do not trim scope or merge distinct stories just to hit a smaller number.
    - Each story must be independently deliverable and testable in isolation
    - Together the stories must fully cover the Feature Acceptance Criteria listed in the brief above
+   - If you find this feature's brief actually bundles multiple independent FRs that don't need each other to deliver value, say so explicitly in your output instead of silently scoping down — that's a signal for feature re-planning, not something to solve by dropping stories
 2. Add product acceptance criteria (Given/When/Then format) to each story
 
 ${ACCEPTANCE_CRITERIA_FORMAT_RULE}
@@ -632,7 +659,7 @@ ${ACCEPTANCE_CRITERIA_FORMAT_RULE}
 5. Don't add technical details yet — that's what the engineers will contribute in the next round
 6. **CRITICAL — One stream per ticket:** Each story must belong to exactly ONE platform stream: \`backend\`, \`web\`, \`ios\`, or \`android\`. If a piece of work spans multiple platforms (e.g., an API + a UI), write a separate story for each platform. Name them descriptively: e.g. "Set Up Alert API [Backend]" and "Alert Creation Form [Web]".
 7. Do not write accessibility-specific acceptance criteria or stories (screen reader support, TalkBack, VoiceOver, voice control, etc.) — this product does not target those use cases unless the PRD explicitly calls for them.
-8. Never write a story whose persona is a QA/test engineer (e.g. "As a QA engineer, I want to test..."). Test coverage is owned entirely by the dedicated test-case creation stage — don't duplicate it as a backlog story.
+8. ${NO_TEST_WRITING_STORIES_RULE}
 9. **Analytics/logging/monitoring features:** if this feature's purpose is to instrument, track, log, or measure an existing or already-planned capability (e.g. "Referral Funnel Analytics", "Checkout Error Logging", "Trading Activity Dashboard"), every story must be about the instrumentation itself — event schema/taxonomy, event firing at the right trigger points, the data pipeline/aggregation, dashboards, alerting thresholds. Do not write stories that (re)build the underlying feature being measured (the referral flow, the checkout flow, the trading screen, etc.) — that's already in scope elsewhere unless the Feature Acceptance Criteria in the brief above explicitly says this feature includes building it.
 10. ${ANALYTICS_SEPARATION_RULE}
 
@@ -652,13 +679,14 @@ Return a JSON structure (use F${featureNum} for all story IDs):
         "functional_requirements": ["FR-01"],
         "non_functional_requirements": ["NFR1"]
       },
-      "platform": "backend"
+      "platform": "backend",
+      "estimated_points": 3
     }
   ]
 }
 \`\`\`
 
-The \`platform\` value must be exactly one of: \`backend\`, \`web\`, \`ios\`, \`android\`.
+The \`platform\` value must be exactly one of: \`backend\`, \`web\`, \`ios\`, \`android\`. \`estimated_points\` must be exactly one of: \`1\`, \`2\`, \`3\`, \`5\`, \`8\` (Fibonacci scale) — this is what ADO's Effort and AI Estimate Dev fields are populated from downstream, so every story must have one.
 `;
     } else if (participant.agentType === 'qa-engineer') {
       // QA Engineer: Testability concerns
@@ -693,7 +721,7 @@ Plain text list of concerns and recommendations. Example:
 2. List the high-level technical direction needed to build this feature — meaningful direction only, not a full spec:
    - ${platformFocus}
 3. Flag any technical constraints or complexities (e.g., "Offline mode will require local DB sync")
-4. Suggest story splits if a feature needs multiple platform-specific implementations
+4. Suggest story splits if a feature needs multiple platform-specific implementations — every split must still be a user-facing story. ${NO_TEST_WRITING_STORIES_RULE}
 
 **Output Format:**
 Plain text list of technical direction, kept high-level — exact endpoints, schemas, and component names can be worked out later during technical refinement. Example:
@@ -766,6 +794,7 @@ Plain text per-story feedback. Example:
 3. **CRITICAL — One stream per ticket:** If any story covers work on YOUR platform but is not already split into its own ticket, propose a new platform-specific story for it. Every story must belong to exactly ONE stream: \`backend\`, \`web\`, \`ios\`, or \`android\`. Shared logic (e.g. "user sees X") must be split into separate stories if it requires distinct implementation on each platform.
 4. Flag dependencies (e.g., "Web story F?.S3 depends on Backend story F?.S2 being complete first")
 5. ${ANALYTICS_SEPARATION_RULE}
+6. ${NO_TEST_WRITING_STORIES_RULE}
 
 **Output Format:**
 Plain text mapping of story_id → technical direction, plus any proposed new platform-specific stories. Example:
@@ -881,7 +910,8 @@ Merge all contributions into a single JSON artifact following the backlog templa
           },
           "platform": "backend",
           "depends_on": [],
-          "technical_notes": "..."
+          "technical_notes": "...",
+          "estimated_points": 3
         }
       ]
     }
@@ -895,9 +925,11 @@ ${ACCEPTANCE_CRITERIA_FORMAT_RULE}
 - Include ONLY the JSON artifact in your response (no explanatory text before or after)
 - Carry forward epic fields (definition_of_done) and feature fields (phase, acceptance_criteria) from the Feature Brief at the top of this prompt — do not drop or weaken them
 - ${ANALYTICS_SEPARATION_RULE}
+- ${NO_TEST_WRITING_STORIES_RULE}
 - The feature acceptance_criteria array must match the Feature Acceptance Criteria from the brief verbatim — these are approved conditions, not suggestions
 - The feature phase must match the Phase label from the brief
 - Every story must include prd_ref with functional_requirements (the FR IDs from the PRD this story satisfies) and non_functional_requirements (the NFR IDs that constrain this story). Copy from the feature's prdRef where applicable and refine per story. Use [] for non_functional_requirements only if no NFR genuinely applies to this specific story.
+- Every story must include estimated_points (one of 1, 2, 3, 5, 8) — finalize Shard's Phase 1/2 point estimates per story here; this is what ADO's Effort and AI Estimate Dev fields are populated from, so a missing value means that story's estimate silently never reaches ADO.
 - Feature acceptance_criteria are high-level "done" conditions for the whole feature, not story-level Gherkin
 - Apply Vera's AC improvements — sharpen any vague acceptance criteria language she flagged
 - Ensure all story_id references are consistent (F?.S1, F?.S2, etc.)

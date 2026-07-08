@@ -27,6 +27,7 @@ export interface BacklogStory {
   platform?: string | string[]; // Can be a single string or array
   estimated_points?: number;
   depends_on?: string[];
+  prd_ref?: { functional_requirements?: string[]; non_functional_requirements?: string[] };
   test_cases?: Array<{
     id: string;
     scenario: { given: string[]; when: string[]; then: string[] };

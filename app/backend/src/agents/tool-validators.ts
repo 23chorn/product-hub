@@ -75,6 +75,7 @@ const FAKE_URL_RE = /\b(example|placeholder|fake|sample|test\.com|foo\.com|bar\.
 const GWT_RE = /^\s*(given|when|then)\b/i;
 const STORY_ID_RE = /^F\d+\.S\d+$/;
 const VALID_PLATFORMS = new Set(['backend', 'web', 'ios', 'android']);
+const VALID_STORY_POINTS = new Set([1, 2, 3, 5, 8]);
 
 // ── validate_analyst_json ─────────────────────────────────────────────────────
 
@@ -454,6 +455,15 @@ export function validateBacklogJson(input: Record<string, unknown>): string {
       issues.push(`${p}: invalid platform "${platformStr}" — must be one of: backend, web, ios, android`);
     }
 
+    // estimated_points drives ADO's Effort and AI Estimate Dev fields downstream
+    // (deriveAiEstimateDev in azure-devops-format.ts) — a missing value here means
+    // those ADO fields silently never get populated.
+    if (story.estimated_points === undefined || story.estimated_points === null) {
+      issues.push(`${p}: missing estimated_points — must be one of 1, 2, 3, 5, 8 (this feeds ADO's Effort and AI Estimate Dev fields)`);
+    } else if (!VALID_STORY_POINTS.has(Number(story.estimated_points))) {
+      issues.push(`${p}: invalid estimated_points "${story.estimated_points}" — must be one of 1, 2, 3, 5, 8`);
+    }
+
   }
 
   function validateFeature(feature: any, p: string): void {
@@ -461,9 +471,9 @@ export function validateBacklogJson(input: Record<string, unknown>): string {
     if (!Array.isArray(feature.stories) || feature.stories.length === 0) {
       issues.push(`${p}: stories must be a non-empty array`);
     } else {
-      if (feature.stories.length > 20) {
-        issues.push(`${p}: ${feature.stories.length} stories — split this feature. 4 functional scenarios × 4 platforms = 16 stories is already a full batch; more than 20 means the feature scope is too wide.`);
-      }
+      // Story count is not a scope signal — a feature's FR(s) define its scope, and complex
+      // FRs legitimately need many stories. Splitting is a feature-planning decision (by FR),
+      // never something enforced here by counting stories.
       feature.stories.forEach((s: any, i: number) => validateStory(s, `${p}.stories[${i}]`));
     }
   }

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { WorkItemStateBucket, BacklogData, BacklogFeature, BacklogStory } from '@pap/shared';
 import { featureLocalKey, storyLocalKey, backlogTier, getSprintMeta, getAllStories, getAllFeatures } from '@pap/shared';
 import { WORK_ITEM_STATE_BUCKET_LABELS, WORK_ITEM_STATE_BUCKET_COLORS } from '../../utils/work-item-state-bucket';
-import { toPhases, PHASE_COLORS, PrdRefTags, type EpicFeature, type EpicFeaturesData } from './EpicFeaturesView';
+import { toPhases, PHASE_COLORS, PrdRefTags, FrTags, type EpicFeature, type EpicFeaturesData } from './EpicFeaturesView';
 import { ExpandableText } from '../common/ExpandableText';
 import { ExpandableList } from '../common/ExpandableList';
 import { DeleteItemButton } from '../common/DeleteItemButton';
@@ -253,6 +253,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
               <span className="text-base text-surface-900 dark:text-surface-100 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">
                 {story.title}
               </span>
+              <FrTags frs={story.prd_ref?.functional_requirements ?? []} frMap={frMap} />
               {story.effort != null && (
                 <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
                   story.effort >= 8 ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
@@ -466,7 +467,10 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
               ) : null}
               <StateBucketPill bucket={stateByLocalKey?.get(featureKey)} />
             </div>
-            <h4 className="text-base font-semibold text-surface-900 dark:text-surface-100">{feature.title}</h4>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h4 className="text-base font-semibold text-surface-900 dark:text-surface-100">{feature.title}</h4>
+              <FrTags frs={epicMatch?.prdRef?.functionalRequirements ?? []} frMap={frMap} />
+            </div>
             {feature.description && (
               <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">{feature.description}</p>
             )}
@@ -546,7 +550,10 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
                           </span>
                         )}
                       </div>
-                      <h4 className="text-base font-semibold text-surface-900 dark:text-surface-100">{feature.title}</h4>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-base font-semibold text-surface-900 dark:text-surface-100">{feature.title}</h4>
+                        <FrTags frs={epicMatch?.prdRef?.functionalRequirements ?? []} frMap={frMap} />
+                      </div>
                       {feature.description && (
                         <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">{feature.description}</p>
                       )}
@@ -700,7 +707,10 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
                 </span>
               )}
             </div>
-            <h3 className="text-base font-semibold text-surface-900 dark:text-surface-100">{story.title}</h3>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-base font-semibold text-surface-900 dark:text-surface-100">{story.title}</h3>
+              <FrTags frs={story.prd_ref?.functional_requirements ?? []} frMap={frMap} />
+            </div>
             {/* Support both old format (persona/goal/benefit) and new format (as_a/i_want/so_that) */}
             {(story.persona || story.as_a) && (
               <div><span className="text-xs font-medium text-surface-500 dark:text-surface-400">As a: </span><span className="text-xs text-surface-700 dark:text-surface-300">{story.as_a || story.persona}</span></div>

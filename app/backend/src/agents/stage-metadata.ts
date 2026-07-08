@@ -14,7 +14,7 @@ export const STAGE_SESSION_MAP: Record<string, { mode: AppMode; agentType: Agent
 };
 
 // Per-stage output token ceiling. Backlog gets more headroom because the JSON
-// scales with story count (6 features × 12 stories at max = ~22k tokens).
+// scales with story count, which is uncapped (an FR-heavy feature can need many stories).
 // QA test suites: ~8 stories × 3 test cases × 500 tokens = ~12k needed.
 // All Claude 4.x models support 64k output, so these are safe upper bounds.
 export const STAGE_MAX_OUTPUT_TOKENS: Record<string, number> = {
@@ -22,7 +22,7 @@ export const STAGE_MAX_OUTPUT_TOKENS: Record<string, number> = {
   pm_prd:               12_000,
   epic_feature_planner: 16_000,
   solution_architect:   20_000,  // data model, API surface, infra, repo impact, new dependencies, open questions
-  story_decomposition:  24_000,  // single feature backlog — up to the validator's 12-story limit with full prd_ref/technical detail; 16k was observed hitting the ceiling on a dense feature
+  story_decomposition:  32_000,  // single feature backlog — story count isn't capped (an FR-heavy feature can need many stories with full prd_ref/technical detail); 16k was observed hitting the ceiling on a dense feature
   qa_engineer:          14_000,  // 10-15 test cases per feature with full test detail
   epic_qa:              28_000,  // cross-epic suite: all features × TC-UI-NNN cases; more context than per-feature
   prototype:            64_000,

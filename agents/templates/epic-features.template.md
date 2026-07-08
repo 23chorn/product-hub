@@ -4,8 +4,8 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
 
 1. **Max 5 features per phase** — if a phase needs more, create a new phase instead.
 2. **Max 4 phases** — MVP, Phase 2, Phase 3, Phase 4. No custom labels. (MVP is the first phase, so numbering continues from 2.)
-3. **Feature scope check** — every feature must decompose into at most 6-8 user stories. If it would need more, split it into two features now.
-4. **Each phase must be independently deployable** — a phase that can't ship on its own is not a phase.
+3. **Feature scope check** — a feature's scope is defined by the FR(s) it owns, not by how many stories it will need. Split a feature only when it bundles multiple FRs that are independently shippable; never split it just to shrink a story count — a feature covering one complex FR can legitimately need many stories.
+4. **Each phase must deliver a real, usable chunk of functionality** — not just something technically deployable. A user must be able to complete something meaningful start-to-finish using only what has shipped through this phase. If MVP's features leave the user with, say, a working backend but no way to actually use the capability, that's not a usable MVP — pull in whatever's missing or restructure the phase split. Each subsequent phase must add a distinct, new increment of value on top — never overlap or restate a prior phase's deliverable.
 
 ---
 
@@ -23,6 +23,7 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
     {
       "label": "MVP",
       "epicTitle": "MVP — [3-5 word deliverable name]",
+      "deliverable": "One sentence: the real, usable end-to-end thing a user can do once ONLY this phase's features (plus any earlier phases) have shipped",
       "features": [
         {
           "title": "Feature name (e.g., Real-time Message Delivery)",
@@ -46,6 +47,7 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
     {
       "label": "Phase 2",
       "epicTitle": "Phase 2 — [3-5 word deliverable name]",
+      "deliverable": "One sentence: the new, distinct increment of usable value this phase adds on top of MVP — must not restate or overlap what MVP already delivers",
       "features": []
     }
   ]
@@ -67,6 +69,7 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
 
 - **label**: Exactly one of: `"MVP"`, `"Phase 2"`, `"Phase 3"`, `"Phase 4"`. Use in order. (MVP is the first phase, so the increments after it start at Phase 2.)
 - **epicTitle**: The ADO/Jira epic title for this phase. Format: `"[Phase label] — [Short name]"`.
+- **deliverable**: One sentence stating the real, usable end-to-end thing a user can do once this phase's features (cumulative with any earlier phases) have shipped — not "the backend is ready" or "infrastructure is in place." If a phase's features can't produce a sentence like this, the phase isn't actually usable yet — pull in whatever feature(s) are missing to complete the chunk, or merge this phase into the next one. Each phase after MVP must describe a genuinely NEW increment of value — never restate or overlap what an earlier phase's deliverable already covers.
 - **features**: 1-5 features for this phase. Each is a narrow, independently implementable capability.
 
 ### Feature
@@ -78,7 +81,7 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
   - "Message history is retained for 7 years with cryptographic integrity verification"
   - "Users can leave a channel and the system removes them from future message delivery within 1 second"
 - **prdRef**: Traceability back to the PRD. Use exact IDs.
-  - `functionalRequirements`: FR IDs this feature satisfies (e.g. `["FR-01", "FR-03"]`)
+  - `functionalRequirements`: FR IDs this feature satisfies (e.g. `["FR-01", "FR-03"]`). Keep this to one FR or a small tightly-coupled cluster — a sprawling list means the feature is too broad and should split by FR, not by platform.
   - `userJourneys`: Journeys from the PRD this feature supports, as `"<id>: <journey name>"` using the PRD's exact `user_journeys[].id` (e.g. `["J1: Share trade idea"]`) — never invent a new id or drop it and use the name alone, or the same journey will render a different badge on every feature that references it
 - **deferredTo**: If this feature was scoped for this phase but is being moved out, note the target phase. Otherwise `null`.
 - **dependsOn**: Array of EXACT feature titles (copy-pasted, case-sensitive) from elsewhere in this epic that this feature cannot start until they are done — i.e. building or changing this feature requires the depended-on feature's behavior or contract to already be settled. Empty array `[]` if this feature has no prerequisites and can be built in parallel with any other feature.
@@ -86,7 +89,7 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
   - Do NOT invent IDs (no "F1", "F2") — titles only. The system resolves titles to IDs after generation.
   - Most features should have an EMPTY `dependsOn`. Only mark a dependency when a change to the other feature would force rework of this one (shared data contract, shared UI surface, sequential user journey step). Two features that merely live in the same phase are NOT automatically dependent.
   - Never depend on a feature in a LATER phase, and never create a circular dependency (A depends on B, B depends on A) — if you find yourself doing this, the features are too tightly coupled and should be merged into one feature instead.
-- **platforms**: `null` (or omit) by default — the feature's scenarios can span whichever platforms apply. Set to an array subset of `["backend", "web", "ios", "android"]` ONLY when you are deliberately splitting the same functional area into platform-specific sibling features (e.g. one feature for the iOS/Android UI, another for the Web UI of the same capability) — each sibling then gets its OWN subset, never overlapping on a UI platform. This is the signal the downstream story-decomposition agent uses to keep each feature's stories on its own platform(s); backend is always implicitly allowed regardless of this field.
+- **platforms**: `null` (or omit) by default, and default is what almost every feature should use — a feature owns all backend + frontend work needed to deliver its FR(s), so its scenarios span whichever platforms that requires. Only set this to an array subset of `["backend", "web", "ios", "android"]` when you are deliberately splitting the same functional area into platform-specific sibling features, and only for a genuine exception (different ship timelines, a hard technical constraint, or a platform-exclusive capability) — never as the default way to organize work. When you do split, each sibling gets its OWN non-overlapping subset. This is the signal the downstream story-decomposition agent uses to keep each feature's stories on its own platform(s); backend is always implicitly allowed regardless of this field.
 - **stories**: MUST be an empty array `[]`. User stories are added later by the story decomposition agent.
 
 ---
@@ -97,13 +100,15 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
 2. **NO TECHNICAL TASKS** — Do not reference implementation details (databases, APIs, repos, frameworks).
 3. **MAX 5 FEATURES PER PHASE** — If you need more, add a phase. If you've used all 4 phases, stop.
 4. **MAX 4 PHASES** — MVP, Phase 2, Phase 3, Phase 4. No custom labels, no "Phase 5".
-5. **FEATURE SCOPE CHECK** — Every feature must be decomposable into ≤8 user stories. Wide features must be split.
+5. **FEATURE SCOPE CHECK** — Scope is defined by the FR(s) a feature owns, never by story count. Split a feature only when it bundles multiple independently-shippable FRs; a feature covering one complex FR can legitimately need many stories.
 6. **MVP DISCIPLINE** — MVP is the minimum to validate the hypothesis. Most features belong in Phase 2+.
-7. **PHASE LABELS** — Must be exactly "MVP", "Phase 2", "Phase 3", "Phase 4". No TBD or missing values.
-8. **ACCEPTANCE CRITERIA** — Feature-level only. 3-5 per feature. Testable and outcome-focused.
-9. **DEPENDENCY DISCIPLINE** — Default every feature's `dependsOn` to `[]`. Only add a prerequisite when truly blocking. Over-tagging dependencies defeats parallel delivery; under-tagging risks rework. When in doubt, leave it empty.
-10. **NO ACCESSIBILITY SCOPE** — Do not propose accessibility-specific features or ACs (screen reader support, TalkBack, VoiceOver, voice control, etc.) — out of scope for this product unless the PRD explicitly calls for it.
-11. **PLATFORM-SPLIT SIBLINGS DECLARE `platforms`** — If you split one functional area into separate features per platform (e.g. "Alert Setup — Mobile UI" and "Alert Setup — Web UI"), each MUST set `platforms` to its own non-overlapping subset. Never leave both siblings with `platforms: null` — that gives the downstream agent no signal and it will generate stories for every platform in both features.
+7. **PHASE USABILITY** — Every phase's `deliverable` must describe something a user can genuinely complete end-to-end with only what has shipped through that phase — not merely "deployable." Each phase after MVP adds a distinct new increment; it must never restate or overlap a prior phase's deliverable.
+8. **PHASE LABELS** — Must be exactly "MVP", "Phase 2", "Phase 3", "Phase 4". No TBD or missing values.
+9. **ACCEPTANCE CRITERIA** — Feature-level only. 3-5 per feature. Testable and outcome-focused.
+10. **DEPENDENCY DISCIPLINE** — Default every feature's `dependsOn` to `[]`. Only add a prerequisite when truly blocking. Over-tagging dependencies defeats parallel delivery; under-tagging risks rework. When in doubt, leave it empty.
+11. **NO ACCESSIBILITY SCOPE** — Do not propose accessibility-specific features or ACs (screen reader support, TalkBack, VoiceOver, voice control, etc.) — out of scope for this product unless the PRD explicitly calls for it.
+12. **PLATFORM-SPLIT SIBLINGS DECLARE `platforms`** — If you split one functional area into separate features per platform (e.g. "Alert Setup — Mobile UI" and "Alert Setup — Web UI"), each MUST set `platforms` to its own non-overlapping subset. Never leave both siblings with `platforms: null` — that gives the downstream agent no signal and it will generate stories for every platform in both features.
+13. **FEATURES ARE CROSS-STREAM BY DEFAULT** — A feature must own all backend + frontend work needed to deliver its FR(s) end to end; do not split a functional area into a backend-only feature and a separate frontend-only feature by default. Platform-split (rule 12) is only for a genuine exception (different ship timelines, a hard technical constraint, or a platform-exclusive capability), never the default way to organize work.
 
 ---
 
@@ -162,6 +167,7 @@ Produce a single valid JSON object wrapped in a ```json code block with this exa
     {
       "label": "Phase 2",
       "epicTitle": "Phase 2 — Safety & Engagement",
+      "deliverable": "Messages are auto-moderated for prohibited content and users get push notifications for new messages — a distinct new increment on top of MVP's core chat, not a restatement of it",
       "features": [
         {
           "title": "Content Moderation",
