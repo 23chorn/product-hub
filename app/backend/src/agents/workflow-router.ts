@@ -23,7 +23,7 @@ import {
   stageStartedNarration,
 } from './stage-metadata';
 import {
-  saveCriticArtifact, loadLatestArtifactForItem,
+  saveCriticArtifact, loadLatestArtifactForItem, loadPriorDraftForStage,
 } from './artifact-helpers';
 import { deleteWorkflow as deleteWorkflowImpl, recoverStaleWorkflows as recoverStaleWorkflowsImpl, startStaleRecoveryTimer } from './workflow-lifecycle';
 import { isDemoMode, isDemoWorkflow, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
@@ -278,8 +278,8 @@ async function advanceStageCore(workflowId: string): Promise<{ stage: string; se
   }
 
   // Check if there's an active change request — if so, use its stage sequence
-  const activeCR = db.prepare<[string], { impact_assessment: string | null }>(
-    `SELECT impact_assessment FROM change_requests WHERE workflow_id = ? AND status = 'in_progress' ORDER BY created_at DESC LIMIT 1`
+  const activeCR = db.prepare<[string], { id: number; type: string; description: string; impact_assessment: string | null }>(
+    `SELECT id, type, description, impact_assessment FROM change_requests WHERE workflow_id = ? AND status = 'in_progress' ORDER BY created_at DESC LIMIT 1`
   ).get(workflowId);
 
   let sequence: string[];
@@ -289,6 +289,15 @@ async function advanceStageCore(workflowId: string): Promise<{ stage: string; se
   } else {
     sequence = JSON.parse(workflow.stage_sequence);
   }
+
+  // executeChangeRequest() only threads the prior draft through as a surgical edit for the
+  // cascade's FIRST stage (via reiterateFromStage). Every stage kickoffMemberStage below
+  // fires after that — i.e. every stage 2+ of a CR cascade — needs the same treatment, or a
+  // small scope change (e.g. "no new DB table needed") re-generates the PRD, architecture,
+  // and backlog from scratch instead of editing what changed.
+  const crContext = activeCR
+    ? { description: `[Change Request #${activeCR.id} — ${activeCR.type}]\n${activeCR.description}` }
+    : null;
 
   if (sequence.length === 0) throw new Error(`Workflow ${workflowId} has no stages defined`);
 
@@ -504,9 +513,22 @@ No changes needed to tech-stack.md or process.md — those remain accurate as wr
     logger.info(`Created ${stageMap.mode} session ${session.id} for stage "${memberStage}"`);
 
     insertEvent(workflowId, 'stage_progress', memberStage, stageProgressBriefing(memberStage));
-    const memberBrief = _wfPolicyOverrides.demo_mode === 'true' || _isDemoAutoApprove
-      ? `## Goal\nDemo mode — running with fixture data.\n\n## Output required\nSee fixture.`
-      : await getCoordinator().generateStageBrief(workflowId, memberStage);
+
+    // In a change-request cascade, thread the prior artifact through as a surgical edit
+    // (same brief format as the cascade's first stage) instead of regenerating from scratch.
+    let priorDraft: string | undefined;
+    let memberBrief: string;
+    if (_wfPolicyOverrides.demo_mode === 'true' || _isDemoAutoApprove) {
+      memberBrief = `## Goal\nDemo mode — running with fixture data.\n\n## Output required\nSee fixture.`;
+    } else if (crContext) {
+      priorDraft = await loadPriorDraftForStage(workflow.item_id, memberStage);
+      memberBrief = priorDraft
+        ? getCoordinator().generateCRBrief(workflowId, memberStage, crContext.description, priorDraft)
+        : await getCoordinator().generateStageBrief(workflowId, memberStage);
+    } else {
+      memberBrief = await getCoordinator().generateStageBrief(workflowId, memberStage);
+    }
+
     sessionManager.updateWorkflow(session.id, workflowId, memberBrief);
     insertEvent(workflowId, 'stage_progress', memberStage, stageProgressBriefReceived(memberStage));
 
@@ -514,7 +536,8 @@ No changes needed to tech-stack.md or process.md — those remain accurate as wr
 
     // Fire the autonomous specialist run as a background task.
     // It will collect the full output, store an artifact, then create the checkpoint.
-    workflowOps.runAutonomousStage(session.id, workflowId, memberStage, workflow.item_id, memberBrief, shouldAutoApprove)
+    // priorDraft/skipCritic are only set when this is a CR-cascade stage (see crContext above).
+    workflowOps.runAutonomousStage(session.id, workflowId, memberStage, workflow.item_id, memberBrief, shouldAutoApprove, undefined, priorDraft, !!crContext)
       .catch(err => {
         logger.error(`Autonomous stage "${memberStage}" background task failed: ${err.message}`);
         createSafetyNetCheckpoint(workflowId, memberStage, stageMap, err.message);

@@ -14,7 +14,7 @@ import {
   advanceStage,
 } from './workflow-router';
 import {
-  loadLatestArtifactForStage,
+  loadPriorDraftForStage,
   loadArtifactSummary,
 } from './artifact-helpers';
 import {
@@ -372,7 +372,7 @@ export async function executeChangeRequest(
   // This uses generateCRBrief instead of the generic generateRevisionBrief.
   const crDescription = `[Change Request #${crId} — ${cr.type}]\n${cr.description}`;
   const coordinator = getCoordinator();
-  const priorDraft = loadLatestArtifactForStage(workflow.item_id, orderedStages[0]);
+  const priorDraft = await loadPriorDraftForStage(workflow.item_id, orderedStages[0]);
   const crBrief = priorDraft
     ? coordinator.generateCRBrief(cr.workflow_id, orderedStages[0], crDescription, priorDraft)
     : undefined;  // falls back to standard brief inside reiterateFromStage

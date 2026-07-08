@@ -11,10 +11,10 @@ import db from '../data/database';
 import { sessionManager } from '../session/session-manager';
 import type { AppMode, AgentType } from '@pap/shared';
 import {
-  STAGE_SESSION_MAP, STAGE_LABELS_INTERNAL, STAGE_ARTIFACT_TYPE,
+  STAGE_SESSION_MAP, STAGE_LABELS_INTERNAL,
   stageProgressWorking, stageStartedNarration, stageProgressBriefing, stageProgressBriefReceived,
 } from './stage-metadata';
-import { loadArtifactContentById, loadLatestArtifactContent, resolveArtifactPath, isJsonArtifactContent } from './artifact-helpers';
+import { loadArtifactContentById, resolveArtifactPath, isJsonArtifactContent, loadPriorDraftForStage } from './artifact-helpers';
 import {
   logger, stmts, insertEvent, workflowOps, createSafetyNetCheckpoint, resolveStageSequenceMember,
 } from './workflow-db';
@@ -140,19 +140,7 @@ export async function reiterateFromStage(
   stmts.updateWorkflowStageAndStatus.run(fromStage, 'active', now, workflowId);
 
   // Load the prior artifact so the specialist can revise in-place.
-  // story_decomposition_F* stages save as 'backlog' type (not keyed to stage name).
-  const isFeatureDecompStage = /^story_decomposition_F\d+$/.test(fromStage);
-  const artifactTypeForLoad = isFeatureDecompStage ? 'backlog' : STAGE_ARTIFACT_TYPE[fromStage];
-  let priorDraft = artifactTypeForLoad
-    ? (await loadLatestArtifactContent(workflow.item_id, artifactTypeForLoad)) ?? undefined
-    : undefined;
-
-  // See propagateFeedback() above — guard against the wiki's markdown mirror leaking
-  // through as the "prior draft" when disk content is unreadable.
-  if (priorDraft && !isJsonArtifactContent(priorDraft)) {
-    logger.warn(`reiterateFromStage: artifact content for stage "${fromStage}" is not JSON (likely wiki fallback) — generating a from-scratch brief instead of threading it as the prior draft`);
-    priorDraft = undefined;
-  }
+  const priorDraft = await loadPriorDraftForStage(workflow.item_id, fromStage);
   const brief = briefOverride
     ? briefOverride
     : priorDraft

@@ -309,6 +309,42 @@ export function isJsonArtifactContent(content: string): boolean {
 }
 
 /**
+ * Resolve the artifact `type` column value that holds a stage's latest output — the single
+ * source of truth for the two cases STAGE_ARTIFACT_TYPE can't express as a static map:
+ * story_decomposition_F<n> saves under 'backlog_F<n>' (see runMultiAgentFeatureStage), and
+ * epic_qa saves under 'qa_tests' (see runEpicQaStage). Every reader that needs a stage's
+ * prior artifact — human reiteration, change-request cascades — must resolve through this
+ * so the two never drift out of sync with where the writers actually save.
+ */
+function resolveStageArtifactType(stage: string): string | undefined {
+  const featureMatch = stage.match(/^story_decomposition_F(\d+)$/);
+  if (featureMatch) return `backlog_F${featureMatch[1]}`;
+  if (stage === 'epic_qa') return 'qa_tests';
+  return STAGE_ARTIFACT_TYPE[stage];
+}
+
+/**
+ * Load the prior draft for a stage so it can be threaded into a specialist's conversation
+ * as its own previous response (surgical revision) instead of a from-scratch regeneration.
+ * Returns undefined if the stage has no known artifact type, no artifact exists yet, or the
+ * stored content isn't JSON (see isJsonArtifactContent — a wiki markdown mirror leaking
+ * through as the "prior draft" would derail the revision, so treat it as absent instead).
+ */
+export async function loadPriorDraftForStage(itemId: string, stage: string): Promise<string | undefined> {
+  const artifactType = resolveStageArtifactType(stage);
+  if (!artifactType) return undefined;
+
+  const content = await loadLatestArtifactContent(itemId, artifactType);
+  if (!content) return undefined;
+
+  if (!isJsonArtifactContent(content)) {
+    logger.warn(`loadPriorDraftForStage: artifact content for stage "${stage}" is not JSON (likely wiki fallback) — treating as no prior draft`);
+    return undefined;
+  }
+  return content;
+}
+
+/**
  * Load content for a specific artifact by DB row ID.
  */
 export async function loadArtifactContentById(artifactId: number): Promise<string | null> {

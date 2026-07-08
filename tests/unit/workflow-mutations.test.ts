@@ -42,6 +42,7 @@ vi.mock('../../app/backend/src/session/session-manager', () => ({
 vi.mock('../../app/backend/src/agents/artifact-helpers', () => ({
   loadArtifactContentById: vi.fn(async () => undefined),
   loadLatestArtifactContent: vi.fn(async () => undefined),
+  loadPriorDraftForStage: vi.fn(async () => undefined),
   resolveArtifactPath: (p: string) => p,
   isJsonArtifactContent: () => true,
 }));
