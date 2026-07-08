@@ -849,7 +849,9 @@ export async function pushFeatureToADO(
       title: `[${storyLocalKey(featureKey, si)}] ${ensureStreamPrefix(storyData.title, storyData.platform)}`,
       description,
       acceptanceCriteria: allAcceptanceCriteria,
-      effort,
+      // Only the custom AI Estimate Dev field is populated from this estimate — the
+      // standard ADO Effort field is left for the team to size themselves, not overwritten
+      // by the AI's estimate.
       aiEstimateDevHours: deriveAiEstimateDev(effort),
       tags,
       parentId: featureId,
