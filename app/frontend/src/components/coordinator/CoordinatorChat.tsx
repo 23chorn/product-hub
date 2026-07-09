@@ -374,8 +374,15 @@ export function CoordinatorChat() {
               setCRLoading(true); setError(null);
               const confirmedList = Object.entries(crConfirmedStages).filter(([, v]) => v).map(([k]) => k);
               try {
-                const result = await api.executeChangeRequest(activeCR.id, confirmedList);
-                applyWorkflowStatus(result);
+                // executeChangeRequest's response is { ok, cr } (the change-request row) —
+                // not a WorkflowStatus. Passing it straight to applyWorkflowStatus left
+                // `workflow` undefined, which no-ops the store update (see its own guard),
+                // so activeWorkflow.status stayed 'complete' and the event/status poll loop
+                // (gated on status !== 'complete') never restarted — nothing moved until a
+                // manual reload re-fetched status from scratch. Fetch the real status instead.
+                await api.executeChangeRequest(activeCR.id, confirmedList);
+                const status = await api.getWorkflowStatus(activeWorkflow.id);
+                applyWorkflowStatus(status);
                 clearActiveCR(); setCRAssessment(null); setCRConfirmedStages({}); setCRDescription(''); setCRType('correction'); setShowCRForm(false);
                 addCoordinatorMessage({ role: 'coordinator', content: `Change request applied to: ${confirmedList.map((s: string) => STAGE_LABELS[s] ?? s).join(', ')}.`, timestamp: Date.now() });
               } catch (err: any) {
