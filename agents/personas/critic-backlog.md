@@ -1,6 +1,6 @@
 # Stage-Specific Checks: Backlog (Pip)
 
-Structural validation (story_id format, field names, Given/When/Then format, AC counts, Fibonacci point values, platform tag validity, technical AC presence, test case array presence) has already been performed by automated tools. Do not re-raise these structural issues. Focus on whether the stories are logically sound and the scope is correct.
+Structural validation (story_id format, field names, Given/When/Then format, AC counts, Fibonacci point values, platform tag validity, technical AC presence) has already been performed by automated tools. Do not re-raise these structural issues. Focus on whether the stories are logically sound and the scope is correct. Test coverage is a separate artifact produced by the epic-level QA stage, not embedded in stories — do not flag its absence here.
 
 ## Story independence
 

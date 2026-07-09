@@ -107,6 +107,25 @@ export function getAllFeatures(data: BacklogData): BacklogFeature[] {
   return data.features ?? [];
 }
 
+/**
+ * Order a feature's stories for display by their story_id's numeric suffix (S1, S2, ..., S10)
+ * rather than raw array/lexicographic order — the merged backlog's array order isn't guaranteed
+ * (revisions and auto-resolve dedup can append/reorder entries), and sorting story_id as a plain
+ * string would place "F1.S10" before "F1.S2". Retains each story's original array index alongside
+ * it so callers can still key state lookups / delete-by-index off the real position rather than
+ * the display position. Stories without a parseable story_id keep their original relative order,
+ * sorted after every numbered story.
+ */
+export function storiesInDisplayOrder(stories: BacklogStory[]): Array<{ story: BacklogStory; index: number }> {
+  const storyNumber = (s: BacklogStory): number => {
+    const m = /\.S(\d+)$/.exec(s.story_id ?? '');
+    return m ? Number(m[1]) : Number.MAX_SAFE_INTEGER;
+  };
+  return stories
+    .map((story, index) => ({ story, index }))
+    .sort((a, b) => (storyNumber(a.story) - storyNumber(b.story)) || (a.index - b.index));
+}
+
 // ── Platform breakdown (Progress Tracker detail page, dev/QA ticket export) ────
 
 export type TicketPlatform = 'backend' | 'web' | 'ios' | 'android';

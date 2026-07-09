@@ -114,6 +114,15 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
     return matches.reduce((latest, a) => (a.created_at > latest.created_at ? a : latest), matches[0]).id;
   }, [artifacts]);
 
+  // Latest PRD artifact id — feeds the Stories/Tests overview's FR/NFR hover tooltips
+  // (BacklogStoriesTests loads it to build frMap/nfrMap). Without this the tooltips
+  // silently don't show, since frMap/nfrMap default to empty when prdArtifactId is absent.
+  const prdArtifactId = useMemo(() => {
+    const matches = artifacts.filter(a => a.type === 'prd');
+    if (matches.length === 0) return null;
+    return matches.reduce((latest, a) => (a.created_at > latest.created_at ? a : latest), matches[0]).id;
+  }, [artifacts]);
+
   // Resolve which phase each feature belongs to, for the "Refinement - F1" stage rows.
   useEffect(() => {
     if (!epicFeaturesArtifactId) {
@@ -742,6 +751,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
           initiativeTitle={activeWorkflow.summary ?? activeWorkflow.goal.split('\n')[0]}
           epicFeaturesArtifactId={epicFeaturesArtifactId}
           epicQaArtifactId={epicQaArtifactId}
+          prdArtifactId={prdArtifactId}
           workflowId={activeWorkflow.id}
           onClose={() => setShowBacklogOverview(false)}
         />

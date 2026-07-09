@@ -186,27 +186,6 @@ function TestCaseCard({ tc, frMap, phaseByFeatureKey, planUrlByFeatureKey, onDel
             {tc.layer === 'technical' && (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-medium">API</span>
             )}
-            {(Array.isArray(tc.prd_ref) ? tc.prd_ref : tc.prd_ref ? [tc.prd_ref] : []).map(fr => {
-              const key = normalizePrdId(fr);
-              const tip = frMap?.[key];
-              return (
-                <span
-                  key={fr}
-                  title={tip}
-                  className={`text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400 ${tip ? 'cursor-help' : ''}`}
-                >
-                  {key}
-                </span>
-              );
-            })}
-            {splitStoryRefs(tc.story_ref ?? tc.linkedStory).map(ref => (
-              <span
-                key={ref}
-                className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400"
-              >
-                {ref}
-              </span>
-            ))}
             {isCrossPhase && (
               <span
                 title="This test case's stories span more than one phase — a deliberate shared flow, not a duplicate."
@@ -216,7 +195,35 @@ function TestCaseCard({ tc, frMap, phaseByFeatureKey, planUrlByFeatureKey, onDel
               </span>
             )}
           </div>
-          <p className="text-base text-surface-800 dark:text-surface-200 mt-0.5 leading-snug">{tc.title}</p>
+          <p className="text-base text-surface-800 dark:text-surface-200 mt-0.5 leading-snug truncate min-w-0">{tc.title}</p>
+          {/* FR/story refs kept on their own row, separate from the fixed id/priority/layer badges
+              above — their count varies per test case, so mixing them into the same row made some
+              rows wrap to two lines and others not, producing inconsistent row heights. */}
+          {((Array.isArray(tc.prd_ref) ? tc.prd_ref : tc.prd_ref ? [tc.prd_ref] : []).length > 0 || splitStoryRefs(tc.story_ref ?? tc.linkedStory).length > 0) && (
+            <div className="flex items-center gap-2 flex-wrap mt-1">
+              {(Array.isArray(tc.prd_ref) ? tc.prd_ref : tc.prd_ref ? [tc.prd_ref] : []).map(fr => {
+                const key = normalizePrdId(fr);
+                const tip = frMap?.[key];
+                return (
+                  <span
+                    key={fr}
+                    title={tip}
+                    className={`text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400 ${tip ? 'cursor-help' : ''}`}
+                  >
+                    {key}
+                  </span>
+                );
+              })}
+              {splitStoryRefs(tc.story_ref ?? tc.linkedStory).map(ref => (
+                <span
+                  key={ref}
+                  className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400"
+                >
+                  {ref}
+                </span>
+              ))}
+            </div>
+          )}
           {tc.endpoint && (
             <p className="text-[10px] font-mono text-indigo-600 dark:text-indigo-400 mt-0.5">{tc.endpoint.method} {tc.endpoint.path}</p>
           )}

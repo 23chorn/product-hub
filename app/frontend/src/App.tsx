@@ -13,6 +13,7 @@ import { CompletedInitiativesPage } from './components/completed-initiatives/Com
 import { QuickFeaturePanel } from './components/quick-feature/QuickFeaturePanel';
 import { PageHeader } from './components/common/PageHeader';
 import { PageHeaderTitle } from './components/common/PageHeaderTitle';
+import { CompanyLogo } from './components/common/CompanyLogo';
 import { LoginPage } from './pages/LoginPage';
 import { useModelStore } from './stores/modelStore';
 import { useSettingsStore } from './stores/settingsStore';
@@ -231,13 +232,16 @@ function App() {
       {/* Header */}
       <header className="bg-white/90 dark:bg-surface-900/80 backdrop-blur-lg border-b border-surface-200 dark:border-surface-700">
         <div className="flex items-center justify-between px-6 pt-4 pb-3">
-          <div className="flex items-baseline gap-2">
-            <h1 className="text-2xl font-bold text-surface-900 dark:text-surface-100">
-              xCube Flow
-            </h1>
-            <p className="text-sm text-surface-500 dark:text-surface-400">
-              The Self-Documenting Product & Quality Workflow
-            </p>
+          <div className="flex items-center gap-2">
+            <CompanyLogo />
+            <div className="flex items-baseline gap-2">
+              <h1 className="text-2xl font-bold text-surface-900 dark:text-surface-100">
+                xCube Flow
+              </h1>
+              <p className="text-sm text-surface-500 dark:text-surface-400">
+                The Self-Documenting Product & Quality Workflow
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {/* Admin user switcher */}

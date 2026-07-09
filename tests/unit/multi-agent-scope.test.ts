@@ -2,9 +2,11 @@ import { describe, it, expect } from 'vitest';
 import {
   filterBacklogStoriesByScope,
   filterQaTestCasesByStoryIds,
+  filterBacklogStoriesByFrOwnership,
   buildPlatformScopeSection,
   type ProductAreaScope,
 } from '../../app/backend/src/agents/multi-agent-refinement';
+import { buildFrOwnershipMap } from '../../app/backend/src/agents/backlog-overlap';
 
 const webOnly: ProductAreaScope = { area: 'Web', hasWeb: true, hasIOS: false, hasAndroid: false };
 const unscoped: ProductAreaScope = { area: null, hasWeb: true, hasIOS: true, hasAndroid: true };
@@ -123,5 +125,56 @@ describe('filterQaTestCasesByStoryIds', () => {
     expect(result.dropped).toBe(1);
     const parsed = JSON.parse(result.qaTests);
     expect(parsed.test_cases.map((t: any) => t.id)).toEqual(['T1', 'T2']);
+  });
+});
+
+describe('filterBacklogStoriesByFrOwnership', () => {
+  function backlogWithFrRefs(stories: Array<{ story_id: string; prd_ref?: { functional_requirements?: string[] } }>): string {
+    return JSON.stringify({ epic: 'E', features: [{ title: 'F1', stories }] });
+  }
+
+  it('strips a story whose FR belongs to a different feature', () => {
+    const frOwnership = buildFrOwnershipMap([
+      { prdRef: { functionalRequirements: ['FR1'] } },
+      { prdRef: { functionalRequirements: ['FR2'] } },
+    ]);
+    const backlog = backlogWithFrRefs([
+      { story_id: 'F1.S1', prd_ref: { functional_requirements: ['FR1'] } },
+      { story_id: 'F1.S2', prd_ref: { functional_requirements: ['FR2'] } }, // belongs to F2
+    ]);
+
+    const result = filterBacklogStoriesByFrOwnership(backlog, 'F1', frOwnership);
+
+    expect(result.dropped).toBe(1);
+    expect(result.violations).toEqual([{ featureKey: 'F1', storyId: 'F1.S2', owningFeatureKey: 'F2', frId: 'FR2' }]);
+    const parsed = JSON.parse(result.backlog);
+    expect(parsed.features[0].stories.map((s: any) => s.story_id)).toEqual(['F1.S1']);
+  });
+
+  it('keeps stories that trace only to this feature\'s own FRs', () => {
+    const frOwnership = buildFrOwnershipMap([{ prdRef: { functionalRequirements: ['FR1', 'FR2'] } }]);
+    const backlog = backlogWithFrRefs([
+      { story_id: 'F1.S1', prd_ref: { functional_requirements: ['FR1'] } },
+      { story_id: 'F1.S2', prd_ref: { functional_requirements: ['FR2'] } },
+    ]);
+
+    const result = filterBacklogStoriesByFrOwnership(backlog, 'F1', frOwnership);
+
+    expect(result.dropped).toBe(0);
+    expect(result.backlog).toBe(backlog);
+  });
+
+  it('is a no-op when the ownership map is empty (epic_features unavailable)', () => {
+    const backlog = backlogWithFrRefs([{ story_id: 'F1.S1', prd_ref: { functional_requirements: ['FR9'] } }]);
+    const result = filterBacklogStoriesByFrOwnership(backlog, 'F1', new Map());
+    expect(result.dropped).toBe(0);
+    expect(result.backlog).toBe(backlog);
+  });
+
+  it('is a safe no-op on malformed backlog JSON', () => {
+    const frOwnership = buildFrOwnershipMap([{ prdRef: { functionalRequirements: ['FR1'] } }]);
+    const result = filterBacklogStoriesByFrOwnership('not json', 'F1', frOwnership);
+    expect(result.dropped).toBe(0);
+    expect(result.backlog).toBe('not json');
   });
 });

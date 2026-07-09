@@ -126,7 +126,7 @@ Focus on:
     case 'story_decomposition':
       return `## Artifact Stage: Backlog (Pip)
 
-Structural validation (story_id format, field names, Given/When/Then format, AC counts, Fibonacci points, platform tags, technical ACs, test cases) has already been performed by automated tools. Do not re-raise those checks.
+Structural validation (story_id format, field names, Given/When/Then format, AC counts, Fibonacci points, platform tags, technical ACs) has already been performed by automated tools. Do not re-raise those checks. Test coverage is a separate artifact produced by the epic-level QA stage, not embedded in stories — do not flag its absence here.
 
 The PRD document is provided above in the Reference Documents section. Use it to verify that every functional requirement has a corresponding story.
 

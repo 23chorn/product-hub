@@ -92,6 +92,17 @@ export function eventToMessage(event: WorkflowEvent): { role: 'coordinator'; con
     } catch { /* fall through to raw summary */ }
   }
 
+  // Deterministic structural validation warnings — list the actual issues so there's
+  // something for a human to act on, not just an issue count with no detail.
+  if (event.event_type === 'validation_warning' && event.details) {
+    try {
+      const details = JSON.parse(event.details);
+      if (Array.isArray(details.issues) && details.issues.length > 0) {
+        content = [content, '', ...details.issues.map((issue: string) => `- ${issue}`)].join('\n');
+      }
+    } catch { /* fall through to raw summary */ }
+  }
+
   // Wiki sync after approval — append the wiki URL
   if (event.event_type === 'wiki_synced' && event.details) {
     try {

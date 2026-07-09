@@ -79,6 +79,7 @@ export function renderStructuredArtifact(content: string, ctx: ArtifactViewConte
     if (featureBacklogData) {
       const previewFeature = featureBacklogData.features?.[0] ?? featureBacklogData.feature;
       const storyCount = previewFeature?.stories?.length ?? 0;
+      const featureKey = artifactType.match(/^backlog_(F\d+)$/)?.[1];
       return (
         <ArtifactTabShell
           tabs={[{ id: 'stories', label: 'Stories', count: storyCount > 0 ? storyCount : undefined }]}
@@ -88,6 +89,7 @@ export function renderStructuredArtifact(content: string, ctx: ArtifactViewConte
           <BacklogView
             data={featureBacklogData}
             isFeaturePreview
+            featureKey={featureKey}
             initiativeTitle={initiativeTitle}
             frMap={frMap}
             nfrMap={nfrMap}

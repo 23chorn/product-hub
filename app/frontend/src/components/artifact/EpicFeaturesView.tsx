@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { featureLocalKey } from '@pap/shared';
 import { DeleteItemButton } from '../common/DeleteItemButton';
 import { Chevron, InitiativeHeader, PhaseTag } from './ArtifactPrimitives';
 
@@ -160,6 +161,19 @@ export function normalizeJourneyId(id: string): string {
   return match ? `J${match[1]}` : id.trim();
 }
 
+/** Feature identity badge ("F1", "F2", ...) — the same positional key (`featureLocalKey`)
+ *  used for FR ownership, push-time dedup, and ADO ticket prefixes, so a reviewer can refer
+ *  to "F3" and mean the exact same feature the backend does. Exported standalone so every
+ *  feature-row surface (epic plan preview, per-feature checkpoint, merged backlog overview)
+ *  renders the same badge instead of each re-deriving its own numbering markup. */
+export function FeatureKeyBadge({ label }: { label: string }) {
+  return (
+    <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400">
+      {label}
+    </span>
+  );
+}
+
 /** FR-only badges — the foundation every downstream stage traces back to, so these are
  *  surfaced prominently (next to titles, always visible) rather than gated behind expand
  *  like NFR/journey badges. Exported standalone so feature/story rows across every view
@@ -182,6 +196,30 @@ export function FrTags({ frs, frMap, className }: {
   );
 }
 
+/** Full-text FR listing for the feature detail/expand view — the header row already shows
+ *  the compact "FR-01" badges via FrTags, so repeating the same badges here added nothing;
+ *  this is the one place a reviewer actually reads the requirement text, not just its id. */
+function FrFullList({ frs, frMap }: { frs: string[]; frMap?: Record<string, string> }) {
+  if (frs.length === 0) return null;
+  return (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-1">Functional Requirements</p>
+      <ul className="space-y-1">
+        {frs.map(fr => {
+          const key = normalizePrdId(fr);
+          const text = frMap?.[key];
+          return (
+            <li key={fr} className="flex gap-2 text-xs text-surface-700 dark:text-surface-300">
+              <span className="flex-shrink-0 text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400">{key}</span>
+              <span>{text ?? fr}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 export function PrdRefTags({ prdRef, frMap, nfrMap }: {
   prdRef: PrdRef;
   frMap?: Record<string, string>;
@@ -192,24 +230,28 @@ export function PrdRefTags({ prdRef, frMap, nfrMap }: {
   const journeys = prdRef.userJourneys ?? [];
   if (frs.length === 0 && nfrs.length === 0 && journeys.length === 0) return null;
   return (
-    <div className="mt-3 flex flex-wrap gap-1.5">
-      <FrTags frs={frs} frMap={frMap} className="contents" />
-      {nfrs.map(nfr => {
-        const key = normalizePrdId(nfr);
-        const tip = nfrMap?.[key];
-        return <span key={nfr} title={tip} className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 ${tip ? 'cursor-help' : ''}`}>{key}</span>;
-      })}
-      {journeys.map(j => {
-        const colonIdx = j.indexOf(': ');
-        const jId = normalizeJourneyId(colonIdx !== -1 ? j.slice(0, colonIdx) : j);
-        const tip = colonIdx !== -1 ? j.slice(colonIdx + 2) : undefined;
-        return <span key={j} title={tip} className={`text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 ${tip ? 'cursor-help' : ''}`}>{jId}</span>;
-      })}
+    <div className="mt-3 space-y-2">
+      <FrFullList frs={frs} frMap={frMap} />
+      {(nfrs.length > 0 || journeys.length > 0) && (
+        <div className="flex flex-wrap gap-1.5">
+          {nfrs.map(nfr => {
+            const key = normalizePrdId(nfr);
+            const tip = nfrMap?.[key];
+            return <span key={nfr} title={tip} className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 ${tip ? 'cursor-help' : ''}`}>{key}</span>;
+          })}
+          {journeys.map(j => {
+            const colonIdx = j.indexOf(': ');
+            const jId = normalizeJourneyId(colonIdx !== -1 ? j.slice(0, colonIdx) : j);
+            const tip = colonIdx !== -1 ? j.slice(colonIdx + 2) : undefined;
+            return <span key={j} title={tip} className={`text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 ${tip ? 'cursor-help' : ''}`}>{jId}</span>;
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
-function FeatureCard({ feature, idx, phaseIndex, frMap, nfrMap, onDeleteFeature }: { feature: EpicFeature; idx: number; phaseIndex: number; frMap?: Record<string, string>; nfrMap?: Record<string, string>; onDeleteFeature?: (phaseIndex: number, featureIndex: number) => void }) {
+function FeatureCard({ feature, idx, globalIndex, phaseIndex, frMap, nfrMap, onDeleteFeature }: { feature: EpicFeature; idx: number; globalIndex: number; phaseIndex: number; frMap?: Record<string, string>; nfrMap?: Record<string, string>; onDeleteFeature?: (phaseIndex: number, featureIndex: number) => void }) {
   const [expanded, setExpanded] = useState(false);
   const hasDetail = (feature.acceptanceCriteria?.length ?? 0) > 0 || !!feature.rationale || !!feature.prdRef;
 
@@ -225,6 +267,7 @@ function FeatureCard({ feature, idx, phaseIndex, frMap, nfrMap, onDeleteFeature 
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-0.5 flex-wrap">
               <span className="text-xs font-semibold uppercase tracking-wide text-brand-500 dark:text-brand-400">Feature</span>
+              <FeatureKeyBadge label={featureLocalKey(globalIndex)} />
               {feature.deferredTo && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 flex-shrink-0">
                   → {feature.deferredTo}
@@ -243,10 +286,8 @@ function FeatureCard({ feature, idx, phaseIndex, frMap, nfrMap, onDeleteFeature 
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h4 className="text-base font-semibold text-surface-900 dark:text-surface-100">{feature.title}</h4>
-              <FrTags frs={feature.prdRef?.functionalRequirements ?? []} frMap={frMap} />
-            </div>
+            <h4 className="text-base font-semibold text-surface-900 dark:text-surface-100 truncate min-w-0">{feature.title}</h4>
+            <FrTags frs={feature.prdRef?.functionalRequirements ?? []} frMap={frMap} className="flex flex-wrap gap-1 mt-1" />
             {feature.description && (
               <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">{feature.description}</p>
             )}
@@ -297,13 +338,16 @@ export const PHASE_COLORS: Record<string, string> = {
 interface PhaseSectionProps {
   phase: EpicPhase;
   phaseIndex: number;
+  /** Count of features in every earlier phase — added to a feature's local index to get
+   *  its global position, matching the backend's flattened `featureLocalKey(i)` numbering. */
+  featureIndexOffset: number;
   frMap?: Record<string, string>;
   nfrMap?: Record<string, string>;
   onDeletePhase?: (phaseIndex: number) => void;
   onDeleteFeature?: (phaseIndex: number, featureIndex: number) => void;
 }
 
-function PhaseSection({ phase, phaseIndex, frMap, nfrMap, onDeletePhase, onDeleteFeature }: PhaseSectionProps) {
+function PhaseSection({ phase, phaseIndex, featureIndexOffset, frMap, nfrMap, onDeletePhase, onDeleteFeature }: PhaseSectionProps) {
   const [expanded, setExpanded] = useState(true);
   const colorClass = PHASE_COLORS[phase.label] ?? 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300';
   const epicTitle = phase.epicTitle?.replace(/^(MVP|Phase \d+)\s*[—–-]\s*/i, '');
@@ -341,7 +385,7 @@ function PhaseSection({ phase, phaseIndex, frMap, nfrMap, onDeletePhase, onDelet
       {expanded && (
         <div className="border-t border-surface-200 dark:border-surface-700 p-4 space-y-2">
           {phase.features.map((f, i) => (
-            <FeatureCard key={i} feature={f} idx={i} phaseIndex={phaseIndex} frMap={frMap} nfrMap={nfrMap} onDeleteFeature={onDeleteFeature} />
+            <FeatureCard key={i} feature={f} idx={i} globalIndex={featureIndexOffset + i} phaseIndex={phaseIndex} frMap={frMap} nfrMap={nfrMap} onDeleteFeature={onDeleteFeature} />
           ))}
         </div>
       )}
@@ -363,6 +407,12 @@ interface EpicFeaturesViewProps {
 export function EpicFeaturesView({ data, initiativeTitle, frMap, nfrMap, onDeletePhase, onDeleteFeature }: EpicFeaturesViewProps) {
   const phases = toPhases(data);
   const totalFeatures = phases.reduce((sum, p) => sum + p.features.length, 0);
+  // Running feature count before each phase, so FeatureCard can show the same global "F<n>"
+  // key the backend assigns via featureLocalKey (positional across the flattened feature list).
+  const featureIndexOffsets = phases.reduce<number[]>((offsets, _p, i) => {
+    offsets.push(i === 0 ? 0 : offsets[i - 1] + phases[i - 1].features.length);
+    return offsets;
+  }, []);
   // Legacy flat features[] data has no real phases[] array to splice from — the removal
   // helpers no-op on it, so don't wire up buttons that would silently do nothing.
   const supportsDelete = !!data.phases;
@@ -393,6 +443,7 @@ export function EpicFeaturesView({ data, initiativeTitle, frMap, nfrMap, onDelet
           key={i}
           phase={phase}
           phaseIndex={i}
+          featureIndexOffset={featureIndexOffsets[i]}
           frMap={frMap}
           nfrMap={nfrMap}
           onDeletePhase={supportsDelete ? onDeletePhase : undefined}

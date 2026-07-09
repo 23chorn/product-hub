@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import type { WorkItemStateBucket, BacklogData, BacklogFeature, BacklogStory } from '@pap/shared';
-import { featureLocalKey, storyLocalKey, backlogTier, getSprintMeta, getAllStories, getAllFeatures } from '@pap/shared';
+import { featureLocalKey, storyLocalKey, backlogTier, getSprintMeta, getAllStories, getAllFeatures, storiesInDisplayOrder } from '@pap/shared';
 import { WORK_ITEM_STATE_BUCKET_LABELS, WORK_ITEM_STATE_BUCKET_COLORS } from '../../utils/work-item-state-bucket';
-import { toPhases, PHASE_COLORS, PrdRefTags, FrTags, type EpicFeature, type EpicFeaturesData } from './EpicFeaturesView';
+import { toPhases, PHASE_COLORS, PrdRefTags, FrTags, FeatureKeyBadge, type EpicFeature, type EpicFeaturesData } from './EpicFeaturesView';
 import { ExpandableText } from '../common/ExpandableText';
 import { ExpandableList } from '../common/ExpandableList';
 import { DeleteItemButton } from '../common/DeleteItemButton';
@@ -179,6 +179,10 @@ function AggregateHours({ hours, traditionalHours, aiAssisted }: { hours: number
 interface BacklogViewProps {
   data: BacklogData;
   isFeaturePreview?: boolean;
+  /** "F3" etc — only known by the caller for a single-feature checkpoint (backlog_F<n>
+   *  artifact type carries its own index), so this stays undefined for the merged overview,
+   *  which already derives it per-row from the flattened features array instead. */
+  featureKey?: string;
   initiativeTitle?: string;
   stateByLocalKey?: Map<string, WorkItemStateBucket>;
   epicFeatures?: EpicFeaturesData | null;
@@ -193,7 +197,7 @@ interface BacklogViewProps {
   onDeleteTestCase?: (storyIndex: number, testCaseIndex: number) => void;
 }
 
-export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLocalKey, epicFeatures, frMap, nfrMap, onDeleteStory, onDeleteTestCase }: BacklogViewProps) {
+export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitle, stateByLocalKey, epicFeatures, frMap, nfrMap, onDeleteStory, onDeleteTestCase }: BacklogViewProps) {
   const [expandedStories, setExpandedStories] = useState<Set<string>>(new Set());
   // Epics and features both default collapsed so a multi-feature overview doesn't dump every
   // story on screen at once — drill in per epic, then per feature.
@@ -237,7 +241,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
   const totalHours = allStories.reduce((s, st) => s + (st.estimatedHours ?? 0), 0);
   const totalTraditionalHours = sprintMeta?.totalTraditionalHours ?? totalHours;
 
-  const renderStory = (story: BacklogStory, si: number, prefix: string, stateBucket?: WorkItemStateBucket) => {
+  const renderStory = (story: BacklogStory, si: number, prefix: string, stateBucket?: WorkItemStateBucket, storyKey?: string) => {
     const key = `${prefix}-${si}`;
     const isExpanded = expandedStories.has(key);
     return (
@@ -250,6 +254,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
           <Chevron expanded={isExpanded} className="w-3.5 h-3.5 mt-0.5 text-surface-400" />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
+              {storyKey && <FeatureKeyBadge label={storyKey} />}
               <span className="text-base text-surface-900 dark:text-surface-100 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">
                 {story.title}
               </span>
@@ -439,6 +444,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-0.5 flex-wrap">
               <span className="text-xs font-semibold uppercase tracking-wide text-brand-500 dark:text-brand-400">Feature</span>
+              <FeatureKeyBadge label={featureKey} />
               {featureEffort > 0 && (
                 <span className="text-xs text-surface-400 dark:text-surface-500">
                   {featureEffort} pts
@@ -467,10 +473,8 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
               ) : null}
               <StateBucketPill bucket={stateByLocalKey?.get(featureKey)} />
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h4 className="text-base font-semibold text-surface-900 dark:text-surface-100">{feature.title}</h4>
-              <FrTags frs={epicMatch?.prdRef?.functionalRequirements ?? []} frMap={frMap} />
-            </div>
+            <h4 className="text-base font-semibold text-surface-900 dark:text-surface-100 truncate min-w-0">{feature.title}</h4>
+            <FrTags frs={epicMatch?.prdRef?.functionalRequirements ?? []} frMap={frMap} className="flex flex-wrap gap-1 mt-1" />
             {feature.description && (
               <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">{feature.description}</p>
             )}
@@ -485,7 +489,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
           <>
             <FeatureDetailPanel epicMatch={epicMatch} acceptanceCriteria={featureAcceptanceCriteria} frMap={frMap} nfrMap={nfrMap} />
             <div className="divide-y divide-surface-100 dark:divide-surface-700 border-t border-surface-200 dark:border-surface-700">
-              {feature.stories.map((story, si) => renderStory(story, si, `${fi + 1}`, stateByLocalKey?.get(storyLocalKey(featureKey, si))))}
+              {storiesInDisplayOrder(feature.stories).map(({ story, index: si }) => renderStory(story, si, `${fi + 1}`, stateByLocalKey?.get(storyLocalKey(featureKey, si)), story.story_id ?? storyLocalKey(featureKey, si)))}
             </div>
           </>
         )}
@@ -542,6 +546,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                         <span className="text-xs font-semibold uppercase tracking-wide text-brand-500 dark:text-brand-400">Feature</span>
+                        {featureKey && <FeatureKeyBadge label={featureKey} />}
                         {totalEffort > 0 && (
                           <span className="text-xs text-surface-400 dark:text-surface-500">
                             {totalEffort} pts
@@ -550,10 +555,8 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h4 className="text-base font-semibold text-surface-900 dark:text-surface-100">{feature.title}</h4>
-                        <FrTags frs={epicMatch?.prdRef?.functionalRequirements ?? []} frMap={frMap} />
-                      </div>
+                      <h4 className="text-base font-semibold text-surface-900 dark:text-surface-100 truncate min-w-0">{feature.title}</h4>
+                      <FrTags frs={epicMatch?.prdRef?.functionalRequirements ?? []} frMap={frMap} className="flex flex-wrap gap-1 mt-1" />
                       {feature.description && (
                         <p className="text-sm text-surface-500 dark:text-surface-400 mt-0.5">{feature.description}</p>
                       )}
@@ -708,6 +711,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
               )}
             </div>
             <div className="flex items-center gap-2 flex-wrap">
+              {story.story_id && <FeatureKeyBadge label={story.story_id} />}
               <h3 className="text-base font-semibold text-surface-900 dark:text-surface-100">{story.title}</h3>
               <FrTags frs={story.prd_ref?.functional_requirements ?? []} frMap={frMap} />
             </div>
@@ -845,7 +849,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
           return (
             <div className="rounded-lg border border-surface-200 dark:border-surface-700">
               <div className="divide-y divide-surface-100 dark:divide-surface-700">
-                {features[0].stories.map((story, si) => renderStory(story, si, '1', stateByLocalKey?.get(storyLocalKey(featureLocalKey(0), si))))}
+                {storiesInDisplayOrder(features[0].stories).map(({ story, index: si }) => renderStory(story, si, '1', stateByLocalKey?.get(storyLocalKey(featureLocalKey(0), si)), story.story_id ?? storyLocalKey(featureLocalKey(0), si)))}
               </div>
             </div>
           );
@@ -865,7 +869,7 @@ export function BacklogView({ data, isFeaturePreview, initiativeTitle, stateByLo
         return (
           <div className="rounded-lg border border-surface-200 dark:border-surface-700">
             <div className="divide-y divide-surface-100 dark:divide-surface-700">
-              {(data.feature?.stories ?? []).map((story, si) => renderStory(story, si, '1', stateByLocalKey?.get(storyLocalKey(featureLocalKey(0), si))))}
+              {storiesInDisplayOrder(data.feature?.stories ?? []).map(({ story, index: si }) => renderStory(story, si, '1', stateByLocalKey?.get(storyLocalKey(featureLocalKey(0), si)), story.story_id ?? storyLocalKey(featureLocalKey(0), si)))}
             </div>
           </div>
         );

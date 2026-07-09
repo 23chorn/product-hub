@@ -17,6 +17,19 @@ export function EventRow({ msg }: { msg: CoordinatorMessage }) {
     );
   }
 
+  if (msg.eventType === 'validation_warning') {
+    return (
+      <ExpandableRow
+        label="validation"
+        labelColor="text-amber-600 dark:text-amber-500"
+        borderColor="border-amber-200 dark:border-amber-800/40"
+        bgColor="bg-amber-50 dark:bg-amber-900/10"
+        content={msg.content}
+        timestamp={msg.timestamp}
+      />
+    );
+  }
+
   if (msg.eventType === 'critic_verdict') {
     // lime, not amber — amber reads as burnt-orange in the retro theme (its brand
     // accent), which makes this box disappear into the surrounding chrome there.

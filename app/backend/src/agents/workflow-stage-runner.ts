@@ -9,18 +9,18 @@
 import db from '../data/database';
 import { sessionManager } from '../session/session-manager';
 import { CoordinatorAgent } from './coordinator-agent';
-import { CriticAgent } from './critic-agent';
 import { ContextCuratorAgent } from './curator-agent';
 import { SpecialistAgent } from './specialist-agent';
 import { resolveAgentModel, getActiveProvider, type TokenUsage } from '../utils/ai-provider';
 import { computeRevisionDiff } from '../utils/revision-diff';
 import { summarizeRevisionDiff } from './revision-diff-summary';
+import { runCriticGate } from './critic-gate';
 import {
   STAGE_SESSION_MAP, STAGE_MAX_OUTPUT_TOKENS, resolveMaxOutputTokens, STAGE_ARTIFACT_TYPE,
   STAGE_ARTIFACT_LABEL, STAGE_TOOL_DEFINITIONS, STAGE_REVISION_DELETABLE_ARRAY, stageProgressHeartbeat, stageProgressReview, stageProgressReviewComplete, stageProgressRevision, stageProgressSection, stageProgressWorking,
 } from './stage-metadata';
 import {
-  saveCriticArtifact, saveDiffArtifact, saveLocalArtifact, loadLatestArtifactContent, syncArtifactToWiki,
+  saveDiffArtifact, saveLocalArtifact, loadLatestArtifactContent, syncArtifactToWiki,
 } from './artifact-helpers';
 import { type ToolDefinition, getRegisteredTools } from './tool-registry';
 import { stripJsonFence } from '../utils/json-repair';
@@ -47,7 +47,7 @@ export {
 } from './workflow-cancel';
 import { setCancelController, clearCancelController, isCancelRequested } from './workflow-cancel';
 export { getCoordinator, getCritic } from './workflow-agents';
-import { getCoordinator, getCritic } from './workflow-agents';
+import { getCoordinator } from './workflow-agents';
 import { runBacklogMerge, runMultiAgentFeatureStage, runMultiAgentFeatureRevision, runMultiAgentFeatureQaRevision, runEpicQaStage, runEpicQaRevision } from './feature-stage-runner';
 import { pushLinksToAirtable } from './ado-stage-push';
 
@@ -627,47 +627,15 @@ export async function runAutonomousStage(
         if (refParts.length > 0) criticReferenceDocuments = refParts.join('\n\n---\n\n');
       }
 
-      let review = await getCritic().review(fullResponse, artifactType, resolveAgentModel('critic'), criticTokenCallback, stage, priorCriticIssues, criticReferenceDocuments);
+      const review = await runCriticGate({
+        workflowId, itemId, sessionId, stage,
+        artifactContent: fullResponse, artifactType,
+        referenceDocuments: criticReferenceDocuments,
+        priorIssues: priorCriticIssues,
+        onTokens: criticTokenCallback,
+      });
       insertEvent(workflowId, 'stage_progress', stage, stageProgressReviewComplete(stage));
-
-      // ── Coordinator scope filter ──────────────────────────────────────────
-      // If the Critic flagged issues, ask the Coordinator to validate them against
-      // the initiative's stated scope. Issues that contradict explicit scope
-      // boundaries are filtered out before the revision decision is made.
-      if (review.verdict === 'revise' && review.issues.length > 0) {
-        insertEvent(workflowId, 'stage_progress', stage, `Validating the review against the scope for ${STAGE_ARTIFACT_LABEL[stage] ?? stage}…`);
-        const filterResult = await getCoordinator().filterCriticIssues(
-          workflowId, stage, review.issues
-        );
-        if (filterResult.filteredCount > 0) {
-          const noun = filterResult.filteredCount === 1 ? 'issue' : 'issues';
-          insertEvent(workflowId, 'stage_progress', stage,
-            `Chief of Staff removed ${filterResult.filteredCount} out-of-scope ${noun}. ${filterResult.reasoning}`);
-        }
-        review = { ...review, issues: filterResult.validIssues };
-        // Re-evaluate verdict with only in-scope issues
-        const hasCritical = filterResult.validIssues.some(i => i.severity === 'critical');
-        const majorCount = filterResult.validIssues.filter(i => i.severity === 'major').length;
-        if (!hasCritical && majorCount < 2) {
-          review = { ...review, verdict: 'approve' };
-        }
-      }
-
-      // Save full critic review as artifact .md file
-      const criticArtifactId = await saveCriticArtifact(itemId, stage, review.fullText, sessionId);
-
-      const criticDetails = {
-        critic_verdict: review.verdict,
-        issue_count: review.issues.length,
-        critical_issues: review.issues.filter(i => i.severity === 'critical').length,
-        major_issues: review.issues.filter(i => i.severity === 'major').length,
-        issues_summary: review.issues.slice(0, 5).map(i => `[${i.severity.toUpperCase()}] ${i.description}`).join('; '),
-        inline_review: true,
-        reviewed_stage: stage,
-        critic_artifact_id: criticArtifactId,
-        questions: review.questions,
-        issues: review.issues.slice(0, 10),
-      };
+      const { criticDetails } = review;
 
       if (review.verdict === 'approve') {
         wikiUrl = await tryWikiPush();

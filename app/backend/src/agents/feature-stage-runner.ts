@@ -13,7 +13,7 @@
  */
 import type { AgentType } from '@pap/shared';
 import db from '../data/database';
-import { logger, insertEvent } from './workflow-db';
+import { logger, insertEvent, stmts, loadGlobalPolicies } from './workflow-db';
 import { validateBacklogJson, validateQaTestsJson } from './tool-validators';
 import { isCancelRequested } from './workflow-cancel';
 import { resolveAgentModel } from '../utils/ai-provider';
@@ -26,6 +26,8 @@ import { loadLatestArtifactContent, saveLocalArtifact, saveDiffArtifact } from '
 import { SpecialistAgent } from './specialist-agent';
 import { summarizeRevisionDiff } from './revision-diff-summary';
 import { isDemoWorkflow } from '../demo/demo-mode';
+import { getCoordinator } from './workflow-agents';
+import { runCriticGate } from './critic-gate';
 import {
   runMultiAgentRefinement,
   resolveProductAreaScope,
@@ -55,6 +57,85 @@ function emitValidationWarnings(
   if (validation.valid || !Array.isArray(validation.issues) || validation.issues.length === 0) return;
   logger.warn(`${logPrefix}: ${validation.issues.join(' | ')}`);
   insertEvent(workflowId, 'validation_warning', stage, eventMessage(validation.issues.length), { issues: validation.issues });
+}
+
+/**
+ * After a multi-agent stage (per-feature backlog or epic QA) produces its artifact, run the
+ * quality critic against it and either checkpoint for human review (approve) or auto-fix once
+ * via the stage's own targeted surgical-revision path — the same one human reviewers trigger,
+ * so this reuses its existing save/diff/checkpoint handling rather than duplicating it. Bounded
+ * to one automatic pass, mirroring MAX_INLINE_REVISIONS in the single-specialist inline critic
+ * gate (workflow-stage-runner.ts), so a critic can't loop on issues a human could resolve in one
+ * message. Skipped entirely for demo fixtures and when require_critic_review is off.
+ */
+async function runFeatureCriticGate(opts: {
+  workflowId: string;
+  itemId: string;
+  sessionId: string;
+  /** Raw workflow stage, e.g. "story_decomposition_F2" or "epic_qa" — used for events/checkpoints. */
+  stage: string;
+  /** Persona lookup key for the critic (e.g. "story_decomposition", "epic_qa"). */
+  personaStage: string;
+  artifactId: number;
+  artifactContent: string;
+  artifactType: string;
+  isDemo: boolean;
+  completionMessage: string;
+  /** Runs the stage's existing targeted revision path; it saves, diffs, and checkpoints itself. */
+  runRevision: (priorDraft: string, brief: string) => Promise<void>;
+}): Promise<void> {
+  const { workflowId, itemId, sessionId, stage, personaStage, artifactId, artifactContent, artifactType, isDemo, completionMessage, runRevision } = opts;
+  const { pauseAtCheckpoint } = await import('./workflow-router'); // dynamic: breaks the workflow-router → stage-runner cycle
+
+  const policies = loadGlobalPolicies();
+  const criticEnabled = policies.get('require_critic_review') !== 'false' && policies.get('require_critic_review') !== (false as any);
+
+  if (isDemo || !criticEnabled) {
+    await pauseAtCheckpoint(workflowId, stage, artifactId, undefined, undefined);
+    insertEvent(workflowId, 'stage_completed', stage, completionMessage, { artifact_id: artifactId });
+    return;
+  }
+
+  insertEvent(workflowId, 'stage_progress', stage, `Running quality review on ${artifactType}...`);
+  const review = await runCriticGate({
+    workflowId, itemId, sessionId, stage, personaStage, artifactContent, artifactType,
+  });
+
+  if (review.verdict === 'approve') {
+    await pauseAtCheckpoint(workflowId, stage, artifactId, undefined, { critic: review.criticDetails });
+    const minorCount = review.issues.filter(i => i.severity === 'minor').length;
+    const approveMsg = minorCount > 0
+      ? `Quality review passed with ${minorCount} minor note${minorCount > 1 ? 's' : ''} (resolved internally). Approve to proceed.`
+      : 'Quality review passed — no issues found. Approve to proceed.';
+    insertEvent(workflowId, 'critic_verdict', stage, approveMsg, review.criticDetails);
+    insertEvent(workflowId, 'stage_completed', stage, completionMessage, { artifact_id: artifactId });
+    return;
+  }
+
+  // Critic wants revisions — auto-revise once via the stage's targeted revision path, then
+  // ask the human. Same cap as the single-specialist inline critic gate.
+  const MAX_INLINE_REVISIONS = 1;
+  const priorRevisions = stmts.getCheckpointsByWorkflow.all(workflowId)
+    .filter(c => c.stage === stage && c.status === 'revised').length;
+
+  if (priorRevisions >= MAX_INLINE_REVISIONS) {
+    const issuesSummary = review.issues.slice(0, 3).map(i => `[${i.severity.toUpperCase()}] ${i.description}`).join('; ');
+    await pauseAtCheckpoint(workflowId, stage, artifactId, undefined, { critic: review.criticDetails });
+    insertEvent(workflowId, 'critic_verdict', stage,
+      `Quality review still has unresolved issues after ${MAX_INLINE_REVISIONS} revision(s): ${issuesSummary}. How would you like to proceed?`,
+      review.criticDetails);
+    return;
+  }
+
+  const now = Date.now();
+  stmts.insertCheckpoint.run(workflowId, stage, artifactId, 'revised', JSON.stringify({ critic: review.criticDetails }), null, now);
+  insertEvent(workflowId, 'critic_verdict', stage,
+    `Quality review flagged issues. Auto-revising (attempt ${priorRevisions + 1}/${MAX_INLINE_REVISIONS}).`,
+    review.criticDetails);
+
+  const issueStrings = review.issues.map(i => `[${i.severity.toUpperCase()}] ${i.description}`);
+  const brief = getCoordinator().generateRevisionBrief(workflowId, stage, artifactContent, issueStrings);
+  await runRevision(artifactContent, brief);
 }
 
 /**
@@ -285,14 +366,21 @@ export async function runMultiAgentFeatureStage(
       `[MULTI-AGENT] Backlog validation issues for Feature ${featureIndex + 1}`,
       (n) => `Backlog quality check flagged ${n} issue(s) for Feature ${featureIndex + 1} — review before approving`);
 
-    // Single checkpoint for backlog review — QA is generated at epic level after all features are approved.
-    const { pauseAtCheckpoint } = await import('./workflow-router'); // dynamic: breaks the workflow-router → stage-runner cycle
-    await pauseAtCheckpoint(workflowId, stage, artifactId, undefined, undefined);
-    logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} refinement complete — checkpoint created`);
+    // Same policy_overrides source runMultiAgentRefinement used internally to decide whether
+    // to serve a demo fixture — re-derived here since it doesn't surface that decision back.
+    const wfRow = db.prepare<[string], { policy_overrides: string | null }>(
+      'SELECT policy_overrides FROM workflows WHERE id = ?'
+    ).get(workflowId);
+    const isDemo = isDemoWorkflow(wfRow?.policy_overrides ? JSON.parse(wfRow.policy_overrides) : {});
 
-    insertEvent(workflowId, 'stage_completed', stage,
-      `Multi-agent collaborative refinement complete for Feature ${featureIndex + 1} — ready for human review`,
-      { artifact_id: artifactId });
+    await runFeatureCriticGate({
+      workflowId, itemId, sessionId, stage, personaStage: 'story_decomposition',
+      artifactId, artifactContent: featureArtifactContent, artifactType: `Feature ${featureNum} Stories`,
+      isDemo,
+      completionMessage: `Multi-agent collaborative refinement complete for Feature ${featureIndex + 1} — ready for human review`,
+      runRevision: (priorDraft, brief) => runMultiAgentFeatureRevision(sessionId, workflowId, stage, itemId, featureIndex, priorDraft, brief),
+    });
+    logger.info(`[MULTI-AGENT] Feature ${featureIndex + 1} refinement complete — checkpoint created`);
   } catch (err: any) {
     logger.error(`[MULTI-AGENT] Feature ${featureIndex + 1} refinement failed: ${err.message}`);
     insertEvent(workflowId, 'error', stage, `Multi-agent refinement failed: ${err.message}`);
@@ -817,16 +905,17 @@ export async function runEpicQaStage(
     '[EPIC QA] QA test suite validation issues',
     (n) => `Epic QA suite quality check flagged ${n} issue(s) — review before approving`);
 
-  const { pauseAtCheckpoint } = await import('./workflow-router'); // dynamic: breaks the workflow-router → stage-runner cycle
-  await pauseAtCheckpoint(workflowId, 'epic_qa', artifactId, undefined, undefined);
-
   const testCaseCount = countTestCases(stripped);
 
-  insertEvent(workflowId, 'stage_completed', 'epic_qa',
-    testCaseCount !== undefined
+  await runFeatureCriticGate({
+    workflowId, itemId, sessionId, stage: 'epic_qa', personaStage: 'epic_qa',
+    artifactId, artifactContent: stripped, artifactType: 'Epic QA Test Suite',
+    isDemo: false, // the demo branch above already returned before reaching this point
+    completionMessage: testCaseCount !== undefined
       ? `Epic QA test suite ready — ${testCaseCount} test case(s) across ${featureCount} features`
-      : `Epic QA test suite ready for review`,
-    { artifact_id: artifactId });
+      : 'Epic QA test suite ready for review',
+    runRevision: (priorDraft, brief) => runEpicQaRevision(sessionId, workflowId, itemId, priorDraft, brief),
+  });
 
   logger.info(`[EPIC QA] Generated ${testCaseCount ?? '?'} test cases across ${featureCount} features`);
 }
