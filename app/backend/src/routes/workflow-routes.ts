@@ -19,6 +19,7 @@ import { requestCancel } from '../agents/workflow-stage-runner';
 import {
   linkCRArtifactVersion,
   completeChangeRequest,
+  syncCrStageSequenceAfterFeatureInjection,
   type ChangeRequestRow,
 } from '../agents/change-request';
 import db from '../data/database';
@@ -283,6 +284,15 @@ workflowRoutes.post('/checkpoint/resolve', async (req: AuthRequest, res: Respons
           logger.info(`[CHECKPOINT] epic_feature_planner approved → injected ${featureCount} feature stages`);
         } catch (err: any) {
           logger.error(`[CHECKPOINT] Failed to inject feature stages: ${err.message}`);
+        }
+
+        // If this is a change-request rerun, its frozen cr_stage_sequence was captured
+        // before the feature count above was known — re-sync it now so CR advancement
+        // walks the new feature stages instead of stale ones from the original run.
+        try {
+          syncCrStageSequenceAfterFeatureInjection(workflowId);
+        } catch (err: any) {
+          logger.error(`[CHECKPOINT] Failed to sync CR stage sequence: ${err.message}`);
         }
       }
 

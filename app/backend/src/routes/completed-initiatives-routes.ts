@@ -21,8 +21,8 @@ import { bucketWorkItemState, workItemStatePercent } from '../integrations/azure
 import { refreshItemAdoState } from '../integrations/ado-state-sync';
 import { getAzureDevOpsClient } from '../integrations/azure-devops';
 import { loadArtifactContentById, updateArtifactContent } from '../agents/artifact-helpers';
-import { recalculateEffortRollupChain, recalculateEpicEffort } from '../agents/effort-rollup';
-import { cascadeDeleteTestCases, pruneMergedBacklogArtifact } from '../agents/story-removal';
+import { recalculateEffortRollupChain } from '../agents/effort-rollup';
+import { cascadeDeleteTestCases, pruneMergedBacklogArtifact, deleteAdoFeature } from '../agents/story-removal';
 import { stripJsonFence } from '../utils/json-repair';
 import {
   getWorkItemRowsByItem, getTestPlanRowsByItem, getDocumentArtifactIds,
@@ -402,9 +402,9 @@ router.patch('/:itemId/work-items/:adoId', async (req: Request, res: Response) =
 /**
  * DELETE /api/completed-initiatives/:itemId/work-items/:adoId
  * Permanently delete a work item from ADO (destroy=true, bypasses recycle bin) and remove
- * its local ado_work_item_map row. When deleting a feature, also removes its child story
- * rows from the local DB (ADO children are not automatically deleted — handle in ADO directly
- * if the stories also need to be removed).
+ * its local ado_work_item_map row. Deleting a feature cascades via deleteAdoFeature —
+ * its child story work items (and their linked test cases) are destroyed too, not just
+ * unmapped locally.
  *
  * Returns: CompletedInitiativeDetail (updated, without the deleted row)
  */
@@ -425,17 +425,19 @@ router.delete('/:itemId/work-items/:adoId', async (req: Request, res: Response) 
     ).get(item.id, adoId);
     if (!row) return res.status(404).json({ error: `Work item ${adoId} not found for this initiative` });
 
+    // Feature deletion is shared with change-request feature-count reconciliation — one
+    // cascade (ADO delete, test case cascade, mapping cleanup, backlog prune, effort rollup).
+    if (row.ado_type === 'feature') {
+      await deleteAdoFeature(row.workflow_id, item.id, row.local_key);
+      return res.json(await buildDetail(item));
+    }
+
     // Collect affected story local keys before any deletes (needed for test case cascade),
     // and whole feature keys being removed entirely (needed to prune the merged backlog artifact).
     const affectedStoryKeys = new Set<string>();
     const affectedFeatureKeys = new Set<string>();
     if (row.ado_type === 'story') {
       affectedStoryKeys.add(row.local_key);
-    } else if (row.ado_type === 'feature') {
-      affectedFeatureKeys.add(row.local_key);
-      for (const s of db.prepare<[string, string], { local_key: string }>(
-        `SELECT local_key FROM ado_work_item_map WHERE workflow_id = ? AND parent_local_key = ?`
-      ).all(row.workflow_id, row.local_key)) affectedStoryKeys.add(s.local_key);
     } else if (row.ado_type === 'epic') {
       for (const f of db.prepare<[string, string], { local_key: string }>(
         `SELECT local_key FROM ado_work_item_map WHERE workflow_id = ? AND parent_local_key = ?`
@@ -459,10 +461,6 @@ router.delete('/:itemId/work-items/:adoId', async (req: Request, res: Response) 
 
     db.transaction(() => {
       db.prepare(`DELETE FROM ado_work_item_map WHERE id = ?`).run(row.id);
-      if (row.ado_type === 'feature') {
-        db.prepare(`DELETE FROM ado_work_item_map WHERE workflow_id = ? AND parent_local_key = ?`)
-          .run(row.workflow_id, row.local_key);
-      }
       if (row.ado_type === 'epic') {
         const childFeatures = db.prepare<[string, string], { local_key: string }>(
           `SELECT local_key FROM ado_work_item_map WHERE workflow_id = ? AND parent_local_key = ?`
@@ -487,12 +485,10 @@ router.delete('/:itemId/work-items/:adoId', async (req: Request, res: Response) 
       logger.warn(`Backlog artifact prune after delete failed (non-fatal): ${err.message}`);
     }
 
-    // Keep the parent feature's/epic's Effort rollup in sync with the story set that remains.
+    // Keep the parent feature's Effort rollup in sync with the story set that remains.
     try {
       if (row.ado_type === 'story' && row.parent_local_key) {
         await recalculateEffortRollupChain(row.workflow_id, row.parent_local_key);
-      } else if (row.ado_type === 'feature' && row.parent_local_key) {
-        await recalculateEpicEffort(row.workflow_id, row.parent_local_key);
       }
     } catch (err: any) {
       logger.warn(`Effort rollup after delete failed (non-fatal): ${err.message}`);

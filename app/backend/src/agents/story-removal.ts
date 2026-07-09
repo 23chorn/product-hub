@@ -8,7 +8,7 @@ import db from '../data/database';
 import { getAzureDevOpsClient } from '../integrations/azure-devops';
 import { parseStoryRefs } from '../integrations/azure-devops-format';
 import { loadArtifactContentById, updateArtifactContent } from './artifact-helpers';
-import { recalculateEffortRollupChain } from './effort-rollup';
+import { recalculateEffortRollupChain, recalculateEpicEffort } from './effort-rollup';
 import { getDocumentArtifactIds } from '../data/work-item-queries';
 import { stripJsonFence } from '../utils/json-repair';
 import { featureLocalKey } from '@pap/shared';
@@ -237,4 +237,72 @@ export async function deleteMergedBacklogStory(
   db.prepare(`DELETE FROM ado_work_item_map WHERE id = ?`).run(mapRow.id);
 
   await recalculateEffortRollupChain(workflowId, featureKey);
+}
+
+/**
+ * Delete one whole feature everywhere it lives: its ADO work item (destroy=true), its
+ * child stories' ADO work items and their linked ADO test cases, all of its own + its
+ * stories' ado_work_item_map rows, the merged backlog artifact entry, and the parent
+ * epic's Effort rollup. Shared by the Completed Initiatives Manage tab's work-item delete
+ * route and change-request feature-count reconciliation (a feature dropped from a revised
+ * epic_features artifact) — one cascade so both remove a feature the same way, with
+ * nothing left orphaned in ADO. No-op if the feature was never pushed to ADO for this
+ * workflow.
+ *
+ * Unlike the story/test-case deletes below (each best-effort — logged, not thrown), the
+ * feature's own ADO work item delete is allowed to throw so a caller can tell a real
+ * failure apart from "nothing to delete."
+ */
+export async function deleteAdoFeature(
+  workflowId: string,
+  itemId: string,
+  featureKey: string,
+): Promise<void> {
+  const row = db.prepare<[string, string], { ado_id: number; parent_local_key: string | null }>(
+    `SELECT ado_id, parent_local_key FROM ado_work_item_map WHERE workflow_id = ? AND ado_type = 'feature' AND local_key = ?`
+  ).get(workflowId, featureKey);
+  if (!row) return; // never reached ADO — nothing further to cascade
+
+  const childStories = db.prepare<[string, string], { local_key: string; ado_id: number }>(
+    `SELECT local_key, ado_id FROM ado_work_item_map WHERE workflow_id = ? AND parent_local_key = ?`
+  ).all(workflowId, featureKey);
+  const affectedStoryKeys = new Set(childStories.map(s => s.local_key));
+
+  const client = getAzureDevOpsClient();
+  await client.deleteWorkItem(row.ado_id);
+
+  for (const story of childStories) {
+    try {
+      await client.deleteWorkItem(story.ado_id);
+    } catch (err: any) {
+      logger.warn(`Failed to delete ADO story #${story.ado_id} (${story.local_key}) under feature ${featureKey}: ${err.message}`);
+    }
+  }
+
+  try {
+    await cascadeDeleteTestCases(workflowId, itemId, affectedStoryKeys);
+  } catch (err: any) {
+    logger.warn(`Test case cascade delete failed for feature ${featureKey} (non-fatal): ${err.message}`);
+  }
+
+  db.transaction(() => {
+    db.prepare(`DELETE FROM ado_work_item_map WHERE workflow_id = ? AND local_key = ?`).run(workflowId, featureKey);
+    db.prepare(`DELETE FROM ado_work_item_map WHERE workflow_id = ? AND parent_local_key = ?`).run(workflowId, featureKey);
+  })();
+
+  try {
+    await pruneMergedBacklogArtifact(itemId, new Set([featureKey]), affectedStoryKeys);
+  } catch (err: any) {
+    logger.warn(`Backlog artifact prune after feature delete failed (non-fatal): ${err.message}`);
+  }
+
+  if (row.parent_local_key) {
+    try {
+      await recalculateEpicEffort(workflowId, row.parent_local_key);
+    } catch (err: any) {
+      logger.warn(`Effort rollup after feature delete failed (non-fatal): ${err.message}`);
+    }
+  }
+
+  logger.info(`Deleted feature ${featureKey} (ADO #${row.ado_id}) and ${affectedStoryKeys.size} stor${affectedStoryKeys.size === 1 ? 'y' : 'ies'} from workflow ${workflowId}`);
 }

@@ -14,6 +14,7 @@ import { detectBacklogOverlaps, AUTO_RESOLVE_THRESHOLD, recordOverlapFlags, buil
 import { stripJsonFence } from '../utils/json-repair';
 import { getAzureDevOpsClient } from '../integrations/azure-devops';
 import { deriveAiEstimateDev, ensureStreamPrefix, buildAcceptanceCriteriaHtml } from '../integrations/azure-devops-format';
+import { deleteAdoFeature } from './story-removal';
 import { featureLocalKey, storyLocalKey } from '@pap/shared';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -91,13 +92,22 @@ export function resolveMaxParallelFeatures(): number {
  * unresolved edge (degrades that one reference to "independent"). A feature
  * referencing itself is also dropped with a warning (self-dependency is always invalid).
  */
+/**
+ * Normalize a feature title for identity comparisons (dependsOn resolution within one
+ * artifact, and old-vs-new feature matching across a change-request rerun) — trim +
+ * lowercase, the one place both use so they can't drift apart.
+ */
+export function normalizeFeatureTitle(title: string): string {
+  return title.trim().toLowerCase();
+}
+
 export function resolveFeatureDependencies(
   flatFeatures: any[]
 ): { resolvedByIndex: Map<number, number[]>; warnings: string[] } {
   const titleToIndex = new Map<string, number>();
   flatFeatures.forEach((f, i) => {
     if (typeof f?.title === 'string' && f.title.trim()) {
-      titleToIndex.set(f.title.trim().toLowerCase(), i);
+      titleToIndex.set(normalizeFeatureTitle(f.title), i);
     }
   });
 
@@ -109,7 +119,7 @@ export function resolveFeatureDependencies(
     const resolved: number[] = [];
     for (const depTitle of rawDeps) {
       if (typeof depTitle !== 'string' || !depTitle.trim()) continue;
-      const depIdx = titleToIndex.get(depTitle.trim().toLowerCase());
+      const depIdx = titleToIndex.get(normalizeFeatureTitle(depTitle));
       if (depIdx === undefined) {
         warnings.push(`Feature "${f?.title}" depends on unresolved title "${depTitle}" — treated as independent`);
         continue;
@@ -260,8 +270,12 @@ export async function injectFeatureDecompositionStages(workflowId: string): Prom
 
   const featureCount = allFeatures.length;
 
-  // Replace 'story_decomposition' in stage_sequence with feature-specific stages
-  const sequence: string[] = JSON.parse(workflow.stage_sequence);
+  // Replace 'story_decomposition' in stage_sequence with feature-specific stages.
+  // Collapse first so this is idempotent on a rerun (e.g. a change request re-entering
+  // epic_feature_planner) — the placeholder was already replaced by the *previous* run's
+  // F* stages, so without this the indexOf below would find nothing and silently no-op,
+  // leaving stage_sequence stuck at the old feature count.
+  const sequence: string[] = collapseFeatureDecompositionStages(JSON.parse(workflow.stage_sequence));
   const storyDecompIndex = sequence.indexOf('story_decomposition');
 
   if (storyDecompIndex === -1) {
@@ -293,13 +307,7 @@ export async function injectFeatureDecompositionStages(workflowId: string): Prom
   const featureStages: string[] = waveStageGroups.flat();
 
   // Build new sequence: replace story_decomposition with wave-ordered F* stages + final merge
-  const newSequence = [
-    ...sequence.slice(0, storyDecompIndex),
-    ...featureStages,
-    'backlog_merge',  // Merge all isolated features into final backlog artifact
-    'epic_qa',        // Generate one unified QA test suite across all approved features
-    ...sequence.slice(storyDecompIndex + 1)
-  ];
+  const newSequence = expandFeatureDecompositionStages(sequence, featureStages);
 
   // Update the workflow's stage_sequence
   db.prepare(`
@@ -355,6 +363,55 @@ export function collapseFeatureDecompositionStages(sequence: string[]): string[]
     'story_decomposition',
     ...sequence.slice(endIdx),
   ];
+}
+
+/**
+ * Collapse any leftover story_decomposition_F<n> wave stages from a previous run back to
+ * the 'story_decomposition' placeholder (and clear wave metadata) the moment
+ * epic_feature_planner is about to (re)run for this workflow. restartWorkflow already
+ * does this inline as part of its own wipe transaction; this is the same reset for the
+ * two places a *change request* can (re)enter this stage — reiterateFromStage when it's
+ * the CR's first stage, and kickoffMemberStage when the cascade reaches it downstream of
+ * an earlier stage — so the sidebar never shows a previous run's now-stale feature list
+ * while this stage is drafting or under review. Idempotent: a no-op on a sequence with no
+ * F* stages yet (this workflow's very first pass through epic_feature_planner).
+ */
+export function resetFeatureDecompositionStagesForRerun(workflowId: string): void {
+  const workflow = stmts.getWorkflow.get(workflowId);
+  if (!workflow) return;
+  const collapsed = collapseFeatureDecompositionStages(JSON.parse(workflow.stage_sequence));
+  db.prepare(`UPDATE workflows SET stage_sequence = ?, decomposition_metadata = NULL WHERE id = ?`)
+    .run(JSON.stringify(collapsed), workflowId);
+}
+
+/**
+ * Inverse of collapseFeatureDecompositionStages's placeholder replacement — splice a
+ * wave-ordered block of story_decomposition_F* stages (plus the backlog_merge/epic_qa
+ * pair they always come with) in at the 'story_decomposition' placeholder. Shared by
+ * injectFeatureDecompositionStages (building workflow.stage_sequence) and
+ * syncCrStageSequenceAfterFeatureInjection (rebuilding a change request's frozen
+ * cr_stage_sequence to match) so both splice the block identically.
+ */
+export function expandFeatureDecompositionStages(sequence: string[], featureStages: string[]): string[] {
+  const storyDecompIndex = sequence.indexOf('story_decomposition');
+  if (storyDecompIndex === -1) return sequence;
+  return [
+    ...sequence.slice(0, storyDecompIndex),
+    ...featureStages,
+    'backlog_merge',  // Merge all isolated features into final backlog artifact
+    'epic_qa',        // Generate one unified QA test suite across all approved features
+    ...sequence.slice(storyDecompIndex + 1),
+  ];
+}
+
+/**
+ * Read the story_decomposition_F<n> stage names currently present in a sequence, in
+ * order — the inverse lookup expandFeatureDecompositionStages needs when a change
+ * request must re-splice a *new* feature-stage block into a previously frozen sequence.
+ */
+export function extractFeatureDecompositionStages(sequence: string[]): string[] {
+  const featureStageRe = /^story_decomposition_F\d+$/;
+  return sequence.filter(s => featureStageRe.test(s));
 }
 
 /**
@@ -547,21 +604,16 @@ export async function pushEpicAndFeaturesToADO(
   const workflow = stmts.getWorkflow.get(workflowId);
   if (!workflow) throw new Error(`Workflow not found: ${workflowId}`);
 
-  // Idempotency guard: if this workflow already has epic work items mapped, a previous
-  // push already ran (e.g. the epic_feature_planner checkpoint was approved twice).
-  // Re-creating would orphan duplicate epics/features in ADO and then collide on the
-  // ado_work_item_map UNIQUE(workflow_id, local_key) constraint — so reuse what's there.
+  // If this workflow already has epic work items mapped, a previous push already ran
+  // (either the checkpoint was approved twice, or — the case this exists for — a change
+  // request re-entered epic_feature_planner and produced a revised feature set). Either
+  // way, re-creating from scratch would orphan duplicate epics/features in ADO and then
+  // collide on the ado_work_item_map UNIQUE(workflow_id, local_key) constraint, so this
+  // reconciles against what's there instead of blindly re-pushing.
   // A genuine restart wipes this map (see restartWorkflow), so it still re-pushes cleanly.
   const existingEpics = db.prepare<[string], { ado_id: number }>(
     `SELECT ado_id FROM ado_work_item_map WHERE workflow_id = ? AND ado_type = 'epic' ORDER BY created_at ASC`
   ).all(workflowId);
-  if (existingEpics.length > 0) {
-    const existingFeatures = db.prepare<[string], { ado_id: number }>(
-      `SELECT ado_id FROM ado_work_item_map WHERE workflow_id = ? AND ado_type = 'feature' ORDER BY created_at ASC`
-    ).all(workflowId);
-    logger.info(`[EPIC PUSH] Workflow ${workflowId} already mapped (${existingEpics.length} epic(s), ${existingFeatures.length} feature(s)) — reusing, skipping re-push`);
-    return { epicId: existingEpics[0].ado_id, epicIds: existingEpics.map(e => e.ado_id), featureIds: existingFeatures.map(f => f.ado_id) };
-  }
 
   logger.info(`[EPIC PUSH] Looking for epic_features artifact for item_id=${workflow.item_id}`);
 
@@ -583,6 +635,10 @@ export async function pushEpicAndFeaturesToADO(
   const { raw: epicFeatures, features: allFeatures } = loadedEpicFeatures;
   if (!epicFeatures.epic) {
     throw new Error('Invalid epic_features structure — missing epic header');
+  }
+
+  if (existingEpics.length > 0) {
+    return reconcileEpicFeaturesWithADO(workflowId, workflow.item_id, loadedEpicFeatures, existingEpics);
   }
 
   // If all features were deleted during review, skip the ADO push entirely
@@ -717,6 +773,166 @@ export async function pushEpicAndFeaturesToADO(
   // of 'ado_pushed', the frontend's eventToMessage() never rendered the link anyway).
 
   return { epicId, epicIds, featureIds };
+}
+
+/**
+ * Reconcile a previously-pushed epic/feature set in ADO against a revised epic_features
+ * artifact (a change request re-entered epic_feature_planner and the feature count/order
+ * may have changed). Matches old (ado_work_item_map) against new (the revised artifact)
+ * features by normalized title — the same identity epic_feature_planner's own dependsOn
+ * resolution already relies on (see normalizeFeatureTitle) — rather than by position,
+ * since a CR can reorder, insert, or remove features.
+ *
+ * - Retained (title matches): rekey local_key/parent_local_key (feature + child stories)
+ *   to the feature's new position if it moved, and sync title/description in ADO in case
+ *   the CR revised this feature's copy without changing its title.
+ * - Removed (old title absent from the revision): cascade-deleted via deleteAdoFeature —
+ *   nothing is left orphaned in ADO.
+ * - Added (new title absent from the old mapping): created fresh under its resolved (or
+ *   newly created) phase epic.
+ *
+ * Scope boundary: this reconciles at the epic/feature level only. A *retained* feature
+ * whose own story set changes under the same CR still goes through pushFeatureToADO's
+ * existing skip-if-already-mapped guard — not reconciled here.
+ */
+async function reconcileEpicFeaturesWithADO(
+  workflowId: string,
+  itemId: string,
+  loadedEpicFeatures: { raw: any; features: any[] },
+  existingEpics: { ado_id: number }[],
+): Promise<{ epicId: number; epicIds: number[]; featureIds: number[] }> {
+  const { raw: epicFeatures, features: newFeatures } = loadedEpicFeatures;
+  const client = getAzureDevOpsClient();
+  const now = Date.now();
+  const isPhased = Array.isArray(epicFeatures.phases) && epicFeatures.phases.length > 0;
+  const initiativeTag = buildInitiativeTag(epicFeatures.epic.title);
+  const prdContent = loadPrdForItem(itemId);
+
+  const epicLocalKeyForPhase = (phaseLabel?: string): string =>
+    isPhased && phaseLabel ? `epic_${phaseLabel.toLowerCase().replace(/\s+/g, '_')}` : 'epic';
+
+  const epicIdByLocalKey = new Map(
+    db.prepare<[string], { local_key: string; ado_id: number }>(
+      `SELECT local_key, ado_id FROM ado_work_item_map WHERE workflow_id = ? AND ado_type = 'epic'`
+    ).all(workflowId).map(e => [e.local_key, e.ado_id])
+  );
+
+  // Resolve the epic a feature's phase belongs to, lazily creating one if this revision
+  // introduced a phase that never had an epic pushed before.
+  const resolveEpicId = async (phaseLabel?: string): Promise<{ epicId: number; epicLocalKey: string }> => {
+    const epicLocalKey = epicLocalKeyForPhase(phaseLabel);
+    const existingId = epicIdByLocalKey.get(epicLocalKey);
+    if (existingId !== undefined) return { epicId: existingId, epicLocalKey };
+
+    const phase = isPhased ? epicFeatures.phases.find((p: any) => epicLocalKeyForPhase(p.label) === epicLocalKey) : null;
+    const phaseEpicTitle = phase ? `${epicFeatures.epic.title} — ${phase.label}` : epicFeatures.epic.title;
+    const phaseEpic = await client.createEpic({
+      title: phaseEpicTitle,
+      description: buildEpicDescription({
+        initiativeDescription: epicFeatures.epic.description,
+        deliverable: phase?.deliverable,
+        phaseLabel: phase?.label,
+        businessValue: epicFeatures.epic.businessValue,
+        prdLink: epicFeatures.epic.prdLink,
+        outOfScope: epicFeatures.outOfScope,
+      }),
+      tags: initiativeTag,
+    });
+    const newEpicId = phaseEpic.id!;
+    insertAdoMapping({
+      workflowId, adoId: newEpicId, adoType: 'epic', adoUrl: client.getEpicUrl(newEpicId),
+      localKey: epicLocalKey, title: phaseEpicTitle, createdAt: now,
+    });
+    epicIdByLocalKey.set(epicLocalKey, newEpicId);
+    logger.info(`[EPIC PUSH] Created new phase epic #${newEpicId} (${epicLocalKey}) for a phase introduced by this revision: ${phaseEpicTitle}`);
+    return { epicId: newEpicId, epicLocalKey };
+  };
+
+  // Stored feature titles carry the "[F#] " local-key prefix stamped at push time — strip
+  // it before comparing against the revision's raw titles.
+  const stripFeatureKeyPrefix = (title: string) => title.replace(/^\[F\d+\]\s*/, '');
+  const existingFeatureRows = db.prepare<[string], { ado_id: number; local_key: string; title: string }>(
+    `SELECT ado_id, local_key, title FROM ado_work_item_map WHERE workflow_id = ? AND ado_type = 'feature'`
+  ).all(workflowId);
+  const existingByNormTitle = new Map(
+    existingFeatureRows.map(f => [normalizeFeatureTitle(stripFeatureKeyPrefix(f.title)), f])
+  );
+  const consumedOldKeys = new Set<string>();
+  const featureIds: number[] = [];
+
+  for (let i = 0; i < newFeatures.length; i++) {
+    const featureData = newFeatures[i];
+    const newKey = featureLocalKey(i);
+    const existing = existingByNormTitle.get(normalizeFeatureTitle(featureData.title ?? ''));
+    const { epicId: parentEpicId, epicLocalKey } = await resolveEpicId(featureData.phase);
+
+    if (existing) {
+      consumedOldKeys.add(existing.local_key);
+      featureIds.push(existing.ado_id);
+
+      if (existing.local_key !== newKey) {
+        // Position shifted — rekey this feature's own row and its child stories' rows to
+        // the new F# so downstream lookups (pushFeatureToADO, story_decomposition_F*
+        // checkpoint stages) resolve against the current position, not the original one.
+        db.transaction(() => {
+          db.prepare(`UPDATE ado_work_item_map SET local_key = ?, parent_local_key = ? WHERE workflow_id = ? AND ado_type = 'feature' AND local_key = ?`)
+            .run(newKey, epicLocalKey, workflowId, existing.local_key);
+          const childStories = db.prepare<[string, string], { local_key: string }>(
+            `SELECT local_key FROM ado_work_item_map WHERE workflow_id = ? AND parent_local_key = ?`
+          ).all(workflowId, existing.local_key);
+          for (const s of childStories) {
+            const rekeyed = `${newKey}${s.local_key.slice(existing.local_key.length)}`;
+            db.prepare(`UPDATE ado_work_item_map SET local_key = ?, parent_local_key = ? WHERE workflow_id = ? AND local_key = ?`)
+              .run(rekeyed, newKey, workflowId, s.local_key);
+          }
+        })();
+        logger.info(`[EPIC PUSH] Retained feature "${featureData.title}" rekeyed ${existing.local_key} -> ${newKey}`);
+      }
+
+      const featureTitle = `[${newKey}] ${featureData.title}`;
+      try {
+        await client.updateWorkItem(existing.ado_id, {
+          title: featureTitle,
+          description: buildFeatureDescription(featureData, prdContent),
+        });
+        db.prepare(`UPDATE ado_work_item_map SET title = ? WHERE workflow_id = ? AND ado_type = 'feature' AND local_key = ?`)
+          .run(featureTitle, workflowId, newKey);
+      } catch (err: any) {
+        logger.warn(`[EPIC PUSH] Failed to sync retained feature #${existing.ado_id}: ${err.message}`);
+      }
+    } else {
+      // New feature introduced by this revision.
+      const featureTitle = `[${newKey}] ${featureData.title}`;
+      const feature = await client.createFeature({
+        title: featureTitle,
+        description: buildFeatureDescription(featureData, prdContent),
+        parentId: parentEpicId,
+        tags: initiativeTag,
+      });
+      featureIds.push(feature.id!);
+      insertAdoMapping({
+        workflowId, adoId: feature.id!, adoType: 'feature', adoUrl: client.getEpicUrl(feature.id!),
+        localKey: newKey, parentLocalKey: epicLocalKey, title: featureTitle, createdAt: now,
+      });
+      logger.info(`[EPIC PUSH] Created feature #${feature.id} (${newKey}) introduced by this revision: ${featureTitle}`);
+    }
+  }
+
+  // Anything not consumed above no longer exists in the revised feature set — remove it
+  // (and its stories) from ADO entirely rather than leaving it orphaned.
+  for (const old of existingFeatureRows) {
+    if (consumedOldKeys.has(old.local_key)) continue;
+    try {
+      await deleteAdoFeature(workflowId, itemId, old.local_key);
+      logger.info(`[EPIC PUSH] Removed feature ${old.local_key} (ADO #${old.ado_id}) — no longer present after revision`);
+    } catch (err: any) {
+      logger.error(`[EPIC PUSH] Failed to remove feature ${old.local_key} (ADO #${old.ado_id}): ${err.message}`);
+    }
+  }
+
+  logger.info(`[EPIC PUSH] Reconciled workflow ${workflowId}: ${featureIds.length} feature(s) current (${consumedOldKeys.size} retained, ${featureIds.length - consumedOldKeys.size} added, ${existingFeatureRows.length - consumedOldKeys.size} removed)`);
+
+  return { epicId: existingEpics[0].ado_id, epicIds: [...epicIdByLocalKey.values()], featureIds };
 }
 
 /**

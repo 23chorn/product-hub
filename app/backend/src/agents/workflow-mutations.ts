@@ -21,7 +21,7 @@ import {
 import {
   runAutonomousStage, getCoordinator, SILENT_STAGES, clearCancelFlag,
 } from './workflow-stage-runner';
-import { parseDecompositionMetadata, findWaveForStage, collapseFeatureDecompositionStages } from './feature-decomposition';
+import { parseDecompositionMetadata, findWaveForStage, collapseFeatureDecompositionStages, resetFeatureDecompositionStagesForRerun } from './feature-decomposition';
 
 function stageSession(stage: string): { mode: AppMode; agentType: AgentType } {
   return STAGE_SESSION_MAP[stage] ?? { mode: 'analyst' as AppMode, agentType: 'analyst' as AgentType };
@@ -132,6 +132,13 @@ export async function reiterateFromStage(
       UPDATE checkpoints SET status = 'revised'
       WHERE workflow_id = ? AND stage = ? AND status = 'approved'
     `).run(workflowId, stage);
+  }
+
+  // Re-entering epic_feature_planner directly (it's the CR's own first stage, or a manual
+  // single-stage reiteration) — collapse its leftover feature-wave stages immediately so
+  // the sidebar doesn't show the previous run's feature rows while this draft is in review.
+  if (fromStage === 'epic_feature_planner') {
+    resetFeatureDecompositionStagesForRerun(workflowId);
   }
 
   // Set current_stage to fromStage so the UI shows the correct active stage

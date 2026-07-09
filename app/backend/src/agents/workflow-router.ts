@@ -32,7 +32,7 @@ import { notifyWorkflowComplete, notifyCheckpointPending } from '../utils/slack-
 import { pushItemStatusToAirtable } from './ado-stage-push';
 import { WorkflowRow, CheckpointRow, WorkflowStatus, WorkflowEvent } from './workflow-types';
 export type { WorkflowRow, CheckpointRow, WorkflowStatus, WorkflowEvent } from './workflow-types';
-import { parseDecompositionMetadata, findWaveForStage, type DecompositionMetadata } from './feature-decomposition';
+import { parseDecompositionMetadata, findWaveForStage, resetFeatureDecompositionStagesForRerun, type DecompositionMetadata } from './feature-decomposition';
 export { propagateFeedback, reiterateFromStage, retryCurrentStage, restartWorkflow } from './workflow-mutations';
 export { deleteWorkflow } from './workflow-lifecycle';
 import Logger from '../utils/logger';
@@ -402,6 +402,23 @@ No changes needed to tech-stack.md or process.md — those remain accurate as wr
   // multi-member wave below — every wave member gets its own session/brief/run/safety-net,
   // exactly like a standalone stage would.
   const kickoffMemberStage = async (memberStage: string): Promise<void> => {
+    // A CR cascade reaching epic_feature_planner downstream of an earlier stage never
+    // goes through reiterateFromStage's own reset — this is that same collapse, so the
+    // sidebar doesn't keep showing the previous run's feature rows while this stage
+    // drafts and is reviewed. No-op on a workflow's first pass through this stage.
+    if (memberStage === 'epic_feature_planner') {
+      resetFeatureDecompositionStagesForRerun(workflowId);
+    }
+
+    // The cascade's first stage logs its own "Re-entering at X" event directly from
+    // reiterateFromStage (workflow-mutations.ts) before advanceStageCore ever runs.
+    // Every later stage in the cascade only goes through here, so without this it would
+    // show a generic stage_started narration with no CR context at all.
+    if (crContext) {
+      const stageLabel = STAGE_LABELS_INTERNAL[memberStage] ?? memberStage;
+      insertEvent(workflowId, 'reiteration', memberStage,
+        `Re-entering at ${stageLabel}: ${crContext.description.slice(0, 200)}`);
+    }
     insertEvent(workflowId, 'stage_started', memberStage, stageStartedNarration(memberStage));
 
     let stageMap = STAGE_SESSION_MAP[memberStage];

@@ -22,6 +22,11 @@ import {
   STAGE_ARTIFACT_TYPE,
   STAGE_LABELS_INTERNAL,
 } from './stage-metadata';
+import {
+  collapseFeatureDecompositionStages,
+  expandFeatureDecompositionStages,
+  extractFeatureDecompositionStages,
+} from './feature-decomposition';
 import { sessionManager } from '../session/session-manager';
 import { SpecialistAgent } from './specialist-agent';
 import { streamAI, resolveAgentModel } from '../utils/ai-provider';
@@ -78,6 +83,9 @@ const stmts = {
     'UPDATE change_requests SET impact_assessment = ?, status = ?, updated_at = ? WHERE id = ?'
   ),
   getWorkflow: db.prepare<[string], WorkflowRow>('SELECT * FROM workflows WHERE id = ?'),
+  getActiveCR: db.prepare<[string], ChangeRequestRow>(
+    `SELECT * FROM change_requests WHERE workflow_id = ? AND status = 'in_progress' ORDER BY created_at DESC LIMIT 1`
+  ),
   getApprovedCheckpoints: db.prepare<[string], CheckpointRow>(`
     SELECT * FROM checkpoints WHERE workflow_id = ? AND status = 'approved' ORDER BY created_at ASC
   `),
@@ -186,6 +194,16 @@ export async function* assessImpact(
 
   const stageSequence: string[] = JSON.parse(workflow.stage_sequence);
 
+  // Collapse the per-feature story_decomposition_F<n>/backlog_merge/epic_qa block down to
+  // one 'story_decomposition' entry for stage-selection purposes — a completed workflow's
+  // real stage_sequence has one row per feature, which would otherwise make the coordinator
+  // (and the human confirming its picks) treat N individual feature stages as separately
+  // selectable. They aren't: if epic_feature_planner reruns, the whole block gets replaced
+  // wholesale regardless (see syncCrStageSequenceAfterFeatureInjection), and the exact F#
+  // stages shown here may not even exist anymore once it does. executeChangeRequest expands
+  // this placeholder back to whatever the real current block is when the CR actually runs.
+  const collapsedStageSequence = collapseFeatureDecompositionStages(stageSequence);
+
   // Load artifact summaries for each approved stage
   const approvedCheckpoints = stmts.getApprovedCheckpoints.all(cr.workflow_id);
   const artifactSummaries: string[] = [];
@@ -220,7 +238,7 @@ ${workflow.goal}
 ${artifactSummaries.join('\n\n') || '(no artifacts available)'}
 
 ## Available Stages
-${stageSequence.filter(s => s !== 'critic' && s !== 'curator').map(s => `- ${s} (${STAGE_LABELS_INTERNAL[s] ?? s})`).join('\n')}
+${collapsedStageSequence.filter(s => s !== 'critic' && s !== 'curator').map(s => `- ${s} (${STAGE_LABELS_INTERNAL[s] ?? s})`).join('\n')}
 
 ## Instructions
 Analyze which stages need to be re-run to address this change request. Write a clear, human-readable assessment:
@@ -234,7 +252,7 @@ Write conversationally for a product manager audience. Do NOT include raw JSON i
 After your assessment, on the very last line of your response, include this machine-readable tag (it will be hidden from the user):
 IMPACT_JSON:{"affected_stages": ["stage_key1"], "summary": "one-sentence summary"}
 
-Only include stages from: ${stageSequence.filter(s => s !== 'critic' && s !== 'curator').join(', ')}`;
+Only include stages from: ${collapsedStageSequence.filter(s => s !== 'critic' && s !== 'curator').join(', ')}`;
 
   const resolvedModel = resolveAgentModel('coordinator');
   let fullResponse = '';
@@ -259,21 +277,21 @@ Only include stages from: ${stageSequence.filter(s => s !== 'critic' && s !== 'c
       assessment = JSON.parse(jsonStr);
     } else {
       assessment = {
-        affected_stages: stageSequence.filter(s => s !== 'critic' && s !== 'curator'),
+        affected_stages: collapsedStageSequence.filter(s => s !== 'critic' && s !== 'curator'),
         summary: 'Could not parse assessment — defaulting to all stages.',
       };
     }
 
     // Validate stages
-    const validStages = new Set(stageSequence);
+    const validStages = new Set(collapsedStageSequence);
     assessment.affected_stages = assessment.affected_stages.filter(s => validStages.has(s));
     if (assessment.affected_stages.length === 0) {
-      assessment.affected_stages = stageSequence.filter(s => s !== 'critic' && s !== 'curator');
+      assessment.affected_stages = collapsedStageSequence.filter(s => s !== 'critic' && s !== 'curator');
       assessment.summary += ' (No valid stages found — defaulting to all stages.)';
     }
   } catch {
     assessment = {
-      affected_stages: stageSequence.filter(s => s !== 'critic' && s !== 'curator'),
+      affected_stages: collapsedStageSequence.filter(s => s !== 'critic' && s !== 'curator'),
       summary: 'Assessment parsing failed — defaulting to all stages.',
     };
   }
@@ -319,15 +337,26 @@ export async function executeChangeRequest(
 
   const stageSequence: string[] = JSON.parse(workflow.stage_sequence);
 
+  // assessImpact() offers 'story_decomposition' as a single collapsed placeholder standing
+  // in for the whole per-feature block — expand it back to this workflow's real current
+  // story_decomposition_F*/backlog_merge/epic_qa stages (the placeholder itself was never
+  // restored in stage_sequence, so it won't be found there for an already-completed workflow).
+  const expandedStages = stages.flatMap(s => {
+    if (s === 'story_decomposition' && !stageSequence.includes('story_decomposition')) {
+      return [...extractFeatureDecompositionStages(stageSequence), 'backlog_merge', 'epic_qa'];
+    }
+    return [s];
+  });
+
   // Validate all requested stages are in the workflow
-  for (const stage of stages) {
+  for (const stage of expandedStages) {
     if (!stageSequence.includes(stage)) {
       throw new Error(`Stage "${stage}" is not in the workflow's stage sequence`);
     }
   }
 
   // Sort stages to match workflow order
-  const orderedStages = stageSequence.filter(s => stages.includes(s));
+  const orderedStages = stageSequence.filter(s => expandedStages.includes(s));
 
   insertEvent(cr.workflow_id, 'cr_stage_started', orderedStages[0],
     `Executing change request: updating ${orderedStages.length} stage(s)`,
@@ -409,6 +438,45 @@ export function linkCRArtifactVersion(
 
   stmts.insertCRArtifactVersion.run(crId, stage, artifactId, parentArtifactId, version, Date.now());
   logger.info(`Linked artifact #${artifactId} to CR #${crId} stage "${stage}" as v${version}`);
+}
+
+/**
+ * Re-sync an in-progress CR's frozen cr_stage_sequence after epic_feature_planner has
+ * rerun and injectFeatureDecompositionStages has re-expanded the live
+ * workflow.stage_sequence to the new feature count.
+ *
+ * executeChangeRequest() captures cr_stage_sequence once, before epic_feature_planner
+ * even reran — it can never contain stage names for features that didn't exist yet at
+ * assessment time. If epic_feature_planner was one of the confirmed stages, every
+ * downstream feature stage is implicitly in scope too (a stale feature stage can't be
+ * meaningfully kept for a feature set that no longer matches it), so this replaces the
+ * *entire* F* block in cr_stage_sequence with whatever the fresh injection produced,
+ * leaving every other confirmed stage (e.g. solution_architect, curator) untouched.
+ *
+ * No-op if there's no in-progress CR for this workflow, or its confirmed stage list
+ * never included epic_feature_planner.
+ */
+export function syncCrStageSequenceAfterFeatureInjection(workflowId: string): void {
+  const cr = stmts.getActiveCR.get(workflowId);
+  if (!cr?.impact_assessment) return;
+
+  const assessment = JSON.parse(cr.impact_assessment);
+  const oldCrSequence: string[] | undefined = assessment.cr_stage_sequence;
+  if (!oldCrSequence || !oldCrSequence.includes('epic_feature_planner')) return;
+
+  const workflow = stmts.getWorkflow.get(workflowId);
+  if (!workflow) return;
+
+  const liveSequence: string[] = JSON.parse(workflow.stage_sequence);
+  const newFeatureStages = extractFeatureDecompositionStages(liveSequence);
+
+  const collapsed = collapseFeatureDecompositionStages(oldCrSequence);
+  const newCrSequence = expandFeatureDecompositionStages(collapsed, newFeatureStages);
+
+  assessment.cr_stage_sequence = newCrSequence;
+  stmts.updateCRAssessment.run(JSON.stringify(assessment), cr.status, Date.now(), cr.id);
+
+  logger.info(`CR #${cr.id} cr_stage_sequence re-synced after feature injection: ${newFeatureStages.length} feature stage(s)`);
 }
 
 /**
