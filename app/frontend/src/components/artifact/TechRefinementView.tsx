@@ -85,7 +85,7 @@ function RefinementCard({ item }: { item: TechRefinement }) {
           {item.technicalNotes && (
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-1">Technical Notes</p>
-              <div className="rounded bg-surface-800 dark:bg-surface-900 border border-surface-700 p-2.5 font-mono text-xs text-surface-300">
+              <div className="rounded bg-slate-900 border border-slate-700 p-2.5 font-mono text-xs text-slate-300">
                 {item.technicalNotes}
               </div>
             </div>

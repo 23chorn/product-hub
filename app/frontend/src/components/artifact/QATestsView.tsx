@@ -281,15 +281,15 @@ function TestCaseCard({ tc, frMap, phaseByFeatureKey, planUrlByFeatureKey, onDel
               (not just in the app's dark theme): this is displayed test-script output, and
               should read like a terminal ran it, in every theme. */}
           {hasScenario && (
-            <div className="rounded bg-surface-900 border border-surface-700 p-2.5 space-y-1.5 font-mono text-xs">
+            <div className="rounded bg-slate-900 border border-slate-700 p-2.5 space-y-1.5 font-mono text-xs">
               {tc.scenario!.given.map((s, i) => (
-                <p key={i}><span className="font-bold text-fuchsia-400">{i === 0 ? 'Given' : 'And'} </span><span className="text-surface-300">{s}</span></p>
+                <p key={i}><span className="font-bold text-fuchsia-400">{i === 0 ? 'Given' : 'And'} </span><span className="text-slate-300">{s}</span></p>
               ))}
               {tc.scenario!.when.map((s, i) => (
-                <p key={i}><span className="font-bold text-blue-400">{i === 0 ? 'When' : 'And'} </span><span className="text-surface-300">{s}</span></p>
+                <p key={i}><span className="font-bold text-blue-400">{i === 0 ? 'When' : 'And'} </span><span className="text-slate-300">{s}</span></p>
               ))}
               {tc.scenario!.then.map((s, i) => (
-                <p key={i}><span className="font-bold text-green-400">{i === 0 ? 'Then' : 'And'} </span><span className="text-surface-300">{s}</span></p>
+                <p key={i}><span className="font-bold text-green-400">{i === 0 ? 'Then' : 'And'} </span><span className="text-slate-300">{s}</span></p>
               ))}
             </div>
           )}

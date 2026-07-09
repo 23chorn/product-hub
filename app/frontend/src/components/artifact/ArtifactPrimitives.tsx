@@ -85,12 +85,15 @@ export function FeatureDependencyBadges({ deferredTo, dependsOn }: { deferredTo?
   );
 }
 
+// Fixed (not theme-token) colors — this console block is deliberately unconditionally dark in
+// every theme (see AcceptanceCriteriaConsole below), so its text must be pinned to a literal
+// palette rather than surface-*, which some themes (e.g. High Contrast) intentionally invert.
 const AC_KEYWORD_COLOR: Record<string, string> = {
   given: 'text-fuchsia-400',
   when: 'text-blue-400',
   then: 'text-green-400',
-  and: 'text-surface-400',
-  but: 'text-surface-400',
+  and: 'text-slate-400',
+  but: 'text-slate-400',
 };
 
 /** One acceptance-criteria line, split on Given/When/Then/And/But keyword boundaries so each
@@ -99,11 +102,11 @@ const AC_KEYWORD_COLOR: Record<string, string> = {
  *  structure, rather than forcing every AC into a scenario shape it doesn't have. */
 function AcceptanceCriterionLine({ text }: { text: string }) {
   const parts = text.split(/\b(Given|When|Then|And|But)\b/gi);
-  if (parts.length === 1) return <p className="text-surface-300">{text}</p>;
+  if (parts.length === 1) return <p className="text-slate-300">{text}</p>;
   return (
     <p>
       {parts.map((part, pi) => {
-        if (!/^(Given|When|Then|And|But)$/i.test(part)) return <span key={pi} className="text-surface-300">{part}</span>;
+        if (!/^(Given|When|Then|And|But)$/i.test(part)) return <span key={pi} className="text-slate-300">{part}</span>;
         return <span key={pi}>{pi > 1 && <br />}<span className={`font-bold ${AC_KEYWORD_COLOR[part.toLowerCase()]}`}>{part}</span></span>;
       })}
     </p>
@@ -118,7 +121,7 @@ export function AcceptanceCriteriaConsole({ items }: { items: string[] }) {
   return (
     <div className="space-y-1.5">
       {items.map((ac, i) => (
-        <div key={i} className="rounded bg-surface-900 border border-surface-700 p-2.5 font-mono text-xs">
+        <div key={i} className="rounded bg-slate-900 border border-slate-700 p-2.5 font-mono text-xs">
           <AcceptanceCriterionLine text={ac} />
         </div>
       ))}

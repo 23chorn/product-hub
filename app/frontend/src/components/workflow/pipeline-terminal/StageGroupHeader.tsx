@@ -39,7 +39,7 @@ export function StageGroupHeader({
         {artifactId && onViewOutput && (
           <button
             onClick={() => onViewOutput(artifactId)}
-            className="text-[9px] font-mono normal-case tracking-normal text-surface-500 dark:text-surface-600 hover:text-brand-600 dark:hover:text-brand-400 transition-colors whitespace-nowrap border border-surface-200 dark:border-surface-800 hover:border-brand-400 dark:hover:border-brand-800 rounded px-1.5 py-0.5"
+            className="text-[9px] font-mono normal-case tracking-normal text-surface-600 dark:text-surface-400 hover:text-brand-600 dark:hover:text-brand-400 transition-colors whitespace-nowrap border border-surface-300 dark:border-surface-700 hover:border-brand-400 dark:hover:border-brand-800 rounded px-1.5 py-0.5"
           >
             view →
           </button>
@@ -49,7 +49,7 @@ export function StageGroupHeader({
             href={wikiUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[9px] font-mono normal-case tracking-normal text-surface-500 dark:text-surface-600 hover:text-brand-600 dark:hover:text-brand-400 transition-colors whitespace-nowrap border border-surface-200 dark:border-surface-800 hover:border-brand-400 dark:hover:border-brand-800 rounded px-1.5 py-0.5"
+            className="text-[9px] font-mono normal-case tracking-normal text-surface-600 dark:text-surface-400 hover:text-brand-600 dark:hover:text-brand-400 transition-colors whitespace-nowrap border border-surface-300 dark:border-surface-700 hover:border-brand-400 dark:hover:border-brand-800 rounded px-1.5 py-0.5"
           >
             wiki ↗
           </a>

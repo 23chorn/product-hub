@@ -14,7 +14,7 @@ export function AsciiCubeBackground({ className = '' }: { className?: string }) 
         style={{ gridTemplateColumns: `repeat(auto-fill, ${TILE_WIDTH}px)`, gap: '2.5rem' }}
       >
         {Array.from({ length: TILE_COUNT }).map((_, i) => (
-          <AsciiMark key={i} width={TILE_WIDTH} className="opacity-[0.08] dark:opacity-[0.2]" />
+          <AsciiMark key={i} width={TILE_WIDTH} className="opacity-[0.09] dark:opacity-[0.14]" />
         ))}
       </div>
     </div>
