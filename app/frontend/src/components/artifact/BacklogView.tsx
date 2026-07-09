@@ -353,7 +353,6 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
               <span className="text-base text-surface-900 dark:text-surface-100 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">
                 {story.title}
               </span>
-              <FrTags frs={story.prd_ref?.functional_requirements ?? []} frMap={frMap} />
               <EffortLabel story={story} aiAssisted={aiAssisted} />
               <StateBucketPill bucket={stateBucket} />
             </div>
@@ -369,6 +368,12 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
 
         {isExpanded && (
           <div className="ml-5.5 mt-2 space-y-2 pl-4 border-l-2 border-surface-100 dark:border-surface-700">
+            {story.prd_ref?.functional_requirements && story.prd_ref.functional_requirements.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs font-medium text-surface-500 dark:text-surface-400">FRs: </span>
+                <FrTags frs={story.prd_ref.functional_requirements} frMap={frMap} />
+              </div>
+            )}
             {/* Support both old format (persona/goal/benefit) and new format (as_a/i_want/so_that) */}
             {(story.persona || story.as_a) && (
               <div>

@@ -515,12 +515,16 @@ export function completeStage(workflowId: string): void {
     rolesJson(workflow.current_stage),
     now
   );
-  stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
+
+  if (isWaveFullyAtCheckpoint(workflowId, workflow.current_stage)) {
+    stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
+    logger.info(`Stage "${workflow.current_stage}" submitted for review — workflow ${workflowId} paused at checkpoint`);
+  } else {
+    logger.info(`Stage "${workflow.current_stage}" submitted for review — workflow ${workflowId} stays active, wave sibling(s) still running`);
+  }
 
   const completeTitleRow = db.prepare<[string], { title: string }>('SELECT title FROM items WHERE id = ?').get(workflow.item_id);
   if (completeTitleRow) notifyCheckpointPending(completeTitleRow.title, workflow.current_stage, workflowId);
-
-  logger.info(`Stage "${workflow.current_stage}" submitted for review — workflow ${workflowId} paused at checkpoint`);
 }
 
 /**
@@ -551,7 +555,9 @@ export function pauseAtCheckpoint(
     roleValue, now
   );
 
-  stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
+  if (isWaveFullyAtCheckpoint(workflowId, stage)) {
+    stmts.updateWorkflowStatus.run('paused_at_checkpoint', now, workflowId);
+  }
 
   const checkpoint = stmts.getCheckpoint.get(result.lastInsertRowid as number)!;
   logger.info(`Paused workflow ${workflowId} at checkpoint #${checkpoint.id} for stage "${stage}"${requiredRole ? ` (role: ${requiredRole})` : ''}`);
@@ -620,6 +626,29 @@ function isWaveFullyApproved(workflowId: string, stage: string): boolean {
   const wave = findWaveForStage(decompMeta, getBaseStage(stage));
   const members = wave ?? [getBaseStage(stage)];
   return members.every(memberStage => isCheckpointGroupFullyApproved(workflowId, memberStage));
+}
+
+/**
+ * True once every OTHER member of the wave containing `stage` has created at least one
+ * checkpoint of its own (any status, any {base, base_qa} variant) — i.e. nothing else in
+ * the wave is still actively drafting in the background. Gates the transition to
+ * 'paused_at_checkpoint' in pauseAtCheckpoint/completeStage: flipping the whole workflow
+ * to paused the instant the FIRST wave member reaches its own checkpoint made
+ * getWorkflowStatus() stop reporting still-running siblings as in-progress (it only
+ * computes inProgressStages while status === 'active'), so a sibling with no checkpoint
+ * yet briefly showed as "not started" instead of its in-progress animation, until it too
+ * reached a checkpoint.
+ *
+ * Degrades to true for a stage with no multi-member wave (or pre-dating wave metadata) —
+ * every non-wave stage keeps today's "pause immediately" behavior.
+ */
+function isWaveFullyAtCheckpoint(workflowId: string, stage: string): boolean {
+  const workflow = stmts.getWorkflow.get(workflowId);
+  if (!workflow) return true;
+  const decompMeta = parseDecompositionMetadata(workflow.decomposition_metadata);
+  const wave = findWaveForStage(decompMeta, getBaseStage(stage));
+  if (!wave || wave.length <= 1) return true;
+  return wave.every(memberStage => getCheckpointGroup(workflowId, memberStage).length > 0);
 }
 
 /**

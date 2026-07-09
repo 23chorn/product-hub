@@ -124,6 +124,11 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   }, [artifacts]);
 
   // Resolve which phase each feature belongs to, for the "Refinement - F1" stage rows.
+  // Also re-fetches on stageSequence changes, not just epicFeaturesArtifactId: a feature
+  // added/removed during epic_feature_planner review saves the SAME artifact row in place
+  // (same id), so the id alone never signals the edit. stageSequence does change — it's
+  // rewritten to the new story_decomposition_F<n> list the moment epic_feature_planner
+  // (re)runs — which is exactly when refinement starts and these labels need to be current.
   useEffect(() => {
     if (!epicFeaturesArtifactId) {
       setFeaturePhaseLabels([]);
@@ -143,7 +148,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
         setFeaturePhaseLabels(labels);
       })
       .catch(() => setFeaturePhaseLabels([]));
-  }, [epicFeaturesArtifactId]);
+  }, [epicFeaturesArtifactId, stageSequence]);
 
   // Auto-scroll event log. On first mount (e.g. returning to this initiative
   // from another page) snap straight to the bottom with no animation — the

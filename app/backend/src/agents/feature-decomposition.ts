@@ -14,7 +14,6 @@ import { detectBacklogOverlaps, AUTO_RESOLVE_THRESHOLD, recordOverlapFlags, buil
 import { stripJsonFence } from '../utils/json-repair';
 import { getAzureDevOpsClient } from '../integrations/azure-devops';
 import { deriveAiEstimateDev, ensureStreamPrefix, buildAcceptanceCriteriaHtml } from '../integrations/azure-devops-format';
-import { deleteAdoFeature } from './story-removal';
 import { featureLocalKey, storyLocalKey } from '@pap/shared';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -607,10 +606,12 @@ export async function pushEpicAndFeaturesToADO(
   // If this workflow already has epic work items mapped, a previous push already ran
   // (either the checkpoint was approved twice, or — the case this exists for — a change
   // request re-entered epic_feature_planner and produced a revised feature set). Either
-  // way, re-creating from scratch would orphan duplicate epics/features in ADO and then
-  // collide on the ado_work_item_map UNIQUE(workflow_id, local_key) constraint, so this
-  // reconciles against what's there instead of blindly re-pushing.
-  // A genuine restart wipes this map (see restartWorkflow), so it still re-pushes cleanly.
+  // way, re-creating from scratch would collide on the ado_work_item_map
+  // UNIQUE(workflow_id, local_key) constraint, so wipe the prior push (and its QA Test
+  // Plan) first — Product Hub's own artifacts are the source of truth, ADO is just the
+  // sync target, so a clean rebuild is simpler than reconciling in place. A genuine
+  // restart already wipes this map itself (see restartWorkflow); this covers the CR path,
+  // which doesn't.
   const existingEpics = db.prepare<[string], { ado_id: number }>(
     `SELECT ado_id FROM ado_work_item_map WHERE workflow_id = ? AND ado_type = 'epic' ORDER BY created_at ASC`
   ).all(workflowId);
@@ -637,8 +638,11 @@ export async function pushEpicAndFeaturesToADO(
     throw new Error('Invalid epic_features structure — missing epic header');
   }
 
+  // Only wipe once the revised artifact is confirmed to load and parse correctly — an
+  // earlier wipe (before this validation) would destroy the prior push with nothing
+  // confirmed ready to replace it if loadEpicFeatures/epicFeatures.epic above had failed.
   if (existingEpics.length > 0) {
-    return reconcileEpicFeaturesWithADO(workflowId, workflow.item_id, loadedEpicFeatures, existingEpics);
+    await wipeAdoWorkItemsForWorkflow(workflowId);
   }
 
   // If all features were deleted during review, skip the ADO push entirely
@@ -776,163 +780,62 @@ export async function pushEpicAndFeaturesToADO(
 }
 
 /**
- * Reconcile a previously-pushed epic/feature set in ADO against a revised epic_features
- * artifact (a change request re-entered epic_feature_planner and the feature count/order
- * may have changed). Matches old (ado_work_item_map) against new (the revised artifact)
- * features by normalized title — the same identity epic_feature_planner's own dependsOn
- * resolution already relies on (see normalizeFeatureTitle) — rather than by position,
- * since a CR can reorder, insert, or remove features.
+ * Wipe every ADO work item (epics, features, stories) and QA Test Plan/test cases
+ * previously pushed for this workflow, then clear the local bookkeeping — so a change
+ * request that reruns epic_feature_planner (and, via the cascade, refinement/backlog_merge/
+ * epic_qa) starts completely fresh in ADO instead of trying to reconcile in place.
  *
- * - Retained (title matches): rekey local_key/parent_local_key (feature + child stories)
- *   to the feature's new position if it moved, and sync title/description in ADO in case
- *   the CR revised this feature's copy without changing its title.
- * - Removed (old title absent from the revision): cascade-deleted via deleteAdoFeature —
- *   nothing is left orphaned in ADO.
- * - Added (new title absent from the old mapping): created fresh under its resolved (or
- *   newly created) phase epic.
+ * Product Hub's own artifacts are the source of truth; ADO is just the sync target, so a
+ * clean rebuild is simpler and more robust than diffing add/remove/rekey against a revised
+ * feature set — that approach still left orphaned phase epics behind when a whole phase
+ * became unnecessary, and still required pushFeatureToADO to reconcile a retained feature's
+ * changed story set (its own, narrower version of the same problem).
  *
- * Scope boundary: this reconciles at the epic/feature level only. A *retained* feature
- * whose own story set changes under the same CR still goes through pushFeatureToADO's
- * existing skip-if-already-mapped guard — not reconciled here.
+ * Best-effort throughout — a failed ADO delete is logged and skipped, not thrown, so one
+ * unreachable item doesn't block the rest of the wipe or the fresh push that follows it.
  */
-async function reconcileEpicFeaturesWithADO(
-  workflowId: string,
-  itemId: string,
-  loadedEpicFeatures: { raw: any; features: any[] },
-  existingEpics: { ado_id: number }[],
-): Promise<{ epicId: number; epicIds: number[]; featureIds: number[] }> {
-  const { raw: epicFeatures, features: newFeatures } = loadedEpicFeatures;
+async function wipeAdoWorkItemsForWorkflow(workflowId: string): Promise<void> {
   const client = getAzureDevOpsClient();
-  const now = Date.now();
-  const isPhased = Array.isArray(epicFeatures.phases) && epicFeatures.phases.length > 0;
-  const initiativeTag = buildInitiativeTag(epicFeatures.epic.title);
-  const prdContent = loadPrdForItem(itemId);
 
-  const epicLocalKeyForPhase = (phaseLabel?: string): string =>
-    isPhased && phaseLabel ? `epic_${phaseLabel.toLowerCase().replace(/\s+/g, '_')}` : 'epic';
-
-  const epicIdByLocalKey = new Map(
-    db.prepare<[string], { local_key: string; ado_id: number }>(
-      `SELECT local_key, ado_id FROM ado_work_item_map WHERE workflow_id = ? AND ado_type = 'epic'`
-    ).all(workflowId).map(e => [e.local_key, e.ado_id])
-  );
-
-  // Resolve the epic a feature's phase belongs to, lazily creating one if this revision
-  // introduced a phase that never had an epic pushed before.
-  const resolveEpicId = async (phaseLabel?: string): Promise<{ epicId: number; epicLocalKey: string }> => {
-    const epicLocalKey = epicLocalKeyForPhase(phaseLabel);
-    const existingId = epicIdByLocalKey.get(epicLocalKey);
-    if (existingId !== undefined) return { epicId: existingId, epicLocalKey };
-
-    const phase = isPhased ? epicFeatures.phases.find((p: any) => epicLocalKeyForPhase(p.label) === epicLocalKey) : null;
-    const phaseEpicTitle = phase ? `${epicFeatures.epic.title} — ${phase.label}` : epicFeatures.epic.title;
-    const phaseEpic = await client.createEpic({
-      title: phaseEpicTitle,
-      description: buildEpicDescription({
-        initiativeDescription: epicFeatures.epic.description,
-        deliverable: phase?.deliverable,
-        phaseLabel: phase?.label,
-        businessValue: epicFeatures.epic.businessValue,
-        prdLink: epicFeatures.epic.prdLink,
-        outOfScope: epicFeatures.outOfScope,
-      }),
-      tags: initiativeTag,
-    });
-    const newEpicId = phaseEpic.id!;
-    insertAdoMapping({
-      workflowId, adoId: newEpicId, adoType: 'epic', adoUrl: client.getEpicUrl(newEpicId),
-      localKey: epicLocalKey, title: phaseEpicTitle, createdAt: now,
-    });
-    epicIdByLocalKey.set(epicLocalKey, newEpicId);
-    logger.info(`[EPIC PUSH] Created new phase epic #${newEpicId} (${epicLocalKey}) for a phase introduced by this revision: ${phaseEpicTitle}`);
-    return { epicId: newEpicId, epicLocalKey };
-  };
-
-  // Stored feature titles carry the "[F#] " local-key prefix stamped at push time — strip
-  // it before comparing against the revision's raw titles.
-  const stripFeatureKeyPrefix = (title: string) => title.replace(/^\[F\d+\]\s*/, '');
-  const existingFeatureRows = db.prepare<[string], { ado_id: number; local_key: string; title: string }>(
-    `SELECT ado_id, local_key, title FROM ado_work_item_map WHERE workflow_id = ? AND ado_type = 'feature'`
+  const planRows = db.prepare<[string], { plan_id: number; test_case_ids: string }>(
+    `SELECT plan_id, test_case_ids FROM qa_test_plan_map WHERE workflow_id = ?`
   ).all(workflowId);
-  const existingByNormTitle = new Map(
-    existingFeatureRows.map(f => [normalizeFeatureTitle(stripFeatureKeyPrefix(f.title)), f])
-  );
-  const consumedOldKeys = new Set<string>();
-  const featureIds: number[] = [];
-
-  for (let i = 0; i < newFeatures.length; i++) {
-    const featureData = newFeatures[i];
-    const newKey = featureLocalKey(i);
-    const existing = existingByNormTitle.get(normalizeFeatureTitle(featureData.title ?? ''));
-    const { epicId: parentEpicId, epicLocalKey } = await resolveEpicId(featureData.phase);
-
-    if (existing) {
-      consumedOldKeys.add(existing.local_key);
-      featureIds.push(existing.ado_id);
-
-      if (existing.local_key !== newKey) {
-        // Position shifted — rekey this feature's own row and its child stories' rows to
-        // the new F# so downstream lookups (pushFeatureToADO, story_decomposition_F*
-        // checkpoint stages) resolve against the current position, not the original one.
-        db.transaction(() => {
-          db.prepare(`UPDATE ado_work_item_map SET local_key = ?, parent_local_key = ? WHERE workflow_id = ? AND ado_type = 'feature' AND local_key = ?`)
-            .run(newKey, epicLocalKey, workflowId, existing.local_key);
-          const childStories = db.prepare<[string, string], { local_key: string }>(
-            `SELECT local_key FROM ado_work_item_map WHERE workflow_id = ? AND parent_local_key = ?`
-          ).all(workflowId, existing.local_key);
-          for (const s of childStories) {
-            const rekeyed = `${newKey}${s.local_key.slice(existing.local_key.length)}`;
-            db.prepare(`UPDATE ado_work_item_map SET local_key = ?, parent_local_key = ? WHERE workflow_id = ? AND local_key = ?`)
-              .run(rekeyed, newKey, workflowId, s.local_key);
-          }
-        })();
-        logger.info(`[EPIC PUSH] Retained feature "${featureData.title}" rekeyed ${existing.local_key} -> ${newKey}`);
-      }
-
-      const featureTitle = `[${newKey}] ${featureData.title}`;
+  let deletedTestCases = 0;
+  for (const plan of planRows) {
+    const testCaseIds: Record<string, number> = JSON.parse(plan.test_case_ids ?? '{}');
+    for (const adoId of Object.values(testCaseIds)) {
       try {
-        await client.updateWorkItem(existing.ado_id, {
-          title: featureTitle,
-          description: buildFeatureDescription(featureData, prdContent),
-        });
-        db.prepare(`UPDATE ado_work_item_map SET title = ? WHERE workflow_id = ? AND ado_type = 'feature' AND local_key = ?`)
-          .run(featureTitle, workflowId, newKey);
+        await client.deleteTestCase(adoId);
+        deletedTestCases++;
       } catch (err: any) {
-        logger.warn(`[EPIC PUSH] Failed to sync retained feature #${existing.ado_id}: ${err.message}`);
+        logger.warn(`[EPIC PUSH] Failed to delete test case #${adoId} during wipe: ${err.message}`);
       }
-    } else {
-      // New feature introduced by this revision.
-      const featureTitle = `[${newKey}] ${featureData.title}`;
-      const feature = await client.createFeature({
-        title: featureTitle,
-        description: buildFeatureDescription(featureData, prdContent),
-        parentId: parentEpicId,
-        tags: initiativeTag,
-      });
-      featureIds.push(feature.id!);
-      insertAdoMapping({
-        workflowId, adoId: feature.id!, adoType: 'feature', adoUrl: client.getEpicUrl(feature.id!),
-        localKey: newKey, parentLocalKey: epicLocalKey, title: featureTitle, createdAt: now,
-      });
-      logger.info(`[EPIC PUSH] Created feature #${feature.id} (${newKey}) introduced by this revision: ${featureTitle}`);
     }
-  }
-
-  // Anything not consumed above no longer exists in the revised feature set — remove it
-  // (and its stories) from ADO entirely rather than leaving it orphaned.
-  for (const old of existingFeatureRows) {
-    if (consumedOldKeys.has(old.local_key)) continue;
     try {
-      await deleteAdoFeature(workflowId, itemId, old.local_key);
-      logger.info(`[EPIC PUSH] Removed feature ${old.local_key} (ADO #${old.ado_id}) — no longer present after revision`);
+      await client.deleteTestPlan(plan.plan_id);
     } catch (err: any) {
-      logger.error(`[EPIC PUSH] Failed to remove feature ${old.local_key} (ADO #${old.ado_id}): ${err.message}`);
+      logger.warn(`[EPIC PUSH] Failed to delete test plan #${plan.plan_id} during wipe: ${err.message}`);
     }
   }
+  db.prepare(`DELETE FROM qa_test_plan_map WHERE workflow_id = ?`).run(workflowId);
 
-  logger.info(`[EPIC PUSH] Reconciled workflow ${workflowId}: ${featureIds.length} feature(s) current (${consumedOldKeys.size} retained, ${featureIds.length - consumedOldKeys.size} added, ${existingFeatureRows.length - consumedOldKeys.size} removed)`);
+  // Stories, then features, then epics — children before parents, though ADO's destroy
+  // call doesn't require a particular order.
+  const rows = db.prepare<[string], { ado_id: number; ado_type: 'epic' | 'feature' | 'story'; local_key: string }>(
+    `SELECT ado_id, ado_type, local_key FROM ado_work_item_map WHERE workflow_id = ?`
+  ).all(workflowId);
+  for (const type of ['story', 'feature', 'epic'] as const) {
+    for (const row of rows.filter(r => r.ado_type === type)) {
+      try {
+        await client.deleteWorkItem(row.ado_id);
+      } catch (err: any) {
+        logger.warn(`[EPIC PUSH] Failed to delete ${row.ado_type} #${row.ado_id} (${row.local_key}) during wipe: ${err.message}`);
+      }
+    }
+  }
+  db.prepare(`DELETE FROM ado_work_item_map WHERE workflow_id = ?`).run(workflowId);
 
-  return { epicId: existingEpics[0].ado_id, epicIds: [...epicIdByLocalKey.values()], featureIds };
+  logger.info(`[EPIC PUSH] Wiped workflow ${workflowId}'s prior ADO push — ${rows.length} work item(s), ${deletedTestCases} test case(s), ${planRows.length} test plan(s) — ahead of a fresh push`);
 }
 
 /**

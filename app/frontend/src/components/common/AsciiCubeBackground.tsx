@@ -1,7 +1,7 @@
 import { AsciiMark } from './AsciiMark';
 
-const TILE_WIDTH = 182;
-const TILE_COUNT = 48;
+const TILE_WIDTH = 400;
+const TILE_COUNT = 16;
 
 /** Static, tiled rendering of the xCube mark used as ambient wallpaper behind page
  *  content — small enough per-copy to read clearly as the logo, repeated so it fills
