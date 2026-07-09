@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { featureLocalKey } from '@pap/shared';
 import { DeleteItemButton } from '../common/DeleteItemButton';
-import { Chevron, InitiativeHeader, PhaseTag } from './ArtifactPrimitives';
+import { Chevron, ChromeStrip, FeatureDependencyBadges, InitiativeHeader, PhaseTag } from './ArtifactPrimitives';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -168,8 +168,8 @@ export function normalizeJourneyId(id: string): string {
  *  renders the same badge instead of each re-deriving its own numbering markup. */
 export function FeatureKeyBadge({ label }: { label: string }) {
   return (
-    <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400">
-      {label}
+    <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900/40 text-indigo-600 dark:text-indigo-400">
+      [{label}]
     </span>
   );
 }
@@ -190,7 +190,7 @@ export function FrTags({ frs, frMap, className }: {
       {frs.map(fr => {
         const key = normalizePrdId(fr);
         const tip = frMap?.[key];
-        return <span key={fr} title={tip} className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400 ${tip ? 'cursor-help' : ''}`}>{key}</span>;
+        return <span key={fr} title={tip} className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-500 ${tip ? 'cursor-help' : ''}`}>{key}</span>;
       })}
     </div>
   );
@@ -220,7 +220,7 @@ function FrFullList({ frs, frMap }: { frs: string[]; frMap?: Record<string, stri
       <ul className="space-y-1">
         {frs.map(fr => {
           const key = normalizePrdId(fr);
-          return <PrdRefFullListRow key={fr} id={key} text={frMap?.[key]} fallback={fr} badgeClassName="bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400" />;
+          return <PrdRefFullListRow key={fr} id={key} text={frMap?.[key]} fallback={fr} badgeClassName="bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-500" />;
         })}
       </ul>
     </div>
@@ -237,7 +237,7 @@ function NfrFullList({ nfrs, nfrMap }: { nfrs: string[]; nfrMap?: Record<string,
       <ul className="space-y-1">
         {nfrs.map(nfr => {
           const key = normalizePrdId(nfr);
-          return <PrdRefFullListRow key={nfr} id={key} text={nfrMap?.[key]} fallback={nfr} badgeClassName="bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400" />;
+          return <PrdRefFullListRow key={nfr} id={key} text={nfrMap?.[key]} fallback={nfr} badgeClassName="bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-500" />;
         })}
       </ul>
     </div>
@@ -293,28 +293,12 @@ function FeatureCard({ feature, idx, globalIndex, phaseIndex, frMap, nfrMap, onD
           disabled={!hasDetail}
           className="flex-1 min-w-0 text-left flex items-start gap-2 px-4 py-3 bg-surface-50 dark:bg-surface-800/60 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors disabled:cursor-default"
         >
-          <Chevron expanded={expanded} className="w-3.5 h-3.5 mt-0.5 text-surface-400" />
+          <Chevron expanded={expanded} className="w-3.5 mt-0.5 text-surface-400" />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-              <span className="text-xs font-semibold uppercase tracking-wide text-brand-500 dark:text-brand-400">Feature</span>
+              <span className="text-[10px] font-mono font-semibold uppercase tracking-widest text-brand-600 dark:text-brand-400">feature</span>
               <FeatureKeyBadge label={featureLocalKey(globalIndex)} />
-              {feature.deferredTo && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 flex-shrink-0">
-                  → {feature.deferredTo}
-                </span>
-              )}
-              {(feature.dependsOn?.length ?? 0) > 0 ? (
-                <span
-                  className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-400 flex-shrink-0"
-                  title={`Cannot start until: ${feature.dependsOn!.join(', ')}`}
-                >
-                  Sequential — after {feature.dependsOn!.join(', ')}
-                </span>
-              ) : (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400 flex-shrink-0">
-                  Parallel
-                </span>
-              )}
+              <FeatureDependencyBadges deferredTo={feature.deferredTo} dependsOn={feature.dependsOn} />
             </div>
             <h4 className="text-base font-semibold text-surface-900 dark:text-surface-100 truncate min-w-0">{feature.title}</h4>
             <FrTags frs={feature.prdRef?.functionalRequirements ?? []} frMap={frMap} className="flex flex-wrap gap-1 mt-1" />
@@ -359,10 +343,10 @@ function FeatureCard({ feature, idx, globalIndex, phaseIndex, frMap, nfrMap, onD
 }
 
 export const PHASE_COLORS: Record<string, string> = {
-  MVP:      'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400',
-  'Phase 1':'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400',
-  'Phase 2':'bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400',
-  'Phase 3':'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400',
+  MVP:      'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-500',
+  'Phase 1':'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-500',
+  'Phase 2':'bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-500',
+  'Phase 3':'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-500',
 };
 
 interface PhaseSectionProps {
@@ -377,27 +361,31 @@ interface PhaseSectionProps {
   onDeleteFeature?: (phaseIndex: number, featureIndex: number) => void;
 }
 
+/** Strip the "MVP — " / "Phase 2 — " phase prefix from an epic title for display — the
+ *  ChromeStrip/PhaseTag badge next to it already shows the phase, so repeating it in the
+ *  title reads as redundant. The prefix stays in the underlying data (and whatever's pushed
+ *  to ADO, where it's useful context on its own) — this only affects what's rendered here. */
+export function stripPhasePrefix(title?: string): string | undefined {
+  return title?.replace(/^(MVP|Phase \d+)\s*[—–-]\s*/i, '');
+}
+
 function PhaseSection({ phase, phaseIndex, featureIndexOffset, frMap, nfrMap, onDeletePhase, onDeleteFeature }: PhaseSectionProps) {
   const [expanded, setExpanded] = useState(true);
   const colorClass = PHASE_COLORS[phase.label] ?? 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300';
-  const epicTitle = phase.epicTitle?.replace(/^(MVP|Phase \d+)\s*[—–-]\s*/i, '');
+  const epicTitle = stripPhasePrefix(phase.epicTitle);
   return (
     <div className="rounded-lg border border-surface-200 dark:border-surface-700 hover:border-violet-200 dark:hover:border-violet-800 transition-colors overflow-hidden">
-      <div className="flex items-stretch bg-surface-50 dark:bg-surface-800/40">
+      <ChromeStrip
+        left={<>◆ epic · <PhaseTag label={phase.label} colorClass={colorClass} /></>}
+        right={`${phase.features.length} feature${phase.features.length !== 1 ? 's' : ''}`}
+      />
+      <div className="flex items-stretch">
         <button
           onClick={() => setExpanded(e => !e)}
           className="group flex-1 min-w-0 text-left flex items-start gap-2 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors p-4"
         >
-          <Chevron expanded={expanded} className="w-4 h-4 mt-1 text-surface-400 group-hover:text-violet-500 transition-colors" />
+          <Chevron expanded={expanded} className="w-4 mt-1 text-surface-400 group-hover:text-violet-500 transition-colors" />
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1 flex-wrap">
-              <span className="text-xs font-semibold uppercase tracking-wide text-violet-500 dark:text-violet-400">Epic</span>
-              <PhaseTag label={phase.label} colorClass={colorClass} />
-              <span className="text-xs text-surface-400">·</span>
-              <span className="text-xs text-surface-500 dark:text-surface-400">
-                {phase.features.length} feature{phase.features.length !== 1 ? 's' : ''}
-              </span>
-            </div>
             {epicTitle && <h3 className="text-lg font-semibold text-surface-900 dark:text-surface-100">{epicTitle}</h3>}
             {phase.deliverable && (
               <p className="text-xs text-surface-500 dark:text-surface-400 mt-1 italic">

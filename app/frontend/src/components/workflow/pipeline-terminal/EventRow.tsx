@@ -21,9 +21,9 @@ export function EventRow({ msg }: { msg: CoordinatorMessage }) {
     return (
       <ExpandableRow
         label="validation"
-        labelColor="text-amber-600 dark:text-amber-500"
-        borderColor="border-amber-200 dark:border-amber-800/40"
-        bgColor="bg-amber-50 dark:bg-amber-900/10"
+        labelColor="text-amber-700 dark:text-amber-500"
+        borderColor="border-amber-200/40 dark:border-amber-800/20"
+        bgColor="bg-amber-50/50 dark:bg-amber-900/10"
         content={msg.content}
         timestamp={msg.timestamp}
       />
@@ -36,9 +36,9 @@ export function EventRow({ msg }: { msg: CoordinatorMessage }) {
     return (
       <ExpandableRow
         label="quality review"
-        labelColor="text-lime-600 dark:text-lime-500"
-        borderColor="border-lime-200 dark:border-lime-800/40"
-        bgColor="bg-lime-50 dark:bg-lime-900/10"
+        labelColor="text-lime-700 dark:text-lime-500"
+        borderColor="border-lime-200/40 dark:border-lime-800/20"
+        bgColor="bg-lime-50/50 dark:bg-lime-900/10"
         content={msg.content}
         timestamp={msg.timestamp}
       />

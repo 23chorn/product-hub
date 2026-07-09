@@ -2,14 +2,14 @@ import { useState } from 'react';
 import type { WorkItemStateBucket, BacklogData, BacklogFeature, BacklogStory } from '@pap/shared';
 import { featureLocalKey, storyLocalKey, backlogTier, getSprintMeta, getAllStories, getAllFeatures, storiesInDisplayOrder } from '@pap/shared';
 import { WORK_ITEM_STATE_BUCKET_LABELS, WORK_ITEM_STATE_BUCKET_COLORS } from '../../utils/work-item-state-bucket';
-import { toPhases, PHASE_COLORS, PrdRefTags, FrTags, FeatureKeyBadge, type EpicFeature, type EpicFeaturesData } from './EpicFeaturesView';
+import { toPhases, PHASE_COLORS, PrdRefTags, FrTags, FeatureKeyBadge, stripPhasePrefix, type EpicFeature, type EpicFeaturesData } from './EpicFeaturesView';
 import { ExpandableText } from '../common/ExpandableText';
 import { ExpandableList } from '../common/ExpandableList';
 import { DeleteItemButton } from '../common/DeleteItemButton';
-import { Chevron, InitiativeHeader, PhaseTag } from './ArtifactPrimitives';
+import { Chevron, ChromeStrip, DotLabel, FeatureDependencyBadges, InitiativeHeader, PhaseTag } from './ArtifactPrimitives';
 
 const DEFAULT_PHASE_LABEL = 'MVP';
-const UNKNOWN_PHASE_COLOR = 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300';
+const UNKNOWN_PHASE_COLOR = 'bg-surface-50 dark:bg-surface-700 text-surface-600 dark:text-surface-300';
 
 interface EpicSection {
   key: string;
@@ -64,7 +64,7 @@ function buildEpicSections(features: BacklogFeature[], epicFeatures: EpicFeature
     const meta = phaseMetaByLabel.get(label);
     return {
       key: label,
-      title: meta?.epicTitle ?? (singleSection ? fallbackTitle : label),
+      title: stripPhasePrefix(meta?.epicTitle) ?? (singleSection ? fallbackTitle : label),
       deliverable: meta?.deliverable,
       colorClass: PHASE_COLORS[label] ?? UNKNOWN_PHASE_COLOR,
       entries: grouped.get(label)!,
@@ -110,13 +110,150 @@ function HoursDisplay({ story, aiAssisted }: { story: BacklogStory; aiAssisted: 
   return <> · {story.estimatedHours}h</>;
 }
 
+/** Effort dot color by size band — red (large) / amber (medium) / brand (small) — shared by
+ *  the story row and the Tier-1 single-story detail, which previously each hand-rolled the
+ *  same threshold logic as a solid-fill pill. */
+function effortDotClass(effort: number): { dot: string; text: string } {
+  if (effort >= 8) return { dot: 'bg-red-400', text: 'text-red-700 dark:text-red-500' };
+  if (effort >= 5) return { dot: 'bg-amber-400', text: 'text-amber-700 dark:text-amber-500' };
+  return { dot: 'bg-brand-400', text: 'text-brand-700 dark:text-brand-500' };
+}
+
+function EffortLabel({ story, aiAssisted }: { story: BacklogStory; aiAssisted: boolean }) {
+  if (story.effort == null) return null;
+  const { dot, text } = effortDotClass(story.effort);
+  return (
+    <DotLabel dotClass={dot} textClass={text} label={<>{story.effort} pts<HoursDisplay story={story} aiAssisted={aiAssisted} /></>} />
+  );
+}
+
+const AC_KEYWORD_COLOR: Record<string, string> = {
+  given: 'text-fuchsia-400',
+  when: 'text-blue-400',
+  then: 'text-green-400',
+  and: 'text-surface-400',
+  but: 'text-surface-400',
+};
+
+/** One acceptance-criteria line, split on Given/When/Then/And/But keyword boundaries so each
+ *  clause starts on its own line — same keyword coloring as the Gherkin scenario box in
+ *  QATestsView. Falls back to a single plain line for free-text criteria with no G/W/T
+ *  structure, rather than forcing every AC into a scenario shape it doesn't have. */
+function AcceptanceCriterionLine({ text }: { text: string }) {
+  const parts = text.split(/\b(Given|When|Then|And|But)\b/gi);
+  if (parts.length === 1) return <p className="text-surface-300">{text}</p>;
+  return (
+    <p>
+      {parts.map((part, pi) => {
+        if (!/^(Given|When|Then|And|But)$/i.test(part)) return <span key={pi} className="text-surface-300">{part}</span>;
+        return <span key={pi}>{pi > 1 && <br />}<span className={`font-bold ${AC_KEYWORD_COLOR[part.toLowerCase()]}`}>{part}</span></span>;
+      })}
+    </p>
+  );
+}
+
+/** Acceptance criteria rendered as console blocks, matching the QA test case Gherkin styling
+ *  (unconditionally dark, monospace, colored keywords) rather than a plain checklist — makes
+ *  a story's AC read as the same kind of test-shaped artifact as its test cases. Shared by the
+ *  story row's expanded detail and the Tier-1 single-story view. */
+function AcceptanceCriteriaConsole({ items }: { items: string[] }) {
+  return (
+    <div className="space-y-1.5">
+      {items.map((ac, i) => (
+        <div key={i} className="rounded bg-surface-900 border border-surface-700 p-2.5 font-mono text-xs">
+          <AcceptanceCriterionLine text={ac} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+type StoryTestCase = NonNullable<BacklogStory['test_cases']>[number];
+
+/** Type/priority dot color for a story's inline test case — a distinct, smaller vocabulary
+ *  ('happy_path' | 'bad_path' | 'edge_case') from QATestsView's TestCase.type, so this stays
+ *  its own small map rather than forcing a reuse that would silently drop the 'bad_path'/
+ *  'edge_case' distinction into QATestsView's generic fallback color. */
+function storyTestTypeMeta(type: StoryTestCase['type']): { label: string; dot: string; text: string } {
+  if (type === 'happy_path') return { label: 'happy path', dot: 'bg-green-400', text: 'text-green-700 dark:text-green-500' };
+  if (type === 'bad_path') return { label: 'bad path', dot: 'bg-red-400', text: 'text-red-700 dark:text-red-500' };
+  return { label: 'edge case', dot: 'bg-amber-400', text: 'text-amber-700 dark:text-amber-500' };
+}
+
+function storyTestPriorityMeta(priority: StoryTestCase['priority']): { dot: string; text: string } {
+  if (priority === 'critical') return { dot: 'bg-red-400', text: 'text-red-700 dark:text-red-500' };
+  if (priority === 'high') return { dot: 'bg-orange-400', text: 'text-orange-700 dark:text-orange-500' };
+  if (priority === 'medium') return { dot: 'bg-yellow-400', text: 'text-yellow-700 dark:text-yellow-500' };
+  return { dot: 'bg-surface-400', text: 'text-surface-500 dark:text-surface-400' };
+}
+
+/** One inline test case nested under a story — shared by the story row's expanded detail and
+ *  the Tier-1 single-story view, which previously each hand-rolled the same markup. */
+function StoryTestCaseCard({ tc, onDelete }: { tc: StoryTestCase; onDelete?: () => void }) {
+  const typeM = storyTestTypeMeta(tc.type);
+  const prioM = storyTestPriorityMeta(tc.priority);
+  return (
+    <div className="bg-surface-50 dark:bg-surface-800/50 rounded p-2 flex items-start justify-between gap-2">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-[10px] font-mono text-surface-500 dark:text-surface-400">{tc.id}</span>
+          <DotLabel dotClass={typeM.dot} textClass={typeM.text} label={typeM.label} />
+          <DotLabel dotClass={prioM.dot} textClass={prioM.text} label={tc.priority} />
+        </div>
+        <div className="space-y-0.5 text-xs">
+          {tc.scenario.given.map((g, gi) => (
+            <div key={`g${gi}`} className="text-surface-600 dark:text-surface-400">
+              <strong className="text-surface-700 dark:text-surface-300">Given</strong> {g}
+            </div>
+          ))}
+          {tc.scenario.when.map((w, wi) => (
+            <div key={`w${wi}`} className="text-surface-600 dark:text-surface-400">
+              <strong className="text-surface-700 dark:text-surface-300">When</strong> {w}
+            </div>
+          ))}
+          {tc.scenario.then.map((t, thi) => (
+            <div key={`t${thi}`} className="text-surface-600 dark:text-surface-400">
+              <strong className="text-surface-700 dark:text-surface-300">Then</strong> {t}
+            </div>
+          ))}
+        </div>
+      </div>
+      {onDelete && <DeleteItemButton onDelete={onDelete} label="Delete test case" />}
+    </div>
+  );
+}
+
+const PLATFORM_COLORS: Record<string, string> = {
+  backend: 'bg-fuchsia-50 dark:bg-fuchsia-900/20 text-fuchsia-700 dark:text-fuchsia-500',
+  web:     'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-500',
+  ios:     'bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-500',
+  android: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-500',
+};
+
+/** Platform badges for a story's `platform` field (single string or array) — shared by the
+ *  story row's expanded detail and the Tier-1 single-story view, which previously each
+ *  hand-rolled the same array-normalization + color-map markup. */
+function PlatformTags({ platform, className = 'flex gap-1.5 flex-wrap' }: { platform?: string | string[]; className?: string }) {
+  const platforms = Array.isArray(platform) ? platform : platform ? [String(platform)] : [];
+  if (platforms.length === 0) return null;
+  return (
+    <div className={className}>
+      {platforms.map(p => (
+        <span key={p} className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full ${PLATFORM_COLORS[p] ?? 'bg-surface-50 dark:bg-surface-800 text-surface-700 dark:text-surface-400'}`}>
+          {p}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 /** Render technical notes (iOS / Android / Backend) added by the tech refinement stage. */
 function TechnicalNotes({ notes }: { notes?: BacklogStory['technical_notes'] }) {
   if (!notes || (!notes.ios && !notes.android && !notes.backend)) return null;
   const items: Array<{ key: string; label: string; color: string; note: string }> = [];
-  if (notes.ios) items.push({ key: 'ios', label: 'iOS', color: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400', note: notes.ios });
-  if (notes.android) items.push({ key: 'android', label: 'Android', color: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400', note: notes.android });
-  if (notes.backend) items.push({ key: 'backend', label: 'Backend', color: 'bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-700 dark:text-fuchsia-400', note: notes.backend });
+  if (notes.ios) items.push({ key: 'ios', label: 'iOS', color: 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-500', note: notes.ios });
+  if (notes.android) items.push({ key: 'android', label: 'Android', color: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-500', note: notes.android });
+  if (notes.backend) items.push({ key: 'backend', label: 'Backend', color: 'bg-fuchsia-50 dark:bg-fuchsia-900/20 text-fuchsia-700 dark:text-fuchsia-500', note: notes.backend });
   return (
     <div className="mt-2 space-y-1.5">
       <p className="text-xs font-medium text-surface-500 dark:text-surface-400">Technical Notes:</p>
@@ -251,7 +388,7 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
           onClick={() => toggleStory(key)}
           className="flex-1 min-w-0 text-left flex items-start gap-2"
         >
-          <Chevron expanded={isExpanded} className="w-3.5 h-3.5 mt-0.5 text-surface-400" />
+          <Chevron expanded={isExpanded} className="w-3.5 mt-0.5 text-surface-400" />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               {storyKey && <FeatureKeyBadge label={storyKey} />}
@@ -259,15 +396,7 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
                 {story.title}
               </span>
               <FrTags frs={story.prd_ref?.functional_requirements ?? []} frMap={frMap} />
-              {story.effort != null && (
-                <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                  story.effort >= 8 ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                    : story.effort >= 5 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
-                    : 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400'
-                }`}>
-                  {story.effort}<HoursDisplay story={story} aiAssisted={aiAssisted} />
-                </span>
-              )}
+              <EffortLabel story={story} aiAssisted={aiAssisted} />
               <StateBucketPill bucket={stateBucket} />
             </div>
             {(story.persona || story.as_a) && !isExpanded && (
@@ -303,19 +432,8 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
             )}
             {(() => { const acs = story.acceptanceCriteria ?? story.acceptance_criteria; return acs && acs.length > 0 && (
               <div>
-                <p className="text-xs font-medium text-surface-500 dark:text-surface-400 mb-1">Acceptance Criteria:</p>
-                <ul className="space-y-1">
-                  {acs.map((ac, ai) => (
-                    <li key={ai} className="text-xs text-surface-700 dark:text-surface-300 flex items-start gap-1.5">
-                      <span className="text-green-500 mt-px flex-shrink-0">✓</span>
-                      <span>{ac.split(/\b(Given|When|Then|And|But)\b/gi).map((part, pi) =>
-                        /^(Given|When|Then|And|But)$/i.test(part)
-                          ? <span key={pi}>{pi > 1 && <br />}<strong>{part}</strong></span>
-                          : <span key={pi}>{part}</span>
-                      )}</span>
-                    </li>
-                  ))}
-                </ul>
+                <p className="text-[10px] font-mono font-semibold uppercase tracking-widest text-surface-400 dark:text-surface-500 mb-1.5">Acceptance Criteria</p>
+                <AcceptanceCriteriaConsole items={acs} />
               </div>
             ); })()}
 
@@ -335,25 +453,7 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
             )}
 
             {/* Platform tags (new multi-agent format) */}
-            {(() => {
-              const platformRaw = story.platform;
-              const platforms = Array.isArray(platformRaw) ? platformRaw : platformRaw ? [String(platformRaw)] : [];
-              return platforms.length > 0 && (
-                <div className="flex gap-1.5 flex-wrap">
-                  {platforms.map(p => (
-                    <span key={p} className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                      p === 'backend' ? 'bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-700 dark:text-fuchsia-400'
-                      : p === 'web' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                      : p === 'ios' ? 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400'
-                      : p === 'android' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                      : 'bg-surface-100 dark:bg-surface-800 text-surface-700 dark:text-surface-400'
-                    }`}>
-                      {p.toUpperCase()}
-                    </span>
-                  ))}
-                </div>
-              );
-            })()}
+            <PlatformTags platform={story.platform} />
 
             {/* Test Cases (new multi-agent format) */}
             {story.test_cases && story.test_cases.length > 0 && (
@@ -361,48 +461,7 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
                 <p className="text-xs font-medium text-surface-500 dark:text-surface-400 mb-2">Test Cases ({story.test_cases.length}):</p>
                 <div className="space-y-2">
                   {story.test_cases.map((tc, tci) => (
-                    <div key={tc.id} className="bg-surface-50 dark:bg-surface-800/50 rounded p-2 flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-[10px] font-mono text-surface-500 dark:text-surface-400">{tc.id}</span>
-                        <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
-                          tc.type === 'happy_path' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                          : tc.type === 'bad_path' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                          : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
-                        }`}>
-                          {tc.type.replace('_', ' ')}
-                        </span>
-                        <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
-                          tc.priority === 'critical' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                          : tc.priority === 'high' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400'
-                          : tc.priority === 'medium' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
-                          : 'bg-surface-100 dark:bg-surface-800 text-surface-700 dark:text-surface-400'
-                        }`}>
-                          {tc.priority}
-                        </span>
-                      </div>
-                      <div className="space-y-0.5 text-xs">
-                        {tc.scenario.given.map((g, gi) => (
-                          <div key={`g${gi}`} className="text-surface-600 dark:text-surface-400">
-                            <strong className="text-surface-700 dark:text-surface-300">Given</strong> {g}
-                          </div>
-                        ))}
-                        {tc.scenario.when.map((w, wi) => (
-                          <div key={`w${wi}`} className="text-surface-600 dark:text-surface-400">
-                            <strong className="text-surface-700 dark:text-surface-300">When</strong> {w}
-                          </div>
-                        ))}
-                        {tc.scenario.then.map((t, thi) => (
-                          <div key={`t${thi}`} className="text-surface-600 dark:text-surface-400">
-                            <strong className="text-surface-700 dark:text-surface-300">Then</strong> {t}
-                          </div>
-                        ))}
-                      </div>
-                      </div>
-                      {onDeleteTestCase && (
-                        <DeleteItemButton onDelete={() => onDeleteTestCase(si, tci)} label="Delete test case" />
-                      )}
-                    </div>
+                    <StoryTestCaseCard key={tc.id} tc={tc} onDelete={onDeleteTestCase ? () => onDeleteTestCase(si, tci) : undefined} />
                   ))}
                 </div>
               </div>
@@ -440,13 +499,13 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
           onClick={() => toggleFeature(fi)}
           className="w-full text-left flex items-start gap-2 px-4 py-3 bg-surface-50 dark:bg-surface-800/60 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
         >
-          <Chevron expanded={isExpanded} className="w-3.5 h-3.5 mt-0.5 text-surface-400" />
+          <Chevron expanded={isExpanded} className="w-3.5 mt-0.5 text-surface-400" />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-              <span className="text-xs font-semibold uppercase tracking-wide text-brand-500 dark:text-brand-400">Feature</span>
+              <span className="text-[10px] font-mono font-semibold uppercase tracking-widest text-brand-600 dark:text-brand-400">feature</span>
               <FeatureKeyBadge label={featureKey} />
               {featureEffort > 0 && (
-                <span className="text-xs text-surface-400 dark:text-surface-500">
+                <span className="text-xs font-mono text-surface-400 dark:text-surface-500">
                   {featureEffort} pts
                   <AggregateHours hours={featureHours} traditionalHours={featureTraditionalHours} aiAssisted={aiAssisted} />
                   {ev && ev > 0 && (
@@ -454,23 +513,7 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
                   )}
                 </span>
               )}
-              {epicMatch?.deferredTo && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
-                  → {epicMatch.deferredTo}
-                </span>
-              )}
-              {(epicMatch?.dependsOn?.length ?? 0) > 0 ? (
-                <span
-                  className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-400"
-                  title={`Cannot start until: ${epicMatch!.dependsOn!.join(', ')}`}
-                >
-                  Sequential — after {epicMatch!.dependsOn!.join(', ')}
-                </span>
-              ) : epicMatch ? (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-brand-50 dark:bg-brand-900/20 text-brand-600 dark:text-brand-400">
-                  Parallel
-                </span>
-              ) : null}
+              {epicMatch && <FeatureDependencyBadges deferredTo={epicMatch.deferredTo} dependsOn={epicMatch.dependsOn} />}
               <StateBucketPill bucket={stateByLocalKey?.get(featureKey)} />
             </div>
             <h4 className="text-base font-semibold text-surface-900 dark:text-surface-100 truncate min-w-0">{feature.title}</h4>
@@ -542,13 +585,13 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
                     disabled={!hasDetail}
                     className="w-full text-left flex items-start gap-2 px-4 py-3 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors disabled:cursor-default disabled:hover:bg-transparent dark:disabled:hover:bg-transparent"
                   >
-                    {hasDetail && <Chevron expanded={isExpanded} className="w-3.5 h-3.5 mt-0.5 text-surface-400 flex-shrink-0" />}
+                    {hasDetail && <Chevron expanded={isExpanded} className="w-3.5 mt-0.5 text-surface-400 flex-shrink-0" />}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-brand-500 dark:text-brand-400">Feature</span>
+                        <span className="text-[10px] font-mono font-semibold uppercase tracking-widest text-brand-600 dark:text-brand-400">feature</span>
                         {featureKey && <FeatureKeyBadge label={featureKey} />}
                         {totalEffort > 0 && (
-                          <span className="text-xs text-surface-400 dark:text-surface-500">
+                          <span className="text-xs font-mono text-surface-400 dark:text-surface-500">
                             {totalEffort} pts
                             <AggregateHours hours={totalHours} traditionalHours={totalTraditionalHours} aiAssisted={aiAssisted} />
                             {sprintMeta?.sprintsRequired != null && <> · {sprintMeta.sprintsRequired} sprints</>}
@@ -620,20 +663,16 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
               const sectionStories = section.entries.reduce((sum, { feature }) => sum + feature.stories.length, 0);
               return (
                 <div key={section.key} className="rounded-lg border border-surface-200 dark:border-surface-700 hover:border-violet-200 dark:hover:border-violet-800 transition-colors overflow-hidden">
+                  <ChromeStrip
+                    left={<>◆ epic · <PhaseTag label={section.key} colorClass={section.colorClass} /></>}
+                    right={`${section.entries.length} feature${section.entries.length !== 1 ? 's' : ''} · ${sectionStories} stor${sectionStories !== 1 ? 'ies' : 'y'}`}
+                  />
                   <button
                     onClick={() => toggleEpic(section.key)}
-                    className="group w-full text-left flex items-start gap-2 bg-surface-50 dark:bg-surface-800/40 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors p-4"
+                    className="group w-full text-left flex items-start gap-2 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors p-4"
                   >
-                    <Chevron expanded={isExpanded} className="w-4 h-4 mt-1 text-surface-400 group-hover:text-violet-500 transition-colors" />
+                    <Chevron expanded={isExpanded} className="w-4 mt-1 text-surface-400 group-hover:text-violet-500 transition-colors" />
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-violet-500 dark:text-violet-400">Epic</span>
-                        <PhaseTag label={section.key} colorClass={section.colorClass} />
-                        <span className="text-xs text-surface-400">·</span>
-                        <span className="text-xs text-surface-500 dark:text-surface-400">
-                          {section.entries.length} feature{section.entries.length !== 1 ? 's' : ''} · {sectionStories} stor{sectionStories !== 1 ? 'ies' : 'y'}
-                        </span>
-                      </div>
                       <h3 className="text-lg font-semibold text-surface-900 dark:text-surface-100">{section.title}</h3>
                       {section.deliverable && (
                         <p className="text-xs text-surface-500 dark:text-surface-400 mt-1 italic">
@@ -661,19 +700,18 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
       {tier === 2 && data.feature && (
         <div className="rounded-lg border border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-900/20 p-4">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-semibold uppercase tracking-wide text-brand-500 dark:text-brand-400">Feature</span>
+            <span className="text-[10px] font-mono font-semibold uppercase tracking-widest text-brand-600 dark:text-brand-400">feature</span>
             {data.feature.phase && (
               <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
                 data.feature.phase === 'MVP'
-                  ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                  : 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-400'
+                  ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-500'
+                  : 'bg-surface-50 dark:bg-surface-700 text-surface-600 dark:text-surface-400'
               }`}>
                 {data.feature.phase}
               </span>
             )}
-            <span className="text-xs text-surface-400">·</span>
-            <span className="text-xs text-surface-500 dark:text-surface-400">
-              {totalStories} stor{totalStories !== 1 ? 'ies' : 'y'}
+            <span className="text-xs font-mono text-surface-400 dark:text-surface-500">
+              · {totalStories} stor{totalStories !== 1 ? 'ies' : 'y'}
               {totalEffort > 0 && <> · {totalEffort} pts</>}
               <AggregateHours hours={totalHours} traditionalHours={totalTraditionalHours} aiAssisted={aiAssisted} />
               {sprintMeta?.sprintsRequired != null && (
@@ -694,18 +732,10 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
         return (
           <div className="rounded-lg border border-surface-200 dark:border-surface-700 p-4 space-y-3">
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs font-semibold uppercase tracking-wide text-emerald-500 dark:text-emerald-400">Story</span>
-              {story.effort != null && (
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                  story.effort >= 8 ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                    : story.effort >= 5 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
-                    : 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400'
-                }`}>
-                  {story.effort} pts<HoursDisplay story={story} aiAssisted={aiAssisted} />
-                </span>
-              )}
+              <span className="text-[10px] font-mono font-semibold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">story</span>
+              <EffortLabel story={story} aiAssisted={aiAssisted} />
               {sprintMeta?.sprintsRequired != null && (
-                <span className="text-xs text-surface-500 dark:text-surface-400">
+                <span className="text-xs font-mono text-surface-500 dark:text-surface-400">
                   · {sprintMeta.sprintsRequired} sprints
                 </span>
               )}
@@ -727,19 +757,8 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
             )}
             {(() => { const acs = story.acceptanceCriteria ?? story.acceptance_criteria; return acs && acs.length > 0 && (
               <div>
-                <p className="text-xs font-medium text-surface-500 dark:text-surface-400 mb-1">Acceptance Criteria:</p>
-                <ul className="space-y-1">
-                  {acs.map((ac, ai) => (
-                    <li key={ai} className="text-xs text-surface-700 dark:text-surface-300 flex items-start gap-1.5">
-                      <span className="text-green-500 mt-px flex-shrink-0">✓</span>
-                      <span>{ac.split(/\b(Given|When|Then|And|But)\b/gi).map((part, pi) =>
-                        /^(Given|When|Then|And|But)$/i.test(part)
-                          ? <span key={pi}>{pi > 1 && <br />}<strong>{part}</strong></span>
-                          : <span key={pi}>{part}</span>
-                      )}</span>
-                    </li>
-                  ))}
-                </ul>
+                <p className="text-[10px] font-mono font-semibold uppercase tracking-widest text-surface-400 dark:text-surface-500 mb-1.5">Acceptance Criteria</p>
+                <AcceptanceCriteriaConsole items={acs} />
               </div>
             ); })()}
 
@@ -759,25 +778,7 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
             )}
 
             {/* Platform tags (new multi-agent format) */}
-            {(() => {
-              const platformRaw = story.platform;
-              const platforms = Array.isArray(platformRaw) ? platformRaw : platformRaw ? [String(platformRaw)] : [];
-              return platforms.length > 0 && (
-                <div className="flex gap-1.5 flex-wrap mt-2">
-                  {platforms.map(p => (
-                    <span key={p} className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                      p === 'backend' ? 'bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-700 dark:text-fuchsia-400'
-                      : p === 'web' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                      : p === 'ios' ? 'bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400'
-                      : p === 'android' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                      : 'bg-surface-100 dark:bg-surface-800 text-surface-700 dark:text-surface-400'
-                    }`}>
-                      {p.toUpperCase()}
-                    </span>
-                  ))}
-                </div>
-              );
-            })()}
+            <PlatformTags platform={story.platform} className="flex gap-1.5 flex-wrap mt-2" />
 
             {/* Test Cases (new multi-agent format) */}
             {story.test_cases && story.test_cases.length > 0 && (
@@ -785,43 +786,7 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
                 <p className="text-xs font-medium text-surface-500 dark:text-surface-400 mb-2">Test Cases ({story.test_cases.length}):</p>
                 <div className="space-y-2">
                   {story.test_cases.map(tc => (
-                    <div key={tc.id} className="bg-surface-50 dark:bg-surface-800/50 rounded p-2">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-[10px] font-mono text-surface-500 dark:text-surface-400">{tc.id}</span>
-                        <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
-                          tc.type === 'happy_path' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                          : tc.type === 'bad_path' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                          : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
-                        }`}>
-                          {tc.type.replace('_', ' ')}
-                        </span>
-                        <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded ${
-                          tc.priority === 'critical' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                          : tc.priority === 'high' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400'
-                          : tc.priority === 'medium' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
-                          : 'bg-surface-100 dark:bg-surface-800 text-surface-700 dark:text-surface-400'
-                        }`}>
-                          {tc.priority}
-                        </span>
-                      </div>
-                      <div className="space-y-0.5 text-xs">
-                        {tc.scenario.given.map((g, gi) => (
-                          <div key={`g${gi}`} className="text-surface-600 dark:text-surface-400">
-                            <strong className="text-surface-700 dark:text-surface-300">Given</strong> {g}
-                          </div>
-                        ))}
-                        {tc.scenario.when.map((w, wi) => (
-                          <div key={`w${wi}`} className="text-surface-600 dark:text-surface-400">
-                            <strong className="text-surface-700 dark:text-surface-300">When</strong> {w}
-                          </div>
-                        ))}
-                        {tc.scenario.then.map((t, ti) => (
-                          <div key={`t${ti}`} className="text-surface-600 dark:text-surface-400">
-                            <strong className="text-surface-700 dark:text-surface-300">Then</strong> {t}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                    <StoryTestCaseCard key={tc.id} tc={tc} />
                   ))}
                 </div>
               </div>

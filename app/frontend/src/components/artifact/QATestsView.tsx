@@ -3,6 +3,7 @@ import type { TestCase, QATestSuite } from '@pap/shared';
 import { ExpandableText } from '../common/ExpandableText';
 import { DeleteItemButton } from '../common/DeleteItemButton';
 import { normalizePrdId } from './EpicFeaturesView';
+import { Chevron, DotLabel } from './ArtifactPrimitives';
 
 /** Remove one test case by its position in data.test_cases. The view groups/reorders
  *  cases by type or priority for display via .filter() (preserves object identity), so
@@ -13,20 +14,23 @@ export function removeTestCase(data: QATestSuite, index: number): QATestSuite {
 }
 
 // Keys match VALID_TEST_TYPES in app/backend/src/agents/tool-validators.ts — keep in sync.
-const TYPE_CONFIG: Record<string, { label: string; color: string; dot: string }> = {
-  happy_path:  { label: 'Happy Path',  color: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',   dot: 'bg-green-400' },
-  negative:    { label: 'Negative',    color: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400',           dot: 'bg-red-400' },
-  edge:        { label: 'Edge Case',   color: 'bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-700 dark:text-fuchsia-400', dot: 'bg-fuchsia-400' },
-  boundary:    { label: 'Boundary',    color: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400',   dot: 'bg-amber-400' },
-  security:    { label: 'Security',    color: 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400', dot: 'bg-cyan-400' },
-  performance: { label: 'Performance', color: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400', dot: 'bg-orange-400' },
+// `color` is a muted filled pill (stat tiles, layer/cross-phase badges); `text` is the same
+// hue with no background, for the dot+label rows where a solid fill would read as a tag
+// rather than a status readout.
+const TYPE_CONFIG: Record<string, { label: string; color: string; text: string; dot: string }> = {
+  happy_path:  { label: 'Happy Path',  color: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-500',     text: 'text-green-700 dark:text-green-500',     dot: 'bg-green-400' },
+  negative:    { label: 'Negative',    color: 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-500',             text: 'text-red-700 dark:text-red-500',         dot: 'bg-red-400' },
+  edge:        { label: 'Edge Case',   color: 'bg-fuchsia-50 dark:bg-fuchsia-900/20 text-fuchsia-700 dark:text-fuchsia-500', text: 'text-fuchsia-700 dark:text-fuchsia-500', dot: 'bg-fuchsia-400' },
+  boundary:    { label: 'Boundary',    color: 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-500',     text: 'text-amber-700 dark:text-amber-500',     dot: 'bg-amber-400' },
+  security:    { label: 'Security',    color: 'bg-cyan-50 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-500',         text: 'text-cyan-700 dark:text-cyan-500',       dot: 'bg-cyan-400' },
+  performance: { label: 'Performance', color: 'bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-500', text: 'text-orange-700 dark:text-orange-500',   dot: 'bg-orange-400' },
 };
 
-const PRIORITY_CONFIG: Record<string, { label: string; color: string; dot: string }> = {
-  critical: { label: 'Critical', color: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 font-semibold', dot: 'bg-red-400' },
-  high:     { label: 'High',     color: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400', dot: 'bg-amber-400' },
-  medium:   { label: 'Medium',   color: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400', dot: 'bg-blue-400' },
-  low:      { label: 'Low',      color: 'bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400', dot: 'bg-surface-400' },
+const PRIORITY_CONFIG: Record<string, { label: string; color: string; text: string; dot: string }> = {
+  critical: { label: 'Critical', color: 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-500 font-semibold', text: 'text-red-700 dark:text-red-500 font-semibold', dot: 'bg-red-400' },
+  high:     { label: 'High',     color: 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-500',       text: 'text-amber-700 dark:text-amber-500',            dot: 'bg-amber-400' },
+  medium:   { label: 'Medium',   color: 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-500',           text: 'text-blue-700 dark:text-blue-500',              dot: 'bg-blue-400' },
+  low:      { label: 'Low',      color: 'bg-surface-50 dark:bg-surface-800 text-surface-500 dark:text-surface-400', text: 'text-surface-500 dark:text-surface-400',        dot: 'bg-surface-400' },
 };
 
 const TYPE_ORDER = ['happy_path', 'negative', 'edge', 'boundary', 'security', 'performance'];
@@ -34,30 +38,33 @@ const PRIORITY_ORDER = ['critical', 'high', 'medium', 'low'];
 
 /** Resolve display metadata for a test type, with a generic fallback for types outside TYPE_ORDER
  *  (e.g. legacy fixtures) so every test case still gets a labeled, colored category. */
-export function typeMeta(type: string): { label: string; color: string; dot: string } {
+export function typeMeta(type: string): { label: string; color: string; text: string; dot: string } {
   return TYPE_CONFIG[type] ?? {
     label: type.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase()),
-    color: 'bg-surface-100 dark:bg-surface-800 text-surface-600 dark:text-surface-400',
+    color: 'bg-surface-50 dark:bg-surface-800 text-surface-600 dark:text-surface-400',
+    text: 'text-surface-600 dark:text-surface-400',
     dot: 'bg-surface-400',
   };
 }
 
 /** Resolve display metadata for a priority, with a generic fallback for values outside
  *  PRIORITY_CONFIG, mirroring typeMeta. */
-function priorityMeta(priority: string): { label: string; color: string; dot: string } {
+export function priorityMeta(priority: string): { label: string; color: string; text: string; dot: string } {
   return PRIORITY_CONFIG[priority] ?? {
     label: priority.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase()),
-    color: 'bg-surface-100 dark:bg-surface-800 text-surface-600 dark:text-surface-400',
+    color: 'bg-surface-50 dark:bg-surface-800 text-surface-600 dark:text-surface-400',
+    text: 'text-surface-600 dark:text-surface-400',
     dot: 'bg-surface-400',
   };
 }
 
 /** Display metadata for a phase label — phases have no fixed palette (unlike type/priority),
  *  so every phase renders with the same neutral style; only the label varies. */
-function phaseMeta(phase: string): { label: string; color: string; dot: string } {
+function phaseMeta(phase: string): { label: string; color: string; text: string; dot: string } {
   return {
     label: phase,
-    color: 'bg-surface-100 dark:bg-surface-800 text-surface-600 dark:text-surface-400',
+    color: 'bg-surface-50 dark:bg-surface-800 text-surface-600 dark:text-surface-400',
+    text: 'text-surface-600 dark:text-surface-400',
     dot: 'bg-surface-400',
   };
 }
@@ -178,20 +185,20 @@ function TestCaseCard({ tc, frMap, phaseByFeatureKey, planUrlByFeatureKey, onDel
         onClick={() => setOpen(o => !o)}
         className="flex-1 min-w-0 text-left px-3 py-2.5 flex items-start gap-3"
       >
-        <div className={`mt-0.5 flex-shrink-0 w-1.5 h-1.5 rounded-full ${typeConf.dot}`} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-mono text-surface-400 dark:text-surface-500">{tc.id}</span>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${prioConf.color}`}>{prioConf.label}</span>
+            <DotLabel dotClass={typeConf.dot} textClass={typeConf.text} label={typeConf.label.toLowerCase()} />
+            <DotLabel dotClass={prioConf.dot} textClass={prioConf.text} label={prioConf.label.toLowerCase()} />
             {tc.layer === 'technical' && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 font-medium">API</span>
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-500 font-medium">api</span>
             )}
             {isCrossPhase && (
               <span
                 title="This test case's stories span more than one phase — a deliberate shared flow, not a duplicate."
-                className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 font-medium cursor-help"
+                className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-500 font-medium cursor-help"
               >
-                Cross-phase
+                cross-phase
               </span>
             )}
           </div>
@@ -229,9 +236,7 @@ function TestCaseCard({ tc, frMap, phaseByFeatureKey, planUrlByFeatureKey, onDel
           )}
           {tc.category && <p className="text-[10px] text-surface-400 dark:text-surface-500 mt-0.5">{tc.category}</p>}
         </div>
-        <svg className={`w-3.5 h-3.5 text-surface-400 flex-shrink-0 mt-1 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
+        <Chevron expanded={open} className="w-3.5 mt-1 text-surface-400" />
       </button>
       {planUrl && (
         <a
@@ -272,17 +277,19 @@ function TestCaseCard({ tc, frMap, phaseByFeatureKey, planUrlByFeatureKey, onDel
             </div>
           )}
 
-          {/* Gherkin scenario (old format) */}
+          {/* Gherkin scenario (old format) — rendered as a console block, unconditionally dark
+              (not just in the app's dark theme): this is displayed test-script output, and
+              should read like a terminal ran it, in every theme. */}
           {hasScenario && (
-            <div className="rounded bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 p-2.5 space-y-1.5 font-mono text-xs">
+            <div className="rounded bg-surface-900 border border-surface-700 p-2.5 space-y-1.5 font-mono text-xs">
               {tc.scenario!.given.map((s, i) => (
-                <p key={i}><span className="font-bold text-fuchsia-600 dark:text-fuchsia-400">{i === 0 ? 'Given' : 'And'} </span><span className="text-surface-700 dark:text-surface-300">{s}</span></p>
+                <p key={i}><span className="font-bold text-fuchsia-400">{i === 0 ? 'Given' : 'And'} </span><span className="text-surface-300">{s}</span></p>
               ))}
               {tc.scenario!.when.map((s, i) => (
-                <p key={i}><span className="font-bold text-blue-600 dark:text-blue-400">{i === 0 ? 'When' : 'And'} </span><span className="text-surface-700 dark:text-surface-300">{s}</span></p>
+                <p key={i}><span className="font-bold text-blue-400">{i === 0 ? 'When' : 'And'} </span><span className="text-surface-300">{s}</span></p>
               ))}
               {tc.scenario!.then.map((s, i) => (
-                <p key={i}><span className="font-bold text-green-600 dark:text-green-400">{i === 0 ? 'Then' : 'And'} </span><span className="text-surface-700 dark:text-surface-300">{s}</span></p>
+                <p key={i}><span className="font-bold text-green-400">{i === 0 ? 'Then' : 'And'} </span><span className="text-surface-300">{s}</span></p>
               ))}
             </div>
           )}
@@ -405,15 +412,15 @@ export function QATestsView({ data, frMap, phaseByFeatureKey, planUrlByFeatureKe
 
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500">
-                By {effectiveGroupMode === 'type' ? 'Type' : effectiveGroupMode === 'priority' ? 'Priority' : 'Phase'}
+              <p className="text-[10px] font-mono font-semibold uppercase tracking-widest text-surface-400 dark:text-surface-500">
+                by {effectiveGroupMode}
               </p>
               <div className="inline-flex rounded-md border border-surface-200 dark:border-surface-700 overflow-hidden">
                 {(hasPhaseData ? (['type', 'priority', 'phase'] as const) : (['type', 'priority'] as const)).map((mode, i) => (
                   <button
                     key={mode}
                     onClick={() => setGroupMode(mode)}
-                    className={`px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide transition-colors ${
+                    className={`px-2.5 py-1 text-[10px] font-mono font-semibold transition-colors ${
                       effectiveGroupMode === mode
                         ? 'bg-brand-600 text-white'
                         : 'bg-surface-50 dark:bg-surface-800 text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700'
@@ -449,9 +456,7 @@ export function QATestsView({ data, frMap, phaseByFeatureKey, planUrlByFeatureKe
               onClick={() => toggleGroup(key)}
               className="w-full flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-2"
             >
-              <svg className={`w-3 h-3 flex-shrink-0 transition-transform ${isOpen ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
+              <Chevron expanded={isOpen} className="w-3 text-surface-400" />
               <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
               {meta.label}
               <span className="font-normal text-surface-400">({cases.length})</span>

@@ -740,8 +740,11 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
               </div>
             </div>
 
-            <div>
-              <div className="flex border-b border-surface-200 dark:border-surface-700">
+            {/* Plain panel background — matches the artifact viewer's content pane used during
+                a live checkpoint review, so a ticket/test/plan reads the same whether it's
+                being viewed in progress or after the fact. */}
+            <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 overflow-hidden">
+              <div className="flex border-b border-surface-200 dark:border-surface-700 px-2">
                 {visibleTabs.map(t => (
                   <button
                     key={t.key}
@@ -757,7 +760,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
                 ))}
               </div>
 
-              <div className="pt-4">
+              <div className="p-4">
                 {tab === 'tickets' && (
                   <div className="max-w-4xl mx-auto">
                     {phaseBacklog && (phaseBacklog.features?.length ?? 0) > 0 ? (

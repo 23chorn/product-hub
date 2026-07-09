@@ -75,21 +75,26 @@ export function CompletedInitiativesPage({ initialSelection, onInitialSelectionC
               <button
                 key={item.itemId}
                 onClick={() => setSelectedItemId(item.itemId)}
-                className="text-left rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/50 p-4 hover:border-brand-400 dark:hover:border-brand-500 transition-colors"
+                className="text-left rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/50 overflow-hidden hover:border-brand-400 dark:hover:border-brand-500 transition-colors flex flex-col"
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-start gap-1.5 min-w-0">
-                    {item.seqNum != null && (
-                      <span
-                        title={`Initiative #${item.seqNum}`}
-                        className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400"
-                      >
-                        #{item.seqNum}
-                      </span>
-                    )}
-                    <h3 className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{item.title}</h3>
-                  </div>
+                {/* Title-bar strip: seq number + refresh status, matching the Initiatives card chrome */}
+                <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900/40 flex-shrink-0">
+                  <span
+                    title={item.seqNum != null ? `Initiative #${item.seqNum}` : undefined}
+                    className="font-mono text-[10px] font-semibold text-surface-500 dark:text-surface-400"
+                  >
+                    {item.seqNum != null ? `#${item.seqNum}` : ''}
+                  </span>
+                  <span className={`text-[10px] font-mono ${item.lastRefreshedAt == null ? 'text-amber-600 dark:text-amber-400' : 'text-surface-400 dark:text-surface-500'}`}>
+                    {item.lastRefreshedAt == null
+                      ? 'needs refresh'
+                      : `${item.percentComplete != null ? `${item.percentComplete}% · ` : ''}refreshed ${relativeTime(item.lastRefreshedAt)}`}
+                  </span>
                 </div>
+
+                <div className="p-4 pt-3 flex-1 flex flex-col">
+
+                <h3 className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{item.title}</h3>
 
                 <div className="flex gap-1.5 flex-wrap mt-2">
                   <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-400">
@@ -124,11 +129,7 @@ export function CompletedInitiativesPage({ initialSelection, onInitialSelectionC
                   </div>
                 )}
 
-                <p className={`text-[10px] mt-2 ${item.lastRefreshedAt == null ? 'text-amber-600 dark:text-amber-400' : 'text-surface-400 dark:text-surface-500'}`}>
-                  {item.lastRefreshedAt == null
-                    ? 'Needs refresh'
-                    : `${item.percentComplete != null ? `${item.percentComplete}% complete · ` : ''}Refreshed ${relativeTime(item.lastRefreshedAt)}`}
-                </p>
+                </div>
               </button>
             ))}
           </div>

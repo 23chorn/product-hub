@@ -3,14 +3,14 @@ import type { ReactNode } from 'react';
 // ── Shared visual primitives used across EpicFeaturesView, BacklogView, and
 //    the tab shells — change here and every panel updates automatically. ──────
 
-export function Chevron({ expanded, className = 'w-3.5 h-3.5 text-surface-400' }: { expanded: boolean; className?: string }) {
+/** Collapse/expand indicator — a unicode glyph rather than an SVG, matching the glyph-based
+ *  status icons used throughout workflow/pipeline-terminal (StatusIcon, EVENT_CFG). Swaps
+ *  glyph shape on toggle instead of rotating, so no transform/transition is needed. */
+export function Chevron({ expanded, className = 'w-3.5 text-surface-400' }: { expanded: boolean; className?: string }) {
   return (
-    <svg
-      className={`${className} flex-shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`}
-      fill="none" viewBox="0 0 24 24" stroke="currentColor"
-    >
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-    </svg>
+    <span className={`${className} flex-shrink-0 inline-block text-center font-mono leading-none select-none`} aria-hidden="true">
+      {expanded ? '▾' : '▸'}
+    </span>
   );
 }
 
@@ -27,6 +27,61 @@ export function InitiativeHeader({ title }: { title?: string }) {
 export function PhaseTag({ label, colorClass }: { label: string; colorClass: string }) {
   return (
     <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${colorClass}`}>{label}</span>
+  );
+}
+
+/** Terminal-window title-bar strip for a collapsible card header — mono label on the left,
+ *  a right-aligned mono readout on the right. Mirrors the seq-number/updated-at strip on
+ *  home/InitiativeCard.tsx, applied here to Epic-level cards (the top of the hierarchy, where
+ *  a persistent chrome bar reads best). */
+export function ChromeStrip({ left, right }: { left: ReactNode; right?: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900/40 font-mono text-[10px]">
+      <span className="font-semibold uppercase tracking-widest text-surface-500 dark:text-surface-400 truncate">{left}</span>
+      {right != null && <span className="flex-shrink-0 text-surface-400 dark:text-surface-500">{right}</span>}
+    </div>
+  );
+}
+
+/** Dot + mono label — status readout used in place of a solid-fill pill (effort, dependency,
+ *  test-type/priority). `dotClass` sets the indicator color; `textClass` colors the label to
+ *  match without filling a background, so a row of these reads as a terminal status line
+ *  rather than a row of colored tags. */
+export function DotLabel({ label, dotClass, textClass = 'text-surface-600 dark:text-surface-400' }: {
+  label: ReactNode;
+  dotClass: string;
+  textClass?: string;
+}) {
+  return (
+    <span className={`inline-flex items-center gap-1.5 font-mono text-[10px] ${textClass}`}>
+      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotClass}`} />
+      {label}
+    </span>
+  );
+}
+
+/** Feature-level "deferred to / depends on / parallel" badges — identical logic previously
+ *  duplicated between EpicFeaturesView's FeatureCard and BacklogView's renderFeatureRow.
+ *  `dependsOn` being present means the feature is gated on those titles (sequential); its
+ *  absence means the feature can run in parallel with its siblings. */
+export function FeatureDependencyBadges({ deferredTo, dependsOn }: { deferredTo?: string | null; dependsOn?: string[] }) {
+  return (
+    <>
+      {deferredTo && (
+        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-500 flex-shrink-0">
+          → {deferredTo}
+        </span>
+      )}
+      {(dependsOn?.length ?? 0) > 0 ? (
+        <DotLabel
+          dotClass="bg-surface-400 dark:bg-surface-500"
+          textClass="text-surface-500 dark:text-surface-400"
+          label={<span title={`Cannot start until: ${dependsOn!.join(', ')}`}>→ after {dependsOn!.join(', ')}</span>}
+        />
+      ) : (
+        <DotLabel dotClass="bg-brand-400 dark:bg-brand-500" textClass="text-brand-600 dark:text-brand-400" label="parallel" />
+      )}
+    </>
   );
 }
 
@@ -49,19 +104,18 @@ export function ArtifactTabShell({ tabs, activeTab, onTabChange, children }: Art
   return (
     <div className="flex flex-col h-full min-h-0">
       {tabs.length > 1 && (
-        <div className="flex border-b border-surface-200 dark:border-surface-700 flex-shrink-0">
+        <div className="flex border-b border-surface-200 dark:border-surface-700 flex-shrink-0 font-mono text-[11px]">
           {tabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
-              className={`flex-1 px-4 py-2 text-xs font-medium transition-colors ${
+              className={`flex-1 px-4 py-2 lowercase transition-colors ${
                 activeTab === tab.id
-                  ? 'text-brand-600 dark:text-brand-400 border-b-2 border-brand-500'
+                  ? 'text-surface-900 dark:text-surface-100 bg-surface-50 dark:bg-surface-900/40 font-semibold'
                   : 'text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200'
               }`}
             >
-              {tab.label}
-              {tab.count != null && <span className="ml-1 opacity-60">({tab.count})</span>}
+              {activeTab === tab.id ? '[ ' : ''}{tab.label}{tab.count != null && <span className="opacity-60"> · {tab.count}</span>}{activeTab === tab.id ? ' ]' : ''}
             </button>
           ))}
         </div>
