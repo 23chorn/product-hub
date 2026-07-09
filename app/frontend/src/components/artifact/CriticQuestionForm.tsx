@@ -101,7 +101,7 @@ export function CriticQuestionForm({ questions, onSubmit, onCancel, loading }: C
                     value={answers[idx] ?? ''}
                     onChange={(e) => setAnswer(idx, e.target.value)}
                     placeholder="Type your answer..."
-                    className="w-full text-sm rounded-md border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 px-2.5 py-1.5 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                    className="w-full text-sm rounded-md border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 px-2.5 py-1.5 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-1 focus:ring-brand-500"
                   />
                 </>
               )}
@@ -119,7 +119,7 @@ export function CriticQuestionForm({ questions, onSubmit, onCancel, loading }: C
             onChange={(e) => setAdditionalFeedback(e.target.value)}
             placeholder="Any other notes for the specialist..."
             rows={2}
-            className="w-full text-sm resize-none rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 px-3 py-2 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            className="w-full text-sm resize-none rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 px-3 py-2 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-1 focus:ring-brand-500"
           />
         </div>
       </div>

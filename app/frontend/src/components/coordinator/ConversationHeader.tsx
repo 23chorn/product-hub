@@ -48,7 +48,7 @@ export function ConversationHeader(props: ConversationHeaderProps) {
   if (hasWorkflow) return null;
 
   return (
-    <div className="px-5 py-3 border-b border-surface-200 dark:border-surface-700 flex-shrink-0 bg-white/80 dark:bg-surface-900/80">
+    <div className="px-5 py-3 border-b border-surface-200 dark:border-surface-700 flex-shrink-0 bg-surface-50/80 dark:bg-surface-900/80">
       {/* Title row */}
       <div className="flex items-center gap-4 min-w-0">
         <div className="min-w-0 flex-1">

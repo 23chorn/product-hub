@@ -23,7 +23,7 @@ export function ResizeHandle({
       {onToggleCollapse && (
         <button
           onClick={onToggleCollapse}
-          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 left-1/2 z-10 w-4 h-8 flex items-center justify-center rounded bg-white dark:bg-surface-800 border border-surface-300 dark:border-surface-600 text-surface-400 hover:text-brand-600 dark:hover:text-brand-400 shadow-sm"
+          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 left-1/2 z-10 w-4 h-8 flex items-center justify-center rounded bg-surface-50 dark:bg-surface-800 border border-surface-300 dark:border-surface-600 text-surface-400 hover:text-brand-600 dark:hover:text-brand-400 shadow-sm"
           title={collapsed ? 'Expand' : 'Collapse'}
         >
           <svg className={`w-3 h-3 transition-transform ${pointsLeft ? '' : 'rotate-180'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">

@@ -309,7 +309,7 @@ export function CoordinatorChat() {
             if (!lastMsg || lastMsg.role !== 'coordinator' || lastMsg.eventType || lastMsg.isProgress) return null;
             const content = stripReadyMarker(lastMsg.content);
             return (
-              <div className="flex-shrink-0 border-t border-surface-200 dark:border-surface-800/60 bg-white dark:bg-[#0d1117] px-4 py-3">
+              <div className="flex-shrink-0 border-t border-surface-200 dark:border-surface-800/60 bg-white dark:bg-surface-900 px-4 py-3">
                 {!content ? (
                   <div className="flex items-center gap-2 text-[10px] text-surface-500 font-mono">
                     <span className="w-1.5 h-1.5 rounded-full bg-brand-500 animate-pulse" />

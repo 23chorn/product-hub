@@ -138,7 +138,7 @@ export function CommentsPanel({ itemId }: { itemId: string }) {
     : comments;
 
   return (
-    <div className="w-80 flex-shrink-0 border-l border-surface-200 dark:border-surface-800/80 flex flex-col bg-white dark:bg-[#0d1117] font-mono">
+    <div className="w-80 flex-shrink-0 border-l border-surface-200 dark:border-surface-800/80 flex flex-col bg-surface-50 dark:bg-surface-900 font-mono">
       {/* Header */}
       <div className="flex-shrink-0 px-3 pt-2 pb-0 border-b border-surface-200 dark:border-surface-800/80">
         <div className="flex items-center justify-between mb-2">

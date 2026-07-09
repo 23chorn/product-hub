@@ -130,7 +130,7 @@ export function SwaggerDocsPanel() {
                 value={editLabel}
                 onChange={(e) => setEditLabel(e.target.value)}
                 placeholder="Label"
-                className="w-full text-sm bg-white dark:bg-surface-900 border border-surface-300 dark:border-surface-600 rounded px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                className="w-full text-sm bg-surface-50 dark:bg-surface-900 border border-surface-300 dark:border-surface-600 rounded px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
               />
               <p className="text-xs text-surface-400 font-mono break-all">{doc.docUrl}</p>
               <div className="flex justify-end gap-2">
@@ -205,13 +205,13 @@ export function SwaggerDocsPanel() {
             value={form.label}
             onChange={(e) => setForm({ ...form, label: e.target.value })}
             placeholder="Label (e.g. Payments API)"
-            className="w-full text-sm bg-white dark:bg-surface-900 border border-surface-300 dark:border-surface-600 rounded px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            className="w-full text-sm bg-surface-50 dark:bg-surface-900 border border-surface-300 dark:border-surface-600 rounded px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
           />
           <input
             value={form.docUrl}
             onChange={(e) => setForm({ ...form, docUrl: e.target.value })}
             placeholder="Raw OpenAPI/Swagger JSON URL (e.g. https://api.example.com/swagger/v1/swagger.json)"
-            className="w-full text-sm bg-white dark:bg-surface-900 border border-surface-300 dark:border-surface-600 rounded px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            className="w-full text-sm bg-surface-50 dark:bg-surface-900 border border-surface-300 dark:border-surface-600 rounded px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
           />
           <div className="flex justify-end gap-2">
             <button

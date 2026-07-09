@@ -130,19 +130,19 @@ export function KnowledgeRepoPanel() {
                 value={editForm.label}
                 onChange={(e) => setEditForm({ ...editForm, label: e.target.value })}
                 placeholder="Label"
-                className="w-full text-sm bg-white dark:bg-surface-900 border border-surface-300 dark:border-surface-600 rounded px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                className="w-full text-sm bg-surface-50 dark:bg-surface-900 border border-surface-300 dark:border-surface-600 rounded px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
               />
               <input
                 value={editForm.branch}
                 onChange={(e) => setEditForm({ ...editForm, branch: e.target.value })}
                 placeholder="Branch (optional — defaults to the repo's default branch)"
-                className="w-full text-sm bg-white dark:bg-surface-900 border border-surface-300 dark:border-surface-600 rounded px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                className="w-full text-sm bg-surface-50 dark:bg-surface-900 border border-surface-300 dark:border-surface-600 rounded px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
               />
               <input
                 value={editForm.project}
                 onChange={(e) => setEditForm({ ...editForm, project: e.target.value })}
                 placeholder="Azure DevOps project (optional — defaults to the configured project)"
-                className="w-full text-sm bg-white dark:bg-surface-900 border border-surface-300 dark:border-surface-600 rounded px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                className="w-full text-sm bg-surface-50 dark:bg-surface-900 border border-surface-300 dark:border-surface-600 rounded px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
               />
               <p className="text-xs text-surface-400 font-mono">{repo.repository}</p>
               <div className="flex justify-end gap-2">
@@ -202,25 +202,25 @@ export function KnowledgeRepoPanel() {
             value={form.label}
             onChange={(e) => setForm({ ...form, label: e.target.value })}
             placeholder="Label (e.g. Web Frontend)"
-            className="w-full text-sm bg-white dark:bg-surface-900 border border-surface-300 dark:border-surface-600 rounded px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            className="w-full text-sm bg-surface-50 dark:bg-surface-900 border border-surface-300 dark:border-surface-600 rounded px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
           />
           <input
             value={form.repository}
             onChange={(e) => setForm({ ...form, repository: e.target.value })}
             placeholder="Azure DevOps repository name (e.g. xCube-Web)"
-            className="w-full text-sm bg-white dark:bg-surface-900 border border-surface-300 dark:border-surface-600 rounded px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            className="w-full text-sm bg-surface-50 dark:bg-surface-900 border border-surface-300 dark:border-surface-600 rounded px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
           />
           <input
             value={form.branch}
             onChange={(e) => setForm({ ...form, branch: e.target.value })}
             placeholder="Branch (optional — defaults to the repo's default branch)"
-            className="w-full text-sm bg-white dark:bg-surface-900 border border-surface-300 dark:border-surface-600 rounded px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            className="w-full text-sm bg-surface-50 dark:bg-surface-900 border border-surface-300 dark:border-surface-600 rounded px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
           />
           <input
             value={form.project}
             onChange={(e) => setForm({ ...form, project: e.target.value })}
             placeholder="Azure DevOps project (optional — only if different from the configured project)"
-            className="w-full text-sm bg-white dark:bg-surface-900 border border-surface-300 dark:border-surface-600 rounded px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            className="w-full text-sm bg-surface-50 dark:bg-surface-900 border border-surface-300 dark:border-surface-600 rounded px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
           />
           <div className="flex justify-end gap-2">
             <button

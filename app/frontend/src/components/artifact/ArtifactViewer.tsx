@@ -312,7 +312,7 @@ export function ArtifactViewer() {
       }`}>
         {/* Issues panel — far left, toggled from review header */}
         {showCriticPanel && showIssuesPanel && hasIssues && (
-          <div className="w-[340px] flex-shrink-0 bg-white dark:bg-surface-800 shadow-xl flex flex-col border-r border-surface-200 dark:border-surface-700">
+          <div className="w-[340px] flex-shrink-0 bg-surface-50 dark:bg-surface-800 shadow-xl flex flex-col border-r border-surface-200 dark:border-surface-700">
             <div className="px-4 py-3 border-b border-surface-200 dark:border-surface-700 flex-shrink-0 flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-semibold text-surface-900 dark:text-surface-100">
@@ -390,7 +390,7 @@ export function ArtifactViewer() {
         )}
 
         {/* Artifact drawer — right side (or only panel) */}
-        <div className="flex-1 bg-white dark:bg-surface-800 shadow-xl flex flex-col overflow-hidden">
+        <div className="flex-1 bg-surface-50 dark:bg-surface-800 shadow-xl flex flex-col overflow-hidden">
           {/* Header */}
           <div className="px-4 py-3 border-b border-surface-200 dark:border-surface-700 flex items-center justify-between flex-shrink-0">
             <div>
@@ -560,7 +560,7 @@ export function ArtifactViewer() {
                       <textarea
                         value={editContent}
                         onChange={(e) => setEditContent(e.target.value)}
-                        className="w-full flex-1 min-h-0 text-sm font-mono resize-none bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 border border-surface-200 dark:border-surface-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                        className="w-full flex-1 min-h-0 text-sm font-mono resize-none bg-surface-50 dark:bg-surface-800 text-surface-900 dark:text-surface-100 border border-surface-200 dark:border-surface-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-brand-500"
                         spellCheck={false}
                       />
                     ) : isFigmaDesign && figmaDesign && content ? (
@@ -626,7 +626,7 @@ export function ArtifactViewer() {
                 )}
                 {/* Persona panel — positioned absolutely so it doesn't affect content centering */}
                 {showPersonaPanel && (
-                  <div className="absolute top-0 right-0 w-80 h-full overflow-y-auto border-l border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 p-3">
+                  <div className="absolute top-0 right-0 w-80 h-full overflow-y-auto border-l border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 p-3">
                     <PersonaPanel personas={extractPersonas(backlogData)} />
                   </div>
                 )}
@@ -715,7 +715,7 @@ export function ArtifactViewer() {
                     onChange={(e) => setFeedback(e.target.value)}
                     placeholder="What needs to change? Be specific."
                     rows={3}
-                    className="w-full text-sm resize-none rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-surface-800 px-3 py-2 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    className="w-full text-sm resize-none rounded-lg border border-amber-300 dark:border-amber-700 bg-surface-50 dark:bg-surface-800 px-3 py-2 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
                   />
                   <div className="flex gap-2">
                     <button

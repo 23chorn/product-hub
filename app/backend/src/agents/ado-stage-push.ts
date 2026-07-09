@@ -297,7 +297,12 @@ export async function pushTestPlanToAdo(workflowId: string, itemId: string): Pro
     const { getAzureDevOpsClient } = require('../integrations/azure-devops');
     const client = getAzureDevOpsClient();
 
+    // Airtable's "Test Plan" field and the checkpoint's own summary/stamp are single-URL —
+    // prefer the MVP ("epic") plan when one exists, but fall back to the first plan pushed
+    // so phase-only work (e.g. a change request scoped entirely to Phase 2) still surfaces
+    // a link instead of leaving it permanently null.
     let mainPlanUrl: string | null = null;
+    let sawEpicGroup = false;
     const now = Date.now();
 
     for (const [epicLocalKey, groupTestCases] of groups) {
@@ -334,7 +339,12 @@ export async function pushTestPlanToAdo(workflowId: string, itemId: string): Pro
         `${groupTestCases.length} test case(s) pushed to the ${planLabel} Test Plan at ${result.planUrl}`,
         { ado_url: result.planUrl });
 
-      if (epicLocalKey === 'epic') mainPlanUrl = result.planUrl;
+      if (epicLocalKey === 'epic') {
+        mainPlanUrl = result.planUrl;
+        sawEpicGroup = true;
+      } else if (!sawEpicGroup && mainPlanUrl === null) {
+        mainPlanUrl = result.planUrl;
+      }
     }
 
     const itemRow = db.prepare<[string], { airtable_id: string | null }>('SELECT airtable_id FROM items WHERE id = ?').get(itemId);

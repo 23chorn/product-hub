@@ -66,7 +66,7 @@ export function HomeHeader({
           onChange={e => onSearchChange(e.target.value)}
           onKeyDown={e => { if (e.key === 'Escape') onSearchChange(''); }}
           placeholder="search initiatives…"
-          className="w-full pl-8 pr-7 py-1.5 text-sm font-mono border border-surface-300 dark:border-surface-600 rounded-md bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          className="w-full pl-8 pr-7 py-1.5 text-sm font-mono border border-surface-300 dark:border-surface-600 rounded-md bg-surface-50 dark:bg-surface-800 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
         />
         {searchQuery && (
           <button
@@ -99,10 +99,10 @@ export function HomeHeader({
                     ? 'bg-violet-600 border-violet-600 text-white font-medium'
                     : 'bg-brand-600 border-brand-600 text-white font-medium'
                   : isMine && myPendingCount > 0
-                    ? 'bg-white dark:bg-surface-800 border-sky-300 dark:border-sky-700 text-sky-600 dark:text-sky-400 hover:border-sky-400'
+                    ? 'bg-surface-50 dark:bg-surface-800 border-sky-300 dark:border-sky-700 text-sky-600 dark:text-sky-400 hover:border-sky-400'
                     : isAssigned && count > 0
-                    ? 'bg-white dark:bg-surface-800 border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400 hover:border-violet-400'
-                    : 'bg-white dark:bg-surface-800 border-surface-300 dark:border-surface-600 text-surface-500 dark:text-surface-400 hover:border-surface-400 dark:hover:border-surface-500'
+                    ? 'bg-surface-50 dark:bg-surface-800 border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400 hover:border-violet-400'
+                    : 'bg-surface-50 dark:bg-surface-800 border-surface-300 dark:border-surface-600 text-surface-500 dark:text-surface-400 hover:border-surface-400 dark:hover:border-surface-500'
               }`}
             >
               [{f.label}{(count > 0) && ` ${count}`}]
@@ -119,7 +119,7 @@ export function HomeHeader({
               ? statusFilter === 'review'
                 ? 'bg-amber-600 border-amber-600 text-white font-medium'
                 : 'bg-brand-600 border-brand-600 text-white font-medium'
-              : 'bg-white dark:bg-surface-800 border-surface-300 dark:border-surface-600 text-surface-500 dark:text-surface-400'
+              : 'bg-surface-50 dark:bg-surface-800 border-surface-300 dark:border-surface-600 text-surface-500 dark:text-surface-400'
           }`}
         >
           <option value="_more" disabled hidden>More filters</option>

@@ -60,7 +60,7 @@ export function FileHistoryPanel({ fileId }: { fileId: number }) {
       {commits.map((commit) => {
         const isExpanded = expandedCommit === commit.commitId;
         return (
-          <div key={commit.commitId} className="rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 p-3">
+          <div key={commit.commitId} className="rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 p-3">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="text-sm text-surface-800 dark:text-surface-200 truncate">{commit.message || '(no commit message)'}</p>

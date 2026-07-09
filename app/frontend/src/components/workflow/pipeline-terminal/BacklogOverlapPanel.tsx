@@ -146,7 +146,7 @@ export function BacklogOverlapPanel({ workflowId, onClose }: Props) {
   const violationCount = flags.filter(f => f.flagType === 'scope_violation').length;
 
   return (
-    <div className="bg-white dark:bg-surface-900 rounded-xl shadow-2xl border border-surface-200 dark:border-surface-700 w-full max-w-3xl max-h-[80vh] flex flex-col">
+    <div className="bg-surface-50 dark:bg-surface-900 rounded-xl shadow-2xl border border-surface-200 dark:border-surface-700 w-full max-w-3xl max-h-[80vh] flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-surface-200 dark:border-surface-700 flex-shrink-0">
         <div>

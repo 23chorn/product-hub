@@ -161,7 +161,12 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
     }
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
     if (nearBottom) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [coordinatorMessages.length]);
+    // checkpoints and artifacts arrive from their own separate fetches, after
+    // coordinatorMessages — checkpoint cards grow the scrollable log itself, and the
+    // artifacts footer (sibling, sticky) shrinks the log's available height. Without
+    // these in the deps, the initial snap fires before that content mounts and leaves
+    // a gap at the bottom.
+  }, [coordinatorMessages.length, checkpoints.length, artifacts.length]);
 
   // Poll workflow status while running
   useEffect(() => {
@@ -540,6 +545,9 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
             const pendingArtifactId = pendingCp && !isStaleRecoveryCheckpoint(pendingCp.coordinator_action)
               ? pendingCp.artifact_id : null;
             const stageArtifactId = approvedCp?.artifact_id ?? pendingArtifactId ?? anyWithArtifact?.artifact_id ?? null;
+            const stageArtifact = approvedCp?.artifact
+              ?? (pendingCp && !isStaleRecoveryCheckpoint(pendingCp.coordinator_action) ? pendingCp.artifact : null)
+              ?? anyWithArtifact?.artifact ?? null;
 
             return (
               <div
@@ -554,6 +562,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                   status={status}
                   artifactId={stageArtifactId}
                   onViewOutput={setViewingArtifactId}
+                  wikiUrl={stageArtifact?.wiki_url}
                 />
                 {msgs.map((msg, i) => (
                   <EventRow key={i} msg={msg} />
@@ -788,7 +797,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
 
       {showDescription && selectedItem?.description && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 dark:bg-black/50" onClick={() => setShowDescription(false)}>
-          <div className="w-full max-w-2xl mx-4 bg-white dark:bg-surface-900 rounded-xl shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-2xl mx-4 bg-surface-50 dark:bg-surface-900 rounded-xl shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-4 border-b border-surface-200 dark:border-surface-700 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100">Initial Description</h3>
               <button

@@ -40,7 +40,7 @@ export function VersionInfo() {
 
       {showDetails && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 dark:bg-black/50 px-4" onClick={() => setShowDetails(false)}>
-          <div className="bg-white dark:bg-surface-800 rounded-lg shadow-xl border border-surface-200 dark:border-surface-700 p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
+          <div className="bg-surface-50 dark:bg-surface-800 rounded-lg shadow-xl border border-surface-200 dark:border-surface-700 p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-surface-900 dark:text-surface-100">Version Info</h3>
               <button

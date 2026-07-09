@@ -103,7 +103,7 @@ export function SkillManagerSidebar({
   };
 
   return (
-    <nav className="w-full h-full border-r border-surface-200 dark:border-surface-700 flex flex-col flex-shrink-0 bg-white dark:bg-surface-800/50 overflow-y-auto">
+    <nav className="w-full h-full border-r border-surface-200 dark:border-surface-700 flex flex-col flex-shrink-0 bg-surface-50/50 dark:bg-surface-800/50 overflow-y-auto">
       {isLoading ? (
         <div className="p-4 text-xs text-surface-400">Loading…</div>
       ) : (

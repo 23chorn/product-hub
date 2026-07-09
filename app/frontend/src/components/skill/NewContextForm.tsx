@@ -20,7 +20,7 @@ export function NewContextForm({ form, setForm, onSubmit, onCancel, isCreating }
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="px-5 py-3 border-b border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/30 flex-shrink-0">
+      <div className="px-5 py-3 border-b border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/30 flex-shrink-0">
         <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100">New Context File</h3>
         <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
           Injected into every agent's system prompt as background context.
@@ -35,7 +35,7 @@ export function NewContextForm({ form, setForm, onSubmit, onCancel, isCreating }
               value={form.label}
               onChange={(e) => field('label', e.target.value)}
               placeholder="e.g. Competitive Landscape"
-              className="w-full px-3 py-1.5 text-sm rounded-md border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              className="w-full px-3 py-1.5 text-sm rounded-md border border-surface-300 dark:border-surface-600 bg-surface-50 dark:bg-surface-800 text-surface-900 dark:text-surface-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
             {previewFileName && (
               <p className="mt-1 text-xs text-surface-400 font-mono">{previewFileName}</p>
@@ -47,7 +47,7 @@ export function NewContextForm({ form, setForm, onSubmit, onCancel, isCreating }
               value={form.description}
               onChange={(e) => field('description', e.target.value)}
               placeholder="e.g. Key competitors and market positioning"
-              className="w-full px-3 py-1.5 text-sm rounded-md border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              className="w-full px-3 py-1.5 text-sm rounded-md border border-surface-300 dark:border-surface-600 bg-surface-50 dark:bg-surface-800 text-surface-900 dark:text-surface-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
           </div>
         </div>
@@ -66,7 +66,7 @@ export function NewContextForm({ form, setForm, onSubmit, onCancel, isCreating }
         </div>
       </div>
 
-      <div className="px-5 py-3 border-t border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/30 flex items-center justify-end space-x-2 flex-shrink-0">
+      <div className="px-5 py-3 border-t border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/30 flex items-center justify-end space-x-2 flex-shrink-0">
         <button
           onClick={onCancel}
           className="text-xs px-3 py-1.5 rounded-md border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-700 transition-colors"

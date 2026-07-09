@@ -2,6 +2,7 @@ import { useState, useRef, useImperativeHandle, forwardRef } from 'react';
 import type { CompletedInitiativeDetail, CompletedInitiativeWorkItemRow, TestCase } from '@pap/shared';
 import { api } from '../../services/api';
 import { WORK_ITEM_STATE_BUCKET_COLORS, WORK_ITEM_STATE_BUCKET_LABELS } from '../../utils/work-item-state-bucket';
+import { DotLabel } from '../artifact/ArtifactPrimitives';
 
 interface Props {
   items: CompletedInitiativeWorkItemRow[];
@@ -89,16 +90,18 @@ const WorkItemRow = forwardRef<WorkItemRowHandle, {
     <div className={compact ? '' : 'border border-surface-200 dark:border-surface-700 rounded-lg overflow-hidden'}>
       {/* Full row with type badge, title, state, and action buttons (non-compact only) */}
       {!compact && (
-        <div className="flex items-center gap-2 px-3 py-2.5 bg-white dark:bg-surface-800/50">
+        <div className="flex items-center gap-2 px-3 py-2.5 bg-surface-50 dark:bg-surface-800/50">
           <span className={`flex-shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded ${TYPE_COLOR[item.adoType] ?? TYPE_COLOR.story}`}>
             {TYPE_LABEL[item.adoType] ?? item.adoType}
           </span>
           <span className="flex-shrink-0 text-[10px] font-mono text-surface-400 dark:text-surface-500 w-14 truncate">{item.localKey}</span>
           <span className="flex-1 min-w-0 text-xs text-surface-800 dark:text-surface-100 truncate">{item.title}</span>
           {item.stateBucket && (
-            <span className={`flex-shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${WORK_ITEM_STATE_BUCKET_COLORS[item.stateBucket]}`}>
-              {item.state ?? WORK_ITEM_STATE_BUCKET_LABELS[item.stateBucket]}
-            </span>
+            <DotLabel
+              dotClass={WORK_ITEM_STATE_BUCKET_COLORS[item.stateBucket].dot}
+              textClass={`flex-shrink-0 ${WORK_ITEM_STATE_BUCKET_COLORS[item.stateBucket].text}`}
+              label={item.state ?? WORK_ITEM_STATE_BUCKET_LABELS[item.stateBucket]}
+            />
           )}
           {mode === 'view' && (
             <div className="flex items-center gap-1 flex-shrink-0">
@@ -132,7 +135,7 @@ const WorkItemRow = forwardRef<WorkItemRowHandle, {
               type="text"
               value={editTitle}
               onChange={e => setEditTitle(e.target.value)}
-              className="w-full text-xs px-2 py-1.5 rounded border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 focus:outline-none focus:border-brand-400"
+              className="w-full text-xs px-2 py-1.5 rounded border border-surface-300 dark:border-surface-600 bg-surface-50 dark:bg-surface-800 text-surface-900 dark:text-surface-100 focus:outline-none focus:border-brand-400"
             />
           </div>
           <div>
@@ -144,7 +147,7 @@ const WorkItemRow = forwardRef<WorkItemRowHandle, {
               onChange={e => setEditDescription(e.target.value)}
               placeholder="Replaces the current ADO description…"
               rows={3}
-              className="w-full text-xs px-2 py-1.5 rounded border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 placeholder:text-surface-400 resize-none focus:outline-none focus:border-brand-400"
+              className="w-full text-xs px-2 py-1.5 rounded border border-surface-300 dark:border-surface-600 bg-surface-50 dark:bg-surface-800 text-surface-900 dark:text-surface-100 placeholder:text-surface-400 resize-none focus:outline-none focus:border-brand-400"
             />
           </div>
           {error && <p className="text-[10px] text-red-600 dark:text-red-400">{error}</p>}
@@ -351,9 +354,11 @@ function FeatureSection({
         </button>
         <div className="flex items-center gap-1 flex-shrink-0">
           {feature.stateBucket && (
-            <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${WORK_ITEM_STATE_BUCKET_COLORS[feature.stateBucket]}`}>
-              {feature.state ?? WORK_ITEM_STATE_BUCKET_LABELS[feature.stateBucket]}
-            </span>
+            <DotLabel
+              dotClass={WORK_ITEM_STATE_BUCKET_COLORS[feature.stateBucket].dot}
+              textClass={WORK_ITEM_STATE_BUCKET_COLORS[feature.stateBucket].text}
+              label={feature.state ?? WORK_ITEM_STATE_BUCKET_LABELS[feature.stateBucket]}
+            />
           )}
           {feature.adoUrl && (
             <a href={feature.adoUrl} target="_blank" rel="noreferrer"
@@ -417,9 +422,11 @@ function EpicSection({
         </button>
         <div className="flex items-center gap-1 flex-shrink-0">
           {epic.stateBucket && (
-            <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${WORK_ITEM_STATE_BUCKET_COLORS[epic.stateBucket]}`}>
-              {epic.state ?? WORK_ITEM_STATE_BUCKET_LABELS[epic.stateBucket]}
-            </span>
+            <DotLabel
+              dotClass={WORK_ITEM_STATE_BUCKET_COLORS[epic.stateBucket].dot}
+              textClass={WORK_ITEM_STATE_BUCKET_COLORS[epic.stateBucket].text}
+              label={epic.state ?? WORK_ITEM_STATE_BUCKET_LABELS[epic.stateBucket]}
+            />
           )}
           {epic.adoUrl && (
             <a href={epic.adoUrl} target="_blank" rel="noreferrer"
@@ -547,7 +554,7 @@ function TcGroupSection({
       {!collapsed && (
         <div className="divide-y divide-surface-100 dark:divide-surface-700/60">
           {group.cases.map(tc => (
-            <div key={tc.id || tc.title} className="flex items-center gap-2 px-3 py-2.5 bg-white dark:bg-surface-800/50">
+            <div key={tc.id || tc.title} className="flex items-center gap-2 px-3 py-2.5 bg-surface-50 dark:bg-surface-800/50">
               {tc.type && (
                 <span className={`flex-shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded ${TC_TYPE_COLOR[tc.type] ?? TC_TYPE_COLOR.edge}`}>
                   {tc.type.replace(/_/g, ' ')}

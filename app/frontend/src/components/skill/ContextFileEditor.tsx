@@ -34,7 +34,7 @@ export function ContextFileEditor({
 
   return (
     <>
-      <div className="px-5 py-3 border-b border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/30 flex-shrink-0">
+      <div className="px-5 py-3 border-b border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/30 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100">{file.label}</h3>
@@ -126,7 +126,7 @@ export function ContextFileEditor({
         )}
       </div>
 
-      <div className="px-5 py-3 border-t border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/30 flex items-center justify-between flex-shrink-0">
+      <div className="px-5 py-3 border-t border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/30 flex items-center justify-between flex-shrink-0">
         <span className={`text-xs ${!canEdit ? 'text-surface-400' : isDirty ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-surface-400'}`}>
           {!canEdit ? 'Read only — insufficient role' : isDirty ? 'Unsaved changes' : 'No changes'}
         </span>

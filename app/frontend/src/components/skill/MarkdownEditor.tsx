@@ -47,12 +47,12 @@ export function MarkdownEditor({
         placeholder={placeholder}
         spellCheck={false}
         readOnly={readOnly}
-        className={`w-1/2 h-full resize-none rounded-lg border text-surface-900 dark:text-surface-100 font-mono text-sm p-4 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent ${readOnly ? 'border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/40 cursor-default' : 'border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800'}`}
+        className={`w-1/2 h-full resize-none rounded-lg border text-surface-900 dark:text-surface-100 font-mono text-sm p-4 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent ${readOnly ? 'border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/40 cursor-default' : 'border-surface-300 dark:border-surface-600 bg-surface-50 dark:bg-surface-800'}`}
       />
       <div
         ref={previewRef}
         onScroll={syncFromPreview}
-        className="w-1/2 h-full overflow-y-auto rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/60 p-4"
+        className="w-1/2 h-full overflow-y-auto rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/60 p-4"
       >
         {value.trim() ? (
           <MarkdownContent breaks>{value}</MarkdownContent>

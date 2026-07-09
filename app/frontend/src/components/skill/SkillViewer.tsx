@@ -23,7 +23,7 @@ export function SkillViewer({
   return (
     <>
       {/* Header */}
-      <div className="px-5 py-3 border-b border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/30 flex-shrink-0">
+      <div className="px-5 py-3 border-b border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/30 flex-shrink-0">
         <div className="flex items-center gap-2 flex-wrap">
           <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100">{displayName}</h3>
           <span className="text-xs px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400 font-mono">
@@ -51,7 +51,7 @@ export function SkillViewer({
       </div>
 
       {/* Footer */}
-      <div className="px-5 py-3 border-t border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/30 flex-shrink-0">
+      <div className="px-5 py-3 border-t border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/30 flex-shrink-0">
         <div className="flex items-center justify-between">
           <span className={`text-xs ${!canEdit ? 'text-surface-400' : isDirty ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-surface-400'}`}>
             {!canEdit ? 'Read only — insufficient role' : isDirty ? 'Unsaved changes' : 'No changes'}

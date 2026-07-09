@@ -365,26 +365,44 @@ interface ExportPayloadTicket {
   nonFunctionalRequirements: NonFunctionalRequirement[];
 }
 
+/** Groups tickets by their owning feature's local key ('unknown' for orphans),
+ *  used by both the context and plan markdown builders. */
+function groupTicketsByFeature<T extends { featureLocalKey: string | null }>(tickets: T[]): Map<string, T[]> {
+  const byFeature = new Map<string, T[]>();
+  for (const t of tickets) {
+    const fk = t.featureLocalKey ?? 'unknown';
+    if (!byFeature.has(fk)) byFeature.set(fk, []);
+    byFeature.get(fk)!.push(t);
+  }
+  return byFeature;
+}
+
+/** Renders "depends on KEY — Title, KEY2 — Title2" for a blocked ticket's out-of-scope
+ *  dependencies, falling back to the bare key when the dependency's title can't be
+ *  resolved (e.g. a stale/removed local key). */
+function formatBlockedReason(depKeys: string[], localKeyToTitle: Map<string, string>): string {
+  return depKeys.map(key => {
+    const title = localKeyToTitle.get(key);
+    return title ? `${key} — ${title}` : key;
+  }).join(', ');
+}
+
 function buildContextMarkdown(
   initiative: { seqNum: number; title: string; context: Record<string, any> | null },
   epic: { title: string; adoId: number; adoUrl: string | null; description: string | null; businessValue: string | null } | null,
   features: Array<{ localKey: string; title: string; description: string | null; totalPoints: number }>,
   tickets: Array<{ localKey: string; featureLocalKey: string | null }>,
   implementationOrder: string[],
-  blockedTickets: string[],
+  blockedReasons: Map<string, string[]>,
+  localKeyToTitle: Map<string, string>,
   payloadByKey: Map<string, ExportPayloadTicket>,
   stream: string,
   phase: string,
 ): string {
   const ctx = initiative.context;
   const date = new Date().toISOString().split('T')[0];
-  const blockedSet = new Set(blockedTickets);
-  const ticketsByFeature = new Map<string, typeof tickets>();
-  for (const t of tickets) {
-    const fk = t.featureLocalKey ?? 'unknown';
-    if (!ticketsByFeature.has(fk)) ticketsByFeature.set(fk, []);
-    ticketsByFeature.get(fk)!.push(t);
-  }
+  const blockedSet = new Set(blockedReasons.keys());
+  const ticketsByFeature = groupTicketsByFeature(tickets);
 
   const lines: string[] = [
     `# Pipeline Context — Initiative #${initiative.seqNum}: ${initiative.title}`,
@@ -487,7 +505,8 @@ function buildContextMarkdown(
     for (const ticket of blockedForFeature) {
       const pts = (ticket as any).estimatedPoints;
       const ptsStr = pts != null ? ` (${pts} pts)` : '';
-      lines.push(`#### ~~${ticket.localKey} — ${(ticket as any).title ?? ticket.localKey}${ptsStr}~~ *(blocked — cross-stream dependency)*`);
+      const reason = formatBlockedReason(blockedReasons.get(ticket.localKey) ?? [], localKeyToTitle);
+      lines.push(`#### ~~${ticket.localKey} — ${(ticket as any).title ?? ticket.localKey}${ptsStr}~~ *(blocked — depends on ${reason})*`);
       lines.push('', '---', '');
     }
   }
@@ -506,21 +525,17 @@ function buildPlanMarkdown(
   features: Array<{ localKey: string; title: string; totalPoints: number }>,
   tickets: Array<{ localKey: string; featureLocalKey: string | null }>,
   implementationOrder: string[],
-  blockedTickets: string[],
+  blockedReasons: Map<string, string[]>,
+  localKeyToTitle: Map<string, string>,
   payloadByKey: Map<string, ExportPayloadTicket>,
   stream: string,
   phase: string,
 ): string {
   const date = new Date().toISOString().split('T')[0];
   const total = implementationOrder.length;
-  const blockedSet = new Set(blockedTickets);
+  const blockedSet = new Set(blockedReasons.keys());
   const orderedSet = new Set(implementationOrder);
-  const ticketsByFeature = new Map<string, typeof tickets>();
-  for (const t of tickets) {
-    const fk = t.featureLocalKey ?? 'unknown';
-    if (!ticketsByFeature.has(fk)) ticketsByFeature.set(fk, []);
-    ticketsByFeature.get(fk)!.push(t);
-  }
+  const ticketsByFeature = groupTicketsByFeature(tickets);
 
   const lines: string[] = [
     `# Implementation Plan — Initiative #${initiative.seqNum}: ${initiative.title}`,
@@ -558,11 +573,12 @@ function buildPlanMarkdown(
       const ptsStr = pts != null ? ` [${pts}pt]` : '';
       const adoId = (ticket as any).adoId;
       const adoStr = adoId ? ` — ADO #${adoId}` : '';
-      lines.push(`- ~~${ticket.localKey} — ${(ticket as any).title ?? ticket.localKey}${ptsStr}${adoStr}~~ *(blocked)*`);
+      const reason = formatBlockedReason(blockedReasons.get(ticket.localKey) ?? [], localKeyToTitle);
+      lines.push(`- ~~${ticket.localKey} — ${(ticket as any).title ?? ticket.localKey}${ptsStr}${adoStr}~~ *(blocked — depends on ${reason})*`);
     }
 
     if (otherStream.length > 0) {
-      lines.push(`- *(${otherStream.length} ticket(s) in other streams)*`);
+      lines.push(`- *(${otherStream.length} ticket(s) in other streams: ${otherStream.map(t => t.localKey).join(', ')})*`);
     }
 
     lines.push('');
@@ -575,11 +591,11 @@ function buildPlanMarkdown(
     lines.push(`${i + 1}. ${key} — ${t?.title ?? key}`);
   });
 
-  if (blockedTickets.length > 0) {
+  if (blockedReasons.size > 0) {
     lines.push('', '## Blocked (cross-stream dependencies)');
-    for (const key of blockedTickets) {
-      const t = payloadByKey.get(key);
-      lines.push(`- ${key}${t ? ` — ${t.title}` : ''}`);
+    for (const [key, deps] of blockedReasons) {
+      const title = localKeyToTitle.get(key);
+      lines.push(`- ${key}${title ? ` — ${title}` : ''} *(depends on ${formatBlockedReason(deps, localKeyToTitle)})*`);
     }
   }
 
@@ -679,12 +695,18 @@ router.get('/:seqNum/pipeline-export', async (req: Request, res: Response) => {
     // Build implementation order
     const streamTicketKeys = new Set(allTickets.map(t => t.localKey));
     const blocked: string[] = [];
+    // Ticket → the specific dependency key(s) outside this stream/phase filter that are
+    // blocking it, so the export can say *why* (not just *that*) a ticket is blocked.
+    const blockedReasons = new Map<string, string[]>();
     const orderableTickets = allTickets.map(t => {
       const crossStream = t.dependsOn.filter((dep: string) => !streamTicketKeys.has(dep));
-      if (crossStream.length > 0) { blocked.push(t.localKey); return null; }
+      if (crossStream.length > 0) { blocked.push(t.localKey); blockedReasons.set(t.localKey, crossStream); return null; }
       return { localKey: t.localKey, dependsOn: t.dependsOn.filter((dep: string) => streamTicketKeys.has(dep)) };
     }).filter((t): t is { localKey: string; dependsOn: string[] } => t !== null);
     const implementationOrder = topoSortTickets(orderableTickets);
+    // Unfiltered by stream/phase — a blocking dependency usually lives in another
+    // stream or phase, so its title won't be in `allTickets`/`payloadByKey`.
+    const localKeyToTitle = new Map(storyRows.map(r => [r.local_key, r.title]));
 
     // Build full ticket payload for ordered tickets
     const prdContent = prdArtifactId != null ? await loadArtifactContentById(prdArtifactId) : null;
@@ -722,11 +744,11 @@ router.get('/:seqNum/pipeline-export', async (req: Request, res: Response) => {
 
     const context = buildContextMarkdown(
       { seqNum: initiative.seq_num, title: initiative.title, context: initiativeContext as any },
-      epic, features, allTickets, implementationOrder, blocked, payloadByKey, streamLabel, phaseLabel,
+      epic, features, allTickets, implementationOrder, blockedReasons, localKeyToTitle, payloadByKey, streamLabel, phaseLabel,
     );
     const plan = buildPlanMarkdown(
       { seqNum: initiative.seq_num, title: initiative.title },
-      features, allTickets, implementationOrder, blocked, payloadByKey, streamLabel, phaseLabel,
+      features, allTickets, implementationOrder, blockedReasons, localKeyToTitle, payloadByKey, streamLabel, phaseLabel,
     );
 
     res.json({ context, plan, seqNum: initiative.seq_num, title: initiative.title });

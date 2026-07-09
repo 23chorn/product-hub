@@ -80,7 +80,7 @@ export function SourceDocumentsPanel({
           <select
             value={sourceType}
             onChange={e => setSourceType(e.target.value as DiscoverySourceType)}
-            className="w-full px-2.5 py-1.5 rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 text-sm text-surface-900 dark:text-surface-100"
+            className="w-full px-2.5 py-1.5 rounded-lg border border-surface-300 dark:border-surface-600 bg-surface-50 dark:bg-surface-800 text-sm text-surface-900 dark:text-surface-100"
           >
             {SOURCE_TYPE_OPTIONS.map(t => (
               <option key={t} value={t}>{SOURCE_TYPE_LABELS[t]}</option>
@@ -91,14 +91,14 @@ export function SourceDocumentsPanel({
             value={title}
             onChange={e => setTitle(e.target.value)}
             placeholder="Title (e.g. Interview with Jane)"
-            className="w-full px-2.5 py-1.5 rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 text-sm text-surface-900 dark:text-surface-100 placeholder:text-surface-400"
+            className="w-full px-2.5 py-1.5 rounded-lg border border-surface-300 dark:border-surface-600 bg-surface-50 dark:bg-surface-800 text-sm text-surface-900 dark:text-surface-100 placeholder:text-surface-400"
           />
           <textarea
             value={content}
             onChange={e => setContent(e.target.value)}
             placeholder="Paste the interview notes, review text, or competitor notes..."
             rows={5}
-            className="w-full px-2.5 py-1.5 rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 text-sm text-surface-900 dark:text-surface-100 placeholder:text-surface-400 resize-none"
+            className="w-full px-2.5 py-1.5 rounded-lg border border-surface-300 dark:border-surface-600 bg-surface-50 dark:bg-surface-800 text-sm text-surface-900 dark:text-surface-100 placeholder:text-surface-400 resize-none"
           />
           <button
             onClick={handleAdd}

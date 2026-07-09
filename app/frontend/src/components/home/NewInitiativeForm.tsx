@@ -72,14 +72,14 @@ export function NewInitiativeForm({
           onChange={e => onTitleChange(e.target.value)}
           onKeyDown={e => { if (e.key === 'Escape') onCancel(); }}
           placeholder="initiative name"
-          className="w-full px-3 py-2 text-sm font-mono border border-brand-300 dark:border-brand-600 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 placeholder-surface-400"
+          className="w-full px-3 py-2 text-sm font-mono border border-brand-300 dark:border-brand-600 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-500 bg-surface-50 dark:bg-surface-800 text-surface-900 dark:text-surface-100 placeholder-surface-400"
         />
       </div>
 
       <div className="grid grid-cols-2 gap-2">
         <div>
           <FieldLabel>product area</FieldLabel>
-          <div className="flex items-center gap-2 px-3 py-2 border border-brand-300 dark:border-brand-600 rounded-md bg-white dark:bg-surface-800">
+          <div className="flex items-center gap-2 px-3 py-2 border border-brand-300 dark:border-brand-600 rounded-md bg-surface-50 dark:bg-surface-800">
             {PRODUCT_AREA_OPTIONS.map(opt => {
               const checked = splitProductAreas(productArea).includes(opt);
               return (
@@ -101,7 +101,7 @@ export function NewInitiativeForm({
           <select
             value={strategicTheme}
             onChange={e => onStrategicThemeChange(e.target.value)}
-            className="w-full px-3 py-2 text-sm font-mono border border-brand-300 dark:border-brand-600 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100"
+            className="w-full px-3 py-2 text-sm font-mono border border-brand-300 dark:border-brand-600 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-500 bg-surface-50 dark:bg-surface-800 text-surface-900 dark:text-surface-100"
           >
             <option value="" disabled>select a theme</option>
             {STRATEGIC_THEME_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
@@ -116,7 +116,7 @@ export function NewInitiativeForm({
           onChange={e => onDescriptionChange(e.target.value)}
           placeholder={`Describe the initiative in detail — who it's for, the core problem, key outcomes, scope, and constraints.\n\nThe richer the description, the less the coordinator needs to ask.`}
           rows={6}
-          className="w-full px-3 py-2 text-sm font-mono border border-brand-300 dark:border-brand-600 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-500 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 placeholder-surface-400 resize-none"
+          className="w-full px-3 py-2 text-sm font-mono border border-brand-300 dark:border-brand-600 rounded-md focus:outline-none focus:ring-2 focus:ring-brand-500 bg-surface-50 dark:bg-surface-800 text-surface-900 dark:text-surface-100 placeholder-surface-400 resize-none"
         />
       </div>
 
@@ -130,7 +130,7 @@ export function NewInitiativeForm({
         </button>
         <button
           onClick={onCancel}
-          className="px-4 py-2 text-xs font-mono font-medium bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-600 text-surface-600 dark:text-surface-400 rounded-md hover:bg-surface-50 dark:hover:bg-surface-700 transition-colors"
+          className="px-4 py-2 text-xs font-mono font-medium bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-600 text-surface-600 dark:text-surface-400 rounded-md hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
         >
           cancel
         </button>

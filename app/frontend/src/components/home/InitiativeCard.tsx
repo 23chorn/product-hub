@@ -145,7 +145,7 @@ export function InitiativeCard({
   return (
     <div
       onContextMenu={handleContextMenu}
-      className={`relative group rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/80 hover:border-brand-300 dark:hover:border-brand-600 transition-all overflow-hidden flex flex-col ${isExpanded ? 'h-auto' : 'h-64'} ${isComplete ? 'opacity-50 hover:opacity-100' : ''}`}
+      className={`relative group rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/80 transition-all overflow-hidden flex flex-col ${isExpanded ? 'h-auto' : 'h-64'} ${isComplete ? '' : 'hover:border-brand-300 dark:hover:border-brand-600'}`}
     >
       {menuPos && (() => {
         const items = [];
@@ -187,17 +187,23 @@ export function InitiativeCard({
         />
       )}
 
-      {/* Title-bar strip: seq number + last-updated timestamp, like a terminal window's chrome */}
+      {/* Title-bar strip: seq number + last-updated timestamp, like a terminal window's chrome.
+          Done cards dim just this strip — like an inactive window's title bar — rather than
+          fading the whole card, which used to hurt legibility of everything below it. */}
       {(item.seqNum != null || wf?.updatedAt) && (
-        <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900/40 flex-shrink-0">
+        <div className={`flex items-center justify-between gap-2 px-3 py-1.5 border-b flex-shrink-0 ${
+          isComplete
+            ? 'border-surface-200 dark:border-surface-800 bg-surface-100 dark:bg-surface-950/60'
+            : 'border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900/40'
+        }`}>
           <span
             title={item.seqNum != null ? `Initiative #${item.seqNum}` : undefined}
-            className="font-mono text-[10px] font-semibold text-surface-500 dark:text-surface-400"
+            className={`font-mono text-[10px] font-semibold ${isComplete ? 'text-surface-400 dark:text-surface-600' : 'text-surface-500 dark:text-surface-400'}`}
           >
             {item.seqNum != null ? `#${item.seqNum}` : ''}
           </span>
           {wf?.updatedAt && (
-            <span className="text-[10px] font-mono text-surface-400 dark:text-surface-500">
+            <span className={`text-[10px] font-mono ${isComplete ? 'text-surface-400 dark:text-surface-600' : 'text-surface-400 dark:text-surface-500'}`}>
               updated {formatUpdatedAt(wf.updatedAt)}
             </span>
           )}
@@ -256,14 +262,14 @@ export function InitiativeCard({
       {/* Row 2: status badges + product area + theme */}
       <div className="flex items-center gap-1.5 flex-wrap flex-shrink-0 mb-3">
         {wf?.isDemo && (
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-700">
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-700 dark:text-fuchsia-300 border border-fuchsia-200 dark:border-fuchsia-700">
             Demo
           </span>
         )}
         <StatusBadge wf={wf} isPaused={item.isPaused} />
         {assignedUsers.length > 0 && (
           <span
-            className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400"
+            className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400"
             title={assignedUsers.map(u => u.name).join(', ')}
           >
             {formatAssignedLabel(assignedUsers, canShowAssign ? user!.id : undefined)}
@@ -279,12 +285,12 @@ export function InitiativeCard({
           </span>
         ))}
         {item.productArea && splitProductAreas(item.productArea).map(area => (
-          <span key={area} className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400">
+          <span key={area} className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
             {area}
           </span>
         ))}
         {item.strategicTheme && (
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400">
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-lime-100 dark:bg-lime-900/30 text-lime-700 dark:text-lime-400">
             {item.strategicTheme}
           </span>
         )}
@@ -369,7 +375,7 @@ export function InitiativeCard({
                         isCompleted || (isCurrent && stage === 'complete')
                           ? 'bg-brand-500 border-brand-500'
                           : isCurrent
-                          ? 'bg-white dark:bg-surface-900 border-brand-500 ring-2 ring-brand-500 ring-offset-1'
+                          ? 'bg-surface-50 dark:bg-surface-900 border-brand-500 ring-2 ring-brand-500 ring-offset-1'
                           : 'bg-surface-100 dark:bg-surface-800 border-surface-300 dark:border-surface-600'
                       }`} />
                       <div className={`absolute top-3 text-[10px] font-medium whitespace-nowrap transition-colors ${

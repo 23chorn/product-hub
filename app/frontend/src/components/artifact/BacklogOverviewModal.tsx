@@ -168,7 +168,7 @@ export function BacklogOverviewModal({ onClose, workflowId, ...storiesTestsProps
     <div className="fixed inset-0 z-50 flex justify-center">
       <div className="absolute inset-0 bg-black/30 dark:bg-black/50" onClick={onClose} />
 
-      <div className="relative h-full bg-white dark:bg-surface-800 shadow-xl flex flex-col overflow-hidden w-full max-w-4xl">
+      <div className="relative h-full bg-surface-50 dark:bg-surface-800 shadow-xl flex flex-col overflow-hidden w-full max-w-4xl">
         <div className="px-4 py-3 border-b border-surface-200 dark:border-surface-700 flex items-center justify-between flex-shrink-0">
           <h2 className="text-sm font-semibold text-surface-900 dark:text-surface-100">Stories &amp; Tests</h2>
           <div className="flex items-center gap-1">

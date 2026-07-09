@@ -252,7 +252,7 @@ export function PrototypePreview({
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-surface-100 dark:bg-surface-900">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-white dark:bg-surface-800 border-b border-surface-200 dark:border-surface-700 flex-shrink-0">
+      <div className="flex items-center justify-between px-4 py-2.5 bg-surface-50 dark:bg-surface-800 border-b border-surface-200 dark:border-surface-700 flex-shrink-0">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold text-surface-900 dark:text-white">{prototype.title}</h2>
           <span className="text-xs text-surface-500 dark:text-surface-400">{prototype.description}</span>
@@ -299,7 +299,7 @@ export function PrototypePreview({
                   onClick={() => setSelectedFile(f)}
                   className={`px-3 py-1.5 text-xs whitespace-nowrap border-r border-surface-200 dark:border-surface-700 transition-colors ${
                     selectedFile === f
-                      ? 'bg-white dark:bg-surface-900 text-surface-900 dark:text-white'
+                      ? 'bg-surface-50 dark:bg-surface-900 text-surface-900 dark:text-white'
                       : 'text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200 hover:bg-surface-100 dark:hover:bg-surface-750'
                   }`}
                 >
@@ -339,7 +339,7 @@ export function PrototypePreview({
       </div>
 
       {/* Revision bar */}
-      <div className="flex-shrink-0 px-4 py-2.5 bg-white dark:bg-surface-800 border-t border-surface-200 dark:border-surface-700">
+      <div className="flex-shrink-0 px-4 py-2.5 bg-surface-50 dark:bg-surface-800 border-t border-surface-200 dark:border-surface-700">
         {revisionStatus && (
           <p className={`text-xs mb-1.5 ${revisionStatus.startsWith('Error') ? 'text-red-500 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
             {revisionStatus}
@@ -356,7 +356,7 @@ export function PrototypePreview({
             placeholder="Describe changes... (e.g. make the buttons larger, add a back button to the transfer screen)"
             rows={1}
             disabled={isRevising}
-            className="flex-1 resize-none rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-900 px-3 py-2 text-sm text-surface-900 dark:text-surface-100 placeholder-surface-400 dark:placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 overflow-y-auto"
+            className="flex-1 resize-none rounded-lg border border-surface-300 dark:border-surface-600 bg-surface-50 dark:bg-surface-900 px-3 py-2 text-sm text-surface-900 dark:text-surface-100 placeholder-surface-400 dark:placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 overflow-y-auto"
           />
           <button
             type="submit"

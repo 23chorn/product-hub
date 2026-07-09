@@ -97,12 +97,12 @@ code {
    ────────────────────────────────────────────────────────────────────────── */
 @layer utilities {
   .glass-panel {
-    @apply backdrop-blur-xl bg-white/80 dark:bg-surface-800/70;
+    @apply backdrop-blur-xl bg-surface-50/80 dark:bg-surface-800/70;
     @apply border border-surface-200/50 dark:border-surface-700/50;
   }
 
   .glass-surface {
-    @apply backdrop-blur-md bg-white/90 dark:bg-surface-900/80;
+    @apply backdrop-blur-md bg-surface-50/90 dark:bg-surface-900/80;
     @apply border border-surface-200/50 dark:border-white/5;
   }
 }

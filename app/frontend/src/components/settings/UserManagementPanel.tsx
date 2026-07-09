@@ -151,7 +151,7 @@ export function UserManagementPanel() {
             onClick={() => setTab(t)}
             className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
               tab === t
-                ? 'bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 shadow-sm'
+                ? 'bg-surface-50 dark:bg-surface-700 text-surface-900 dark:text-surface-100 shadow-sm'
                 : 'text-surface-500 hover:text-surface-700 dark:hover:text-surface-300'
             }`}
           >
@@ -233,7 +233,7 @@ export function UserManagementPanel() {
                     <select
                       value=""
                       onChange={e => { if (e.target.value) addStageRole(stage, e.target.value); }}
-                      className="text-xs bg-white dark:bg-surface-800 border border-surface-300 dark:border-surface-600 rounded-md px-2 py-1 text-surface-500 dark:text-surface-400 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                      className="text-xs bg-surface-50 dark:bg-surface-800 border border-surface-300 dark:border-surface-600 rounded-md px-2 py-1 text-surface-500 dark:text-surface-400 focus:outline-none focus:ring-1 focus:ring-brand-500"
                     >
                       <option value="">+ add role</option>
                       {available.map(r => (
@@ -295,7 +295,7 @@ function UserForm({
             autoComplete="off"
             data-1p-ignore
             data-lpignore="true"
-            className="mt-1 w-full text-xs bg-white dark:bg-surface-700 border border-surface-300 dark:border-surface-600 rounded-md px-2 py-1.5 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-1 focus:ring-brand-500 font-mono" />
+            className="mt-1 w-full text-xs bg-surface-50 dark:bg-surface-700 border border-surface-300 dark:border-surface-600 rounded-md px-2 py-1.5 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-1 focus:ring-brand-500 font-mono" />
         </div>
         <div>
           <label className="text-[10px] text-surface-500 uppercase tracking-wide">Display name</label>
@@ -304,7 +304,7 @@ function UserForm({
             autoComplete="off"
             data-1p-ignore
             data-lpignore="true"
-            className="mt-1 w-full text-xs bg-white dark:bg-surface-700 border border-surface-300 dark:border-surface-600 rounded-md px-2 py-1.5 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+            className="mt-1 w-full text-xs bg-surface-50 dark:bg-surface-700 border border-surface-300 dark:border-surface-600 rounded-md px-2 py-1.5 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-1 focus:ring-brand-500" />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-2">
@@ -315,7 +315,7 @@ function UserForm({
             autoComplete="new-password"
             data-1p-ignore
             data-lpignore="true"
-            className="mt-1 w-full text-xs bg-white dark:bg-surface-700 border border-surface-300 dark:border-surface-600 rounded-md px-2 py-1.5 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+            className="mt-1 w-full text-xs bg-surface-50 dark:bg-surface-700 border border-surface-300 dark:border-surface-600 rounded-md px-2 py-1.5 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-1 focus:ring-brand-500" />
         </div>
         <div>
           <label className="text-[10px] text-surface-500 uppercase tracking-wide">Slack User ID</label>
@@ -324,7 +324,7 @@ function UserForm({
             autoComplete="off"
             data-1p-ignore
             data-lpignore="true"
-            className="mt-1 w-full text-xs bg-white dark:bg-surface-700 border border-surface-300 dark:border-surface-600 rounded-md px-2 py-1.5 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+            className="mt-1 w-full text-xs bg-surface-50 dark:bg-surface-700 border border-surface-300 dark:border-surface-600 rounded-md px-2 py-1.5 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-1 focus:ring-brand-500" />
         </div>
       </div>
 

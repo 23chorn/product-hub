@@ -27,7 +27,7 @@ export function OpportunityCard({ opportunity, canMutate, canPromote, onDismiss,
   const isResolved = opportunity.status === 'promoted' || opportunity.status === 'dismissed';
 
   return (
-    <div className="rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/50 overflow-hidden">
+    <div className="rounded-xl border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/50 overflow-hidden">
       <div className="p-4">
         <div className="flex items-start justify-between gap-3">
           <h4 className="text-sm font-semibold text-surface-900 dark:text-surface-100">{opportunity.title}</h4>

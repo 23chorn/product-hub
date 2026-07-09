@@ -24,7 +24,7 @@ export function AssignUserFlyout({ item, onClose, onToggle }: Props) {
   return createPortal(
     <>
       <div className="fixed inset-0 z-[9998] bg-black/30" onClick={onClose} />
-      <div className="fixed z-[9999] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 bg-white dark:bg-surface-900 border border-surface-200 dark:border-surface-700 rounded-xl shadow-2xl overflow-hidden">
+      <div className="fixed z-[9999] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 bg-surface-50 dark:bg-surface-900 border border-surface-200 dark:border-surface-700 rounded-xl shadow-2xl overflow-hidden">
         <div className="px-4 py-3 border-b border-surface-200 dark:border-surface-700 flex items-center justify-between">
           <h3 className="text-sm font-medium text-surface-900 dark:text-surface-100">Assign users</h3>
           <button

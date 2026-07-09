@@ -65,7 +65,7 @@ export function Toast({ message, type, onClose, duration = 2000 }: ToastProps) {
 
   return (
     <div
-      className="flex items-start gap-3 p-4 rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 shadow-xl animate-slide-in-right"
+      className="flex items-start gap-3 p-4 rounded-xl border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 shadow-xl animate-slide-in-right"
       role="alert"
     >
       <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${getIconChip()}`}>

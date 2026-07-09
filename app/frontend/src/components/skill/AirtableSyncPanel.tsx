@@ -83,7 +83,7 @@ export function AirtableSyncPanel() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="px-5 py-3 border-b border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/30 flex-shrink-0">
+      <div className="px-5 py-3 border-b border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/30 flex-shrink-0">
         <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100">Airtable Sync</h3>
         <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
           Detects initiative status changes in Airtable (e.g. moved to Shipped) and proposes context file
@@ -186,7 +186,7 @@ export function AirtableSyncPanel() {
                       </button>
                     </div>
                   </div>
-                  <pre className="text-xs px-3 py-2 whitespace-pre-wrap font-mono text-surface-700 dark:text-surface-300 bg-white dark:bg-surface-900/30">
+                  <pre className="text-xs px-3 py-2 whitespace-pre-wrap font-mono text-surface-700 dark:text-surface-300 bg-surface-50 dark:bg-surface-900/30">
                     {p.proposedText}
                   </pre>
                   <div className="text-xs px-3 py-1.5 text-surface-500 dark:text-surface-400 border-t border-surface-100 dark:border-surface-700/50">

@@ -11,9 +11,11 @@ export const WORK_ITEM_STATE_BUCKET_LABELS: Record<WorkItemStateBucket, string> 
   removed: 'Removed',
 };
 
-export const WORK_ITEM_STATE_BUCKET_COLORS: Record<WorkItemStateBucket, string> = {
-  not_started: 'bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-400',
-  in_progress: 'bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400',
-  done: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',
-  removed: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400',
+/** Dot + text colors for DotLabel — not a filled pill, so a row of these reads as a terminal
+ *  status line rather than a row of colored tags (see ArtifactPrimitives' DotLabel doc). */
+export const WORK_ITEM_STATE_BUCKET_COLORS: Record<WorkItemStateBucket, { dot: string; text: string }> = {
+  not_started: { dot: 'bg-surface-400 dark:bg-surface-500', text: 'text-surface-500 dark:text-surface-400' },
+  in_progress: { dot: 'bg-brand-500 animate-pulse', text: 'text-brand-600 dark:text-brand-400' },
+  done: { dot: 'bg-green-500', text: 'text-green-600 dark:text-green-400' },
+  removed: { dot: 'bg-red-500', text: 'text-red-600 dark:text-red-400' },
 };

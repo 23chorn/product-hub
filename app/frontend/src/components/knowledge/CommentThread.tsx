@@ -15,7 +15,7 @@ function CommentRow({ comment, disabled, onSetStatus }: {
     <div className={`rounded-lg border p-3 ${comment.status === 'resolved' ? 'opacity-60' : ''} ${
       isAgent
         ? 'border-brand-200 dark:border-brand-800 bg-brand-50/50 dark:bg-brand-900/10'
-        : 'border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800'
+        : 'border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800'
     }`}>
       <div className="flex items-center justify-between gap-2 mb-1">
         <div className="flex items-center gap-1.5 min-w-0">
@@ -84,14 +84,14 @@ export function CommentThread({
             value={quote}
             onChange={(e) => setQuote(e.target.value)}
             placeholder="Optional: quote the passage this is about"
-            className="w-full text-xs bg-white dark:bg-surface-800 border border-surface-300 dark:border-surface-600 rounded px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+            className="w-full text-xs bg-surface-50 dark:bg-surface-800 border border-surface-300 dark:border-surface-600 rounded px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
           />
           <textarea
             value={body}
             onChange={(e) => setBody(e.target.value)}
             placeholder="Leave a comment or suggestion for the owner…"
             rows={3}
-            className="w-full text-sm bg-white dark:bg-surface-800 border border-surface-300 dark:border-surface-600 rounded px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none"
+            className="w-full text-sm bg-surface-50 dark:bg-surface-800 border border-surface-300 dark:border-surface-600 rounded px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none"
           />
           <div className="flex justify-end">
             <button

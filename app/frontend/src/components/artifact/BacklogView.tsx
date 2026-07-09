@@ -92,10 +92,9 @@ function buildEpicFeatureLookup(epicFeatures: EpicFeaturesData | null | undefine
  */
 function StateBucketPill({ bucket }: { bucket?: WorkItemStateBucket }) {
   if (!bucket) return null;
+  const { dot, text } = WORK_ITEM_STATE_BUCKET_COLORS[bucket];
   return (
-    <span className={`flex-shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${WORK_ITEM_STATE_BUCKET_COLORS[bucket]}`}>
-      {WORK_ITEM_STATE_BUCKET_LABELS[bucket]}
-    </span>
+    <DotLabel dotClass={dot} textClass={`flex-shrink-0 ${text}`} label={WORK_ITEM_STATE_BUCKET_LABELS[bucket]} />
   );
 }
 

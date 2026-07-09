@@ -3,7 +3,7 @@ import { api } from '../../services/api';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useConfigStore } from '../../stores/configStore';
 import { useThemeStore } from '../../stores/themeStore';
-import { THEMES, getTheme, type ThemeId } from '../../theme/themes';
+import { THEMES, THEME_GROUP_ORDER, THEME_GROUP_LABELS, getTheme, type ThemeId } from '../../theme/themes';
 import { useToast } from '../../hooks/useToast';
 import { useAuthStore } from '../../stores/authStore';
 import { UserManagementPanel } from './UserManagementPanel';
@@ -52,7 +52,7 @@ function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (
         checked ? 'bg-brand-600' : 'bg-surface-300 dark:bg-surface-600'
       } ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
     >
-      <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ${checked ? 'translate-x-4' : 'translate-x-0'}`} />
+      <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-surface-50 shadow transition duration-200 ${checked ? 'translate-x-4' : 'translate-x-0'}`} />
     </button>
   );
 }
@@ -167,7 +167,7 @@ export function SettingsPanel() {
   }, [canAccessAdminTabs, tab]);
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-surface-900 rounded-xl shadow-2xl border border-surface-200 dark:border-surface-700 overflow-hidden">
+    <div className="flex flex-col h-full bg-surface-50 dark:bg-surface-900 rounded-xl shadow-2xl border border-surface-200 dark:border-surface-700 overflow-hidden">
 
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/50 flex-shrink-0">
@@ -186,7 +186,7 @@ export function SettingsPanel() {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-surface-200 dark:border-surface-700 flex-shrink-0 bg-white dark:bg-surface-900">
+      <div className="flex border-b border-surface-200 dark:border-surface-700 flex-shrink-0 bg-surface-50 dark:bg-surface-900">
         {TABS.map(t => (
           <button
             key={t.key}
@@ -227,10 +227,14 @@ export function SettingsPanel() {
                     value={theme}
                     onChange={(e) => setTheme(e.target.value as ThemeId)}
                     aria-label="Theme"
-                    className="text-xs bg-white dark:bg-surface-800 border border-surface-300 dark:border-surface-600 rounded-md px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                    className="text-xs bg-surface-50 dark:bg-surface-800 border border-surface-300 dark:border-surface-600 rounded-md px-2 py-1.5 text-surface-700 dark:text-surface-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
                   >
-                    {THEMES.map((t) => (
-                      <option key={t.id} value={t.id}>{t.label}</option>
+                    {THEME_GROUP_ORDER.map((group) => (
+                      <optgroup key={group} label={THEME_GROUP_LABELS[group]}>
+                        {THEMES.filter((t) => t.group === group).map((t) => (
+                          <option key={t.id} value={t.id}>{t.label}</option>
+                        ))}
+                      </optgroup>
                     ))}
                   </select>
                 </div>
@@ -248,7 +252,7 @@ export function SettingsPanel() {
                     <button
                       onClick={handleSyncAirtable}
                       disabled={syncing}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 bg-white dark:bg-surface-800/50 hover:bg-surface-50 dark:hover:bg-surface-700/70 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 bg-surface-50 dark:bg-surface-800/50 hover:bg-surface-50 dark:hover:bg-surface-700/70 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
                       <svg className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />

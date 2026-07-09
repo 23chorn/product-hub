@@ -58,15 +58,15 @@ export function DocFileViewer({ fileId }: { fileId: number }) {
   };
 
   if (isLoading) {
-    return <div className="flex-1 flex items-center justify-center text-sm text-surface-400 bg-white dark:bg-surface-900">Loading…</div>;
+    return <div className="flex-1 flex items-center justify-center text-sm text-surface-400 bg-surface-50 dark:bg-surface-900">Loading…</div>;
   }
   if (!file) {
-    return <div className="flex-1 flex items-center justify-center text-sm text-surface-400 bg-white dark:bg-surface-900">{error ?? 'File not found'}</div>;
+    return <div className="flex-1 flex items-center justify-center text-sm text-surface-400 bg-surface-50 dark:bg-surface-900">{error ?? 'File not found'}</div>;
   }
 
   return (
     <>
-      <div className="px-6 py-4 border-b border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-900 flex-shrink-0">
+      <div className="px-6 py-4 border-b border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900 flex-shrink-0">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100 truncate">{file.path}</h3>
@@ -105,7 +105,7 @@ export function DocFileViewer({ fileId }: { fileId: number }) {
       <Group orientation="horizontal" className="flex-1 min-h-0" id="doc-file-viewer-layout">
         <Panel id="doc-content" minSize="30%">
           <div className="h-full overflow-y-auto px-6 py-4">
-            <MarkdownContent breaks className="bg-white dark:bg-surface-900 rounded-lg p-4">{stripFrontmatter(file.content)}</MarkdownContent>
+            <MarkdownContent breaks className="bg-surface-50 dark:bg-surface-900 rounded-lg p-4">{stripFrontmatter(file.content)}</MarkdownContent>
           </div>
         </Panel>
 

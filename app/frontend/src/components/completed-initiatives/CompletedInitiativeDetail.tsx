@@ -59,7 +59,7 @@ function PipelineExportModal({ seqNum, availableStreams, phaseLabels, onClose }:
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 dark:bg-black/60" onClick={onClose}>
-      <div className="relative bg-white dark:bg-surface-900 rounded-xl shadow-xl border border-surface-200 dark:border-surface-700 w-full max-w-sm mx-4 p-5" onClick={e => e.stopPropagation()}>
+      <div className="relative bg-surface-50 dark:bg-surface-900 rounded-xl shadow-xl border border-surface-200 dark:border-surface-700 w-full max-w-sm mx-4 p-5" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100">Pipeline Export</h3>
           <button onClick={onClose} className="p-1 rounded text-surface-400 hover:text-surface-700 dark:hover:text-surface-200 transition-colors">
@@ -708,7 +708,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/50 p-4">
+              <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/50 p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-1">Total Tickets</p>
                 <p className="text-2xl font-bold text-surface-900 dark:text-surface-100">{ticketBreakdown?.total ?? detail?.storyCount ?? 0}</p>
                 <div className="flex gap-1.5 flex-wrap mt-2">
@@ -720,7 +720,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
                 </div>
               </div>
 
-              <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/50 p-4">
+              <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/50 p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-1">Test Cases</p>
                 <p className="text-2xl font-bold text-surface-900 dark:text-surface-100">{phaseQa?.test_cases.length ?? detail?.testCaseCount ?? 0}</p>
                 <div className="flex gap-1.5 flex-wrap mt-2">
@@ -732,7 +732,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
                 </div>
               </div>
 
-              <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/50 p-4 flex flex-col justify-center">
+              <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/50 p-4 flex flex-col justify-center">
                 <PercentBar percent={phasePercentComplete} />
                 <p className={`text-[10px] mt-2 ${detail?.lastRefreshedAt == null ? 'text-amber-600 dark:text-amber-400' : 'text-surface-400 dark:text-surface-500'}`}>
                   {detail?.lastRefreshedAt == null ? 'Needs refresh' : `Refreshed ${relativeTime(detail.lastRefreshedAt)}`}
@@ -743,7 +743,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
             {/* Plain panel background — matches the artifact viewer's content pane used during
                 a live checkpoint review, so a ticket/test/plan reads the same whether it's
                 being viewed in progress or after the fact. */}
-            <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 overflow-hidden">
+            <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 overflow-hidden">
               <div className="flex border-b border-surface-200 dark:border-surface-700 px-2">
                 {visibleTabs.map(t => (
                   <button

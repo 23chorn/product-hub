@@ -24,7 +24,7 @@ export function CardContextMenu({ x, y, items, onClose }: CardContextMenuProps) 
         onContextMenu={(e) => { e.preventDefault(); onClose(); }}
       />
       <div
-        className="fixed z-[9999] min-w-[170px] bg-white dark:bg-surface-900 border border-surface-200 dark:border-surface-700 rounded-lg shadow-2xl overflow-hidden py-1"
+        className="fixed z-[9999] min-w-[170px] bg-surface-50 dark:bg-surface-900 border border-surface-200 dark:border-surface-700 rounded-lg shadow-2xl overflow-hidden py-1"
         style={{ top: y, left: x }}
       >
         {items.map(item => (

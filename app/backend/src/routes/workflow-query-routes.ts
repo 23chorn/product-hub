@@ -32,6 +32,7 @@ interface ArtifactRow {
   type: string;
   file_path: string;
   created_at: number;
+  wiki_url: string | null;
 }
 
 /**
@@ -154,7 +155,7 @@ workflowQueryRoutes.get('/:id/checkpoints', (req: Request, res: Response) => {
     const enriched = checkpoints.map(cp => {
       if (!cp.artifact_id) return { ...cp, artifact: null };
       const artifact = db
-        .prepare<[number], ArtifactRow>('SELECT id, type, file_path, created_at FROM artifacts WHERE id = ?')
+        .prepare<[number], ArtifactRow>('SELECT id, type, file_path, created_at, wiki_url FROM artifacts WHERE id = ?')
         .get(cp.artifact_id);
       return { ...cp, artifact: artifact ?? null };
     });

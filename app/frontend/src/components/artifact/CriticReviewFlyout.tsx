@@ -13,7 +13,7 @@ export function CriticReviewFlyout({ issues, questions, onClose }: CriticReviewF
   const hasQuestions = questions.length > 0;
 
   return (
-    <div className="absolute top-0 left-0 w-[380px] h-full overflow-y-auto border-r border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800 shadow-lg flex flex-col z-10">
+    <div className="absolute top-0 left-0 w-[380px] h-full overflow-y-auto border-r border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 shadow-lg flex flex-col z-10">
       <div className="px-4 py-3 border-b border-surface-200 dark:border-surface-700 flex-shrink-0 flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold text-surface-900 dark:text-surface-100">Flint's Review</h2>

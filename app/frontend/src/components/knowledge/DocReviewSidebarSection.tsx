@@ -91,7 +91,7 @@ export function DocReviewSidebarSection({
               <select
                 value={ownerFilter}
                 onChange={(e) => setOwnerFilter(e.target.value)}
-                className="text-xs bg-white dark:bg-surface-800 border border-surface-300 dark:border-surface-600 rounded px-1.5 py-1 text-surface-600 dark:text-surface-300"
+                className="text-xs bg-surface-50 dark:bg-surface-800 border border-surface-300 dark:border-surface-600 rounded px-1.5 py-1 text-surface-600 dark:text-surface-300"
               >
                 <option value="">All owners</option>
                 {owners.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -99,7 +99,7 @@ export function DocReviewSidebarSection({
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="text-xs bg-white dark:bg-surface-800 border border-surface-300 dark:border-surface-600 rounded px-1.5 py-1 text-surface-600 dark:text-surface-300"
+                className="text-xs bg-surface-50 dark:bg-surface-800 border border-surface-300 dark:border-surface-600 rounded px-1.5 py-1 text-surface-600 dark:text-surface-300"
               >
                 <option value="">All statuses</option>
                 {statuses.map((s) => <option key={s} value={s}>{s}</option>)}

@@ -3,12 +3,13 @@ import type { StageStatus } from '../../../stores/workflowStore';
 
 /** Section header that groups terminal events by pipeline stage. */
 export function StageGroupHeader({
-  stageName, status, artifactId, onViewOutput,
+  stageName, status, artifactId, onViewOutput, wikiUrl,
 }: {
   stageName: string;
   status: StageStatus;
   artifactId?: number | null;
   onViewOutput?: (id: number) => void;
+  wikiUrl?: string | null;
 }) {
   const label = STAGE_LABELS[stageName] ?? stageName;
   const color = status === 'complete'
@@ -42,6 +43,16 @@ export function StageGroupHeader({
           >
             view →
           </button>
+        )}
+        {wikiUrl && (
+          <a
+            href={wikiUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[9px] font-mono normal-case tracking-normal text-surface-500 dark:text-surface-600 hover:text-brand-600 dark:hover:text-brand-400 transition-colors whitespace-nowrap border border-surface-200 dark:border-surface-800 hover:border-brand-400 dark:hover:border-brand-800 rounded px-1.5 py-0.5"
+          >
+            wiki ↗
+          </a>
         )}
       </div>
     </div>

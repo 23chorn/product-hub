@@ -49,7 +49,14 @@
    near-black surfaces with a faint green tint, paired with a vivid emerald accent
    (overriding the teal brand from :root). The green glow on buttons/focus comes
    for free via the --brand-500-backed `glow-brand` shadows. Both ramps are
-   overridden here so the whole app — surfaces AND accent — restyles together. ── */
+   overridden here so the whole app — surfaces AND accent — restyles together.
+
+   The 400-700 mid-range is intentionally lighter than a "linear" ramp would
+   suggest: those steps carry muted text (text-400/500) and borders
+   (border-600/700) against 800/900/950 backgrounds, and need real WCAG
+   contrast (>=4.5:1 for text, >=3:1 for borders) rather than just looking
+   dark-on-dark in isolation. Verify with a contrast checker before nudging
+   these back down. ───────────────────────────────────────────────────────── */
 [data-theme="dark"] {
   /* Emerald accent (replaces the :root teal) */
   --brand-50: 236 253 245;
@@ -65,17 +72,17 @@
   --brand-950: 2 44 34;
 
   /* Green-tinted obsidian surfaces */
-  --surface-50: 236 245 240;
-  --surface-100: 221 245 230;
-  --surface-200: 200 224 210;
-  --surface-300: 168 196 180;
-  --surface-400: 122 150 134;
-  --surface-500: 90 116 102;
-  --surface-600: 60 82 70;
-  --surface-700: 28 40 32;
-  --surface-800: 18 26 21;
-  --surface-900: 10 15 12;
-  --surface-950: 5 9 7;
+  --surface-50: 237 242 240;
+  --surface-100: 232 238 235;
+  --surface-200: 211 222 217;
+  --surface-300: 182 201 191;
+  --surface-400: 138 168 153;
+  --surface-500: 114 151 133;
+  --surface-600: 91 123 107;
+  --surface-700: 80 109 94;
+  --surface-800: 26 35 31;
+  --surface-900: 13 18 15;
+  --surface-950: 7 9 8;
 }
 
 /* ── Retro — "70s Warm" (light family) ────────────────────────────────────────
@@ -114,7 +121,11 @@
 /* ── Terminal — "Phosphor CRT" (dark family) ──────────────────────────────────
    True near-neutral black surfaces (not the green-tinted obsidian of Dark) paired
    with a vivid phosphor-green accent — the classic black-terminal-with-green-text
-   look, echoing this app's own monospace pipeline-terminal UI. ────────────────── */
+   look, echoing this app's own monospace pipeline-terminal UI.
+
+   Same contrast constraint as Dark above: 400-700 are lightened well past a
+   "linear" ramp so muted text and borders clear WCAG minimums against the
+   near-black 800/900/950 backgrounds. ───────────────────────────────────── */
 [data-theme="terminal"] {
   /* Phosphor green accent */
   --brand-50: 230 255 234;
@@ -130,16 +141,16 @@
   --brand-950: 0 38 12;
 
   /* True black, near-neutral surfaces */
-  --surface-50: 235 238 235;
-  --surface-100: 219 224 219;
-  --surface-200: 187 195 187;
-  --surface-300: 148 158 148;
-  --surface-400: 110 122 110;
-  --surface-500: 80 92 80;
-  --surface-600: 55 64 55;
-  --surface-700: 34 40 34;
-  --surface-800: 18 22 18;
-  --surface-900: 8 10 8;
+  --surface-50: 236 238 236;
+  --surface-100: 228 231 228;
+  --surface-200: 207 211 207;
+  --surface-300: 178 184 178;
+  --surface-400: 141 150 141;
+  --surface-500: 120 130 120;
+  --surface-600: 98 106 98;
+  --surface-700: 86 93 86;
+  --surface-800: 27 29 27;
+  --surface-900: 12 13 12;
   --surface-950: 0 0 0;
 }
 
@@ -174,6 +185,373 @@
   --surface-800: 44 41 34;
   --surface-900: 28 26 21;
   --surface-950: 15 14 12;
+}
+
+/* ── Nord — "Arctic Frost" (dark family) ──────────────────────────────────────
+   Inspired by the Nord editor theme: desaturated blue-grey Polar Night surfaces
+   paired with a muted Frost blue accent. Cooler and calmer than Obsidian's green
+   tint or Terminal's true black — reads as overcast/arctic rather than high-energy.
+   Same contrast-safe 400-700 lightening as Dark/Terminal above. ─────────────── */
+[data-theme="nord"] {
+  /* Frost blue accent */
+  --brand-50: 237 242 248;
+  --brand-100: 218 230 241;
+  --brand-200: 181 204 227;
+  --brand-300: 137 173 210;
+  --brand-400: 100 148 196;
+  --brand-500: 67 122 177;
+  --brand-600: 56 102 148;
+  --brand-700: 46 84 122;
+  --brand-800: 36 66 96;
+  --brand-900: 27 48 70;
+  --brand-950: 15 28 41;
+
+  /* Polar Night blue-grey surfaces */
+  --surface-50: 237 239 242;
+  --surface-100: 228 231 236;
+  --surface-200: 205 209 219;
+  --surface-300: 169 177 193;
+  --surface-400: 134 145 167;
+  --surface-500: 116 129 154;
+  --surface-600: 94 106 130;
+  --surface-700: 88 99 121;
+  --surface-800: 26 29 35;
+  --surface-900: 13 14 18;
+  --surface-950: 6 7 9;
+}
+
+/* ── Monokai — "Classic Editor" (dark family) ─────────────────────────────────
+   Warm olive-black surfaces (not blue-grey like Nord/One Dark) paired with
+   Monokai's signature hot-pink accent — the classic Sublime/TextMate look.
+   Same contrast-safe 400-700 lightening as Dark/Terminal above. ────────────── */
+[data-theme="monokai"] {
+  /* Hot pink accent */
+  --brand-50: 254 231 243;
+  --brand-100: 252 207 232;
+  --brand-200: 250 158 209;
+  --brand-300: 247 100 181;
+  --brand-400: 244 52 158;
+  --brand-500: 233 12 133;
+  --brand-600: 194 10 111;
+  --brand-700: 160 8 92;
+  --brand-800: 126 7 72;
+  --brand-900: 92 5 53;
+  --brand-950: 53 3 31;
+
+  /* Warm olive-black surfaces */
+  --surface-50: 241 241 238;
+  --surface-100: 234 234 230;
+  --surface-200: 215 216 207;
+  --surface-300: 187 188 174;
+  --surface-400: 154 156 134;
+  --surface-500: 135 137 112;
+  --surface-600: 111 112 92;
+  --surface-700: 102 104 85;
+  --surface-800: 33 34 28;
+  --surface-900: 17 17 14;
+  --surface-950: 8 8 7;
+}
+
+/* ── One Dark Pro — "Atom Editor" (dark family) ───────────────────────────────
+   Neutral charcoal-blue surfaces paired with the signature One Dark blue accent —
+   understated compared to Nord's frostier tint or Monokai's warm olive. Same
+   contrast-safe 400-700 lightening as Dark/Terminal above. ──────────────────── */
+[data-theme="one-dark"] {
+  /* One Dark blue accent */
+  --brand-50: 232 243 252;
+  --brand-100: 209 232 250;
+  --brand-200: 164 208 244;
+  --brand-300: 109 180 238;
+  --brand-400: 63 156 233;
+  --brand-500: 26 132 219;
+  --brand-600: 21 110 183;
+  --brand-700: 18 91 151;
+  --brand-800: 14 72 119;
+  --brand-900: 10 52 87;
+  --brand-950: 6 30 50;
+
+  /* Neutral charcoal-blue surfaces */
+  --surface-50: 238 239 242;
+  --surface-100: 229 231 235;
+  --surface-200: 206 210 217;
+  --surface-300: 171 178 191;
+  --surface-400: 137 145 164;
+  --surface-500: 120 129 151;
+  --surface-600: 98 107 127;
+  --surface-700: 91 100 118;
+  --surface-800: 27 29 35;
+  --surface-900: 13 15 17;
+  --surface-950: 7 7 9;
+}
+
+/* ── GitHub Light — "Clean Canvas" (light family) ─────────────────────────────
+   Crisp cool-grey surfaces paired with GitHub's signature link/button blue —
+   minimal and highly familiar, a neutral counterpart to Paper's warm bond-paper
+   tone. ───────────────────────────────────────────────────────────────────── */
+[data-theme="github-light"] {
+  /* GitHub blue accent */
+  --brand-50: 231 241 254;
+  --brand-100: 206 228 253;
+  --brand-200: 157 201 251;
+  --brand-300: 98 168 248;
+  --brand-400: 49 141 246;
+  --brand-500: 10 115 235;
+  --brand-600: 8 96 196;
+  --brand-700: 7 79 162;
+  --brand-800: 5 62 127;
+  --brand-900: 4 45 93;
+  --brand-950: 2 26 54;
+
+  /* Crisp cool-grey surfaces */
+  --surface-50: 246 247 248;
+  --surface-100: 238 240 242;
+  --surface-200: 220 224 229;
+  --surface-300: 194 201 209;
+  --surface-400: 150 163 176;
+  --surface-500: 110 128 145;
+  --surface-600: 88 102 116;
+  --surface-700: 70 82 93;
+  --surface-800: 53 61 70;
+  --surface-900: 35 41 47;
+  --surface-950: 20 23 26;
+}
+
+/* ── Solarized Light — "Golden Precision" (light family) ──────────────────────
+   Bolder than a faithful Solarized recreation on purpose: real Solarized's base3
+   cream is actually SUBTLER than Retro's tan, which made a literal recreation
+   collide with Retro/Paper/Sand's existing warm-neutral cluster. Pushed to a
+   distinctly saturated golden-yellow instead — unmistakable, not just another
+   beige — paired with its signature cyan accent. ─────────────────────────────── */
+[data-theme="solarized-light"] {
+  /* Solarized cyan accent */
+  --brand-50: 235 250 249;
+  --brand-100: 214 245 242;
+  --brand-200: 174 234 229;
+  --brand-300: 125 222 214;
+  --brand-400: 85 211 201;
+  --brand-500: 50 195 183;
+  --brand-600: 42 162 152;
+  --brand-700: 35 134 126;
+  --brand-800: 27 105 99;
+  --brand-900: 20 77 72;
+  --brand-950: 12 45 42;
+
+  /* Saturated golden-yellow surfaces */
+  --surface-50: 249 241 210;
+  --surface-100: 245 234 188;
+  --surface-200: 240 221 148;
+  --surface-300: 233 206 99;
+  --surface-400: 226 190 50;
+  --surface-500: 161 133 23;
+  --surface-600: 134 111 19;
+  --surface-700: 107 89 15;
+  --surface-800: 80 67 11;
+  --surface-900: 54 44 8;
+  --surface-950: 31 26 4;
+}
+
+/* ── Catppuccin Latte — "Periwinkle Pastel" (light family) ────────────────────
+   Pushed cooler and more saturated than a timid lavender tint — a clear
+   periwinkle-violet wash, not just "white with a cool undertone" (which read as
+   nearly identical to GitHub Light's neutral grey at the original saturation)
+   — paired with a muted mauve-purple accent. ─────────────────────────────────── */
+[data-theme="catppuccin-latte"] {
+  /* Mauve accent */
+  --brand-50: 243 232 252;
+  --brand-100: 230 209 250;
+  --brand-200: 205 164 244;
+  --brand-300: 176 109 238;
+  --brand-400: 151 63 233;
+  --brand-500: 126 26 219;
+  --brand-600: 105 21 183;
+  --brand-700: 86 18 151;
+  --brand-800: 68 14 119;
+  --brand-900: 50 10 87;
+  --brand-950: 29 6 50;
+
+  /* Periwinkle-violet surfaces */
+  --surface-50: 227 222 242;
+  --surface-100: 211 203 235;
+  --surface-200: 186 174 224;
+  --surface-300: 152 133 209;
+  --surface-400: 118 92 193;
+  --surface-500: 91 65 170;
+  --surface-600: 75 53 141;
+  --surface-700: 61 43 115;
+  --surface-800: 45 32 85;
+  --surface-900: 30 21 55;
+  --surface-950: 16 11 30;
+}
+
+/* ── Rosé Pine Dawn — "Dusty Rose" (light family) ─────────────────────────────
+   Pushed to a clearly pink-forward rose rather than a warm cream that drifted
+   into Solarized's territory — unmistakably rose, not "cream with a pink hint"
+   — paired with a muted terracotta-rose accent. ──────────────────────────────── */
+[data-theme="rose-pine-dawn"] {
+  /* Terracotta-rose accent */
+  --brand-50: 248 237 236;
+  --brand-100: 242 219 217;
+  --brand-200: 228 183 180;
+  --brand-300: 213 139 134;
+  --brand-400: 199 103 96;
+  --brand-500: 181 71 64;
+  --brand-600: 151 60 53;
+  --brand-700: 125 49 44;
+  --brand-800: 98 39 34;
+  --brand-900: 72 28 25;
+  --brand-950: 42 16 15;
+
+  /* Saturated rose-pink surfaces */
+  --surface-50: 244 215 222;
+  --surface-100: 238 196 206;
+  --surface-200: 227 160 177;
+  --surface-300: 215 117 141;
+  --surface-400: 202 73 105;
+  --surface-500: 178 52 83;
+  --surface-600: 146 42 68;
+  --surface-700: 119 34 55;
+  --surface-800: 87 25 41;
+  --surface-900: 55 16 26;
+  --surface-950: 32 9 15;
+}
+
+/* ── Everforest Light — "True Sage" (light family) ─────────────────────────────
+   Pushed to a genuinely visible green rather than a grey with a whisper of tint
+   — reads as sage/moss paper at a glance, not another off-white — paired with a
+   forest-green accent. ─────────────────────────────────────────────────────── */
+[data-theme="everforest-light"] {
+  /* Forest-green accent */
+  --brand-50: 244 252 233;
+  --brand-100: 234 249 210;
+  --brand-200: 213 242 166;
+  --brand-300: 188 235 112;
+  --brand-400: 167 228 68;
+  --brand-500: 144 214 31;
+  --brand-600: 120 179 25;
+  --brand-700: 99 147 21;
+  --brand-800: 78 116 17;
+  --brand-900: 57 85 12;
+  --brand-950: 33 49 7;
+
+  /* Saturated sage-green surfaces */
+  --surface-50: 222 238 221;
+  --surface-100: 206 230 203;
+  --surface-200: 176 215 172;
+  --surface-300: 140 197 135;
+  --surface-400: 103 179 97;
+  --surface-500: 65 124 60;
+  --surface-600: 54 103 50;
+  --surface-700: 43 83 40;
+  --surface-800: 33 62 30;
+  --surface-900: 22 41 20;
+  --surface-950: 13 24 12;
+}
+
+/* ── Blackout — "Void" (dark family) ──────────────────────────────────────────
+   Pure black/white extremes with a bright accessibility-yellow accent. Started
+   life as a "high contrast" experiment but reads as just another (very dark)
+   dark theme in practice, so it lives in the regular Dark group — see High
+   Contrast below for the theme that actually commits to the bit. ──────────── */
+[data-theme="blackout"] {
+  /* Accessibility yellow accent */
+  --brand-50: 255 252 240;
+  --brand-100: 255 249 219;
+  --brand-200: 255 242 179;
+  --brand-300: 255 235 133;
+  --brand-400: 255 228 92;
+  --brand-500: 255 219 41;
+  --brand-600: 255 213 0;
+  --brand-700: 214 179 0;
+  --brand-800: 173 145 0;
+  --brand-900: 122 102 0;
+  --brand-950: 71 60 0;
+
+  /* Pure black/white extremes */
+  --surface-50: 255 255 255;
+  --surface-100: 245 245 245;
+  --surface-200: 224 224 224;
+  --surface-300: 201 201 201;
+  --surface-400: 178 178 178;
+  --surface-500: 158 158 158;
+  --surface-600: 138 138 138;
+  --surface-700: 120 120 120;
+  --surface-800: 38 38 38;
+  --surface-900: 18 18 18;
+  --surface-950: 0 0 0;
+}
+
+/* ── High Contrast — "No Compromise" (high-contrast group) ────────────────────
+   Actually commits to high contrast: unlike Blackout (or any other dark theme
+   here), the 50-700 range is NOT a gradient — it's clustered almost entirely at
+   near-white, because true accessibility high-contrast modes don't have shades
+   of muted text, everything is either full-bright content or black background.
+   Only 800-950 carry real darkness. Every text/border pairing against those
+   backgrounds lands at 11:1+ (WCAG AAA is 7:1). Accent is pure, fully-saturated
+   yellow (#FFFF00) rather than the warm-shifted yellow Blackout uses. ───────── */
+[data-theme="high-contrast"] {
+  /* Pure yellow accent */
+  --brand-50: 255 255 240;
+  --brand-100: 255 255 219;
+  --brand-200: 255 255 179;
+  --brand-300: 255 255 133;
+  --brand-400: 255 255 92;
+  --brand-500: 255 255 0;
+  --brand-600: 230 230 0;
+  --brand-700: 194 194 0;
+  --brand-800: 153 153 0;
+  --brand-900: 102 102 0;
+  --brand-950: 61 61 0;
+
+  /* Near-binary black/white — minimal gradient, maximum separation */
+  --surface-50: 255 255 255;
+  --surface-100: 255 255 255;
+  --surface-200: 255 255 255;
+  --surface-300: 250 250 250;
+  --surface-400: 240 240 240;
+  --surface-500: 225 225 225;
+  --surface-600: 210 210 210;
+  --surface-700: 195 195 195;
+  --surface-800: 20 20 20;
+  --surface-900: 5 5 5;
+  --surface-950: 0 0 0;
+}
+
+/* ── High Contrast Light — "No Compromise, Inverted" (high-contrast group) ────
+   The light-family mirror of High Contrast above, same near-binary philosophy
+   flipped: only 50/100 are near-white (background) — everything from 200 down
+   is pushed dark immediately, because 200 is this codebase's actual default
+   card/panel border tier (`border-surface-200`, ~2x more common than 300), so
+   a near-white 200 would leave every card outline nearly invisible even though
+   the ramp "looked" high-contrast in isolation. border-200 on bg-50 now lands
+   at 8.7:1, matching High Contrast's border-700-on-bg-900 strength. Accent is
+   pure, fully-saturated blue (#0000FF) — yellow doesn't have anywhere near
+   enough contrast against white to use here. ─────────────────────────────── */
+[data-theme="high-contrast-light"] {
+  /* Pure blue accent */
+  --brand-50: 229 229 255;
+  --brand-100: 204 204 255;
+  --brand-200: 153 153 255;
+  --brand-300: 102 102 255;
+  --brand-400: 51 51 255;
+  --brand-500: 0 0 255;
+  --brand-600: 0 0 214;
+  --brand-700: 0 0 173;
+  --brand-800: 0 0 133;
+  --brand-900: 0 0 92;
+  --brand-950: 0 0 51;
+
+  /* Near-binary white/black — minimal gradient, maximum separation */
+  --surface-50: 255 255 255;
+  --surface-100: 255 255 255;
+  --surface-200: 75 75 75;
+  --surface-300: 60 60 60;
+  --surface-400: 48 48 48;
+  --surface-500: 36 36 36;
+  --surface-600: 24 24 24;
+  --surface-700: 15 15 15;
+  --surface-800: 8 8 8;
+  --surface-900: 0 0 0;
+  --surface-950: 0 0 0;
 }
 
 /* ── Sand — "Desert Modern" (light family) ────────────────────────────────────

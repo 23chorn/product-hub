@@ -114,7 +114,7 @@ export function InlineCheckpointActions({
               onChange={(e) => setFeedback(e.target.value)}
               placeholder="What needs to change?"
               rows={2}
-              className="w-full text-sm resize-none rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-surface-800 px-3 py-2 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              className="w-full text-sm resize-none rounded-lg border border-amber-300 dark:border-amber-700 bg-surface-50 dark:bg-surface-800 px-3 py-2 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
             />
             <div className="flex gap-2">
               <button
@@ -186,7 +186,7 @@ export function InlineCheckpointActions({
       {showRejectConfirm && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center">
           <div className="absolute inset-0 bg-black/40" onClick={() => setShowRejectConfirm(false)} />
-          <div className="relative bg-white dark:bg-surface-800 rounded-xl shadow-2xl max-w-sm w-full mx-4 p-6">
+          <div className="relative bg-surface-50 dark:bg-surface-800 rounded-xl shadow-2xl max-w-sm w-full mx-4 p-6">
             <div className="flex items-center gap-3 mb-3">
               <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
                 <svg className="w-5 h-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">

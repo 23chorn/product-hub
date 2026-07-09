@@ -322,7 +322,7 @@ function TestCaseCard({ tc, frMap, phaseByFeatureKey, planUrlByFeatureKey, onDel
               <p className="text-[10px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-1">Test data</p>
               <div className="flex flex-wrap gap-1.5">
                 {Object.entries(tc.test_data).map(([k, v]) => (
-                  <span key={k} className="text-[10px] bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded px-1.5 py-0.5 font-mono text-surface-600 dark:text-surface-400">
+                  <span key={k} className="text-[10px] bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 rounded px-1.5 py-0.5 font-mono text-surface-600 dark:text-surface-400">
                     {k}: <span className="text-brand-600 dark:text-brand-400">{String(v)}</span>
                   </span>
                 ))}

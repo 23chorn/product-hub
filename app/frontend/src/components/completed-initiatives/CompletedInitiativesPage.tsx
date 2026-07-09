@@ -5,6 +5,7 @@ import { relativeTime } from '../../utils/relative-time';
 import { WORK_ITEM_STATE_BUCKETS, WORK_ITEM_STATE_BUCKET_LABELS, WORK_ITEM_STATE_BUCKET_COLORS } from '../../utils/work-item-state-bucket';
 import { CompletedInitiativeDetail } from './CompletedInitiativeDetail';
 import { PageHeaderTitle } from '../common/PageHeaderTitle';
+import { DotLabel } from '../artifact/ArtifactPrimitives';
 
 type View = 'active' | 'archived';
 
@@ -75,7 +76,7 @@ export function CompletedInitiativesPage({ initialSelection, onInitialSelectionC
               <button
                 key={item.itemId}
                 onClick={() => setSelectedItemId(item.itemId)}
-                className="text-left rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/50 overflow-hidden hover:border-brand-400 dark:hover:border-brand-500 transition-colors flex flex-col"
+                className="text-left rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/50 overflow-hidden hover:border-brand-400 dark:hover:border-brand-500 transition-colors flex flex-col"
               >
                 {/* Title-bar strip: seq number + refresh status, matching the Initiatives card chrome */}
                 <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900/40 flex-shrink-0">
@@ -96,28 +97,28 @@ export function CompletedInitiativesPage({ initialSelection, onInitialSelectionC
 
                 <h3 className="text-sm font-medium text-surface-900 dark:text-surface-100 truncate">{item.title}</h3>
 
-                <div className="flex gap-1.5 flex-wrap mt-2">
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-400">
-                    {item.epicCount} phase{item.epicCount !== 1 ? 's' : ''}
-                  </span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-400">
-                    {item.featureCount} feature{item.featureCount !== 1 ? 's' : ''}
-                  </span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-400">
-                    {item.storyCount} stor{item.storyCount !== 1 ? 'ies' : 'y'}
-                  </span>
+                <p className="text-[10px] font-mono text-surface-500 dark:text-surface-400 mt-2">
+                  {item.epicCount} phase{item.epicCount !== 1 ? 's' : ''}
+                  <span className="mx-1 text-surface-300 dark:text-surface-600">·</span>
+                  {item.featureCount} feature{item.featureCount !== 1 ? 's' : ''}
+                  <span className="mx-1 text-surface-300 dark:text-surface-600">·</span>
+                  {item.storyCount} stor{item.storyCount !== 1 ? 'ies' : 'y'}
                   {item.testCaseCount > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-400">
+                    <>
+                      <span className="mx-1 text-surface-300 dark:text-surface-600">·</span>
                       {item.testCaseCount} test{item.testCaseCount !== 1 ? 's' : ''}
-                    </span>
+                    </>
                   )}
-                </div>
+                </p>
 
-                <div className="flex gap-1.5 flex-wrap mt-2">
+                <div className="flex gap-3 flex-wrap mt-2">
                   {WORK_ITEM_STATE_BUCKETS.filter(b => item.stateBuckets[b] > 0).map(bucket => (
-                    <span key={bucket} className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${WORK_ITEM_STATE_BUCKET_COLORS[bucket]}`}>
-                      {item.stateBuckets[bucket]} {WORK_ITEM_STATE_BUCKET_LABELS[bucket]}
-                    </span>
+                    <DotLabel
+                      key={bucket}
+                      dotClass={WORK_ITEM_STATE_BUCKET_COLORS[bucket].dot}
+                      textClass={WORK_ITEM_STATE_BUCKET_COLORS[bucket].text}
+                      label={`${item.stateBuckets[bucket]} ${WORK_ITEM_STATE_BUCKET_LABELS[bucket]}`}
+                    />
                   ))}
                 </div>
 

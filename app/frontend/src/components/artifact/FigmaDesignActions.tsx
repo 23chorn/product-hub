@@ -40,7 +40,7 @@ export function FigmaScreenPreviewer({
   const [currentIndex, setCurrentIndex] = useState(0);
   const { screens, figmaFileUrl, designGaps, navigationFlow, notes } = figmaDesign;
 
-  const inputClass = 'w-full text-sm rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 px-3 py-2 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-rose-500';
+  const inputClass = 'w-full text-sm rounded-lg border border-surface-300 dark:border-surface-600 bg-surface-50 dark:bg-surface-800 px-3 py-2 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-rose-500';
   const sectionLabel = 'text-[11px] font-medium text-surface-500 dark:text-surface-400 uppercase tracking-wide mb-1';
 
   // Page 0 is always a Summary when there are screens (lists them briefly, plus nav/notes).
@@ -379,8 +379,8 @@ export function FigmaDesignActions({
   }
 
   const inputClass = compact
-    ? 'w-full text-xs rounded-md border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 px-2.5 py-1.5 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-rose-500'
-    : 'w-full text-sm rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 px-3 py-2 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-rose-500';
+    ? 'w-full text-xs rounded-md border border-surface-300 dark:border-surface-600 bg-surface-50 dark:bg-surface-800 px-2.5 py-1.5 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-rose-500'
+    : 'w-full text-sm rounded-lg border border-surface-300 dark:border-surface-600 bg-surface-50 dark:bg-surface-800 px-3 py-2 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-rose-500';
   const labelClass = 'block text-[11px] font-medium text-surface-500 dark:text-surface-400 mb-0.5';
   const primaryBtnClass = compact
     ? 'text-xs px-3 py-1.5 rounded-md bg-rose-600 hover:bg-rose-700 disabled:bg-surface-300 dark:disabled:bg-surface-700 text-white font-medium transition-colors'

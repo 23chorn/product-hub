@@ -66,7 +66,7 @@ export function ConfirmModal({
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onCancel} />
-      <div className="relative bg-white dark:bg-surface-800 rounded-xl shadow-2xl max-w-sm w-full mx-4 p-6">
+      <div className="relative bg-surface-50 dark:bg-surface-800 rounded-xl shadow-2xl max-w-sm w-full mx-4 p-6">
         <div className="flex items-center gap-3 mb-3">
           <div className={`flex-shrink-0 w-10 h-10 rounded-full ${spec.circle} flex items-center justify-center`}>
             <svg className={`w-5 h-5 ${spec.icon}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">

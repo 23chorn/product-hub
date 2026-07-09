@@ -27,7 +27,7 @@ export function PromoteOpportunityModal({ opportunity, onClose, onPromoted }: Pr
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 px-4" onClick={onClose}>
       <div
-        className="w-full max-w-md bg-white dark:bg-surface-800 rounded-xl shadow-2xl border border-surface-200 dark:border-surface-700 overflow-hidden"
+        className="w-full max-w-md bg-surface-50 dark:bg-surface-800 rounded-xl shadow-2xl border border-surface-200 dark:border-surface-700 overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
         <div className="px-5 py-4 border-b border-surface-200 dark:border-surface-700">

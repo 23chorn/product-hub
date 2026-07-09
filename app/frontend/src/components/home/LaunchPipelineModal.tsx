@@ -77,7 +77,7 @@ export function LaunchPipelineModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 dark:bg-black/50 px-4">
-      <div className="w-full max-w-3xl max-h-[90vh] bg-white dark:bg-surface-800 rounded-xl shadow-xl border border-surface-200 dark:border-surface-700 overflow-hidden flex flex-col">
+      <div className="w-full max-w-3xl max-h-[90vh] bg-surface-50 dark:bg-surface-800 rounded-xl shadow-xl border border-surface-200 dark:border-surface-700 overflow-hidden flex flex-col">
         <div className="px-5 py-4 border-b border-surface-100 dark:border-surface-700 flex-shrink-0">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-surface-400 dark:text-surface-500 mb-1">
             {phase === 'launching' ? 'Launching' : step === 'description' ? 'Step 1: Review Description' : 'Step 2: Configure Pipeline'}
@@ -112,7 +112,7 @@ export function LaunchPipelineModal({
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
                       placeholder="Add context for this initiative (syncs to Airtable)..."
-                      className="w-full px-3 py-2.5 text-xs border border-surface-200 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-750 text-surface-900 dark:text-surface-100 placeholder-surface-400 dark:placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:focus:ring-brand-400 resize-none font-mono leading-relaxed"
+                      className="w-full px-3 py-2.5 text-xs border border-surface-200 dark:border-surface-600 rounded-lg bg-surface-50 dark:bg-surface-750 text-surface-900 dark:text-surface-100 placeholder-surface-400 dark:placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-brand-500 dark:focus:ring-brand-400 resize-none font-mono leading-relaxed"
                       rows={8}
                       disabled={isSavingDescription}
                     />
@@ -183,7 +183,7 @@ export function LaunchPipelineModal({
               className={`text-left p-3 rounded-lg border transition-colors cursor-pointer ${
                 selectedPreset === 'full'
                   ? 'border-brand-400 dark:border-brand-500 bg-brand-50 dark:bg-brand-900/30'
-                  : 'border-surface-200 dark:border-surface-600 bg-white dark:bg-surface-750 hover:border-surface-300 dark:hover:border-surface-500'
+                  : 'border-surface-200 dark:border-surface-600 bg-surface-50 dark:bg-surface-750 hover:border-surface-300 dark:hover:border-surface-500'
               }`}
             >
               <div className="flex items-center gap-1.5 mb-0.5">
@@ -207,7 +207,7 @@ export function LaunchPipelineModal({
               className={`text-left p-3 rounded-lg border transition-colors cursor-pointer ${
                 selectedPreset === 'small'
                   ? 'border-brand-400 dark:border-brand-500 bg-brand-50 dark:bg-brand-900/30'
-                  : 'border-surface-200 dark:border-surface-600 bg-white dark:bg-surface-750 hover:border-surface-300 dark:hover:border-surface-500'
+                  : 'border-surface-200 dark:border-surface-600 bg-surface-50 dark:bg-surface-750 hover:border-surface-300 dark:hover:border-surface-500'
               }`}
             >
               <div className="flex items-center gap-1.5 mb-0.5">

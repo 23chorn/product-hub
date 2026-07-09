@@ -149,7 +149,7 @@ function FeatureReview({
 
   return (
     <div className="space-y-5">
-      <div className="bg-white dark:bg-surface-800 rounded-xl border border-surface-200 dark:border-surface-700 overflow-hidden">
+      <div className="bg-surface-50 dark:bg-surface-800 rounded-xl border border-surface-200 dark:border-surface-700 overflow-hidden">
         <div className="px-5 py-4 border-b border-surface-200 dark:border-surface-700">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
@@ -257,7 +257,7 @@ function HistoryEntry({ entry }: { entry: QuickFeatureHistoryEntry }) {
               <div className="flex flex-wrap gap-2">
                 {entry.adoStories.map(s => (
                   <a key={s.id} href={s.url} target="_blank" rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono font-medium bg-white dark:bg-surface-800 border border-surface-200 dark:border-surface-700 text-surface-700 dark:text-surface-300 hover:border-brand-400 hover:text-brand-600 dark:hover:text-brand-400 transition-colors">
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono font-medium bg-surface-50 dark:bg-surface-800 border border-surface-200 dark:border-surface-700 text-surface-700 dark:text-surface-300 hover:border-brand-400 hover:text-brand-600 dark:hover:text-brand-400 transition-colors">
                     <span className="text-surface-400">#{s.id}</span>
                     <span className="truncate max-w-[160px]">{s.title}</span>
                   </a>
@@ -375,10 +375,10 @@ export function QuickFeaturePanel() {
         <div className="max-w-3xl mx-auto px-6 py-6 space-y-6">
 
           {/* Input form */}
-          <div className="bg-white dark:bg-surface-800 rounded-xl border border-surface-200 dark:border-surface-700 p-5 space-y-4">
+          <div className="bg-brand-50/60 dark:bg-brand-900/20 rounded-lg border border-brand-200 dark:border-brand-800 p-5 space-y-4">
             <div>
-              <h2 className="text-base font-semibold text-surface-900 dark:text-surface-100">
-                <span className="text-brand-500 font-mono">&gt;</span> quick feature
+              <h2 className="text-sm font-mono font-semibold text-brand-700 dark:text-brand-300">
+                <span className="text-brand-500">&gt;</span> quick feature
               </h2>
               <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
                 Describe the feature — the AI generates 1–3 FRs with one story per stream per requirement.
@@ -394,7 +394,7 @@ export function QuickFeaturePanel() {
                   onChange={e => setTitle(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && !e.shiftKey && canGenerate && runGenerate()}
                   placeholder="e.g. user profile editing with avatar upload"
-                  className="w-full px-3 py-2 rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                  className="w-full px-3 py-2 rounded-md border border-brand-300 dark:border-brand-600 bg-surface-50 dark:bg-surface-800 text-surface-900 dark:text-surface-100 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
                   disabled={isGenerating}
                 />
               </div>
@@ -406,7 +406,7 @@ export function QuickFeaturePanel() {
                   onChange={e => setDescription(e.target.value)}
                   placeholder="constraints, scope limits, technical notes, or anything the PM should know…"
                   rows={3}
-                  className="w-full px-3 py-2 rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent resize-none"
+                  className="w-full px-3 py-2 rounded-md border border-brand-300 dark:border-brand-600 bg-surface-50 dark:bg-surface-800 text-surface-900 dark:text-surface-100 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent resize-none"
                   disabled={isGenerating}
                 />
               </div>
@@ -414,7 +414,7 @@ export function QuickFeaturePanel() {
               {/* Platform toggle */}
               <div>
                 <FieldLabel>platform</FieldLabel>
-                <div className="inline-flex rounded-lg border border-surface-300 dark:border-surface-600 overflow-hidden">
+                <div className="inline-flex rounded-md border border-brand-300 dark:border-brand-600 overflow-hidden">
                   {(['web', 'mobile'] as PlatformChoice[]).map(choice => (
                     <button
                       key={choice}
@@ -423,7 +423,7 @@ export function QuickFeaturePanel() {
                       className={`px-4 py-1.5 text-xs font-mono font-semibold transition-colors ${
                         platformChoice === choice
                           ? 'bg-brand-600 text-white'
-                          : 'bg-white dark:bg-surface-800 text-surface-600 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-700'
+                          : 'bg-surface-50 dark:bg-surface-800 text-surface-600 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700'
                       }`}
                     >
                       {choice}
@@ -438,7 +438,7 @@ export function QuickFeaturePanel() {
               <button
                 onClick={() => runGenerate()}
                 disabled={!canGenerate}
-                className="w-full py-2.5 px-4 rounded-lg text-sm font-mono font-medium bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
+                className="w-full py-2.5 px-4 rounded-md text-sm font-mono font-medium bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
               >
                 {isGenerating && !isRevising ? (
                   <span className="flex items-center justify-center gap-2">
@@ -478,7 +478,7 @@ export function QuickFeaturePanel() {
               />
 
               {isRevising && (
-                <div ref={revisionRef} className="bg-white dark:bg-surface-800 rounded-xl border border-surface-200 dark:border-surface-700 p-4 space-y-3">
+                <div ref={revisionRef} className="bg-surface-50 dark:bg-surface-800 rounded-xl border border-surface-200 dark:border-surface-700 p-4 space-y-3">
                   <p className="text-sm font-medium text-surface-800 dark:text-surface-200">What should change?</p>
                   <textarea
                     autoFocus
@@ -486,7 +486,7 @@ export function QuickFeaturePanel() {
                     onChange={e => setRevisionFeedback(e.target.value)}
                     placeholder="e.g. split FR1 into two separate requirements, add a story for error handling, make story points more conservative…"
                     rows={3}
-                    className="w-full px-3 py-2 rounded-lg border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-700 text-surface-900 dark:text-surface-100 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent resize-none"
+                    className="w-full px-3 py-2 rounded-md border border-brand-300 dark:border-brand-600 bg-surface-50 dark:bg-surface-800 text-surface-900 dark:text-surface-100 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent resize-none"
                   />
                   <div className="flex gap-2">
                     <button

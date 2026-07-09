@@ -281,7 +281,7 @@ function App() {
                     <>
                       <div className="fixed inset-0 z-[9998]" onClick={() => setShowUserSwitcher(false)} />
                       <div
-                        className="fixed z-[9999] w-60 bg-white dark:bg-surface-900 border border-surface-200 dark:border-surface-700 rounded-xl shadow-2xl overflow-hidden"
+                        className="fixed z-[9999] w-60 bg-surface-50 dark:bg-surface-900 border border-surface-200 dark:border-surface-700 rounded-xl shadow-2xl overflow-hidden"
                         style={rect ? { top: rect.bottom + 8, right: window.innerWidth - rect.right } : { top: 60, right: 16 }}
                       >
                         <div className="px-3 py-2 border-b border-surface-200 dark:border-surface-700">
