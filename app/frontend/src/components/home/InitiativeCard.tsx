@@ -145,7 +145,7 @@ export function InitiativeCard({
   return (
     <div
       onContextMenu={handleContextMenu}
-      className={`relative group rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/80 hover:border-brand-300 dark:hover:border-brand-600 transition-all p-5 flex flex-col ${isExpanded ? 'h-auto' : 'h-64'} ${isComplete ? 'opacity-50 hover:opacity-100' : ''}`}
+      className={`relative group rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/80 hover:border-brand-300 dark:hover:border-brand-600 transition-all overflow-hidden flex flex-col ${isExpanded ? 'h-auto' : 'h-64'} ${isComplete ? 'opacity-50 hover:opacity-100' : ''}`}
     >
       {menuPos && (() => {
         const items = [];
@@ -187,16 +187,27 @@ export function InitiativeCard({
         />
       )}
 
-      {/* Row 1: number + title + action button */}
-      <div className="flex items-start gap-2 flex-shrink-0">
-        {item.seqNum != null && (
+      {/* Title-bar strip: seq number + last-updated timestamp, like a terminal window's chrome */}
+      {(item.seqNum != null || wf?.updatedAt) && (
+        <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900/40 flex-shrink-0">
           <span
-            title={`Initiative #${item.seqNum}`}
-            className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-surface-100 dark:bg-surface-700 text-surface-500 dark:text-surface-400"
+            title={item.seqNum != null ? `Initiative #${item.seqNum}` : undefined}
+            className="font-mono text-[10px] font-semibold text-surface-500 dark:text-surface-400"
           >
-            #{item.seqNum}
+            {item.seqNum != null ? `#${item.seqNum}` : ''}
           </span>
-        )}
+          {wf?.updatedAt && (
+            <span className="text-[10px] font-mono text-surface-400 dark:text-surface-500">
+              updated {formatUpdatedAt(wf.updatedAt)}
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="flex-1 min-h-0 flex flex-col p-5 pt-3">
+
+      {/* Row 1: title + action button */}
+      <div className="flex items-start gap-2 flex-shrink-0">
         <h3 className="flex-1 min-w-0 text-base font-semibold text-surface-900 dark:text-surface-100 leading-snug line-clamp-2">
           {resolveDisplayTitle(item.initiative, wf?.summary)}
         </h3>
@@ -377,12 +388,7 @@ export function InitiativeCard({
         );
       })()}
 
-      {/* Row 5: last updated, bottom */}
-      {wf?.updatedAt && (
-        <p className="text-[10px] text-surface-400 dark:text-surface-500 flex-shrink-0">
-          Updated {formatUpdatedAt(wf.updatedAt)}
-        </p>
-      )}
+      </div>
     </div>
   );
 }
