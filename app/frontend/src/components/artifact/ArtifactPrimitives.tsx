@@ -85,6 +85,47 @@ export function FeatureDependencyBadges({ deferredTo, dependsOn }: { deferredTo?
   );
 }
 
+const AC_KEYWORD_COLOR: Record<string, string> = {
+  given: 'text-fuchsia-400',
+  when: 'text-blue-400',
+  then: 'text-green-400',
+  and: 'text-surface-400',
+  but: 'text-surface-400',
+};
+
+/** One acceptance-criteria line, split on Given/When/Then/And/But keyword boundaries so each
+ *  clause starts on its own line — same keyword coloring as the Gherkin scenario box in
+ *  QATestsView. Falls back to a single plain line for free-text criteria with no G/W/T
+ *  structure, rather than forcing every AC into a scenario shape it doesn't have. */
+function AcceptanceCriterionLine({ text }: { text: string }) {
+  const parts = text.split(/\b(Given|When|Then|And|But)\b/gi);
+  if (parts.length === 1) return <p className="text-surface-300">{text}</p>;
+  return (
+    <p>
+      {parts.map((part, pi) => {
+        if (!/^(Given|When|Then|And|But)$/i.test(part)) return <span key={pi} className="text-surface-300">{part}</span>;
+        return <span key={pi}>{pi > 1 && <br />}<span className={`font-bold ${AC_KEYWORD_COLOR[part.toLowerCase()]}`}>{part}</span></span>;
+      })}
+    </p>
+  );
+}
+
+/** Acceptance criteria rendered as console blocks, matching the QA test case Gherkin styling
+ *  (unconditionally dark, monospace, colored keywords) rather than a plain checklist — makes
+ *  a story's AC read as the same kind of test-shaped artifact as its test cases. Shared by
+ *  BacklogView's story row/Tier-1 view and QuickFeaturePanel/QuickTicketPanel's story cards. */
+export function AcceptanceCriteriaConsole({ items }: { items: string[] }) {
+  return (
+    <div className="space-y-1.5">
+      {items.map((ac, i) => (
+        <div key={i} className="rounded bg-surface-900 border border-surface-700 p-2.5 font-mono text-xs">
+          <AcceptanceCriterionLine text={ac} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Tab shell — outer container shared by all three artifact panel views ──────
 
 interface TabDef {
