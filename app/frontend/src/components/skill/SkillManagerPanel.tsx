@@ -251,7 +251,7 @@ export function SkillManagerPanel() {
   const selectedAgentFile = selectedAgentFileKey ? agentFiles.find((f) => f.key === selectedAgentFileKey) ?? null : null;
 
   return (
-    <div className="h-full flex flex-col overflow-hidden bg-surface-50 dark:bg-surface-950">
+    <div className="h-full flex flex-col overflow-hidden">
       {toast && (
         <PageHeaderActions>
           <span className={`text-xs font-medium ${toast.ok ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>

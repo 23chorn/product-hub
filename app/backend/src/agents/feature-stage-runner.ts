@@ -11,7 +11,7 @@
  *     single-agent edits for human/critic revisions (spec-driven, see below)
  *   runEpicQaStage / runEpicQaRevision — epic-level QA suite generation + revision
  */
-import type { AgentType } from '@pap/shared';
+import { featureLocalKey, renumberFeatureStories, type AgentType } from '@pap/shared';
 import db from '../data/database';
 import { logger, insertEvent, stmts, loadGlobalPolicies } from './workflow-db';
 import { validateBacklogJson, validateQaTestsJson } from './tool-validators';
@@ -36,6 +36,7 @@ import {
   filterBacklogStoriesByScope,
   filterBacklogStoriesByFeaturePlatforms,
   filterQaTestCasesByStoryIds,
+  renumberFeatureStoryIds,
   ACCEPTANCE_CRITERIA_FORMAT_RULE,
   type ProductAreaScope,
 } from './multi-agent-refinement';
@@ -242,12 +243,29 @@ export async function runBacklogMerge(
 
   // Drop any story already auto-resolved out at pushFeatureToADO time (see that function
   // and backlog-overlap.ts) so the merged backlog / epic QA generation matches what
-  // actually reached ADO, without needing to mutate any already-approved artifact.
+  // actually reached ADO, without needing to mutate any already-approved artifact. Then
+  // renumber survivors sequentially — pushFeatureToADO stamped ADO ticket keys positionally
+  // over this same filtered-and-ordered list, so this reproduces those exact keys rather
+  // than leaving the merged artifact showing the gapped ids the stories were drafted with.
   const autoResolvedKeys = loadAutoResolvedStoryKeys(workflowId);
+  let excludedAutoResolvedCount = 0;
   featureArtifacts.forEach((f: any, i: number) => {
     const featureKey = f.key || `F${i + 1}`;
+    const before = (f.stories ?? []).length;
     f.stories = excludeAutoResolvedStories(featureKey, f.stories ?? [], autoResolvedKeys);
+    excludedAutoResolvedCount += before - f.stories.length;
+    f.stories = renumberFeatureStories(f, featureKey).stories;
   });
+
+  // Surface this here too, not just at the original push-time event — a reviewer looking
+  // at the FINAL merged backlog has no other way to know some stories it once had were
+  // already dropped as duplicates. Full detail (what each one clashed with) lives in
+  // backlog_overlap_flags — see loadAutoResolvedStoryKeys / the backlog-overlaps API.
+  if (excludedAutoResolvedCount > 0) {
+    insertEvent(workflowId, 'validation_warning', 'backlog_merge',
+      `Excluded ${excludedAutoResolvedCount} stor${excludedAutoResolvedCount === 1 ? 'y' : 'ies'} already auto-resolved as duplicate(s) when an earlier feature was pushed to ADO — see backlog overlap history for what each one clashed with.`,
+      { excluded_auto_resolved_count: excludedAutoResolvedCount });
+  }
 
   // Deterministic cross-feature scope-overlap check — backstop for whatever pushFeatureToADO
   // couldn't already resolve (same-wave races between concurrently-generated features, plus
@@ -582,13 +600,16 @@ const STORY_REVISION_SPEC: SurgicalRevisionSpec = {
     );
   },
 
-  async postProcess(revised, { platformScope, extra }) {
+  async postProcess(revised, { platformScope, featureNum, extra }) {
     // Enforce platform scope on the revision too — guards against a model carrying an
     // out-of-scope story forward from the prior draft when the feedback didn't mention it.
     // Checks both the initiative-wide scope and this feature's own narrower declaration.
     const { backlog: itemScoped } = filterBacklogStoriesByScope(JSON.stringify(revised), platformScope);
     const { backlog } = filterBacklogStoriesByFeaturePlatforms(itemScoped, extra.featurePlatforms);
-    return JSON.parse(backlog);
+    // Renumber survivors sequentially — this revision hasn't reached ADO yet (it's a fresh
+    // checkpoint draft), so closing any gap the scope filters just opened is safe here,
+    // same as the initial synthesis path (multi-agent-refinement.ts).
+    return JSON.parse(renumberFeatureStoryIds(backlog, featureLocalKey(featureNum - 1)));
   },
 
   validate(jsonStr) {

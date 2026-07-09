@@ -12,14 +12,11 @@ interface HomeHeaderProps {
   showMineFilter: boolean;
   showAssignedFilter: boolean;
   isAdmin: boolean;
-  productAreas: string[];
-  productAreaFilter: string;
-  onProductAreaFilterChange: (v: string) => void;
   onCreateInitiative?: () => void;
 }
 
-/** Home screen search box, status filter chips, and product area filter —
- * portaled into the shared PageHeader's actions slot. */
+/** Home screen search box and status filter chips — portaled into the shared
+ * PageHeader's actions slot. (Product area filter removed for now — may return later.) */
 export function HomeHeader({
   searchQuery,
   onSearchChange,
@@ -31,9 +28,6 @@ export function HomeHeader({
   showMineFilter,
   showAssignedFilter,
   isAdmin,
-  productAreas,
-  productAreaFilter,
-  onProductAreaFilterChange,
   onCreateInitiative,
 }: HomeHeaderProps) {
   const primaryFilters = STATUS_FILTERS.filter(f => {
@@ -52,12 +46,12 @@ export function HomeHeader({
       {onCreateInitiative && (
         <button
           onClick={onCreateInitiative}
-          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors flex-shrink-0"
+          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-mono font-medium bg-brand-600 hover:bg-brand-700 text-white rounded-md transition-colors flex-shrink-0"
         >
           <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          New
+          new
         </button>
       )}
 
@@ -71,8 +65,8 @@ export function HomeHeader({
           value={searchQuery}
           onChange={e => onSearchChange(e.target.value)}
           onKeyDown={e => { if (e.key === 'Escape') onSearchChange(''); }}
-          placeholder="Search initiatives…"
-          className="w-full pl-8 pr-7 py-1.5 text-sm border border-surface-200 dark:border-surface-600 rounded-lg bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          placeholder="search initiatives…"
+          className="w-full pl-8 pr-7 py-1.5 text-sm font-mono border border-surface-300 dark:border-surface-600 rounded-md bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 placeholder-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
         />
         {searchQuery && (
           <button
@@ -97,31 +91,21 @@ export function HomeHeader({
             <button
               key={f.key}
               onClick={() => onStatusFilterChange(f.key)}
-              className={`px-2.5 py-1.5 text-xs rounded-lg border transition-colors ${
+              className={`px-2 py-1.5 text-xs font-mono lowercase rounded-md border transition-colors ${
                 isActive
                   ? isMine
-                    ? 'bg-sky-100 dark:bg-sky-900/40 border-sky-300 dark:border-sky-600 text-sky-800 dark:text-sky-200 font-medium'
+                    ? 'bg-sky-600 border-sky-600 text-white font-medium'
                     : isAssigned
-                    ? 'bg-violet-100 dark:bg-violet-900/40 border-violet-300 dark:border-violet-600 text-violet-800 dark:text-violet-200 font-medium'
-                    : 'bg-brand-50 dark:bg-brand-900/40 border-brand-300 dark:border-brand-600 text-brand-800 dark:text-brand-200 font-medium'
+                    ? 'bg-violet-600 border-violet-600 text-white font-medium'
+                    : 'bg-brand-600 border-brand-600 text-white font-medium'
                   : isMine && myPendingCount > 0
-                    ? 'bg-sky-50 dark:bg-sky-900/20 border-sky-200 dark:border-sky-700 text-sky-600 dark:text-sky-400 hover:border-sky-300'
+                    ? 'bg-white dark:bg-surface-800 border-sky-300 dark:border-sky-700 text-sky-600 dark:text-sky-400 hover:border-sky-400'
                     : isAssigned && count > 0
-                    ? 'bg-violet-50 dark:bg-violet-900/20 border-violet-200 dark:border-violet-700 text-violet-600 dark:text-violet-400 hover:border-violet-300'
-                    : 'bg-white dark:bg-surface-800 border-surface-200 dark:border-surface-600 text-surface-500 dark:text-surface-400 hover:border-surface-300 dark:hover:border-surface-500'
+                    ? 'bg-white dark:bg-surface-800 border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400 hover:border-violet-400'
+                    : 'bg-white dark:bg-surface-800 border-surface-300 dark:border-surface-600 text-surface-500 dark:text-surface-400 hover:border-surface-400 dark:hover:border-surface-500'
               }`}
             >
-              {f.label}
-              {(count > 0 && f.key !== 'all') && (
-                <span className={`ml-1 ${isActive ? 'opacity-80' : 'opacity-60'}`}>
-                  {count}
-                </span>
-              )}
-              {f.key === 'all' && (
-                <span className={`ml-1 ${isActive ? 'opacity-80' : 'opacity-60'}`}>
-                  {count}
-                </span>
-              )}
+              [{f.label}{(count > 0) && ` ${count}`}]
             </button>
           );
         })}
@@ -130,12 +114,12 @@ export function HomeHeader({
         <select
           value={isSecondaryActive ? statusFilter : '_more'}
           onChange={e => onStatusFilterChange(e.target.value as StatusFilter)}
-          className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 ${
+          className={`text-xs font-mono px-2.5 py-1.5 rounded-md border transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 ${
             isSecondaryActive
               ? statusFilter === 'review'
-                ? 'bg-amber-100 dark:bg-amber-900/40 border-amber-300 dark:border-amber-600 text-amber-800 dark:text-amber-200 font-medium'
-                : 'bg-brand-50 dark:bg-brand-900/40 border-brand-300 dark:border-brand-600 text-brand-800 dark:text-brand-200 font-medium'
-              : 'bg-white dark:bg-surface-800 border-surface-200 dark:border-surface-600 text-surface-500 dark:text-surface-400'
+                ? 'bg-amber-600 border-amber-600 text-white font-medium'
+                : 'bg-brand-600 border-brand-600 text-white font-medium'
+              : 'bg-white dark:bg-surface-800 border-surface-300 dark:border-surface-600 text-surface-500 dark:text-surface-400'
           }`}
         >
           <option value="_more" disabled hidden>More filters</option>
@@ -149,18 +133,6 @@ export function HomeHeader({
             ))}
         </select>
       </div>
-
-      {/* Product area filter */}
-      {productAreas.length > 0 && (
-        <select
-          value={productAreaFilter}
-          onChange={e => onProductAreaFilterChange(e.target.value)}
-          className="text-xs px-2.5 py-1.5 rounded-lg border border-surface-200 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-600 dark:text-surface-400 focus:outline-none focus:ring-2 focus:ring-brand-500 max-w-[140px]"
-        >
-          <option value="all">Product areas</option>
-          {productAreas.map(area => <option key={area} value={area}>{area}</option>)}
-        </select>
-      )}
 
     </div>
   );

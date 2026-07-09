@@ -14,6 +14,7 @@ import { QuickFeaturePanel } from './components/quick-feature/QuickFeaturePanel'
 import { PageHeader } from './components/common/PageHeader';
 import { PageHeaderTitle } from './components/common/PageHeaderTitle';
 import { CompanyLogo } from './components/common/CompanyLogo';
+import { AsciiCubeBackground } from './components/common/AsciiCubeBackground';
 import { LoginPage } from './pages/LoginPage';
 import { useModelStore } from './stores/modelStore';
 import { useSettingsStore } from './stores/settingsStore';
@@ -225,12 +226,16 @@ function App() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-surface-100 dark:bg-surface-950">
+    <div className="h-screen flex flex-col bg-surface-100 dark:bg-surface-950 relative">
+      {/* Ambient watermark — sits behind the whole app shell; visible through the
+          translucent header/footer chrome and through any page that goes transparent. */}
+      <AsciiCubeBackground className="fixed inset-0 z-0" />
+
       {/* Toast Notifications */}
       <ToastContainer />
 
       {/* Header */}
-      <header className="bg-white/90 dark:bg-surface-900/80 backdrop-blur-lg border-b border-surface-200 dark:border-surface-700">
+      <header className="relative z-10 bg-white/90 dark:bg-surface-900/80 backdrop-blur-lg border-b border-surface-200 dark:border-surface-700">
         <div className="flex items-center justify-between px-6 pt-4 pb-3">
           <div className="flex items-center gap-2">
             <CompanyLogo />
@@ -373,7 +378,7 @@ function App() {
       </header>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden relative">
+      <div className="relative z-10 flex-1 flex flex-col overflow-hidden">
         <main className="flex-1 flex flex-col overflow-hidden min-w-0 relative">
           <PageHeader />
           {/* When an initiative is open, the pipeline view portals its own back

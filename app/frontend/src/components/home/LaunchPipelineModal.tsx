@@ -77,7 +77,7 @@ export function LaunchPipelineModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 dark:bg-black/50 px-4">
-      <div className="w-full max-w-3xl max-h-[90vh] bg-white dark:bg-surface-800 rounded-2xl shadow-xl border border-surface-200 dark:border-surface-700 overflow-hidden flex flex-col">
+      <div className="w-full max-w-3xl max-h-[90vh] bg-white dark:bg-surface-800 rounded-xl shadow-xl border border-surface-200 dark:border-surface-700 overflow-hidden flex flex-col">
         <div className="px-5 py-4 border-b border-surface-100 dark:border-surface-700 flex-shrink-0">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-surface-400 dark:text-surface-500 mb-1">
             {phase === 'launching' ? 'Launching' : step === 'description' ? 'Step 1: Review Description' : 'Step 2: Configure Pipeline'}
@@ -99,9 +99,9 @@ export function LaunchPipelineModal({
                   {!isEditingDescription && (
                     <button
                       onClick={() => setIsEditingDescription(true)}
-                      className="text-xs text-brand-600 dark:text-brand-400 hover:underline font-medium"
+                      className="text-xs font-mono text-brand-600 dark:text-brand-400 hover:underline font-medium"
                     >
-                      {description ? 'Edit' : 'Add description'}
+                      {description ? 'edit' : 'add description'}
                     </button>
                   )}
                 </div>
@@ -120,9 +120,9 @@ export function LaunchPipelineModal({
                       <button
                         onClick={handleSaveDescription}
                         disabled={isSavingDescription}
-                        className="px-4 py-2 text-xs font-medium bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white rounded-lg transition-colors"
+                        className="px-4 py-2 text-xs font-mono font-medium bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white rounded-md transition-colors"
                       >
-                        {isSavingDescription ? 'Saving...' : 'Save'}
+                        {isSavingDescription ? 'saving…' : 'save'}
                       </button>
                       <button
                         onClick={() => {
@@ -130,9 +130,9 @@ export function LaunchPipelineModal({
                           setIsEditingDescription(false);
                         }}
                         disabled={isSavingDescription}
-                        className="px-4 py-2 text-xs text-surface-600 dark:text-surface-400 hover:text-surface-800 dark:hover:text-surface-200 transition-colors"
+                        className="px-4 py-2 text-xs font-mono text-surface-600 dark:text-surface-400 hover:text-surface-800 dark:hover:text-surface-200 transition-colors"
                       >
-                        Cancel
+                        cancel
                       </button>
                     </div>
                   </div>
@@ -152,16 +152,16 @@ export function LaunchPipelineModal({
                 <button
                   onClick={handleNext}
                   disabled={isEditingDescription || isSavingDescription}
-                  className="flex-1 py-3 text-sm font-medium bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl transition-colors"
+                  className="flex-1 py-3 text-sm font-mono font-medium bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md transition-colors"
                 >
-                  Next →
+                  next →
                 </button>
                 <button
                   onClick={onCancel}
                   disabled={isSavingDescription}
-                  className="px-5 py-3 text-sm text-surface-600 dark:text-surface-400 hover:text-surface-800 dark:hover:text-surface-200 transition-colors"
+                  className="px-5 py-3 text-sm font-mono text-surface-600 dark:text-surface-400 hover:text-surface-800 dark:hover:text-surface-200 transition-colors"
                 >
-                  Cancel
+                  cancel
                 </button>
               </div>
             </div>
@@ -180,7 +180,7 @@ export function LaunchPipelineModal({
             <button
               type="button"
               onClick={() => onSelectPreset('full')}
-              className={`text-left p-3 rounded-xl border transition-colors cursor-pointer ${
+              className={`text-left p-3 rounded-lg border transition-colors cursor-pointer ${
                 selectedPreset === 'full'
                   ? 'border-brand-400 dark:border-brand-500 bg-brand-50 dark:bg-brand-900/30'
                   : 'border-surface-200 dark:border-surface-600 bg-white dark:bg-surface-750 hover:border-surface-300 dark:hover:border-surface-500'
@@ -204,7 +204,7 @@ export function LaunchPipelineModal({
             <button
               type="button"
               onClick={() => onSelectPreset('small')}
-              className={`text-left p-3 rounded-xl border transition-colors cursor-pointer ${
+              className={`text-left p-3 rounded-lg border transition-colors cursor-pointer ${
                 selectedPreset === 'small'
                   ? 'border-brand-400 dark:border-brand-500 bg-brand-50 dark:bg-brand-900/30'
                   : 'border-surface-200 dark:border-surface-600 bg-white dark:bg-surface-750 hover:border-surface-300 dark:hover:border-surface-500'
@@ -233,15 +233,15 @@ export function LaunchPipelineModal({
               <div className="flex gap-2 pt-1">
                 <button
                   onClick={() => setStep('description')}
-                  className="px-5 py-3 text-sm text-surface-600 dark:text-surface-400 hover:text-surface-800 dark:hover:text-surface-200 transition-colors"
+                  className="px-5 py-3 text-sm font-mono text-surface-600 dark:text-surface-400 hover:text-surface-800 dark:hover:text-surface-200 transition-colors"
                 >
-                  ← Back
+                  back
                 </button>
                 <button
                   onClick={onConfirm}
-                  className="flex-1 py-3 text-sm font-medium bg-brand-600 hover:bg-brand-700 text-white rounded-xl transition-colors"
+                  className="flex-1 py-3 text-sm font-mono font-medium bg-brand-600 hover:bg-brand-700 text-white rounded-md transition-colors"
                 >
-                  Launch pipeline →
+                  launch pipeline →
                 </button>
               </div>
             </div>

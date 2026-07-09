@@ -38,12 +38,67 @@ function StoryCard({ story, onKeep, keeping, keepLabel }: {
   );
 }
 
+/** Label + tone for a resolved flag's status, shown in the History tab. */
+const HISTORY_STATUS_LABEL: Record<string, string> = {
+  auto_resolved: 'Auto-removed',
+  confirmed: 'Removed by reviewer',
+  dismissed: 'Dismissed — kept',
+};
+
+function HistoryRow({ flag }: { flag: BacklogOverlapFlag }) {
+  const isScopeViolation = flag.flagType === 'scope_violation';
+  // scope_violation only ever removes side B (the UI always confirms with keep: 'A' there —
+  // see the "Remove this ticket" handler below); a plain overlap can go either way, so it
+  // relies on the persisted keptSide rather than guessing.
+  const removed = flag.keptSide === 'A' ? flag.storyB : flag.keptSide === 'B' ? flag.storyA : null;
+  const kept = flag.keptSide === 'A' ? flag.storyA : flag.keptSide === 'B' ? flag.storyB : null;
+
+  return (
+    <div className="border border-surface-200 dark:border-surface-700 rounded-lg overflow-hidden">
+      <div className="px-3 py-2 bg-surface-50 dark:bg-surface-800 border-b border-surface-200 dark:border-surface-700 flex items-center justify-between flex-wrap gap-1">
+        <span className="text-xs font-medium text-surface-700 dark:text-surface-300">
+          {HISTORY_STATUS_LABEL[flag.status] ?? flag.status}
+        </span>
+        <span className="text-[10px] text-surface-400 dark:text-surface-500">
+          {flag.resolvedAt ? new Date(flag.resolvedAt).toLocaleString() : ''}
+        </span>
+      </div>
+      <div className="p-3 space-y-1.5 text-xs text-surface-600 dark:text-surface-400">
+        {isScopeViolation ? (
+          <p>
+            <span className="font-mono font-medium text-surface-700 dark:text-surface-300">{flag.storyB.featureKey}/{flag.storyB.story_id}</span>
+            {' '}({flag.storyB.title ?? '(untitled)'}) traced to <span className="font-medium">{flag.matchedTerms[0] ?? '(unknown FR)'}</span>, owned by <span className="font-mono font-medium">{flag.owningFeatureKey}</span>.
+          </p>
+        ) : (
+          <p>
+            <span className="font-mono font-medium text-surface-700 dark:text-surface-300">{flag.storyA.featureKey}/{flag.storyA.story_id}</span>
+            {' '}vs{' '}
+            <span className="font-mono font-medium text-surface-700 dark:text-surface-300">{flag.storyB.featureKey}/{flag.storyB.story_id}</span>
+            {' '}— {Math.round(flag.score * 100)}% token overlap{flag.matchedTerms.length > 0 && ` (${flag.matchedTerms.join(', ')})`}.
+          </p>
+        )}
+        {flag.status !== 'dismissed' && (
+          <p className="text-surface-500 dark:text-surface-500">
+            Removed: <span className="font-mono">{removed?.featureKey}/{removed?.story_id}</span>
+            {kept && <> — kept <span className="font-mono">{kept.featureKey}/{kept.story_id}</span></>}
+          </p>
+        )}
+        {flag.notes && <p className="italic text-surface-400 dark:text-surface-500">"{flag.notes}"</p>}
+      </div>
+    </div>
+  );
+}
+
 export function BacklogOverlapPanel({ workflowId, onClose }: Props) {
-  const [flags, setFlags] = useState<BacklogOverlapFlag[]>([]);
+  const [allFlags, setAllFlags] = useState<BacklogOverlapFlag[]>([]);
+  const [view, setView] = useState<'pending' | 'history'>('pending');
   const [loading, setLoading] = useState(true);
   const [actioning, setActioning] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+
+  const flags = allFlags.filter(f => f.status === 'pending');
+  const history = allFlags.filter(f => f.status !== 'pending').sort((a, b) => (b.resolvedAt ?? 0) - (a.resolvedAt ?? 0));
 
   useEffect(() => {
     loadFlags();
@@ -59,7 +114,7 @@ export function BacklogOverlapPanel({ workflowId, onClose }: Props) {
     setLoading(true);
     try {
       const { flags: f } = await api.getBacklogOverlaps(workflowId);
-      setFlags(f.filter(x => x.status === 'pending'));
+      setAllFlags(f);
     } catch (err: any) {
       setError(err.response?.data?.error ?? err.message ?? 'Failed to load overlap candidates');
     } finally {
@@ -76,7 +131,9 @@ export function BacklogOverlapPanel({ workflowId, onClose }: Props) {
     setError(null);
     try {
       await api.resolveBacklogOverlap(id, status, { keep });
-      setFlags((prev) => prev.filter((f) => f.id !== id));
+      // Re-fetch rather than patch locally — resolving updates resolvedAt/notes server-side
+      // and the flag needs to reappear in the History tab with that data, not just vanish.
+      await loadFlags();
       setToast(successMessage ?? (status === 'confirmed' ? 'Resolved.' : 'Dismissed as false positive.'));
     } catch (err: any) {
       setError(err.response?.data?.error ?? err.message ?? 'Failed to update overlap flag');
@@ -94,14 +151,20 @@ export function BacklogOverlapPanel({ workflowId, onClose }: Props) {
       <div className="flex items-center justify-between px-5 py-4 border-b border-surface-200 dark:border-surface-700 flex-shrink-0">
         <div>
           <h2 className="text-sm font-semibold text-surface-900 dark:text-surface-100">
-            Possible Scope Overlaps
+            Scope Overlaps
           </h2>
           <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
-            {overlapCount > 0 && `${overlapCount} overlapping pair${overlapCount !== 1 ? 's' : ''}`}
-            {overlapCount > 0 && violationCount > 0 && ', '}
-            {violationCount > 0 && `${violationCount} out-of-scope ticket${violationCount !== 1 ? 's' : ''}`}
-            {overlapCount === 0 && violationCount === 0 && 'Nothing pending'}
-            {' '}— keep/remove or dismiss each
+            {view === 'pending' ? (
+              <>
+                {overlapCount > 0 && `${overlapCount} overlapping pair${overlapCount !== 1 ? 's' : ''}`}
+                {overlapCount > 0 && violationCount > 0 && ', '}
+                {violationCount > 0 && `${violationCount} out-of-scope ticket${violationCount !== 1 ? 's' : ''}`}
+                {overlapCount === 0 && violationCount === 0 && 'Nothing pending'}
+                {' '}— keep/remove or dismiss each
+              </>
+            ) : (
+              `${history.length} resolved — auto-removed, manually removed, or dismissed`
+            )}
           </p>
         </div>
         <button
@@ -112,6 +175,23 @@ export function BacklogOverlapPanel({ workflowId, onClose }: Props) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 px-5 pt-3 flex-shrink-0">
+        {(['pending', 'history'] as const).map(v => (
+          <button
+            key={v}
+            onClick={() => setView(v)}
+            className={`px-3 py-1.5 text-xs font-medium rounded-t-md transition-colors ${
+              view === v
+                ? 'bg-surface-100 dark:bg-surface-800 text-surface-900 dark:text-surface-100'
+                : 'text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200'
+            }`}
+          >
+            {v === 'pending' ? `Pending${flags.length > 0 ? ` (${flags.length})` : ''}` : `History${history.length > 0 ? ` (${history.length})` : ''}`}
+          </button>
+        ))}
       </div>
 
       {/* Toast */}
@@ -134,7 +214,7 @@ export function BacklogOverlapPanel({ workflowId, onClose }: Props) {
           <p className="text-xs text-surface-400 dark:text-surface-500 text-center py-8">Loading…</p>
         )}
 
-        {!loading && flags.length === 0 && (
+        {!loading && view === 'pending' && flags.length === 0 && (
           <div className="text-center py-12">
             <p className="text-sm text-surface-500 dark:text-surface-400">No pending overlap candidates.</p>
             <button
@@ -146,7 +226,15 @@ export function BacklogOverlapPanel({ workflowId, onClose }: Props) {
           </div>
         )}
 
-        {flags.map((flag) => {
+        {!loading && view === 'history' && history.length === 0 && (
+          <p className="text-sm text-surface-500 dark:text-surface-400 text-center py-12">
+            No resolved overlaps yet.
+          </p>
+        )}
+
+        {!loading && view === 'history' && history.map(flag => <HistoryRow key={flag.id} flag={flag} />)}
+
+        {!loading && view === 'pending' && flags.map((flag) => {
           const busy = actioning === flag.id;
 
           if (flag.flagType === 'scope_violation') {

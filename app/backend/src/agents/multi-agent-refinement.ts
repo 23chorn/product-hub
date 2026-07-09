@@ -19,8 +19,8 @@ import { progressHeartbeatLine, collectStreamWithHeartbeat, STAGE_MAX_OUTPUT_TOK
 import { stripJsonFence, parseJsonLoose } from '../utils/json-repair';
 import { loadEpicFeatures } from './feature-decomposition';
 import { readProductArea } from './item-metadata';
-import { buildFrOwnershipMap, detectOutOfScopeFrReferences, type FrOwnershipViolation } from './backlog-overlap';
-import { featureLocalKey, type AgentType } from '@pap/shared';
+import { buildFrOwnershipMap, detectOutOfScopeFrReferences, recordOverlapFlags, type FrOwnershipViolation } from './backlog-overlap';
+import { featureLocalKey, renumberFeatureStories, type AgentType } from '@pap/shared';
 import * as fs from 'fs';
 import * as path from 'path';
 import { findRepoRoot } from '../utils/find-repo-root';
@@ -260,6 +260,29 @@ export function filterBacklogStoriesByFrOwnership(
   if (violations.length === 0) return { backlog, dropped: 0, violations: [] };
   logger.warn(`[MULTI-AGENT] Feature ${featureKey}: stripped ${violations.length} out-of-scope stor${violations.length === 1 ? 'y' : 'ies'} tracing to a sibling feature's FR`);
   return { backlog: JSON.stringify(backlogJson, null, 2), dropped: violations.length, violations };
+}
+
+/**
+ * Renumber a feature's story_ids sequentially (S1, S2, ...) after the scope/platform/
+ * FR-ownership backstops above may have dropped some out of the middle of the list —
+ * a checkpoint left showing stale gapped ids (S13, S14 after S11/S12 were dropped) would
+ * mislead a reviewer about what actually reaches ADO. Thin JSON-string wrapper around
+ * renumberFeatureStories (@pap/shared) — the single source of truth every other removal
+ * path (backlog_merge, the story revision path, the frontend's delete-story button) also
+ * calls, so they all renumber the same way instead of each re-deriving it.
+ */
+export function renumberFeatureStoryIds(backlog: string, featureKey: string): string {
+  const backlogJson = parseJsonLoose(backlog);
+  if (!backlogJson || !Array.isArray(backlogJson.features)) return backlog;
+
+  let changed = false;
+  backlogJson.features = backlogJson.features.map((feature: any) => {
+    const renumbered = renumberFeatureStories(feature, featureKey);
+    if (renumbered !== feature) changed = true;
+    return renumbered;
+  });
+
+  return changed ? JSON.stringify(backlogJson, null, 2) : backlog;
 }
 
 /**
@@ -564,12 +587,26 @@ Any story whose UI surfaces one of these screens must cite the screen's frame_ur
   // ownership (this feature's own entry included — harmless, since a story tracing to its
   // own feature's FR is never a violation).
   const frOwnership = buildFrOwnershipMap(epicFeaturesLoaded?.features ?? []);
-  const { backlog, violations } = filterBacklogStoriesByFrOwnership(platformScoped, featureLocalKey(featureIndex), frOwnership);
+  const { backlog: frFiltered, violations } = filterBacklogStoriesByFrOwnership(platformScoped, featureLocalKey(featureIndex), frOwnership);
+  // Renumber here (not inside each filter above) so it's a single fixup pass that closes
+  // any gaps left by the scope/platform filters too, not just this FR-ownership one.
+  const backlog = renumberFeatureStoryIds(frFiltered, featureLocalKey(featureIndex));
   if (violations.length > 0) {
     const summary = violations.map(v => `${v.storyId} → ${v.frId} (owned by ${v.owningFeatureKey})`).join(', ');
     insertEvent(workflowId, 'validation_warning', stage,
       `Removed ${violations.length} stor${violations.length === 1 ? 'y' : 'ies'} that traced to a sibling feature's FR before this checkpoint — ${summary}. Confirm that feature's own refinement covers it.`,
       { fr_ownership_violations: violations });
+    // Record alongside every other auto-removal (push-time cross-feature dedup,
+    // backlog_merge's own FR-ownership backstop) so backlog_overlap_flags stays the one
+    // place to look up every story this workflow has ever auto-dropped, not just some of them.
+    recordOverlapFlags(violations.map(v => ({
+      workflowId, itemId,
+      featureKeyA: v.owningFeatureKey, storyIdA: '',
+      featureKeyB: v.featureKey, storyIdB: v.storyId,
+      score: 1, matchedTerms: [v.frId],
+      status: 'auto_resolved' as const,
+      flagType: 'scope_violation' as const,
+    })));
   }
 
   logger.info(`[MULTI-AGENT] Feature ${featureNum} refinement complete — backlog: ${backlog.length} chars`);

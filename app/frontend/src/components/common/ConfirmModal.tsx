@@ -83,16 +83,16 @@ export function ConfirmModal({
           <button
             onClick={onCancel}
             disabled={loading}
-            className="flex-1 py-2 px-3 text-sm font-medium rounded-lg border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-700 transition-colors"
+            className="flex-1 py-2 px-3 text-sm font-mono font-medium rounded-md border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-700 transition-colors"
           >
-            {cancelLabel}
+            {cancelLabel.toLowerCase()}
           </button>
           <button
             onClick={onConfirm}
             disabled={loading}
-            className={`flex-1 py-2 px-3 ${spec.confirmButton} disabled:bg-surface-300 text-white text-sm font-medium rounded-lg transition-colors`}
+            className={`flex-1 py-2 px-3 ${spec.confirmButton} disabled:bg-surface-300 text-white text-sm font-mono font-medium rounded-md transition-colors`}
           >
-            {loading ? loadingLabel : confirmLabel}
+            {loading ? loadingLabel.toLowerCase() : `${confirmLabel.toLowerCase()} →`}
           </button>
         </div>
       </div>

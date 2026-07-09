@@ -414,20 +414,20 @@ export function SettingsPanel() {
 
       {/* Footer */}
       <div className="flex items-center justify-between px-5 py-3 border-t border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/50 flex-shrink-0">
-        <p className="text-xs text-surface-400 dark:text-surface-500">
-          {dirty ? 'Unsaved changes' : 'All changes saved'}
+        <p className="text-xs font-mono text-surface-400 dark:text-surface-500">
+          {dirty ? 'unsaved changes' : 'all changes saved'}
         </p>
         <div className="flex items-center gap-2">
           <button
             onClick={closeSettings}
-            className="px-3 py-1.5 text-xs text-surface-600 dark:text-surface-400 hover:text-surface-800 dark:hover:text-surface-200 transition-colors"
+            className="px-3 py-1.5 text-xs font-mono text-surface-600 dark:text-surface-400 hover:text-surface-800 dark:hover:text-surface-200 transition-colors"
           >
-            Cancel
+            cancel
           </button>
           <button
             onClick={save}
             disabled={!dirty || saving}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-brand-600 hover:bg-brand-700 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono font-medium rounded-md bg-brand-600 hover:bg-brand-700 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             {saving ? (
               <>
@@ -435,9 +435,9 @@ export function SettingsPanel() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
-                Saving…
+                saving…
               </>
-            ) : 'Save'}
+            ) : 'save →'}
           </button>
         </div>
       </div>

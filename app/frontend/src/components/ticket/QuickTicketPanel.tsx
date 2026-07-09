@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { api } from '../../services/api';
 import { useConfigStore } from '../../stores/configStore';
 import { useModelStore } from '../../stores/modelStore';
+import { FieldLabel } from '../common/FieldLabel';
 
 interface FormattedStory {
   title: string;
@@ -36,7 +37,7 @@ function highlightGWT(text: string) {
   const parts = text.split(/(\bGiven\b|\bWhen\b|\bThen\b|\bAnd\b|\bBut\b)/i);
   return parts.map((part, i) =>
     /^(Given|When|Then|And|But)$/i.test(part)
-      ? <strong key={i} className="text-gray-900 dark:text-gray-100">{part}</strong>
+      ? <strong key={i} className="text-surface-900 dark:text-surface-100">{part}</strong>
       : <span key={i}>{part}</span>
   );
 }
@@ -109,16 +110,18 @@ export function QuickTicketPanel({ onClose }: QuickTicketPanelProps) {
   };
 
   return (
-    <div className="h-full bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden">
+    <div className="h-full bg-white dark:bg-surface-800 rounded-xl shadow-2xl border border-surface-200 dark:border-surface-700 flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-surface-200 dark:border-surface-700 flex-shrink-0">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Quick Ticket</h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Format a ticket and get an AI complexity estimate</p>
+          <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-100">
+            <span className="text-brand-500 font-mono">&gt;</span> quick ticket
+          </h2>
+          <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">Format a ticket and get an AI complexity estimate</p>
         </div>
         <button
           onClick={onClose}
-          className="p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+          className="p-2 rounded-md text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 hover:bg-surface-100 dark:hover:bg-surface-700 transition-colors"
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -130,34 +133,30 @@ export function QuickTicketPanel({ onClose }: QuickTicketPanelProps) {
         {/* Input form */}
         <div className="space-y-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-              Ticket title <span className="text-red-500">*</span>
-            </label>
+            <FieldLabel>ticket title <span className="text-red-500">*</span></FieldLabel>
             <input
               type="text"
               value={title}
               onChange={e => setTitle(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSubmit()}
-              placeholder="e.g. Add CSV export to reports page"
-              className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="e.g. add CSV export to reports page"
+              className="w-full px-3 py-2 rounded-md border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-              Additional context <span className="text-xs font-normal text-gray-400">(optional)</span>
-            </label>
+            <FieldLabel>additional context <span className="text-xs font-normal normal-case text-surface-400">(optional)</span></FieldLabel>
             <textarea
               value={description}
               onChange={e => setDescription(e.target.value)}
-              placeholder="Technical notes, constraints, or any extra detail..."
+              placeholder="technical notes, constraints, or any extra detail…"
               rows={3}
-              className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+              className="w-full px-3 py-2 rounded-md border border-surface-300 dark:border-surface-600 bg-white dark:bg-surface-800 text-surface-900 dark:text-surface-100 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent resize-none"
             />
           </div>
           <button
             onClick={handleSubmit}
             disabled={!title.trim() || isStreaming}
-            className="w-full py-2 px-4 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
+            className="w-full py-2 px-4 rounded-md text-sm font-mono font-medium bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
           >
             {isStreaming ? (
               <span className="flex items-center justify-center gap-2">
@@ -165,24 +164,24 @@ export function QuickTicketPanel({ onClose }: QuickTicketPanelProps) {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
-                Analysing...
+                analysing…
               </span>
-            ) : 'Format & Estimate'}
+            ) : 'estimate →'}
           </button>
         </div>
 
         {/* Error */}
         {error && (
-          <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-700 dark:text-red-300">
+          <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md text-sm text-red-700 dark:text-red-300">
             {error}
           </div>
         )}
 
         {/* Streaming text (while processing, before result parses) */}
         {isStreaming && streamedText && !story && (
-          <div className="p-4 bg-gray-50 dark:bg-gray-700/40 rounded-lg border border-gray-200 dark:border-gray-600">
-            <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Analysing...</p>
-            <p className="text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">{streamedText}</p>
+          <div className="p-4 bg-surface-50 dark:bg-surface-700/40 rounded-md border border-surface-200 dark:border-surface-600">
+            <p className="text-xs font-mono font-medium text-surface-500 dark:text-surface-400 mb-2">analysing…</p>
+            <p className="text-sm text-surface-600 dark:text-surface-300 whitespace-pre-wrap leading-relaxed">{streamedText}</p>
           </div>
         )}
 
@@ -203,46 +202,46 @@ export function QuickTicketPanel({ onClose }: QuickTicketPanelProps) {
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  AI Est. Dev: {aiEstimateDevHours}h
+                  AI est. dev: {aiEstimateDevHours}h
                 </span>
               )}
             </div>
 
             {/* Complexity rationale */}
             {story.complexityRationale && (
-              <p className="text-sm text-gray-500 dark:text-gray-400 italic leading-relaxed">{story.complexityRationale}</p>
+              <p className="text-sm text-surface-500 dark:text-surface-400 italic leading-relaxed">{story.complexityRationale}</p>
             )}
 
             {/* Story card */}
-            <div className="rounded-xl border border-gray-200 dark:border-gray-600 overflow-hidden">
+            <div className="rounded-lg border border-surface-200 dark:border-surface-600 overflow-hidden">
               {/* Title bar */}
-              <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600">
-                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{story.title}</p>
+              <div className="px-4 py-3 bg-surface-50 dark:bg-surface-700/50 border-b border-surface-200 dark:border-surface-600">
+                <p className="text-sm font-semibold text-surface-900 dark:text-surface-100">{story.title}</p>
               </div>
 
               {/* User story body */}
-              <div className="px-4 py-3 space-y-1.5 border-b border-gray-200 dark:border-gray-600">
-                <p className="text-sm text-gray-700 dark:text-gray-300">
-                  <span className="font-semibold text-gray-900 dark:text-gray-100">As a</span> {story.persona}
+              <div className="px-4 py-3 space-y-1.5 border-b border-surface-200 dark:border-surface-600">
+                <p className="text-sm text-surface-700 dark:text-surface-300">
+                  <span className="font-semibold text-surface-900 dark:text-surface-100">As a</span> {story.persona}
                 </p>
-                <p className="text-sm text-gray-700 dark:text-gray-300">
-                  <span className="font-semibold text-gray-900 dark:text-gray-100">I want</span> {story.goal}
+                <p className="text-sm text-surface-700 dark:text-surface-300">
+                  <span className="font-semibold text-surface-900 dark:text-surface-100">I want</span> {story.goal}
                 </p>
-                <p className="text-sm text-gray-700 dark:text-gray-300">
-                  <span className="font-semibold text-gray-900 dark:text-gray-100">So that</span> {story.benefit}
+                <p className="text-sm text-surface-700 dark:text-surface-300">
+                  <span className="font-semibold text-surface-900 dark:text-surface-100">So that</span> {story.benefit}
                 </p>
               </div>
 
               {/* Acceptance Criteria */}
               {story.acceptanceCriteria.length > 0 && (
                 <div className="px-4 py-3">
-                  <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2.5">
-                    Acceptance Criteria
+                  <p className="text-xs font-mono font-semibold text-surface-400 dark:text-surface-500 uppercase tracking-wide mb-2.5">
+                    acceptance criteria
                   </p>
                   <ol className="space-y-2.5">
                     {story.acceptanceCriteria.map((ac, i) => (
-                      <li key={i} className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
-                        <span className="font-semibold text-gray-900 dark:text-gray-100 mr-1">AC {i + 1}:</span>
+                      <li key={i} className="text-sm text-surface-700 dark:text-surface-300 leading-relaxed">
+                        <span className="font-semibold text-surface-900 dark:text-surface-100 mr-1">AC {i + 1}:</span>
                         {highlightGWT(ac)}
                       </li>
                     ))}
@@ -259,18 +258,18 @@ export function QuickTicketPanel({ onClose }: QuickTicketPanelProps) {
                     href={pushResult.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-mono font-medium bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
-                    Created #{pushResult.id} — Open in ADO
+                    created #{pushResult.id} — open in ADO
                   </a>
                 ) : (
                   <button
                     onClick={handlePushToAdo}
                     disabled={isPushing}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-mono font-medium bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
                   >
                     {isPushing ? (
                       <>
@@ -278,9 +277,9 @@ export function QuickTicketPanel({ onClose }: QuickTicketPanelProps) {
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                         </svg>
-                        Creating...
+                        creating…
                       </>
-                    ) : 'Push to ADO'}
+                    ) : 'push to ADO →'}
                   </button>
                 )}
               </div>

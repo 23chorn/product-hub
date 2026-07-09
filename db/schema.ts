@@ -170,6 +170,11 @@ export const backlogOverlapFlags = sqliteTable('backlog_overlap_flags', {
   // deterministic, not fuzzy — so story_id_a is a placeholder (no comparable "other" story;
   // the owning feature just hasn't necessarily written its own version of it yet).
   flag_type:           text('flag_type', { enum: ['overlap', 'scope_violation'] }).notNull().default('overlap'),
+  // Which side survived a 'confirmed' resolution — null for 'pending'/'dismissed' (nothing
+  // removed) and for 'auto_resolved' (side A is kept by convention, see recordOverlapFlags).
+  // Only a human 'confirmed' resolution of an 'overlap' flag can go either way, so this is
+  // the one case worth persisting rather than re-deriving from convention.
+  kept_side:           text('kept_side', { enum: ['A', 'B'] }),
 }, (t) => [
   index('idx_backlog_overlap_flags_workflow').on(t.workflow_id),
 ]);

@@ -22,6 +22,18 @@ export default {
       },
       fontFamily: {
         sans: ['"Space Grotesk"', 'system-ui', '-apple-system', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', '"Liberation Mono"', '"Courier New"', 'monospace'],
+      },
+      keyframes: {
+        'fade-in': {
+          '0%': { opacity: '0', transform: 'translateY(4px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+      },
+      animation: {
+        // `forwards` so a delayed/staggered fade-in holds its end state instead of
+        // reverting to the pre-animation (opacity-0) class once the animation ends.
+        'fade-in': 'fade-in 0.5s ease-out forwards',
       },
       // @tailwindcss/typography ships hardcoded slate/gray hex colors for `prose` content
       // that don't respond to our `--surface-*`/`--brand-*` CSS variables, so markdown-

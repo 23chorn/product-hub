@@ -1,4 +1,5 @@
-import type { BacklogData, BacklogFeature } from '@pap/shared';
+import type { BacklogData, BacklogFeature, BacklogStory } from '@pap/shared';
+import { renumberFeatureStories, parseStoryLocalKey, featureLocalKey } from '@pap/shared';
 
 // ── Checkpoint-review deletion (story_decomposition_F<n> artifacts only) ────────
 //
@@ -12,11 +13,27 @@ function getPreviewFeature(data: BacklogData): BacklogFeature | undefined {
   return data.features?.[0] ?? data.feature;
 }
 
-/** Remove one story from the previewed feature. Returns new BacklogData; no-op if there's no previewed feature. */
+/** Recover this feature's "F<n>" key from any story's own story_id ("F3.S2") rather than
+ *  needing it threaded in as a prop — every story in a feature preview shares the same
+ *  prefix, so the first parseable one is enough. */
+function deriveFeatureKey(stories: BacklogStory[]): string | null {
+  for (const s of stories) {
+    const parsed = s.story_id ? parseStoryLocalKey(s.story_id) : null;
+    if (parsed) return featureLocalKey(parsed.featureIndex);
+  }
+  return null;
+}
+
+/** Remove one story from the previewed feature and renumber the survivors sequentially
+ *  (S1, S2, ...) — this is a pending, not-yet-approved checkpoint, so no ADO ticket exists
+ *  yet to desync from (see renumberFeatureStories in @pap/shared). No-op if there's no
+ *  previewed feature. */
 export function removeStoryFromBacklog(data: BacklogData, storyIndex: number): BacklogData {
   const feature = getPreviewFeature(data);
   if (!feature) return data;
-  const stories = feature.stories.filter((_, si) => si !== storyIndex);
+  const filtered = feature.stories.filter((_, si) => si !== storyIndex);
+  const featureKey = deriveFeatureKey(feature.stories);
+  const stories = featureKey ? renumberFeatureStories({ ...feature, stories: filtered }, featureKey).stories : filtered;
   if (data.features) return { ...data, features: [{ ...feature, stories }, ...data.features.slice(1)] };
   return { ...data, feature: { ...feature, stories } };
 }

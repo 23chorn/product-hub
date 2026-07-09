@@ -63,7 +63,7 @@ export function AssignUserFlyout({ item, onClose, onToggle }: Props) {
                   )}
                 </div>
                 <span className="text-sm text-surface-800 dark:text-surface-200 text-left flex-1">{u.name}</span>
-                <span className="text-xs text-surface-400">@{u.username}</span>
+                <span className="text-xs font-mono text-surface-400">@{u.username}</span>
               </button>
             );
           })}

@@ -128,7 +128,7 @@ function FRSection({ fr }: { fr: QuickFR }) {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-3">
-        <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-400 border border-brand-200 dark:border-brand-700/40">
+        <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-mono font-bold bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-400 border border-brand-200 dark:border-brand-700/40">
           {fr.id}
         </span>
         <h3 className="text-sm font-semibold text-surface-800 dark:text-surface-200">{fr.title}</h3>

@@ -304,10 +304,16 @@ const STAGE_STARTED_NARRATION: Record<string, string> = {
   epic_qa:              'Vera is synthesising the epic-level QA test suite across all approved features.',
 };
 
+/** "backlog_merge" -> "Backlog Merge" — last-resort fallback for a stage with no entry
+ *  in STAGE_STARTED_NARRATION above, so a raw snake_case id never leaks into the event log. */
+function humanizeStageId(stage: string): string {
+  return stage.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
 export function stageStartedNarration(stage: string): string {
   const featureStageMatch = stage.match(/^story_decomposition_F(\d+)$/);
   return STAGE_STARTED_NARRATION[stage]
-    ?? (featureStageMatch ? `Starting refinement for Feature ${featureStageMatch[1]}...` : `Starting ${stage}...`);
+    ?? (featureStageMatch ? `Starting refinement for Feature ${featureStageMatch[1]}...` : `Starting ${humanizeStageId(stage)}...`);
 }
 
 export function stageProgressSection(stage: string, section: string, index?: number): string {

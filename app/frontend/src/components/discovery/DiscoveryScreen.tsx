@@ -85,7 +85,7 @@ export function DiscoveryScreen() {
   };
 
   return (
-    <div className="h-full bg-surface-50 dark:bg-surface-950 flex flex-col overflow-hidden">
+    <div className="h-full flex flex-col overflow-hidden">
       <PageHeaderActions>
         {canRun ? (
           <button

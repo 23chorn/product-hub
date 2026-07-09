@@ -321,7 +321,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   const epicQaArtifactId = deriveEpicQaArtifactId(checkpoints);
 
   return (
-    <div className="flex h-full overflow-hidden bg-white dark:bg-[#0d1117] font-mono">
+    <div className="flex h-full overflow-hidden font-mono">
       {/* ── Left: stage list ───────────────────────────────────── */}
       <div className="w-96 flex-shrink-0 flex flex-col border-r border-surface-200 dark:border-surface-800/80">
         {/* Scrollable content: agent stage rows + post-completion pipeline section */}
@@ -386,9 +386,12 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
         <PageHeaderTitle>
           <button
             onClick={onBack}
-            className="flex-shrink-0 text-[11px] text-surface-500 hover:text-surface-800 dark:hover:text-surface-200 transition-colors font-mono"
+            className="flex items-center gap-1 text-sm text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200 transition-colors flex-shrink-0"
           >
-            ← back
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            back
           </button>
           <span className="text-surface-300 dark:text-surface-700/60 text-xs select-none">│</span>
           <span className="text-sm font-semibold text-surface-900 dark:text-surface-100 truncate leading-tight">
@@ -677,7 +680,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
 
           const hasArtifacts = regularArtifacts.length > 0 || !!ticketArtifact || featureButtons.length > 0;
           return (
-            <div className="flex-shrink-0 border-t border-surface-200 dark:border-surface-700/60 bg-white dark:bg-[#0d1117] px-2 py-2">
+            <div className="flex-shrink-0 border-t border-surface-200 dark:border-surface-700/60 px-2 py-2">
               <div className="flex flex-wrap items-center gap-1.5">
                 {regularArtifacts.map((artifact) => {
                   const stageLabel = STAGE_SHORT_LABELS[artifact.type ?? ''] ?? STAGE_SHORT_LABELS[artifact.stage ?? ''] ?? STAGE_LABELS[artifact.stage ?? ''] ?? artifact.type;
@@ -685,7 +688,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                     <button
                       key={artifact.id}
                       onClick={() => setViewingArtifactId(artifact.id)}
-                      className="px-2.5 py-1 text-xs font-medium rounded bg-surface-100 dark:bg-surface-800/60 text-surface-700 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-700/60 transition-colors"
+                      className="px-2.5 py-1 text-xs font-medium rounded border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-800 hover:border-surface-400 dark:hover:border-surface-500 transition-colors"
                     >
                       {stageLabel}
                     </button>
@@ -694,7 +697,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                 {ticketArtifact && (
                   <button
                     onClick={() => setViewingArtifactId(ticketArtifact.id)}
-                    className="px-2.5 py-1 text-xs font-medium rounded bg-surface-100 dark:bg-surface-800/60 text-surface-700 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-700/60 transition-colors"
+                    className="px-2.5 py-1 text-xs font-medium rounded border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-800 hover:border-surface-400 dark:hover:border-surface-500 transition-colors"
                   >
                     Epic/Features
                   </button>
@@ -702,7 +705,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                 {featureButtons.length > 0 && (
                   <button
                     onClick={() => setShowBacklogOverview(true)}
-                    className="px-2.5 py-1 text-xs font-medium rounded bg-surface-100 dark:bg-surface-800/60 text-surface-700 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-700/60 transition-colors"
+                    className="px-2.5 py-1 text-xs font-medium rounded border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-800 hover:border-surface-400 dark:hover:border-surface-500 transition-colors"
                   >
                     Stories/Tests
                   </button>

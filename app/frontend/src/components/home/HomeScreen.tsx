@@ -371,11 +371,6 @@ export function HomeScreen() {
     return c;
   }, [visibleItems, productAreaFilter, mineWorkflowIds]);
 
-  const productAreas = useMemo(
-    () => Array.from(new Set(visibleItems.map(i => i.productArea).filter((v): v is string => !!v))).sort(),
-    [visibleItems]
-  );
-
   const filteredLocalItems = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     const filtered = visibleItems.filter(item => {
@@ -433,7 +428,7 @@ export function HomeScreen() {
   };
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-surface-50 dark:bg-surface-950">
+    <div className="flex flex-col h-full overflow-hidden">
 
       {/* Search + filters, portaled into the shared PageHeader */}
       <PageHeaderActions>
@@ -448,9 +443,6 @@ export function HomeScreen() {
           showMineFilter={!noAuth && !!user}
           showAssignedFilter={!noAuth && !!user}
           isAdmin={isAdmin}
-          productAreas={productAreas}
-          productAreaFilter={productAreaFilter}
-          onProductAreaFilterChange={setProductAreaFilter}
           onCreateInitiative={canCreate ? openForm : undefined}
         />
       </PageHeaderActions>
@@ -505,12 +497,12 @@ export function HomeScreen() {
               {canCreate && (
                 <button
                   onClick={openForm}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium bg-brand-600 hover:bg-brand-700 text-white rounded-lg transition-colors"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-mono font-medium bg-brand-600 hover:bg-brand-700 text-white rounded-md transition-colors"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
-                  Create first initiative
+                  create first initiative →
                 </button>
               )}
             </div>
@@ -522,7 +514,7 @@ export function HomeScreen() {
               {loading && localItems.length === 0 ? (
                 <div className="grid grid-cols-1 gap-3">
                   {[...Array(4)].map((_, i) => (
-                    <div key={i} className="h-32 rounded-xl bg-surface-200 dark:bg-surface-800 animate-pulse" />
+                    <div key={i} className="h-32 rounded-lg bg-surface-200 dark:bg-surface-800 animate-pulse" />
                   ))}
                 </div>
               ) : (

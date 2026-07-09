@@ -29,6 +29,7 @@ interface OverlapFlagRow {
   notes: string | null;
   created_at: number;
   flag_type: 'overlap' | 'scope_violation';
+  kept_side: 'A' | 'B' | null;
 }
 
 /**
@@ -78,6 +79,10 @@ backlogOverlapRoutes.get('/:workflowId/backlog-overlaps', async (req: AuthReques
       storyB: storiesById.get(row.story_id_b) ?? { story_id: row.story_id_b, featureKey: row.feature_key_b },
       createdAt: row.created_at,
       resolvedAt: row.resolved_at,
+      // 'auto_resolved' always keeps side A by convention (see recordOverlapFlags); a human
+      // 'confirmed' resolution persists whichever side they actually picked. Null for
+      // 'pending'/'dismissed' — nothing was removed.
+      keptSide: row.status === 'auto_resolved' ? 'A' : row.kept_side,
     }));
 
     res.json({ flags });
@@ -130,9 +135,9 @@ backlogOverlapRoutes.patch('/backlog-overlaps/:id', async (req: AuthRequest, res
 
     db.prepare(`
       UPDATE backlog_overlap_flags
-      SET status = ?, notes = ?, resolved_by_user_id = ?, resolved_at = ?
+      SET status = ?, notes = ?, resolved_by_user_id = ?, resolved_at = ?, kept_side = ?
       WHERE id = ?
-    `).run(status, notes ?? null, req.user?.id ?? null, Date.now(), id);
+    `).run(status, notes ?? null, req.user?.id ?? null, Date.now(), status === 'confirmed' ? keep! : null, id);
 
     logger.info(`Overlap flag ${id} marked ${status} by ${req.user?.username ?? 'system'}`);
     res.json({ ok: true });

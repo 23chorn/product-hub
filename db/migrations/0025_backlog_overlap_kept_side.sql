@@ -1,0 +1,1 @@
+ALTER TABLE `backlog_overlap_flags` ADD `kept_side` text;

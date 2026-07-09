@@ -3,6 +3,8 @@
 // detail) and the frontend (artifact viewer, Progress Tracker detail page) so both
 // runtimes parse and interpret the same backlog artifact JSON one way.
 
+import { storyLocalKey } from './initiative-status';
+
 export interface BacklogStory {
   // Old format (story decomposition)
   title: string;
@@ -124,6 +126,43 @@ export function storiesInDisplayOrder(stories: BacklogStory[]): Array<{ story: B
   return stories
     .map((story, index) => ({ story, index }))
     .sort((a, b) => (storyNumber(a.story) - storyNumber(b.story)) || (a.index - b.index));
+}
+
+/**
+ * Renumber a feature's stories sequentially (S1, S2, ...) after some were filtered out of
+ * the middle of the array. Every removal path that can drop a story mid-list — cross-feature
+ * dedup, the FR-ownership scope-creep backstop, a human deleting one from a pending checkpoint
+ * — otherwise leaves the survivors with the gapped ids they were drafted with, which stops
+ * matching the positional numbering ADO ticket creation stamps (storyLocalKey over the final
+ * array). Single source of truth so every caller that removes a story mid-array renumbers the
+ * same way instead of each re-deriving it.
+ *
+ * Only safe to call BEFORE this feature's stories have been pushed to ADO — once a story_id is
+ * stamped onto a real ADO ticket title and recorded in ado_work_item_map by that id, renumbering
+ * the JSON out from under it desyncs the two instead of fixing anything. Callers past that point
+ * (story-removal.ts's post-push deletes) must leave gapped ids as-is.
+ *
+ * Rewrites depends_on refs that pointed at a renumbered same-feature story; a ref to a different
+ * feature or an already-dropped story is left untouched. Returns the same object (no-op) when
+ * nothing actually needed renumbering.
+ */
+export function renumberFeatureStories(feature: BacklogFeature, featureKey: string): BacklogFeature {
+  if (!Array.isArray(feature.stories) || feature.stories.length === 0) return feature;
+
+  const idMap = new Map<string, string>();
+  const stories = feature.stories.map((s, i) => {
+    const newId = storyLocalKey(featureKey, i);
+    if (s.story_id && s.story_id !== newId) idMap.set(s.story_id, newId);
+    return { ...s, story_id: newId };
+  });
+  if (idMap.size === 0) return feature;
+
+  return {
+    ...feature,
+    stories: stories.map(s => Array.isArray(s.depends_on)
+      ? { ...s, depends_on: s.depends_on.map(d => idMap.get(d) ?? d) }
+      : s),
+  };
 }
 
 // ── Platform breakdown (Progress Tracker detail page, dev/QA ticket export) ────

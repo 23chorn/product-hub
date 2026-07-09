@@ -145,7 +145,7 @@ export function InitiativeCard({
   return (
     <div
       onContextMenu={handleContextMenu}
-      className={`relative group rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/80 hover:border-surface-300 dark:hover:border-surface-600 hover:shadow-sm transition-all p-5 flex flex-col ${isExpanded ? 'h-auto' : 'h-64'} ${isComplete ? 'opacity-50 hover:opacity-100' : ''}`}
+      className={`relative group rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-800/80 hover:border-brand-300 dark:hover:border-brand-600 transition-all p-5 flex flex-col ${isExpanded ? 'h-auto' : 'h-64'} ${isComplete ? 'opacity-50 hover:opacity-100' : ''}`}
     >
       {menuPos && (() => {
         const items = [];
@@ -205,38 +205,38 @@ export function InitiativeCard({
           {/* Action button */}
           {isActive ? (
               <button onClick={onResume}
-                className="text-xs px-3 py-1.5 rounded-lg border border-cyan-300 dark:border-cyan-700 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 font-medium transition-colors">
-                Continue →
+                className="text-xs font-mono px-3 py-1.5 rounded-md border border-cyan-300 dark:border-cyan-700 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20 font-medium transition-colors">
+                continue →
               </button>
             ) : isCancelled ? (
               <button onClick={onResume}
-                className="text-xs px-3 py-1.5 rounded-lg border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 font-medium transition-colors">
-                Restart →
+                className="text-xs font-mono px-3 py-1.5 rounded-md border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 font-medium transition-colors">
+                restart →
               </button>
             ) : isComplete ? (
               <button onClick={onResume}
-                className="text-xs px-3 py-1.5 rounded-lg border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-700/50 font-medium transition-colors">
-                View →
+                className="text-xs font-mono px-3 py-1.5 rounded-md border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-400 hover:bg-surface-50 dark:hover:bg-surface-700/50 font-medium transition-colors">
+                view →
               </button>
             ) : !canLaunch ? (
               <span title="Only Product or Admin users can launch a workflow" className="cursor-not-allowed">
                 <button disabled
-                  className="text-xs px-3 py-1.5 rounded-lg border border-surface-200 dark:border-surface-700 text-surface-400 dark:text-surface-600 font-medium pointer-events-none">
-                  Launch →
+                  className="text-xs font-mono px-3 py-1.5 rounded-md border border-surface-200 dark:border-surface-700 text-surface-400 dark:text-surface-600 font-medium pointer-events-none">
+                  launch →
                 </button>
               </span>
             ) : (
               <button onClick={onLaunch} disabled={isAnalysing}
-                className="text-xs px-3 py-1.5 rounded-lg border border-brand-300 dark:border-brand-700 text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 disabled:opacity-60 font-medium transition-colors flex items-center gap-1.5">
+                className="text-xs font-mono px-3 py-1.5 rounded-md border border-brand-300 dark:border-brand-700 text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 disabled:opacity-60 font-medium transition-colors flex items-center gap-1.5">
                 {isAnalysing ? (
                   <>
                     <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
                     </svg>
-                    Analysing…
+                    analysing…
                   </>
-                ) : 'Launch →'}
+                ) : 'launch →'}
               </button>
             )}
         </div>

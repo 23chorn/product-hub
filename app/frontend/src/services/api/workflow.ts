@@ -272,4 +272,7 @@ export interface BacklogOverlapFlag {
   storyB: BacklogOverlapStory;
   createdAt: number;
   resolvedAt: number | null;
+  /** Which side survived resolution — 'A' for every 'auto_resolved' flag (fixed convention),
+   *  whichever the reviewer picked for a 'confirmed' one, null for 'pending'/'dismissed'. */
+  keptSide: 'A' | 'B' | null;
 }

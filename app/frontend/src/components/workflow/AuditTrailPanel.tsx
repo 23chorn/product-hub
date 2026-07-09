@@ -54,7 +54,7 @@ export function AuditTrailPanel({ workflowId, onClose }: AuditTrailPanelProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 dark:bg-black/50 px-4" onClick={onClose}>
       <div
-        className="w-full max-w-lg max-h-[80vh] flex flex-col bg-white dark:bg-surface-800 rounded-2xl shadow-xl border border-surface-200 dark:border-surface-700 overflow-hidden"
+        className="w-full max-w-lg max-h-[80vh] flex flex-col bg-white dark:bg-surface-800 rounded-xl shadow-xl border border-surface-200 dark:border-surface-700 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-5 py-3 border-b border-surface-200 dark:border-surface-700 flex items-center justify-between flex-shrink-0">

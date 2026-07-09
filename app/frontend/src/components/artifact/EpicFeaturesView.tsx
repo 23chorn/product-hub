@@ -168,7 +168,7 @@ export function normalizeJourneyId(id: string): string {
  *  renders the same badge instead of each re-deriving its own numbering markup. */
 export function FeatureKeyBadge({ label }: { label: string }) {
   return (
-    <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400">
+    <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400">
       {label}
     </span>
   );
@@ -196,6 +196,19 @@ export function FrTags({ frs, frMap, className }: {
   );
 }
 
+/** Shared row shape for a full-text PRD-reference listing: a compact id chip (sized to its
+ *  own label, not stretched by the description next to it — `items-start` keeps the chip
+ *  pinned to the top of the row instead of the flex default stretching it to match a
+ *  multi-line description's height) followed by the requirement's full text. */
+function PrdRefFullListRow({ id, text, fallback, badgeClassName }: { id: string; text?: string; fallback: string; badgeClassName: string }) {
+  return (
+    <li className="flex items-start gap-2 text-xs text-surface-700 dark:text-surface-300">
+      <span className={`flex-shrink-0 text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded ${badgeClassName}`}>{id}</span>
+      <span>{text ?? fallback}</span>
+    </li>
+  );
+}
+
 /** Full-text FR listing for the feature detail/expand view — the header row already shows
  *  the compact "FR-01" badges via FrTags, so repeating the same badges here added nothing;
  *  this is the one place a reviewer actually reads the requirement text, not just its id. */
@@ -207,13 +220,43 @@ function FrFullList({ frs, frMap }: { frs: string[]; frMap?: Record<string, stri
       <ul className="space-y-1">
         {frs.map(fr => {
           const key = normalizePrdId(fr);
-          const text = frMap?.[key];
-          return (
-            <li key={fr} className="flex gap-2 text-xs text-surface-700 dark:text-surface-300">
-              <span className="flex-shrink-0 text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400">{key}</span>
-              <span>{text ?? fr}</span>
-            </li>
-          );
+          return <PrdRefFullListRow key={fr} id={key} text={frMap?.[key]} fallback={fr} badgeClassName="bg-brand-100 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400" />;
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/** Full-text NFR listing — same rationale as FrFullList: the badge only ever showed the id,
+ *  so a reviewer had to already know what "NFR3" meant. */
+function NfrFullList({ nfrs, nfrMap }: { nfrs: string[]; nfrMap?: Record<string, string> }) {
+  if (nfrs.length === 0) return null;
+  return (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-1">Non-Functional Requirements</p>
+      <ul className="space-y-1">
+        {nfrs.map(nfr => {
+          const key = normalizePrdId(nfr);
+          return <PrdRefFullListRow key={nfr} id={key} text={nfrMap?.[key]} fallback={nfr} badgeClassName="bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400" />;
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/** Full-text user-journey listing. Journey strings carry their own description inline
+ *  ("J1: Browse and add to cart") rather than needing a separate lookup map. */
+function JourneyFullList({ journeys }: { journeys: string[] }) {
+  if (journeys.length === 0) return null;
+  return (
+    <div>
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-1">User Journeys</p>
+      <ul className="space-y-1">
+        {journeys.map(j => {
+          const colonIdx = j.indexOf(': ');
+          const jId = normalizeJourneyId(colonIdx !== -1 ? j.slice(0, colonIdx) : j);
+          const text = colonIdx !== -1 ? j.slice(colonIdx + 2) : undefined;
+          return <PrdRefFullListRow key={j} id={jId} text={text} fallback={j} badgeClassName="bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300" />;
         })}
       </ul>
     </div>
@@ -232,21 +275,8 @@ export function PrdRefTags({ prdRef, frMap, nfrMap }: {
   return (
     <div className="mt-3 space-y-2">
       <FrFullList frs={frs} frMap={frMap} />
-      {(nfrs.length > 0 || journeys.length > 0) && (
-        <div className="flex flex-wrap gap-1.5">
-          {nfrs.map(nfr => {
-            const key = normalizePrdId(nfr);
-            const tip = nfrMap?.[key];
-            return <span key={nfr} title={tip} className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400 ${tip ? 'cursor-help' : ''}`}>{key}</span>;
-          })}
-          {journeys.map(j => {
-            const colonIdx = j.indexOf(': ');
-            const jId = normalizeJourneyId(colonIdx !== -1 ? j.slice(0, colonIdx) : j);
-            const tip = colonIdx !== -1 ? j.slice(colonIdx + 2) : undefined;
-            return <span key={j} title={tip} className={`text-[10px] px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-700 text-surface-600 dark:text-surface-300 ${tip ? 'cursor-help' : ''}`}>{jId}</span>;
-          })}
-        </div>
-      )}
+      <NfrFullList nfrs={nfrs} nfrMap={nfrMap} />
+      <JourneyFullList journeys={journeys} />
     </div>
   );
 }

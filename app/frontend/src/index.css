@@ -20,8 +20,7 @@
 }
 
 code {
-  font-family: 'JetBrains Mono', 'Fira Code', source-code-pro, Menlo, Monaco,
-    Consolas, 'Courier New', monospace;
+  font-family: theme('fontFamily.mono');
 }
 
 /* Chat message prose styling */

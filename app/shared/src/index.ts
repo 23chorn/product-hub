@@ -16,6 +16,7 @@ export {
 export type { WorkflowInfo, InitiativeComment } from './initiative-status';
 export {
   backlogTier, getSprintMeta, getAllStories, getAllFeatures, storiesInDisplayOrder, tryParseBacklog, isBacklogArtifactType,
+  renumberFeatureStories,
   TICKET_PLATFORMS, PLATFORM_LABELS, getStoryPlatforms, countTicketsByPlatform,
   tryParseResearchBrief, tryParsePRD, tryParseArchitecture,
 } from './backlog-helpers';

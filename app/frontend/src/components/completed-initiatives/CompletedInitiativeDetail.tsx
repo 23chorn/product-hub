@@ -597,7 +597,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
   })();
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-surface-50 dark:bg-surface-950">
+    <div className="flex flex-col h-full overflow-hidden">
       <PageHeaderTitle>
         <button
           onClick={() => onBack(everRefreshed)}

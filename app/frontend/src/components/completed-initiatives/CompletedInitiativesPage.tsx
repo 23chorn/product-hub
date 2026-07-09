@@ -58,7 +58,7 @@ export function CompletedInitiativesPage({ initialSelection, onInitialSelectionC
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-surface-50 dark:bg-surface-950">
+    <div className="flex flex-col h-full overflow-hidden">
       <PageHeaderTitle>
         <p className="text-xs text-surface-500 dark:text-surface-400 truncate">Track ADO progress across completed initiatives</p>
       </PageHeaderTitle>
