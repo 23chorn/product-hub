@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { MarkdownContent } from '../common/MarkdownContent';
+import { DotLabel } from './ArtifactPrimitives';
 
 interface CriticQuestionFormProps {
   questions: string[];
@@ -8,7 +9,7 @@ interface CriticQuestionFormProps {
   loading: boolean;
 }
 
-const SUGGESTED_ANSWERS = [
+export const SUGGESTED_ANSWERS = [
   'Not applicable to this scope',
   'Will address in next iteration',
   'Already covered in the artifact',
@@ -147,21 +148,24 @@ export function CriticQuestionForm({ questions, onSubmit, onCancel, loading }: C
 
 // ── Issues panel content (rendered separately in ArtifactViewer) ─────────────
 
-const SEVERITY_STYLES: Record<string, string> = {
-  critical: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800',
-  major: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800',
-  minor: 'bg-surface-100 dark:bg-surface-800 text-surface-600 dark:text-surface-400 border-surface-200 dark:border-surface-700',
+const SEVERITY_STYLES: Record<string, { dot: string; text: string }> = {
+  critical: { dot: 'bg-red-500', text: 'text-red-600 dark:text-red-400' },
+  major: { dot: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-400' },
+  minor: { dot: 'bg-surface-400 dark:bg-surface-500', text: 'text-surface-500 dark:text-surface-400' },
 };
 
 export function CriticIssuesPanel({ issues }: { issues: Array<{ severity: string; description: string }> }) {
   return (
     <div className="space-y-2">
-      {issues.map((issue, i) => (
-        <div key={i} className={`text-sm px-3 py-2 rounded-lg border ${SEVERITY_STYLES[issue.severity] ?? SEVERITY_STYLES.minor}`}>
-          <span className="font-semibold uppercase text-[11px] tracking-wide">{issue.severity}</span>
-          <MarkdownContent className="mt-1 [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0">{issue.description}</MarkdownContent>
-        </div>
-      ))}
+      {issues.map((issue, i) => {
+        const style = SEVERITY_STYLES[issue.severity] ?? SEVERITY_STYLES.minor;
+        return (
+          <div key={i} className="rounded border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900/30 px-3 py-2.5">
+            <DotLabel dotClass={style.dot} textClass={`${style.text} font-semibold uppercase tracking-wide`} label={issue.severity} />
+            <MarkdownContent className="mt-1.5 text-sm [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0">{issue.description}</MarkdownContent>
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -8,6 +8,8 @@ import { tryParseEpicFeatures, type EpicFeaturesData } from './EpicFeaturesView'
 import { ArtifactTabShell } from './ArtifactPrimitives';
 import { copyToClipboard } from '../../utils/markdown';
 import { buildPrdMaps } from '../../utils/artifact-to-markdown';
+import { SplitArtifactPane } from './SplitArtifactPane';
+import { SplitViewButton } from './SplitViewButton';
 
 interface StoriesTestsProps {
   featureButtons: FeatureArtifactRef[];
@@ -179,6 +181,7 @@ const VIEW_LABEL: Record<Props['view'], string> = { stories: 'Stories', tests: '
  */
 export function BacklogOverviewModal({ onClose, workflowId, view, ...storiesTestsProps }: Props) {
   const [toast, setToast] = useState<string | null>(null);
+  const [splitArtifactId, setSplitArtifactId] = useState<number | null>(null);
 
   const handleShare = () => {
     if (!workflowId) return;
@@ -194,10 +197,18 @@ export function BacklogOverviewModal({ onClose, workflowId, view, ...storiesTest
     <div className="fixed inset-0 z-50 flex justify-center">
       <div className="absolute inset-0 bg-black/30 dark:bg-black/50" onClick={onClose} />
 
-      <div className="relative h-full bg-surface-50 dark:bg-surface-800 shadow-xl flex flex-col overflow-hidden w-full max-w-4xl">
+      <div className={`relative flex h-full overflow-hidden transition-all duration-200 ${splitArtifactId ? 'w-full max-w-[100rem]' : 'w-full max-w-4xl'}`}>
+        {/* Split-view companion pane — shows a second document (e.g. the PRD) beside the
+            stories/tests being reviewed. Read-only; its own close button clears splitArtifactId. */}
+        {splitArtifactId && (
+          <SplitArtifactPane artifactId={splitArtifactId} onClose={() => setSplitArtifactId(null)} />
+        )}
+
+        <div className="relative flex-1 min-w-0 h-full bg-surface-50 dark:bg-surface-800 shadow-xl flex flex-col overflow-hidden">
         <div className="px-4 py-3 border-b border-surface-200 dark:border-surface-700 flex items-center justify-between flex-shrink-0">
           <h2 className="text-sm font-semibold text-surface-900 dark:text-surface-100">{VIEW_LABEL[view]}</h2>
           <div className="flex items-center gap-1">
+            <SplitViewButton selectedId={splitArtifactId} onSelect={setSplitArtifactId} />
             {workflowId && (
               <button
                 onClick={handleShare}
@@ -234,6 +245,7 @@ export function BacklogOverviewModal({ onClose, workflowId, view, ...storiesTest
         </div>
 
         {view === 'stories' ? <BacklogStoriesPreview {...storiesTestsProps} /> : <BacklogTestsPreview {...storiesTestsProps} />}
+        </div>
       </div>
     </div>
   );

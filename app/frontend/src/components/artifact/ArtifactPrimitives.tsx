@@ -53,6 +53,50 @@ export function InitiativeCard({ title, right, children }: { title?: string; rig
   );
 }
 
+/** Terminal-style header bar for review side-panels (Issues, Questions, the read-only review
+ *  flyout) — mono uppercase label + optional right-aligned meta readout + close glyph, in
+ *  place of the bold-title/light-subtitle header those panels used before. `actions` sits
+ *  left of the close glyph (e.g. a "view issues" link). */
+export function PanelChromeHeader({ label, meta, onClose, actions }: {
+  label: ReactNode;
+  meta?: ReactNode;
+  onClose?: () => void;
+  actions?: ReactNode;
+}) {
+  return (
+    <div className="px-3 py-2 border-b border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900/40 flex-shrink-0 flex items-center justify-between gap-2 font-mono text-[10px]">
+      <div className="flex items-baseline gap-2 min-w-0">
+        <span className="font-semibold uppercase tracking-widest text-surface-600 dark:text-surface-300 truncate">{label}</span>
+        {meta != null && <span className="text-surface-400 dark:text-surface-500 flex-shrink-0">{meta}</span>}
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {actions}
+        {onClose && (
+          <button onClick={onClose} className="text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 transition-colors leading-none" title="Close">
+            ✕
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const QUESTION_SOURCE_STYLES: Record<'flint' | 'document', string> = {
+  flint: 'text-amber-600 dark:text-amber-400',
+  document: 'text-cyan-600 dark:text-cyan-400',
+};
+
+/** Tags a question as coming from Flint's critic pass or from the document's own open
+ *  questions — used by both the interactive review panel and the read-only review flyout so
+ *  a mixed list of questions still reads as one shape with a clear provenance per item. */
+export function QuestionSourceTag({ source }: { source: 'flint' | 'document' }) {
+  return (
+    <span className={`font-mono text-[10px] uppercase tracking-wide flex-shrink-0 ${QUESTION_SOURCE_STYLES[source]}`}>
+      {source === 'flint' ? '◆ flint' : '◇ open'}
+    </span>
+  );
+}
+
 /** Dot + mono label — status readout used in place of a solid-fill pill (effort, dependency,
  *  test-type/priority). `dotClass` sets the indicator color; `textClass` colors the label to
  *  match without filling a background, so a row of these reads as a terminal status line

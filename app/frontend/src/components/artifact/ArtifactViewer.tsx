@@ -4,8 +4,9 @@ import { useWorkflowStore } from '../../stores/workflowStore';
 import { useConfigStore } from '../../stores/configStore';
 import { useAuthStore, canApprove, parseRequiredRoles, ROLE_LABELS } from '../../stores/authStore';
 import { api } from '../../services/api';
-import { CriticQuestionForm, CriticIssuesPanel } from './CriticQuestionForm';
-import { OpenQuestionsPanel } from './OpenQuestionsPanel';
+import { CriticIssuesPanel } from './CriticQuestionForm';
+import { QuestionsReviewPanel } from './QuestionsReviewPanel';
+import { PanelChromeHeader, Chevron } from './ArtifactPrimitives';
 import { ARTIFACT_TYPE_LABELS, STAGE_LABELS } from '../../constants/stage-labels';
 import { tryParseBacklog, isBacklogArtifactType } from '@pap/shared';
 import { extractPersonas, PersonaPanel } from './PersonaPanel';
@@ -23,6 +24,8 @@ import { copyToClipboard, printArtifact } from '../../utils/markdown';
 import { buildPrdMaps } from '../../utils/artifact-to-markdown';
 import { deriveEpicFeaturesArtifactId } from '../../utils/feature-artifacts';
 import { tryParseEpicFeatures, toPhases } from './EpicFeaturesView';
+import { SplitArtifactPane } from './SplitArtifactPane';
+import { SplitViewButton } from './SplitViewButton';
 
 export function ArtifactViewer() {
   const { viewingArtifactId, setViewingArtifactId, checkpoints, activeWorkflow, applyWorkflowStatus, addCoordinatorMessage } = useWorkflowStore();
@@ -42,7 +45,6 @@ export function ArtifactViewer() {
   const [editContent, setEditContent] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saveToast, setSaveToast] = useState<string | null>(null);
-  const [showOpenQPanel, setShowOpenQPanel] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<{ itemLabel: string; run: () => string } | null>(null);
   const [showRevisionSummary, setShowRevisionSummary] = useState(false);
   const [figmaLinks, setFigmaLinks] = useState<Record<string, string>>({});
@@ -50,6 +52,7 @@ export function ArtifactViewer() {
   const [nfrMap, setNfrMap] = useState<Record<string, string>>({});
   const [phaseByFeatureKey, setPhaseByFeatureKey] = useState<Record<string, string>>({});
   const [phaseOrder, setPhaseOrder] = useState<string[]>([]);
+  const [splitArtifactId, setSplitArtifactId] = useState<number | null>(null);
   const setFigmaLink = (key: string, value: string) => setFigmaLinks(prev => ({ ...prev, [key]: value }));
 
   const { user, noAuth } = useAuthStore();
@@ -76,6 +79,7 @@ export function ArtifactViewer() {
 
   useEffect(() => {
     setShowRevisionSummary(false);
+    setSplitArtifactId(null);
     if (!viewingArtifactId) { setContent(null); setError(null); setVersionInfo(null); return; }
 
     let stale = false;
@@ -284,8 +288,6 @@ export function ArtifactViewer() {
     return null;
   })();
 
-  const showCriticPanel = showReviseForm && (criticData?.questions?.length ?? 0) > 0;
-  const showSidePanel = showCriticPanel || showOpenQPanel;
   const hasIssues = (criticData?.issues?.length ?? 0) > 0;
   const hasQuestions = (criticData?.questions?.length ?? 0) > 0;
   const hasCriticData = hasIssues || hasQuestions;
@@ -296,6 +298,19 @@ export function ArtifactViewer() {
     : [];
   const hasOpenQuestions = openQuestions.length > 0;
 
+  // Revise opens one combined questions panel whenever there's anything to answer (Flint's
+  // critic questions and/or the document's own open questions) — otherwise the plain
+  // freeform textarea fallback further down.
+  const showQuestionsPanel = showReviseForm && (hasQuestions || hasOpenQuestions);
+  const showSidePanel = showQuestionsPanel;
+
+  // The review flyout fills whatever backdrop space is actually free to the left of the
+  // drawer (drawerMaxWidthRem must track the container's own max-w-* class below) rather
+  // than a fixed width — clamped so it never shrinks below a usable size or sprawls
+  // unreadably wide on ultra-wide monitors.
+  const drawerMaxWidthRem = splitArtifactId ? 100 : 56;
+  const reviewFlyoutWidth = `clamp(380px, calc((100vw - min(100vw, ${drawerMaxWidthRem}rem)) / 2), 40rem)`;
+
   return (
     <div className="fixed inset-0 z-50 flex justify-center">
       {/* Backdrop */}
@@ -304,93 +319,83 @@ export function ArtifactViewer() {
         onClick={() => setViewingArtifactId(null)}
       />
 
-      {/* Side-by-side container — expands as panels are opened */}
-      <div className={`relative flex h-full overflow-hidden transition-all duration-200 ${
-        showSidePanel && showIssuesPanel ? 'w-full max-w-[90rem]'
-          : showSidePanel ? 'w-full max-w-[72rem]'
-          : 'w-full max-w-4xl'
+      {/* Side-by-side container — widens only for the split-view companion pane (an
+          intentional in-flow pane). The questions/issues review panels are flyouts anchored
+          to the drawer's own left edge (see below), so they never resize the modal or sit
+          over the document — they slide out into the backdrop area instead. */}
+      <div className={`relative flex h-full transition-all duration-200 ${
+        splitArtifactId ? 'w-full max-w-[100rem]' : 'w-full max-w-4xl'
       }`}>
-        {/* Issues panel — far left, toggled from review header */}
-        {showCriticPanel && showIssuesPanel && hasIssues && (
-          <div className="w-[340px] flex-shrink-0 bg-surface-50 dark:bg-surface-800 shadow-xl flex flex-col border-r border-surface-200 dark:border-surface-700">
-            <div className="px-4 py-3 border-b border-surface-200 dark:border-surface-700 flex-shrink-0 flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-semibold text-surface-900 dark:text-surface-100">
-                  Issues Flagged
-                </h2>
-                <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
-                  {criticData.issues.length} issue{criticData.issues.length !== 1 ? 's' : ''}
-                </p>
-              </div>
-              <button
-                onClick={() => setShowIssuesPanel(false)}
-                className="text-surface-400 hover:text-surface-600 dark:hover:text-surface-200 transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
-              <CriticIssuesPanel issues={criticData.issues} />
-            </div>
-          </div>
+        {/* Split-view companion pane — shows a second document (e.g. the PRD) beside the
+            one being reviewed. Read-only; its own close button clears splitArtifactId. */}
+        {splitArtifactId && (
+          <SplitArtifactPane artifactId={splitArtifactId} onClose={() => setSplitArtifactId(null)} />
         )}
 
-        {/* Critic review panel — questions, left of artifact */}
-        {showCriticPanel && (
-          <div className="w-[520px] flex-shrink-0 bg-surface-50 dark:bg-surface-900 shadow-xl flex flex-col border-r border-surface-200 dark:border-surface-700">
-            <div className="px-4 py-3 border-b border-surface-200 dark:border-surface-700 flex-shrink-0 flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-semibold text-surface-900 dark:text-surface-100">
-                  Flint's Review
-                </h2>
-                <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
-                  {criticData.questions.length} question{criticData.questions.length !== 1 ? 's' : ''} to answer
-                </p>
-              </div>
-              {hasIssues && !showIssuesPanel && (
-                <button
-                  onClick={() => setShowIssuesPanel(true)}
-                  className="text-xs px-2.5 py-1 rounded-md border border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"
-                >
-                  View {criticData.issues.length} issue{criticData.issues.length !== 1 ? 's' : ''}
-                </button>
+        {/* Artifact drawer — right side (or only panel). Its wrapper is `relative` with no
+            overflow clipping so the questions flyout below can render just outside its left
+            edge instead of overlapping the document content. */}
+        <div className="relative flex-1 min-w-0 h-full">
+          {/* Combined questions flyout — Flint's critic questions + the document's own open
+              questions in one list, tagged by source (see QuestionsReviewPanel), plus the
+              issues panel when toggled. Anchored via right-full so it slides out over the
+              backdrop to the left of the drawer, never covering the document. */}
+          {showQuestionsPanel && (
+            <div className="absolute top-0 right-full h-full flex z-20">
+              {showIssuesPanel && hasIssues && (
+                <div className="w-[340px] h-full bg-surface-50 dark:bg-surface-800 shadow-xl flex flex-col border-r border-surface-200 dark:border-surface-700">
+                  <PanelChromeHeader
+                    label="issues flagged"
+                    meta={`${criticData.issues.length} issue${criticData.issues.length !== 1 ? 's' : ''}`}
+                    onClose={() => setShowIssuesPanel(false)}
+                  />
+                  <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
+                    <CriticIssuesPanel issues={criticData.issues} />
+                  </div>
+                </div>
               )}
+              <div className="w-[520px] h-full bg-surface-50 dark:bg-surface-900 shadow-xl flex flex-col border-r border-surface-200 dark:border-surface-700">
+                <PanelChromeHeader
+                  label="questions to review"
+                  meta={`${(criticData?.questions?.length ?? 0) + openQuestions.length} to answer`}
+                  actions={hasIssues && !showIssuesPanel && (
+                    <button
+                      onClick={() => setShowIssuesPanel(true)}
+                      className="font-mono text-[10px] uppercase tracking-wide px-2 py-1 rounded border border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors normal-case"
+                    >
+                      View {criticData.issues.length} issue{criticData.issues.length !== 1 ? 's' : ''}
+                    </button>
+                  )}
+                />
+                <div className="flex-1 min-h-0 px-4 py-3 flex flex-col">
+                  <QuestionsReviewPanel
+                    criticQuestions={criticData?.questions ?? []}
+                    openQuestions={openQuestions}
+                    onSubmit={(fb) => resolve('revised', fb)}
+                    onCancel={() => { setShowReviseForm(false); setShowIssuesPanel(false); setFeedback(''); }}
+                    loading={resolveLoading}
+                  />
+                </div>
+              </div>
             </div>
-            <div className="flex-1 min-h-0 px-4 py-3 flex flex-col">
-              <CriticQuestionForm
-                questions={criticData.questions}
-                onSubmit={(fb) => resolve('revised', fb)}
-                onCancel={() => { setShowReviseForm(false); setShowIssuesPanel(false); setFeedback(''); }}
-                loading={resolveLoading}
+          )}
+
+          {/* Review flyout — read-only peek at Flint's issues/questions + the document's open
+              questions, without entering the interactive review panel. Anchored the same way
+              (right-full, outside the drawer) so it never overlays the document — true both
+              while a checkpoint is pending review and afterward on an approved artifact. */}
+          {showCriticFlyout && (hasCriticData || hasOpenQuestions) && !showSidePanel && (
+            <div className="absolute top-0 right-full h-full z-20" style={{ width: reviewFlyoutWidth }}>
+              <CriticReviewFlyout
+                issues={criticData?.issues ?? []}
+                questions={criticData?.questions ?? []}
+                openQuestions={openQuestions}
+                onClose={() => setShowCriticFlyout(false)}
               />
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Open questions panel — left of artifact, shown when answering PRD open questions */}
-        {showOpenQPanel && (
-          <div className="w-[520px] flex-shrink-0 bg-surface-50 dark:bg-surface-900 shadow-xl flex flex-col border-r border-surface-200 dark:border-surface-700">
-            <div className="px-4 py-3 border-b border-surface-200 dark:border-surface-700 flex-shrink-0">
-              <h2 className="text-sm font-semibold text-surface-900 dark:text-surface-100">Open Questions</h2>
-              <p className="text-xs text-surface-500 dark:text-surface-400 mt-0.5">
-                {openQuestions.length} question{openQuestions.length !== 1 ? 's' : ''} to resolve
-              </p>
-            </div>
-            <div className="flex-1 min-h-0 px-4 py-3 flex flex-col">
-              <OpenQuestionsPanel
-                questions={openQuestions}
-                onSubmit={(fb) => { setShowOpenQPanel(false); resolve('revised', fb); }}
-                onCancel={() => setShowOpenQPanel(false)}
-                loading={resolveLoading}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Artifact drawer — right side (or only panel) */}
-        <div className="flex-1 bg-surface-50 dark:bg-surface-800 shadow-xl flex flex-col overflow-hidden">
+        <div className="h-full bg-surface-50 dark:bg-surface-800 shadow-xl flex flex-col overflow-hidden">
           {/* Header */}
           <div className="px-4 py-3 border-b border-surface-200 dark:border-surface-700 flex items-center justify-between flex-shrink-0">
             <div>
@@ -411,6 +416,7 @@ export function ArtifactViewer() {
               )}
             </div>
             <div className="flex items-center gap-2">
+              <SplitViewButton excludeArtifactId={viewingArtifactId} selectedId={splitArtifactId} onSelect={setSplitArtifactId} />
               {activeWorkflow && (
                 <button
                   onClick={() => {
@@ -463,7 +469,7 @@ export function ArtifactViewer() {
                 onMessage={emitMessage}
                 onError={setError}
               />
-              {hasCriticData && !showSidePanel && (
+              {(hasCriticData || hasOpenQuestions) && !showSidePanel && (
                 <button
                   onClick={() => setShowCriticFlyout(f => !f)}
                   className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md border transition-colors ${
@@ -471,12 +477,12 @@ export function ArtifactViewer() {
                       ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400'
                       : 'border-surface-200 dark:border-surface-700 text-surface-500 dark:text-surface-400 hover:border-surface-300 dark:hover:border-surface-600'
                   }`}
-                  title="Toggle Flint's review"
+                  title="Toggle review panel"
                 >
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                   </svg>
-                  Flint's Review
+                  Review
                 </button>
               )}
               {content && !loading && (
@@ -531,26 +537,21 @@ export function ArtifactViewer() {
                 <div className={`h-full ${isEditing ? 'flex flex-col px-4 py-4' : isFigmaDesign && figmaDesign && !loading && !error ? 'overflow-hidden flex flex-col' : 'overflow-y-auto px-4 py-4'}`}>
                   <div className={`${isEditing || (isFigmaDesign && figmaDesign && !loading && !error) ? 'flex-1 min-h-0 flex flex-col' : ''}`}>
                     {revisionSummary && !isEditing && (
-                      <div className="mb-4 rounded-lg border border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-900/20 px-3.5 py-3">
+                      <div className="mb-4 rounded border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900/40 overflow-hidden">
                         <button
                           onClick={() => setShowRevisionSummary(v => !v)}
-                          className="w-full flex items-center gap-1.5 mb-1.5"
+                          className="w-full flex items-center gap-2 px-3 py-1.5 font-mono text-[10px]"
                         >
-                          <svg className="w-3.5 h-3.5 text-brand-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-                          </svg>
-                          <h3 className="text-[11px] font-semibold uppercase tracking-wide text-brand-700 dark:text-brand-300">
-                            AI revision summary
-                          </h3>
-                          <svg
-                            className={`w-3.5 h-3.5 text-brand-400 flex-shrink-0 ml-auto transition-transform ${showRevisionSummary ? 'rotate-180' : ''}`}
-                            fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                          >
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
+                          <span className="text-brand-500 dark:text-brand-400 flex-shrink-0">✦</span>
+                          <span className="font-semibold uppercase tracking-widest text-surface-500 dark:text-surface-400">
+                            ai revision summary
+                          </span>
+                          <Chevron expanded={showRevisionSummary} className="w-3 text-surface-400 ml-auto" />
                         </button>
                         {showRevisionSummary && (
-                          <MarkdownContent className="[&_p]:my-1 [&_ul]:my-1 [&_li]:my-0.5">{revisionSummary}</MarkdownContent>
+                          <div className="px-3.5 pb-3 pt-2 border-t border-surface-200 dark:border-surface-700">
+                            <MarkdownContent className="[&_p]:my-1 [&_ul]:my-1 [&_li]:my-0.5">{revisionSummary}</MarkdownContent>
+                          </div>
                         )}
                       </div>
                     )}
@@ -616,14 +617,6 @@ export function ArtifactViewer() {
                     )}
                   </div>
                 </div>
-                {/* Critic flyout — positioned absolutely on the left */}
-                {showCriticFlyout && hasCriticData && !showSidePanel && (
-                  <CriticReviewFlyout
-                    issues={criticData.issues ?? []}
-                    questions={criticData.questions ?? []}
-                    onClose={() => setShowCriticFlyout(false)}
-                  />
-                )}
                 {/* Persona panel — positioned absolutely so it doesn't affect content centering */}
                 {showPersonaPanel && (
                   <div className="absolute top-0 right-0 w-80 h-full overflow-y-auto border-l border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 p-3">
@@ -746,16 +739,10 @@ export function ArtifactViewer() {
                 />
               ) : hasApprovePermission && !showSidePanel ? (
                 <div className="space-y-2">
-                  {/* Answer open questions — shown for PRD artifacts with unresolved questions */}
                   {hasOpenQuestions && (
-                    <button
-                      onClick={() => setShowOpenQPanel(true)}
-                      disabled={resolveLoading}
-                      className="w-full py-2 px-3 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/30 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-sm font-medium rounded-lg transition-colors text-left flex items-center justify-between"
-                    >
-                      <span>Answer open questions</span>
-                      <span className="text-xs font-normal opacity-70">{openQuestions.length} unresolved</span>
-                    </button>
+                    <p className="text-[11px] font-mono text-cyan-600 dark:text-cyan-400">
+                      {openQuestions.length} open question{openQuestions.length !== 1 ? 's' : ''} on this document — Revise to answer them
+                    </p>
                   )}
                   <div className="flex gap-2">
                     <button
@@ -784,6 +771,7 @@ export function ArtifactViewer() {
               ) : null}
             </div>
           )}
+        </div>
         </div>
       </div>
 
