@@ -357,7 +357,10 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               {storyKey && <FeatureKeyBadge label={storyKey} />}
-              <span className="text-base text-surface-900 dark:text-surface-100 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">
+              <span
+                title={story.title}
+                className="flex-1 min-w-0 truncate text-base text-surface-900 dark:text-surface-100 group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors"
+              >
                 {story.title}
               </span>
               <EffortLabel story={story} aiAssisted={aiAssisted} />
@@ -600,7 +603,7 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
             {/* Initiative + epic overview — shown once, not collapsible */}
             <InitiativeCard
               title={initiativeTitle ?? epic.title}
-              right={`${sections.length} epic${sections.length !== 1 ? 's' : ''} · ${features.length} feature${features.length !== 1 ? 's' : ''}`}
+              right={`${sections.length} epic${sections.length !== 1 ? 's' : ''} · ${features.length} feature${features.length !== 1 ? 's' : ''}${totalEffort > 0 ? ` · ${totalEffort} pts` : ''}`}
             >
               {epic.description && (
                 <ExpandableText text={epic.description} className="text-sm text-surface-600 dark:text-surface-300" />
@@ -632,11 +635,12 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
             {sections.map(section => {
               const isExpanded = expandedEpics.has(section.key);
               const sectionStories = section.entries.reduce((sum, { feature }) => sum + feature.stories.length, 0);
+              const sectionEffort = section.entries.reduce((sum, { feature }) => sum + feature.stories.reduce((s, st) => s + (storyEffort(st) ?? 0), 0), 0);
               return (
                 <div key={section.key} className="rounded-lg border border-surface-200 dark:border-surface-700 hover:border-violet-200 dark:hover:border-violet-800 transition-colors overflow-hidden">
                   <ChromeStrip
                     left={<>◆ epic · <PhaseTag label={section.key} colorClass={section.colorClass} /></>}
-                    right={`${section.entries.length} feature${section.entries.length !== 1 ? 's' : ''} · ${sectionStories} stor${sectionStories !== 1 ? 'ies' : 'y'}`}
+                    right={`${section.entries.length} feature${section.entries.length !== 1 ? 's' : ''} · ${sectionStories} stor${sectionStories !== 1 ? 'ies' : 'y'}${sectionEffort > 0 ? ` · ${sectionEffort} pts` : ''}`}
                   />
                   <button
                     onClick={() => toggleEpic(section.key)}
@@ -713,7 +717,7 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               {story.story_id && <FeatureKeyBadge label={story.story_id} />}
-              <h3 className="text-base font-semibold text-surface-900 dark:text-surface-100">{story.title}</h3>
+              <h3 title={story.title} className="flex-1 min-w-0 truncate text-base font-semibold text-surface-900 dark:text-surface-100">{story.title}</h3>
               <FrTags frs={story.prd_ref?.functional_requirements ?? []} frMap={frMap} />
             </div>
             {/* Support both old format (persona/goal/benefit) and new format (as_a/i_want/so_that) */}
