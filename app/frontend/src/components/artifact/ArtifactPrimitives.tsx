@@ -1,18 +1,13 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Chevron } from '../common/Chevron';
 
 // ── Shared visual primitives used across EpicFeaturesView, BacklogView, and
 //    the tab shells — change here and every panel updates automatically. ──────
 
-/** Collapse/expand indicator — a unicode glyph rather than an SVG, matching the glyph-based
- *  status icons used throughout workflow/pipeline-terminal (StatusIcon, EVENT_CFG). Swaps
- *  glyph shape on toggle instead of rotating, so no transform/transition is needed. */
-export function Chevron({ expanded, className = 'w-3.5 text-surface-400' }: { expanded: boolean; className?: string }) {
-  return (
-    <span className={`${className} flex-shrink-0 inline-block text-center font-mono leading-none select-none`} aria-hidden="true">
-      {expanded ? '▾' : '▸'}
-    </span>
-  );
-}
+// Re-exported so existing call sites importing Chevron from here keep working — it now
+// lives in common/ (see Chevron.tsx) since common-level components (ExpandableText,
+// ExpandableList) need it too, and common/ can't import from artifact/.
+export { Chevron };
 
 export function PhaseTag({ label, colorClass }: { label: string; colorClass: string }) {
   return (
@@ -37,16 +32,49 @@ export function ChromeStrip({ left, right }: { left: ReactNode; right?: ReactNod
 /** Initiative-level overview card — the top of the hierarchy (Initiative → Epic → Feature),
  *  so it gets the same ChromeStrip "windowed card" treatment as an Epic card instead of a
  *  bare label + bold title floating with no chrome. `right` mirrors an Epic card's own
- *  right-aligned readout (e.g. "N phases · N features"); `children` is the card body
- *  (description, business value, PRD link, ...) — left to the caller since it varies by
- *  view (plain text vs ExpandableText, optional PRD link/out-of-scope list). */
-export function InitiativeCard({ title, right, children }: { title?: string; right?: ReactNode; children?: ReactNode }) {
+ *  right-aligned readout (e.g. "N phases · N features"). Title text is larger than an Epic
+ *  card's (text-xl vs text-lg) since this is one tier up in the hierarchy, and — when
+ *  `description` is long enough to clamp — the chevron sits next to the title as the
+ *  click target, same as PhaseSection/FeatureCard's header-toggles-body pattern, rather
+ *  than a separate "Show more" link buried under the text. `children` is everything else
+ *  in the card body (business value, PRD link, out-of-scope list, ...), always visible —
+ *  left to the caller since it varies by view. */
+export function InitiativeCard({ title, right, description, children }: {
+  title?: string;
+  right?: ReactNode;
+  description?: string | null;
+  children?: ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [isTruncated, setIsTruncated] = useState(false);
+  const descRef = useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => {
+    if (descRef.current) setIsTruncated(descRef.current.scrollHeight > descRef.current.clientHeight);
+  }, [description]);
+
   if (!title) return null;
   return (
     <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/40 overflow-hidden">
       <ChromeStrip left="■ initiative" right={right} />
       <div className="p-4 space-y-2">
-        <p className="text-base font-bold text-surface-900 dark:text-surface-100 truncate">{title}</p>
+        <button
+          type="button"
+          onClick={() => setExpanded(e => !e)}
+          disabled={!isTruncated}
+          className="w-full flex items-start gap-2 text-left disabled:cursor-default"
+        >
+          {isTruncated && <Chevron expanded={expanded} className="w-4 mt-1 text-surface-400 flex-shrink-0" />}
+          <p className="flex-1 min-w-0 text-xl font-bold text-surface-900 dark:text-surface-100 truncate">{title}</p>
+        </button>
+        {description && (
+          <p
+            ref={descRef}
+            className={`text-sm text-surface-600 dark:text-surface-300 ${expanded ? '' : 'line-clamp-3'}`}
+          >
+            {description}
+          </p>
+        )}
         {children}
       </div>
     </div>

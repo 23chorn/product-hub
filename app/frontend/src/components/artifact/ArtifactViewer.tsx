@@ -515,7 +515,7 @@ export function ArtifactViewer() {
                 <div className={`h-full ${isEditing ? 'flex flex-col px-4 py-4' : isFigmaDesign && figmaDesign && !loading && !error ? 'overflow-hidden flex flex-col' : 'overflow-y-auto [scrollbar-gutter:stable] px-4 py-4'}`}>
                   <div className={`${isEditing || (isFigmaDesign && figmaDesign && !loading && !error) ? 'flex-1 min-h-0 flex flex-col' : ''}`}>
                     {revisionSummary && !isEditing && artifactType !== 'qa_tests' && (
-                      <div className="mb-4 rounded border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900/40 overflow-hidden">
+                      <div className={`mb-4 rounded border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900/40 overflow-hidden ${isFigmaDesign ? 'mt-4 mx-4' : ''}`}>
                         <button
                           onClick={() => setShowRevisionSummary(v => !v)}
                           className="w-full flex items-center gap-2 px-3 py-1.5 font-mono text-[10px]"

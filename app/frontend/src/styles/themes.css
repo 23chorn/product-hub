@@ -33,7 +33,7 @@
   /* Surface / neutral — default: slate */
   --surface-50: 248 250 252;
   --surface-100: 241 245 249;
-  --surface-200: 226 232 240;
+  --surface-200: 217 225 235;
   --surface-300: 203 213 225;
   --surface-400: 148 163 184;
   --surface-500: 100 116 139;
@@ -78,8 +78,8 @@
   --surface-300: 182 201 191;
   --surface-400: 138 168 153;
   --surface-500: 114 151 133;
-  --surface-600: 91 123 107;
-  --surface-700: 80 109 94;
+  --surface-600: 111 149 130;
+  --surface-700: 94 128 110;
   --surface-800: 26 35 31;
   --surface-900: 13 18 15;
   --surface-950: 7 9 8;
@@ -107,7 +107,7 @@
   /* Warm cream / tan surfaces (brown-tinted neutrals) */
   --surface-50: 251 243 228;
   --surface-100: 245 234 211;
-  --surface-200: 232 217 188;
+  --surface-200: 224 207 172;
   --surface-300: 214 194 160;
   --surface-400: 181 160 126;
   --surface-500: 140 122 92;
@@ -147,8 +147,8 @@
   --surface-300: 178 184 178;
   --surface-400: 141 150 141;
   --surface-500: 120 130 120;
-  --surface-600: 98 106 98;
-  --surface-700: 86 93 86;
+  --surface-600: 116 125 116;
+  --surface-700: 101 109 101;
   --surface-800: 27 29 27;
   --surface-900: 12 13 12;
   --surface-950: 0 0 0;
@@ -176,7 +176,7 @@
   /* Warm bond-paper grey — dimmer and visibly warmer than Light's cool near-white */
   --surface-50: 240 237 230;
   --surface-100: 230 226 215;
-  --surface-200: 213 207 190;
+  --surface-200: 202 195 174;
   --surface-300: 188 179 156;
   --surface-400: 152 142 119;
   --surface-500: 118 109 90;
@@ -213,8 +213,8 @@
   --surface-300: 169 177 193;
   --surface-400: 134 145 167;
   --surface-500: 116 129 154;
-  --surface-600: 94 106 130;
-  --surface-700: 88 99 121;
+  --surface-600: 111 125 154;
+  --surface-700: 104 117 143;
   --surface-800: 26 29 35;
   --surface-900: 13 14 18;
   --surface-950: 6 7 9;
@@ -245,8 +245,8 @@
   --surface-300: 187 188 174;
   --surface-400: 154 156 134;
   --surface-500: 135 137 112;
-  --surface-600: 111 112 92;
-  --surface-700: 102 104 85;
+  --surface-600: 131 132 108;
+  --surface-700: 119 122 99;
   --surface-800: 33 34 28;
   --surface-900: 17 17 14;
   --surface-950: 8 8 7;
@@ -277,8 +277,8 @@
   --surface-300: 171 178 191;
   --surface-400: 137 145 164;
   --surface-500: 120 129 151;
-  --surface-600: 98 107 127;
-  --surface-700: 91 100 118;
+  --surface-600: 116 127 150;
+  --surface-700: 107 118 139;
   --surface-800: 27 29 35;
   --surface-900: 13 15 17;
   --surface-950: 7 7 9;
@@ -305,7 +305,7 @@
   /* Crisp cool-grey surfaces */
   --surface-50: 246 247 248;
   --surface-100: 238 240 242;
-  --surface-200: 220 224 229;
+  --surface-200: 210 215 221;
   --surface-300: 194 201 209;
   --surface-400: 150 163 176;
   --surface-500: 110 128 145;
@@ -339,7 +339,7 @@
   /* Saturated golden-yellow surfaces */
   --surface-50: 249 241 210;
   --surface-100: 245 234 188;
-  --surface-200: 240 221 148;
+  --surface-200: 236 213 123;
   --surface-300: 233 206 99;
   --surface-400: 226 190 50;
   --surface-500: 161 133 23;
@@ -372,7 +372,7 @@
   /* Periwinkle-violet surfaces */
   --surface-50: 227 222 242;
   --surface-100: 211 203 235;
-  --surface-200: 186 174 224;
+  --surface-200: 170 155 217;
   --surface-300: 152 133 209;
   --surface-400: 118 92 193;
   --surface-500: 91 65 170;
@@ -404,7 +404,7 @@
   /* Saturated rose-pink surfaces */
   --surface-50: 244 215 222;
   --surface-100: 238 196 206;
-  --surface-200: 227 160 177;
+  --surface-200: 220 138 159;
   --surface-300: 215 117 141;
   --surface-400: 202 73 105;
   --surface-500: 178 52 83;
@@ -436,7 +436,7 @@
   /* Saturated sage-green surfaces */
   --surface-50: 222 238 221;
   --surface-100: 206 230 203;
-  --surface-200: 176 215 172;
+  --surface-200: 158 206 152;
   --surface-300: 140 197 135;
   --surface-400: 103 179 97;
   --surface-500: 65 124 60;
@@ -473,8 +473,8 @@
   --surface-300: 201 201 201;
   --surface-400: 178 178 178;
   --surface-500: 158 158 158;
-  --surface-600: 138 138 138;
-  --surface-700: 120 120 120;
+  --surface-600: 153 153 153;
+  --surface-700: 132 132 132;
   --surface-800: 38 38 38;
   --surface-900: 18 18 18;
   --surface-950: 0 0 0;
@@ -486,8 +486,15 @@
    near-white, because true accessibility high-contrast modes don't have shades
    of muted text, everything is either full-bright content or black background.
    Only 800-950 carry real darkness. Every text/border pairing against those
-   backgrounds lands at 11:1+ (WCAG AAA is 7:1). Accent is pure, fully-saturated
-   yellow (#FFFF00) rather than the warm-shifted yellow Blackout uses. ───────── */
+   backgrounds lands at 13:1+ (WCAG AAA is 7:1). --surface-700 (the section-divider
+   border tier — border-surface-200/dark:border-surface-700 is the dominant divider
+   pairing app-wide) is pushed noticeably past the arithmetic contrast minimum: a
+   light line on a near-black background reads as visually thinner/softer than a
+   dark line on white at the *same* contrast ratio (a known light-on-dark
+   perception effect), so 700 needs real headroom above AAA to actually look as
+   bold as High Contrast Light's border-200-on-white, not just measure the same.
+   Accent is pure, fully-saturated yellow (#FFFF00) rather than the warm-shifted
+   yellow Blackout uses. ─────────────────────────────────────────────────────── */
 [data-theme="high-contrast"] {
   /* Pure yellow accent */
   --brand-50: 255 255 240;
@@ -508,9 +515,9 @@
   --surface-200: 255 255 255;
   --surface-300: 250 250 250;
   --surface-400: 240 240 240;
-  --surface-500: 225 225 225;
-  --surface-600: 210 210 210;
-  --surface-700: 195 195 195;
+  --surface-500: 235 235 235;
+  --surface-600: 228 228 228;
+  --surface-700: 222 222 222;
   --surface-800: 20 20 20;
   --surface-900: 5 5 5;
   --surface-950: 0 0 0;

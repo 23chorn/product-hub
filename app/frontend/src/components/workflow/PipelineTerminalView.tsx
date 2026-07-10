@@ -424,7 +424,7 @@ export function PipelineTerminalView({ coordinatorMessages, onCheckpointResolved
   return (
     <div className="flex h-full overflow-hidden font-mono">
       {/* ── Left: stage list ───────────────────────────────────── */}
-      <div className="w-[27rem] flex-shrink-0 flex flex-col border-r border-surface-200 dark:border-surface-800/80">
+      <div className="w-[27rem] flex-shrink-0 flex flex-col border-r border-surface-200 dark:border-surface-700">
         {/* Scrollable content: agent stage rows + post-completion pipeline section */}
         <div className="flex-1 overflow-y-auto">
           {/* Agent stage rows — a box-drawing tree once features exist, so the

@@ -179,6 +179,25 @@ code {
   animation: slide-in-right 0.3s ease-out;
 }
 
+/* xCube mark "colored" fill — gradient across the current theme's own accent ramp (see
+   AsciiMark.tsx). Spans 700->300 rather than the adjacent 600->400 tiers so the two ends
+   are far enough apart to read as a visible gradient (not a near-solid wash) and so the
+   light 300 end stays bright enough to stand out against dark-theme surfaces. */
+.xcube-mark-colored {
+  background-image: linear-gradient(135deg, rgb(var(--brand-700)) 0%, rgb(var(--brand-700)) 10%, rgb(var(--brand-300)) 90%, rgb(var(--brand-300)) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Dark-family themes (including High Contrast) get a white-based gradient instead of the
+   theme accent — white-to-light-grey, not a flat solid white, so the ASCII shading still
+   reads as a gradient with some depth while staying maximally visible against near-black
+   surfaces. */
+.dark .xcube-mark-colored {
+  background-image: linear-gradient(135deg, #ffffff 0%, #ffffff 10%, #c6c6c6 90%, #c6c6c6 100%);
+}
+
 /* xCube mark travel — logo sweeps left-to-right across the pane in a continuous cycle,
    trailing a fading brand-gradient streak, as the pipeline "working" indicator */
 @keyframes xcube-travel {

@@ -443,10 +443,8 @@ export function EpicFeaturesView({ data, initiativeTitle, frMap, nfrMap, onDelet
       <InitiativeCard
         title={initiativeTitle ?? data.epic.title}
         right={`${phases.length} phase${phases.length !== 1 ? 's' : ''} · ${totalFeatures} feature${totalFeatures !== 1 ? 's' : ''}`}
+        description={data.epic.description}
       >
-        {data.epic.description && (
-          <p className="text-sm text-surface-600 dark:text-surface-300">{data.epic.description}</p>
-        )}
         {data.epic.businessValue && (
           <p className="text-xs text-surface-500 dark:text-surface-400">
             <span className="font-semibold">Business value: </span>{data.epic.businessValue}

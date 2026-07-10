@@ -59,9 +59,17 @@ export function useSplitArtifactCandidates(excludeArtifactId?: number | null): S
   }, [epicFeaturesArtifactId]);
 
   const stageOrder: string[] = activeWorkflow ? JSON.parse(activeWorkflow.stage_sequence || '[]') : [];
+  // A stage still belongs to the current run if it's a literal stage_sequence member, or —
+  // for a synthetic QA sub-stage, which never gets its own stage_sequence entry (see
+  // deriveQaSubStageStatus in PipelineTerminalView) — if its parent feature stage does. A CR
+  // that changes the feature count regenerates stage_sequence with fewer/renumbered
+  // story_decomposition_F<n> entries, but leaves the old run's checkpoints (and their QA
+  // siblings) in the DB for audit — those must not still show up as split-view candidates.
+  const isCurrentStage = (stage: string): boolean =>
+    stageOrder.includes(stage) || (stage.endsWith('_qa') && stageOrder.includes(stage.slice(0, -3)));
   const finalByStage = new Map<string, WorkflowCheckpoint>();
   for (const c of checkpoints) {
-    if (!c.artifact_id) continue;
+    if (!c.artifact_id || !isCurrentStage(c.stage)) continue;
     const existing = finalByStage.get(c.stage);
     if (!existing || c.created_at > existing.created_at) finalByStage.set(c.stage, c);
   }

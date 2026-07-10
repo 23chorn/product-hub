@@ -21,4 +21,11 @@ describe('effectiveStatus', () => {
   it('passes the raw status through otherwise', () => {
     expect(effectiveStatus(wf({ status: 'paused_at_checkpoint' }))).toBe('paused_at_checkpoint');
   });
+
+  it('reports active for a resumed workflow even though its old workflow_cancelled event still makes isCancelled true', () => {
+    // reiterateFromStage flips status back to 'active' but never deletes the original stop's
+    // workflow_cancelled event, so isCancelled stays true forever — effectiveStatus must not
+    // let that stale flag override a since-resumed 'active' status.
+    expect(effectiveStatus(wf({ status: 'active', isCancelled: true }))).toBe('active');
+  });
 });

@@ -30,9 +30,15 @@ export type InitiativeComment = {
   createdAt: number;
 };
 
-/** Collapse a workflow's raw status into a display status, accounting for cancellation and pipeline state. */
+/** Collapse a workflow's raw status into a display status, accounting for cancellation and pipeline state.
+ *  isCancelled only reclassifies a `complete` workflow (stop/reject both land on status='complete',
+ *  and isCancelled disambiguates that from a normal finish) — it must not override 'active' or
+ *  'paused_at_checkpoint'. Resuming a stopped workflow (reiterateFromStage) flips status back to
+ *  'active' but leaves its old workflow_cancelled event in place for the audit trail, so isCancelled
+ *  stays true forever; gating on status==='complete' here is what lets a resumed workflow read as
+ *  active again instead of stuck showing "stopped". */
 export function effectiveStatus(wf: WorkflowInfo): string {
-  if (wf.isCancelled) return 'cancelled';
+  if (wf.status === 'complete' && wf.isCancelled) return 'cancelled';
   if (wf.status === 'complete' && wf.pipelineStatus && wf.pipelineStatus !== 'complete') return 'active';
   return wf.status;
 }

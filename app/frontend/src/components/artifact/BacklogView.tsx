@@ -3,7 +3,6 @@ import type { WorkItemStateBucket, BacklogData, BacklogFeature, BacklogStory } f
 import { featureLocalKey, storyLocalKey, backlogTier, getSprintMeta, getAllStories, getAllFeatures, storiesInDisplayOrder } from '@pap/shared';
 import { WORK_ITEM_STATE_BUCKET_LABELS, WORK_ITEM_STATE_BUCKET_COLORS } from '../../utils/work-item-state-bucket';
 import { toPhases, PHASE_COLORS, PrdRefTags, FrTags, FeatureKeyBadge, stripPhasePrefix, type EpicFeature, type EpicFeaturesData } from './EpicFeaturesView';
-import { ExpandableText } from '../common/ExpandableText';
 import { ExpandableList } from '../common/ExpandableList';
 import { DeleteItemButton } from '../common/DeleteItemButton';
 import { AcceptanceCriteriaConsole, Chevron, ChromeStrip, DotLabel, FeatureDependencyBadges, InitiativeCard, PhaseTag } from './ArtifactPrimitives';
@@ -531,10 +530,7 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
         const epic = data.epic;
         return (
           <div className="space-y-3">
-            <InitiativeCard title={initiativeTitle ?? epic.title}>
-              {epic.description && (
-                <ExpandableText text={epic.description} className="text-sm text-surface-600 dark:text-surface-300" />
-              )}
+            <InitiativeCard title={initiativeTitle ?? epic.title} description={epic.description}>
               {epic.businessValue && (
                 <p className="text-xs text-surface-500 dark:text-surface-400">
                   <span className="font-semibold">Business value: </span>{epic.businessValue}
@@ -604,10 +600,8 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
             <InitiativeCard
               title={initiativeTitle ?? epic.title}
               right={`${sections.length} epic${sections.length !== 1 ? 's' : ''} · ${features.length} feature${features.length !== 1 ? 's' : ''}${totalEffort > 0 ? ` · ${totalEffort} pts` : ''}`}
+              description={epic.description}
             >
-              {epic.description && (
-                <ExpandableText text={epic.description} className="text-sm text-surface-600 dark:text-surface-300" />
-              )}
               {epic.businessValue && (
                 <p className="text-xs text-surface-500 dark:text-surface-400">
                   <span className="font-semibold">Business value: </span>{epic.businessValue}
@@ -624,10 +618,7 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
                 </a>
               )}
               {outOfScope.length > 0 && (
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500 mb-1">Out of scope</p>
-                  <ExpandableList items={outOfScope} />
-                </div>
+                <ExpandableList label="Out of scope" items={outOfScope} />
               )}
             </InitiativeCard>
 
