@@ -8,6 +8,7 @@ import {
   buildAcceptanceCriteriaHtml,
   deriveTeamTags,
   deriveEpicLocalKey,
+  resolveStoryEffort,
   type StoryHtmlInput,
 } from './azure-devops-format';
 import {
@@ -50,6 +51,7 @@ type BacklogStoryInput = StoryHtmlInput & {
   title: string;
   acceptanceCriteria?: string[];
   effort?: number;
+  estimated_points?: number;
   aiEstimatedQaHours?: number;
 };
 
@@ -181,13 +183,14 @@ export class AzureDevOpsClient {
   private async createStoriesUnderFeature(featureId: number, stories: BacklogStoryInput[]): Promise<number[]> {
     const storyIds: number[] = [];
     for (const storyData of stories) {
+      const effort = resolveStoryEffort(storyData);
       const story = await this.createWorkItem({
         type: this.workItemTypes.story as any,
         title: storyData.title,
         description: buildStoryDescriptionHtml(storyData),
         acceptanceCriteria: buildAcceptanceCriteriaHtml(storyData.acceptanceCriteria),
-        effort: storyData.effort,
-        aiEstimateDevHours: deriveAiEstimateDev(storyData.effort),
+        effort,
+        aiEstimateDevHours: deriveAiEstimateDev(effort),
         aiEstimateQaHours: storyData.aiEstimatedQaHours,
         tags: deriveTeamTags(storyData.technical_notes),
         parentId: featureId,
@@ -371,7 +374,7 @@ export class AzureDevOpsClient {
       // Total story-point effort across all features for high-level prioritisation
       const totalEffort = structure.features
         .flatMap(f => f.stories)
-        .reduce((sum, s) => sum + (s.effort ?? 0), 0);
+        .reduce((sum, s) => sum + (resolveStoryEffort(s) ?? 0), 0);
 
       // 1. Main epic — MVP features only (or all features if not splitting)
       const epic = await this.createWorkItem({
@@ -430,6 +433,7 @@ export class AzureDevOpsClient {
         benefit: string;
         acceptanceCriteria?: string[];
         effort?: number;
+        estimated_points?: number;
         technical?: any;
         technical_notes?: any;
         aiEstimatedHours?: number;
@@ -543,7 +547,7 @@ export class AzureDevOpsClient {
     const epicTitleChanged = epicMapping.title !== structure.epic.title;
     const epicTotalEffort = structure.features
       .flatMap(f => f.stories)
-      .reduce((sum, s) => sum + (s.effort ?? 0), 0);
+      .reduce((sum, s) => sum + (resolveStoryEffort(s) ?? 0), 0);
     await this.updateWorkItem(epicId, {
       ...(epicTitleChanged ? { title: structure.epic.title } : {}),
       description: structure.epic.description,
@@ -633,13 +637,14 @@ export class AzureDevOpsClient {
         // update path lacked the strip its create-path siblings had (copy drift).
         const storyDescription = buildStoryDescriptionHtml(storyData);
         const acceptanceCriteriaHtml = buildAcceptanceCriteriaHtml(storyData.acceptanceCriteria);
+        const effort = resolveStoryEffort(storyData);
 
         if (storyMapping) {
           await this.updateWorkItem(storyMapping.ado_id, {
             title: storyData.title,
             description: storyDescription,
             acceptanceCriteria: acceptanceCriteriaHtml,
-            aiEstimateDevHours: deriveAiEstimateDev(storyData.effort),
+            aiEstimateDevHours: deriveAiEstimateDev(effort),
             aiEstimateQaHours: storyData.aiEstimatedQaHours,
             tags: deriveTeamTags(storyData.technical_notes),
           });
@@ -651,8 +656,8 @@ export class AzureDevOpsClient {
             title: storyData.title,
             description: storyDescription,
             acceptanceCriteria: acceptanceCriteriaHtml,
-            effort: storyData.effort,
-            aiEstimateDevHours: deriveAiEstimateDev(storyData.effort),
+            effort,
+            aiEstimateDevHours: deriveAiEstimateDev(effort),
             aiEstimateQaHours: storyData.aiEstimatedQaHours,
             tags: deriveTeamTags(storyData.technical_notes),
             parentId: featureAdoId,

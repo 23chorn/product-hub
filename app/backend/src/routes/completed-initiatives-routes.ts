@@ -29,6 +29,7 @@ import {
   type AdoWorkItemRow,
 } from '../data/work-item-queries';
 import { getAssignedUsersByItem } from '../data/item-assignments';
+import { readProductArea, readStrategicTheme } from '../agents/item-metadata';
 
 const logger = new Logger('COMPLETED-INITIATIVES');
 const router = Router();
@@ -37,6 +38,7 @@ interface CandidateRow {
   id: string;
   title: string;
   seq_num: number | null;
+  description: string;
 }
 
 const EMPTY_BUCKETS: Record<WorkItemStateBucket, number> = { not_started: 0, in_progress: 0, done: 0, removed: 0 };
@@ -54,7 +56,7 @@ function candidatesPredicate(archived: boolean): string {
  *  by default; pass `archived: true` for the admin-only archived review list. */
 export function getCandidateItems(archived = false): CandidateRow[] {
   return db.prepare(`
-    SELECT DISTINCT i.id, i.title, i.seq_num FROM items i
+    SELECT DISTINCT i.id, i.title, i.seq_num, i.description FROM items i
     WHERE ${candidatesPredicate(archived)}
     ORDER BY i.created_at DESC
   `).all() as CandidateRow[];
@@ -62,7 +64,7 @@ export function getCandidateItems(archived = false): CandidateRow[] {
 
 function getCandidateItem(itemId: string, archived = false): CandidateRow | undefined {
   return db.prepare(`
-    SELECT i.id, i.title, i.seq_num FROM items i
+    SELECT i.id, i.title, i.seq_num, i.description FROM items i
     WHERE i.id = ? AND ${candidatesPredicate(archived)}
   `).get(itemId) as CandidateRow | undefined;
 }
@@ -247,6 +249,9 @@ async function buildDetail(item: CandidateRow): Promise<CompletedInitiativeDetai
   const summary = buildSummary(item.id, item.seq_num, item.title, workItemRows, testCaseCount, assignedUsers);
   return {
     ...summary,
+    description: item.description,
+    productArea: readProductArea(item.id),
+    strategicTheme: readStrategicTheme(item.id),
     workItems: workItemRows.map(toWorkItemRow),
     testPlans: testPlanRows.map(r => ({ planId: r.plan_id, planUrl: r.plan_url, testCaseCount: r.test_case_count, artifactId: r.artifact_id, epicLocalKey: r.epic_local_key })),
     ...getDocumentArtifactIds(item.id),

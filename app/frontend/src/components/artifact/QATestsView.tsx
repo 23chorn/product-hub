@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { TestCase, QATestSuite } from '@pap/shared';
 import { ExpandableText } from '../common/ExpandableText';
 import { DeleteItemButton } from '../common/DeleteItemButton';
-import { normalizePrdId } from './EpicFeaturesView';
+import { normalizePrdId, PHASE_COLORS } from './EpicFeaturesView';
 import { Chevron, DotLabel } from './ArtifactPrimitives';
 
 /** Remove one test case by its position in data.test_cases. The view groups/reorders
@@ -58,14 +58,25 @@ export function priorityMeta(priority: string): { label: string; color: string; 
   };
 }
 
-/** Display metadata for a phase label — phases have no fixed palette (unlike type/priority),
- *  so every phase renders with the same neutral style; only the label varies. */
+// Text-only/dot variants of PHASE_COLORS (imported from EpicFeaturesView — the shared
+// MVP/Phase-N palette the epic sections in BacklogView already use), matching each phase's
+// hue so a phase reads as the same color everywhere it appears, not just here.
+const PHASE_DOT_TEXT: Record<string, { text: string; dot: string }> = {
+  MVP:        { text: 'text-emerald-700 dark:text-emerald-500', dot: 'bg-emerald-400' },
+  'Phase 1':  { text: 'text-blue-700 dark:text-blue-500',       dot: 'bg-blue-400' },
+  'Phase 2':  { text: 'text-rose-700 dark:text-rose-500',       dot: 'bg-rose-400' },
+  'Phase 3':  { text: 'text-amber-700 dark:text-amber-500',     dot: 'bg-amber-400' },
+};
+
+/** Display metadata for a phase label, reusing PHASE_COLORS so a phase gets the same color
+ *  here as it does in the epic sections it's grouped under, instead of a flat neutral tile. */
 function phaseMeta(phase: string): { label: string; color: string; text: string; dot: string } {
+  const dotText = PHASE_DOT_TEXT[phase];
   return {
     label: phase,
-    color: 'bg-surface-50 dark:bg-surface-800 text-surface-600 dark:text-surface-400',
-    text: 'text-surface-600 dark:text-surface-400',
-    dot: 'bg-surface-400',
+    color: PHASE_COLORS[phase] ?? 'bg-surface-50 dark:bg-surface-800 text-surface-600 dark:text-surface-400',
+    text: dotText?.text ?? 'text-surface-600 dark:text-surface-400',
+    dot: dotText?.dot ?? 'bg-surface-400',
   };
 }
 
@@ -388,33 +399,29 @@ export function QATestsView({ data, frMap, phaseByFeatureKey, planUrlByFeatureKe
     // font-sans: this view can render inside the font-mono pipeline terminal subtree
     // (the per-refinement Stories/Tests overview); pin the app font so it never inherits monospace.
     <div className="space-y-5 font-sans">
-      {/* Header */}
-      <div>
-        <h2 className="text-base font-bold text-surface-900 dark:text-surface-100">{data.suite ?? 'QA Test Suite'}</h2>
-        {data.version && <p className="text-xs text-surface-400 dark:text-surface-500 mt-0.5">v{data.version}</p>}
-        {data.metadata?.notes && (
-          <div className="mt-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded px-2.5 py-2">
-            <ExpandableText text={data.metadata.notes} className="text-xs text-surface-500 dark:text-surface-400 leading-relaxed" />
-          </div>
-        )}
-      </div>
+      {data.metadata?.notes && (
+        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded px-2.5 py-2">
+          <ExpandableText text={data.metadata.notes} className="text-xs text-surface-500 dark:text-surface-400 leading-relaxed" />
+        </div>
+      )}
 
       {/* Test counts — total on its own row, then a toggleable type/priority breakdown. Counts
           are derived from test_cases directly rather than the artifact's separate `coverage`
           field, which is frequently absent or stale. Switching the toggle also re-groups the
           test case list below. */}
       {totalCount > 0 && (
-        <div className="space-y-3">
-          <div className="bg-surface-50 dark:bg-surface-800 rounded-lg px-3 py-2 flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400">Total Test Cases</span>
-            <span className="text-lg font-bold text-surface-900 dark:text-surface-100">{totalCount}</span>
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <p className="text-[10px] font-mono font-semibold uppercase tracking-widest text-surface-400 dark:text-surface-500">
-                by {effectiveGroupMode}
-              </p>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="inline-flex items-baseline gap-1.5 bg-surface-50 dark:bg-surface-800 rounded-lg px-3 py-2">
+              <span className="text-lg font-bold text-surface-900 dark:text-surface-100">{totalCount}</span>
+              <span className="text-xs font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400">
+                test case{totalCount !== 1 ? 's' : ''} total
+              </span>
+            </div>
+            <div className="inline-flex items-center gap-1.5">
+              <span className="text-[10px] font-mono font-semibold uppercase tracking-widest text-surface-400 dark:text-surface-500">
+                by
+              </span>
               <div className="inline-flex rounded-md border border-surface-200 dark:border-surface-700 overflow-hidden">
                 {(hasPhaseData ? (['type', 'priority', 'phase'] as const) : (['type', 'priority'] as const)).map((mode, i) => (
                   <button
@@ -431,38 +438,44 @@ export function QATestsView({ data, frMap, phaseByFeatureKey, planUrlByFeatureKe
                 ))}
               </div>
             </div>
-            <div className={`grid gap-1.5 ${effectiveGroupMode === 'type' ? 'grid-cols-3 sm:grid-cols-6' : 'grid-cols-2 sm:grid-cols-4'}`}>
-              {groupedCases.map(([key, cases]) => {
-                const meta = groupMeta(key);
-                return (
-                  <div key={key} className={`${meta.color} rounded-md px-2 py-1.5 text-center`}>
-                    <p className="text-sm font-bold">{cases.length}</p>
-                    <p className="text-[9px] uppercase tracking-wide mt-0.5 opacity-80">{meta.label}</p>
-                  </div>
-                );
-              })}
-            </div>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {groupedCases.map(([key, cases]) => {
+              const meta = groupMeta(key);
+              return (
+                <div key={key} className={`${meta.color} rounded-md px-2.5 py-1.5 min-w-[64px] text-center`}>
+                  <p className="text-sm font-bold">{cases.length}</p>
+                  <p className="text-[9px] uppercase tracking-wide mt-0.5 opacity-80">{meta.label}</p>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
 
-      {/* Test case groups — grouped by the same toggle above, collapsed by default. */}
+      {/* Test case groups — grouped by the same toggle above, collapsed by default. Same
+          bordered-card + header-row idiom as a feature row in BacklogView (chevron, colored
+          eyebrow badge, count on the right, border-t divider on expand) so a category group
+          reads as the same kind of container as everything else it sits next to. */}
       {groupedCases.map(([key, cases]) => {
         const meta = groupMeta(key);
         const isOpen = expandedGroups.has(key);
         return (
-          <div key={key}>
+          <div key={key} className="rounded-lg border border-surface-200 dark:border-surface-700 overflow-hidden">
             <button
               onClick={() => toggleGroup(key)}
-              className="w-full flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-2"
+              className="w-full flex items-center gap-2 px-4 py-2.5 bg-surface-50 dark:bg-surface-800/60 hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors"
             >
-              <Chevron expanded={isOpen} className="w-3 text-surface-400" />
-              <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
-              {meta.label}
-              <span className="font-normal text-surface-400">({cases.length})</span>
+              <Chevron expanded={isOpen} className="w-3.5 text-surface-400" />
+              <span className={`text-[10px] font-mono font-semibold uppercase tracking-widest px-1.5 py-0.5 rounded ${meta.color}`}>
+                {meta.label}
+              </span>
+              <span className="text-xs font-mono text-surface-400 dark:text-surface-500 ml-auto">
+                {cases.length} case{cases.length !== 1 ? 's' : ''}
+              </span>
             </button>
             {isOpen && (
-              <div className="space-y-2">
+              <div className="border-t border-surface-200 dark:border-surface-700 bg-surface-50/50 dark:bg-surface-900/20 p-3 space-y-2">
                 {cases.map(tc => (
                   <TestCaseCard
                     key={tc.id}

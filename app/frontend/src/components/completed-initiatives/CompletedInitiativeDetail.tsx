@@ -12,9 +12,12 @@ import { BacklogView } from '../artifact/BacklogView';
 import { tryParseEpicFeatures, type EpicFeaturesData } from '../artifact/EpicFeaturesView';
 import { PageHeaderTitle } from '../common/PageHeaderTitle';
 import { PageHeaderActions } from '../common/PageHeaderActions';
+import { splitProductAreas } from '../../utils/product-area';
 import { QATestsView, groupByType, typeMeta, splitStoryRefs } from '../artifact/QATestsView';
 import { MarkdownContent } from '../common/MarkdownContent';
 import { ArchiveConfirmModal } from '../common/ArchiveConfirmModal';
+import { DescriptionModal } from '../common/DescriptionModal';
+import { BrailleSpinner } from '../workflow/pipeline-terminal/BrailleSpinner';
 import { WorkItemManagePanel } from './WorkItemManagePanel';
 import { FigmaScreenPreviewer } from '../artifact/FigmaDesignActions';
 import { parseFigmaDesignContent } from '../../utils/figma-design';
@@ -62,10 +65,8 @@ function PipelineExportModal({ seqNum, availableStreams, phaseLabels, onClose }:
       <div className="relative bg-surface-50 dark:bg-surface-900 rounded-xl shadow-xl border border-surface-200 dark:border-surface-700 w-full max-w-sm mx-4 p-5" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold text-surface-900 dark:text-surface-100">Pipeline Export</h3>
-          <button onClick={onClose} className="p-1 rounded text-surface-400 hover:text-surface-700 dark:hover:text-surface-200 transition-colors">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+          <button onClick={onClose} className="text-[11px] font-mono text-surface-400 hover:text-surface-600 dark:hover:text-surface-300 transition-colors">
+            [x]
           </button>
         </div>
 
@@ -73,20 +74,23 @@ function PipelineExportModal({ seqNum, availableStreams, phaseLabels, onClose }:
           {availableStreams.length > 0 && (
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-1.5">Stream</p>
-              <div className="flex flex-wrap gap-1.5">
-                {(['all', ...availableStreams] as const).map(s => (
-                  <button
-                    key={s}
-                    onClick={() => setStream(s === 'all' ? null : s as PipelineStream)}
-                    className={`text-[11px] px-2.5 py-1 rounded-full transition-colors ${
-                      (s === 'all' ? stream === null : stream === s)
-                        ? 'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-medium'
-                        : 'bg-surface-100 dark:bg-surface-800 text-surface-600 dark:text-surface-400 hover:bg-surface-200 dark:hover:bg-surface-700'
-                    }`}
-                  >
-                    {s}
-                  </button>
-                ))}
+              <div className="flex flex-wrap gap-x-2 gap-y-1">
+                {(['all', ...availableStreams] as const).map(s => {
+                  const selected = s === 'all' ? stream === null : stream === s;
+                  return (
+                    <button
+                      key={s}
+                      onClick={() => setStream(s === 'all' ? null : s as PipelineStream)}
+                      className={`text-[11px] font-mono transition-colors ${
+                        selected
+                          ? 'text-brand-700 dark:text-brand-400 font-semibold'
+                          : 'text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200'
+                      }`}
+                    >
+                      {selected ? '[ ' : ''}{s}{selected ? ' ]' : ''}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -94,20 +98,23 @@ function PipelineExportModal({ seqNum, availableStreams, phaseLabels, onClose }:
           {phaseLabels.length > 0 && (
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400 mb-1.5">Phase</p>
-              <div className="flex flex-wrap gap-1.5">
-                {(['all', ...phaseLabels]).map(p => (
-                  <button
-                    key={p}
-                    onClick={() => setPhase(p === 'all' ? null : p)}
-                    className={`text-[11px] px-2.5 py-1 rounded-full transition-colors ${
-                      (p === 'all' ? phase === null : phase === p)
-                        ? 'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-medium'
-                        : 'bg-surface-100 dark:bg-surface-800 text-surface-600 dark:text-surface-400 hover:bg-surface-200 dark:hover:bg-surface-700'
-                    }`}
-                  >
-                    {p}
-                  </button>
-                ))}
+              <div className="flex flex-wrap gap-x-2 gap-y-1">
+                {(['all', ...phaseLabels]).map(p => {
+                  const selected = p === 'all' ? phase === null : phase === p;
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => setPhase(p === 'all' ? null : p)}
+                      className={`text-[11px] font-mono transition-colors ${
+                        selected
+                          ? 'text-brand-700 dark:text-brand-400 font-semibold'
+                          : 'text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200'
+                      }`}
+                    >
+                      {selected ? '[ ' : ''}{p}{selected ? ' ]' : ''}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -124,9 +131,10 @@ function PipelineExportModal({ seqNum, availableStreams, phaseLabels, onClose }:
             <button
               onClick={() => generate('context')}
               disabled={loading !== null}
-              className="flex-shrink-0 text-[11px] px-3 py-1.5 rounded-lg border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-200 hover:bg-surface-50 dark:hover:bg-surface-700 disabled:opacity-40 transition-colors font-medium"
+              className="flex-shrink-0 flex items-center gap-1.5 text-[11px] font-mono px-3 py-1.5 rounded-lg border border-surface-300 dark:border-surface-600 text-surface-700 dark:text-surface-200 hover:bg-surface-50 dark:hover:bg-surface-700 disabled:opacity-40 transition-colors font-medium"
             >
-              {loading === 'context' ? '…' : 'Download'}
+              {loading === 'context' && <BrailleSpinner />}
+              {loading === 'context' ? 'downloading' : 'download'}
             </button>
           </div>
 
@@ -138,9 +146,10 @@ function PipelineExportModal({ seqNum, availableStreams, phaseLabels, onClose }:
             <button
               onClick={() => generate('plan')}
               disabled={loading !== null}
-              className="flex-shrink-0 text-[11px] px-3 py-1.5 rounded-lg bg-brand-500 text-white hover:bg-brand-600 disabled:opacity-40 transition-colors font-medium"
+              className="flex-shrink-0 flex items-center gap-1.5 text-[11px] font-mono px-3 py-1.5 rounded-lg bg-brand-500 text-white hover:bg-brand-600 disabled:opacity-40 transition-colors font-medium"
             >
-              {loading === 'plan' ? '…' : 'Download'}
+              {loading === 'plan' && <BrailleSpinner />}
+              {loading === 'plan' ? 'downloading' : 'download'}
             </button>
           </div>
         </div>
@@ -149,7 +158,7 @@ function PipelineExportModal({ seqNum, availableStreams, phaseLabels, onClose }:
           <button
             onClick={onClose}
             disabled={loading !== null}
-            className="text-xs px-3 py-1.5 rounded-lg border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-300 hover:bg-surface-50 dark:hover:bg-surface-700 disabled:opacity-40 transition-colors"
+            className="text-xs px-3 py-1.5 rounded-lg bg-surface-100 dark:bg-surface-800 text-surface-700 dark:text-surface-300 hover:bg-surface-200 dark:hover:bg-surface-700 disabled:opacity-40 transition-colors"
           >
             Cancel
           </button>
@@ -302,6 +311,7 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
   const [archiving, setArchiving] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [showDescription, setShowDescription] = useState(false);
 
   // Re-fetches and re-parses the ticket (backlog) and QA artifact content that the "Total
   // Tickets"/"Test Cases" stat cards and the Stories/Tests tabs are computed from. Split out
@@ -610,6 +620,25 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
         </button>
         <span className="text-surface-300 dark:text-surface-600">/</span>
         <span className="text-sm font-semibold text-surface-900 dark:text-surface-100 truncate">{detail?.title ?? 'Loading...'}</span>
+        {detail?.description && (
+          <button
+            onClick={() => setShowDescription(true)}
+            title="View initial description"
+            className="flex-shrink-0 text-[11px] font-mono text-surface-400 hover:text-brand-600 dark:hover:text-brand-400 transition-colors"
+          >
+            [i]
+          </button>
+        )}
+        {detail?.productArea && splitProductAreas(detail.productArea).map(area => (
+          <span key={area} className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400">
+            {area}
+          </span>
+        ))}
+        {detail?.strategicTheme && (
+          <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+            {detail.strategicTheme}
+          </span>
+        )}
       </PageHeaderTitle>
       <PageHeaderActions>
         {detail && detail.workItems.filter(w => w.adoType === 'epic' && w.adoUrl).map((e, i, arr) => (
@@ -839,6 +868,10 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
           onCancel={() => setShowArchiveConfirm(false)}
           onConfirm={handleArchiveToggle}
         />
+      )}
+
+      {showDescription && detail?.description && (
+        <DescriptionModal description={detail.description} onClose={() => setShowDescription(false)} />
       )}
     </div>
   );

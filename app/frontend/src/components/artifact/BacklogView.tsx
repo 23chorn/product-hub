@@ -6,7 +6,7 @@ import { toPhases, PHASE_COLORS, PrdRefTags, FrTags, FeatureKeyBadge, stripPhase
 import { ExpandableText } from '../common/ExpandableText';
 import { ExpandableList } from '../common/ExpandableList';
 import { DeleteItemButton } from '../common/DeleteItemButton';
-import { AcceptanceCriteriaConsole, Chevron, ChromeStrip, DotLabel, FeatureDependencyBadges, InitiativeHeader, PhaseTag } from './ArtifactPrimitives';
+import { AcceptanceCriteriaConsole, Chevron, ChromeStrip, DotLabel, FeatureDependencyBadges, InitiativeCard, PhaseTag } from './ArtifactPrimitives';
 
 const DEFAULT_PHASE_LABEL = 'MVP';
 const UNKNOWN_PHASE_COLOR = 'bg-surface-50 dark:bg-surface-700 text-surface-600 dark:text-surface-300';
@@ -118,11 +118,18 @@ function effortDotClass(effort: number): { dot: string; text: string } {
   return { dot: 'bg-brand-400', text: 'text-brand-700 dark:text-brand-500' };
 }
 
+/** A story's point estimate — the current schema's `estimated_points`, falling back to the
+ *  legacy `effort` field name used by the older single-feature Quick Ticket flow. */
+function storyEffort(story: BacklogStory): number | undefined {
+  return story.estimated_points ?? story.effort;
+}
+
 function EffortLabel({ story, aiAssisted }: { story: BacklogStory; aiAssisted: boolean }) {
-  if (story.effort == null) return null;
-  const { dot, text } = effortDotClass(story.effort);
+  const effort = storyEffort(story);
+  if (effort == null) return null;
+  const { dot, text } = effortDotClass(effort);
   return (
-    <DotLabel dotClass={dot} textClass={text} label={<>{story.effort} pts<HoursDisplay story={story} aiAssisted={aiAssisted} /></>} />
+    <DotLabel dotClass={dot} textClass={text} label={<>{effort} pts<HoursDisplay story={story} aiAssisted={aiAssisted} /></>} />
   );
 }
 
@@ -332,7 +339,7 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
   const epicFeatureLookup = buildEpicFeatureLookup(epicFeatures);
 
   const totalStories = allStories.length;
-  const totalEffort = allStories.reduce((s, st) => s + (st.effort ?? 0), 0);
+  const totalEffort = allStories.reduce((s, st) => s + (storyEffort(st) ?? 0), 0);
   const totalHours = allStories.reduce((s, st) => s + (st.estimatedHours ?? 0), 0);
   const totalTraditionalHours = sprintMeta?.totalTraditionalHours ?? totalHours;
 
@@ -450,7 +457,7 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
    *  repeat, and is undefined when there's no epic_features data to match against. */
   const renderFeatureRow = (feature: BacklogFeature, fi: number, epicMatch?: EpicFeature) => {
     const isExpanded = expandedFeatures.has(fi);
-    const featureEffort = feature.stories.reduce((s, st) => s + (st.effort ?? 0), 0);
+    const featureEffort = feature.stories.reduce((s, st) => s + (storyEffort(st) ?? 0), 0);
     const featureHours = feature.stories.reduce((s, st) => s + (st.estimatedHours ?? 0), 0);
     const featureTraditionalHours = feature.stories.reduce((s, st) => s + (st.traditionalHours ?? st.estimatedHours ?? 0), 0);
     const featureKey = featureLocalKey(fi);
@@ -521,8 +528,7 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
         const epic = data.epic;
         return (
           <div className="space-y-3">
-            <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/40 p-4 space-y-2">
-              <InitiativeHeader title={initiativeTitle ?? epic.title} />
+            <InitiativeCard title={initiativeTitle ?? epic.title}>
               {epic.description && (
                 <ExpandableText text={epic.description} className="text-sm text-surface-600 dark:text-surface-300" />
               )}
@@ -531,7 +537,7 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
                   <span className="font-semibold">Business value: </span>{epic.businessValue}
                 </p>
               )}
-            </div>
+            </InitiativeCard>
             {feature && (() => {
               // Same title→phase→epicMatch resolution as the merged overview's renderFeatureRow
               // (buildEpicFeatureLookup below) — a single feature checkpoint still needs its
@@ -592,8 +598,10 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
         return (
           <div className="space-y-3">
             {/* Initiative + epic overview — shown once, not collapsible */}
-            <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/40 p-4 space-y-2">
-              <InitiativeHeader title={initiativeTitle ?? epic.title} />
+            <InitiativeCard
+              title={initiativeTitle ?? epic.title}
+              right={`${sections.length} epic${sections.length !== 1 ? 's' : ''} · ${features.length} feature${features.length !== 1 ? 's' : ''}`}
+            >
               {epic.description && (
                 <ExpandableText text={epic.description} className="text-sm text-surface-600 dark:text-surface-300" />
               )}
@@ -618,7 +626,7 @@ export function BacklogView({ data, isFeaturePreview, featureKey, initiativeTitl
                   <ExpandableList items={outOfScope} />
                 </div>
               )}
-            </div>
+            </InitiativeCard>
 
             {/* One collapsible "Epic" card per phase */}
             {sections.map(section => {

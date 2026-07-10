@@ -40,6 +40,12 @@ export function readProductArea(itemId: string): string | null {
   return coerceProductArea(readItemMetadata(itemId)?.productArea);
 }
 
+/** Read the strategicTheme label for an item, or null when unset. */
+export function readStrategicTheme(itemId: string): string | null {
+  const raw = readItemMetadata(itemId)?.strategicTheme;
+  return typeof raw === 'string' && raw.trim() ? raw.trim() : null;
+}
+
 /**
  * Next human-facing display number for a new item, e.g. for an "Initiative #42" badge.
  * Must be called and inserted within the same synchronous call stack as the INSERT — Node's

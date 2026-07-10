@@ -46,6 +46,13 @@ export function sumStoryPoints(stories: Array<{ estimated_points?: number; story
   return stories.reduce((total, s) => total + (s.estimated_points ?? s.storyPoints ?? 0), 0);
 }
 
+/** A single story's point estimate — the current schema's `estimated_points`, falling back to
+ *  the legacy `effort` field name used by the older single-feature Quick Ticket flow. Single
+ *  source of truth so the ADO push client doesn't keep its own copy of this fallback. */
+export function resolveStoryEffort(story: { estimated_points?: number; effort?: number }): number | undefined {
+  return story.estimated_points ?? story.effort;
+}
+
 /**
  * Build the "Estimated Effort" HTML block for a feature or epic description — a rough
  * scope signal (total story points, story count) so competing initiatives/features can be

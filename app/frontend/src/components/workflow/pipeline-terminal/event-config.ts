@@ -26,6 +26,12 @@ export function getEventCfg(eventType: string) {
   return EVENT_CFG[eventType] ?? { icon: '●', color: 'text-surface-500', bgColor: 'bg-surface-100 dark:bg-surface-800/30' };
 }
 
+/** Row grid shared by EventRow and ExpandableRow so the glyph/timestamp columns line
+ *  up between the two — a plain event line and a boxed one (context updates,
+ *  validation, quality review) read as the same log instead of two different widgets.
+ *  Order: glyph · content · timestamp (right). */
+export const LOG_ROW_GRID = 'grid grid-cols-[1.25rem_1fr_8.5rem] gap-2';
+
 export function formatTs(ts: number) {
   const d = new Date(ts);
   const date = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });

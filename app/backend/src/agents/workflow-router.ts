@@ -19,7 +19,7 @@ import { streamAI, resolveModelId, resolveAgentModel } from '../utils/ai-provide
 import type { AppMode, AgentType } from '@pap/shared';
 import {
   STAGE_SESSION_MAP, STAGE_MAX_OUTPUT_TOKENS, STAGE_ARTIFACT_TYPE,
-  STAGE_ARTIFACT_LABEL, STAGE_LABELS_INTERNAL, stageProgressBriefing, stageProgressBriefReceived,
+  STAGE_ARTIFACT_LABEL, internalStageLabel, stageProgressBriefing, stageProgressBriefReceived,
   stageStartedNarration,
 } from './stage-metadata';
 import {
@@ -27,7 +27,7 @@ import {
 } from './artifact-helpers';
 import { deleteWorkflow as deleteWorkflowImpl, recoverStaleWorkflows as recoverStaleWorkflowsImpl, startStaleRecoveryTimer } from './workflow-lifecycle';
 import { isDemoMode, isDemoWorkflow, demoSleep, DEMO_STAGE_DELAY_MS } from '../demo/demo-mode';
-import { readItemMetadata, coerceProductArea } from './item-metadata';
+import { readProductArea, readStrategicTheme } from './item-metadata';
 import { notifyWorkflowComplete, notifyCheckpointPending } from '../utils/slack-notifier';
 import { pushItemStatusToAirtable } from './ado-stage-push';
 import { WorkflowRow, CheckpointRow, WorkflowStatus, WorkflowEvent } from './workflow-types';
@@ -415,7 +415,7 @@ No changes needed to tech-stack.md or process.md — those remain accurate as wr
     // Every later stage in the cascade only goes through here, so without this it would
     // show a generic stage_started narration with no CR context at all.
     if (crContext) {
-      const stageLabel = STAGE_LABELS_INTERNAL[memberStage] ?? memberStage;
+      const stageLabel = internalStageLabel(memberStage);
       insertEvent(workflowId, 'reiteration', memberStage,
         `Re-entering at ${stageLabel}: ${crContext.description.slice(0, 200)}`);
     }
@@ -802,9 +802,8 @@ export function getWorkflowStatus(workflowId: string): WorkflowStatus {
   }
 
   // Product Area / Theme live on the item's metadata (synced from Airtable), not the workflow row
-  const meta = readItemMetadata(workflow.item_id);
-  const productArea = coerceProductArea(meta?.productArea) ?? undefined;
-  const strategicTheme = typeof meta?.strategicTheme === 'string' ? meta.strategicTheme : undefined;
+  const productArea = readProductArea(workflow.item_id) ?? undefined;
+  const strategicTheme = readStrategicTheme(workflow.item_id) ?? undefined;
 
   return {
     workflow,

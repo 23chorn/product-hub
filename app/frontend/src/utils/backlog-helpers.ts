@@ -6,7 +6,7 @@ import { renumberFeatureStories, parseStoryLocalKey, featureLocalKey } from '@pa
 // In the live checkpoint review path a backlog_F<n> artifact is always shaped around
 // exactly one feature being refined — either `data.feature` (Tier 2) or `data.features[0]`
 // (the Tier-3-shaped single-feature preview). The merged multi-feature 'backlog' artifact
-// type never reaches these functions (it renders through BacklogStoriesTests instead,
+// type never reaches these functions (it renders through BacklogStoriesPreview instead,
 // which has no single artifact id to save a deletion back to).
 
 function getPreviewFeature(data: BacklogData): BacklogFeature | undefined {

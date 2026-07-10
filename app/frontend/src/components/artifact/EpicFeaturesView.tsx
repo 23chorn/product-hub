@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { featureLocalKey } from '@pap/shared';
 import { DeleteItemButton } from '../common/DeleteItemButton';
-import { Chevron, ChromeStrip, FeatureDependencyBadges, InitiativeHeader, PhaseTag } from './ArtifactPrimitives';
+import { Chevron, ChromeStrip, FeatureDependencyBadges, InitiativeCard, PhaseTag } from './ArtifactPrimitives';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -440,8 +440,10 @@ export function EpicFeaturesView({ data, initiativeTitle, frMap, nfrMap, onDelet
     // (e.g. the Stories/Tests overview); pin the app font so it never inherits monospace.
     <div className="space-y-3 text-sm font-sans">
       {/* Initiative / epic overview card — same structure as BacklogView's !isFeaturePreview path */}
-      <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/40 p-4 space-y-2">
-        <InitiativeHeader title={initiativeTitle ?? data.epic.title} />
+      <InitiativeCard
+        title={initiativeTitle ?? data.epic.title}
+        right={`${phases.length} phase${phases.length !== 1 ? 's' : ''} · ${totalFeatures} feature${totalFeatures !== 1 ? 's' : ''}`}
+      >
         {data.epic.description && (
           <p className="text-sm text-surface-600 dark:text-surface-300">{data.epic.description}</p>
         )}
@@ -450,10 +452,7 @@ export function EpicFeaturesView({ data, initiativeTitle, frMap, nfrMap, onDelet
             <span className="font-semibold">Business value: </span>{data.epic.businessValue}
           </p>
         )}
-        <p className="text-[10px] font-semibold text-surface-400 dark:text-surface-500">
-          {phases.length} phase{phases.length !== 1 ? 's' : ''} · {totalFeatures} feature{totalFeatures !== 1 ? 's' : ''}
-        </p>
-      </div>
+      </InitiativeCard>
 
       {/* Phases */}
       {phases.map((phase, i) => (

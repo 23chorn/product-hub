@@ -26,6 +26,9 @@ interface StoriesTestsProps {
 }
 
 interface Props extends StoriesTestsProps {
+  /** Which single-purpose preview to show — the drawer opened by the pipeline's "Stories"
+   *  button shows only stories, "Tests" only tests. There is no combined view anymore. */
+  view: 'stories' | 'tests';
   onClose: () => void;
   workflowId?: string;
 }
@@ -41,14 +44,12 @@ export function mergeBacklogs(parsed: Array<{ num: number; data: BacklogData }>)
 }
 
 /**
- * Read-only Stories/Tests tab view that merges every approved per-feature backlog + QA
- * artifact, growing as each feature refinement is approved. Embeddable — no modal chrome of
- * its own — so it can be reused both inside BacklogOverviewModal's drawer and inside the
- * artifact viewer's read of the final backlog_merge artifact (the same merge, rendered the
- * same way wherever it's viewed).
+ * Loads and merges every approved per-feature backlog + QA artifact, growing as each feature
+ * refinement is approved. Shared by BacklogStoriesPreview and BacklogTestsPreview so both
+ * single-purpose views (and the drawer they render inside, plus the artifact viewer's read of
+ * the final backlog_merge artifact) stay in sync off one fetch/merge path.
  */
-export function BacklogStoriesTests({ featureButtons, initiativeTitle, epicFeaturesArtifactId, prdArtifactId, epicQaArtifactId }: StoriesTestsProps) {
-  const [tab, setTab] = useState<'stories' | 'tests'>('stories');
+function useMergedBacklogData({ featureButtons, epicFeaturesArtifactId, prdArtifactId, epicQaArtifactId }: StoriesTestsProps) {
   const [backlog, setBacklog] = useState<BacklogData | null>(null);
   const [qa, setQa] = useState<QATestSuite | null>(null);
   const [epicFeatures, setEpicFeatures] = useState<EpicFeaturesData | null>(null);
@@ -125,21 +126,42 @@ export function BacklogStoriesTests({ featureButtons, initiativeTitle, epicFeatu
     return map;
   })();
 
-  const tabs = [
-    { id: 'stories', label: 'Stories', count: totalStories > 0 ? totalStories : undefined },
-    { id: 'tests', label: 'Tests', count: totalTests > 0 ? totalTests : undefined },
-  ];
+  return { backlog, qa, epicFeatures, frMap, nfrMap, loading, totalStories, totalTests, phaseByFeatureKey };
+}
+
+/**
+ * Read-only Stories-only view of the merged backlog. Embeddable — no modal chrome of its own —
+ * so it's reused both inside BacklogOverviewModal's "Stories" drawer and inside the artifact
+ * viewer's read of the final backlog_merge artifact (the same merge, rendered the same way
+ * wherever it's viewed).
+ */
+export function BacklogStoriesPreview(props: StoriesTestsProps) {
+  const { backlog, epicFeatures, frMap, nfrMap, loading, totalStories } = useMergedBacklogData(props);
 
   return (
-    <ArtifactTabShell tabs={tabs} activeTab={tab} onTabChange={t => setTab(t as 'stories' | 'tests')}>
+    <ArtifactTabShell tabs={[{ id: 'stories', label: 'Stories', count: totalStories > 0 ? totalStories : undefined }]} activeTab="stories" onTabChange={() => {}}>
       {loading ? (
         <p className="text-sm text-surface-400 animate-pulse">Loading...</p>
-      ) : tab === 'stories' ? (
-        backlog && (backlog.features?.length ?? 0) > 0 ? (
-          <BacklogView data={backlog} initiativeTitle={initiativeTitle} epicFeatures={epicFeatures} frMap={frMap} nfrMap={nfrMap} />
-        ) : (
-          <p className="text-sm text-surface-400 italic">No features approved yet.</p>
-        )
+      ) : backlog && (backlog.features?.length ?? 0) > 0 ? (
+        <BacklogView data={backlog} initiativeTitle={props.initiativeTitle} epicFeatures={epicFeatures} frMap={frMap} nfrMap={nfrMap} />
+      ) : (
+        <p className="text-sm text-surface-400 italic">No features approved yet.</p>
+      )}
+    </ArtifactTabShell>
+  );
+}
+
+/**
+ * Read-only Tests-only view of the merged QA suite — the drawer opened by the pipeline
+ * terminal's "Tests" button.
+ */
+export function BacklogTestsPreview(props: StoriesTestsProps) {
+  const { qa, epicFeatures, frMap, loading, totalTests, phaseByFeatureKey } = useMergedBacklogData(props);
+
+  return (
+    <ArtifactTabShell tabs={[{ id: 'tests', label: 'Tests', count: totalTests > 0 ? totalTests : undefined }]} activeTab="tests" onTabChange={() => {}}>
+      {loading ? (
+        <p className="text-sm text-surface-400 animate-pulse">Loading...</p>
       ) : qa && qa.test_cases.length > 0 ? (
         <QATestsView data={qa} frMap={frMap} phaseByFeatureKey={phaseByFeatureKey} phaseOrder={epicFeatures?.phases?.map(p => p.label) ?? []} />
       ) : (
@@ -149,16 +171,20 @@ export function BacklogStoriesTests({ featureButtons, initiativeTitle, epicFeatu
   );
 }
 
+const VIEW_LABEL: Record<Props['view'], string> = { stories: 'Stories', tests: 'Tests' };
+
 /**
- * Drawer chrome around BacklogStoriesTests — opened from the pipeline terminal's bottom-bar
- * "Stories/Tests" button.
+ * Drawer chrome around BacklogStoriesPreview/BacklogTestsPreview — opened from the pipeline
+ * terminal's bottom-bar "Stories" or "Tests" button.
  */
-export function BacklogOverviewModal({ onClose, workflowId, ...storiesTestsProps }: Props) {
+export function BacklogOverviewModal({ onClose, workflowId, view, ...storiesTestsProps }: Props) {
   const [toast, setToast] = useState<string | null>(null);
 
   const handleShare = () => {
     if (!workflowId) return;
-    const url = `${window.location.origin}${window.location.pathname}?workflowId=${workflowId}`;
+    // backlogView tells the deep-link handler (App.tsx) to reopen this same Stories/Tests
+    // preview once it's landed on the right workflow, instead of just the bare pipeline view.
+    const url = `${window.location.origin}${window.location.pathname}?workflowId=${workflowId}&backlogView=${view}`;
     copyToClipboard(url);
     setToast('Link copied!');
     setTimeout(() => setToast(null), 2000);
@@ -170,7 +196,7 @@ export function BacklogOverviewModal({ onClose, workflowId, ...storiesTestsProps
 
       <div className="relative h-full bg-surface-50 dark:bg-surface-800 shadow-xl flex flex-col overflow-hidden w-full max-w-4xl">
         <div className="px-4 py-3 border-b border-surface-200 dark:border-surface-700 flex items-center justify-between flex-shrink-0">
-          <h2 className="text-sm font-semibold text-surface-900 dark:text-surface-100">Stories &amp; Tests</h2>
+          <h2 className="text-sm font-semibold text-surface-900 dark:text-surface-100">{VIEW_LABEL[view]}</h2>
           <div className="flex items-center gap-1">
             {workflowId && (
               <button
@@ -207,7 +233,7 @@ export function BacklogOverviewModal({ onClose, workflowId, ...storiesTestsProps
           </div>
         </div>
 
-        <BacklogStoriesTests {...storiesTestsProps} />
+        {view === 'stories' ? <BacklogStoriesPreview {...storiesTestsProps} /> : <BacklogTestsPreview {...storiesTestsProps} />}
       </div>
     </div>
   );

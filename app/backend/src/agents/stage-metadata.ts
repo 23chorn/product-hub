@@ -102,6 +102,21 @@ export const STAGE_LABELS_INTERNAL: Record<string, string> = Object.fromEntries(
   Object.keys(STAGE_PERSONAS).map(stage => [stage, stagePersonaLabel(stage)!])
 );
 
+/**
+ * Resolve a stage to its human-readable internal label, handling the dynamic per-feature
+ * stages (story_decomposition_F3, story_decomposition_F3_qa) that have no static entry in
+ * STAGE_LABELS_INTERNAL — mirrors the frontend's STAGE_LABELS proxy (constants/stage-labels.ts)
+ * so backend event text (e.g. "Re-entering at ...") agrees with what the UI calls these stages.
+ */
+export function internalStageLabel(stage: string): string {
+  const qaMatch = stage.match(/^story_decomposition_F(\d+)_qa$/) ?? stage.match(/^qa_engineer_F(\d+)$/);
+  if (qaMatch) return `QA Tests — F${qaMatch[1]}`;
+  if (stage.endsWith('_qa')) return 'QA Tests';
+  const featureMatch = stage.match(/^story_decomposition_F(\d+)$/);
+  if (featureMatch) return `Refinement — F${featureMatch[1]}`;
+  return STAGE_LABELS_INTERNAL[stage] ?? stage;
+}
+
 // Brief labels used in coordinator stage briefing — artifact noun + persona first name.
 const BRIEF_STAGES = ['analyst', 'pm_prd', 'epic_feature_planner', 'solution_architect', 'prototype', 'figma_design', 'api_spec'] as const;
 export const STAGE_LABELS_BRIEF: Record<string, string> = Object.fromEntries(

@@ -3,7 +3,7 @@ import { tryParseBacklog, isBacklogArtifactType } from '@pap/shared';
 import { removeStoryFromBacklog, removeTestCaseFromStory } from '../../utils/backlog-helpers';
 import { deriveFeatureButtons, deriveEpicFeaturesArtifactId, deriveEpicQaArtifactId } from '../../utils/feature-artifacts';
 import { BacklogView } from './BacklogView';
-import { BacklogStoriesTests } from './BacklogOverviewModal';
+import { BacklogStoriesPreview } from './BacklogOverviewModal';
 import { EpicFeaturesView, tryParseEpicFeatures, removePhase, removeFeatureFromPhase } from './EpicFeaturesView';
 import { ArtifactTabShell } from './ArtifactPrimitives';
 import { tryParseQATests } from '@pap/shared';
@@ -56,12 +56,12 @@ export function renderStructuredArtifact(content: string, ctx: ArtifactViewConte
   const prdArtifactId = checkpoints.find(c => c.stage === 'pm_prd' && c.artifact_id != null)?.artifact_id ?? null;
 
   // The final cross-feature merge ('backlog' exactly, not the per-feature 'backlog_F<n>'
-  // artifacts) — show the same Stories/Tests tabbed view as the pipeline's "Stories/Tests"
-  // button, rather than a bare read of this one snapshot with no tests alongside it and no
-  // epic_features enrichment.
+  // artifacts) — show the same Stories-only preview as the pipeline's "Stories" button,
+  // rather than a bare read of this one snapshot with no epic_features enrichment. Tests
+  // are reviewed separately via the "Tests" button once epic_qa has run.
   if (artifactType === 'backlog') {
     return (
-      <BacklogStoriesTests
+      <BacklogStoriesPreview
         featureButtons={deriveFeatureButtons(checkpoints)}
         initiativeTitle={initiativeTitle}
         epicFeaturesArtifactId={epicFeaturesArtifactId}

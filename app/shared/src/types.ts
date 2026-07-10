@@ -579,6 +579,13 @@ export interface CompletedInitiativeTestPlanRow {
 }
 
 export interface CompletedInitiativeDetail extends CompletedInitiativeSummary {
+  /** Original problem-statement text and Airtable-synced classification — same fields
+   *  the live pipeline header shows (description "[i]" popover, product area / theme
+   *  badges), sourced from items.description / items.metadata here since there's no
+   *  active workflow row to read them from once the initiative is done. */
+  description: string;
+  productArea: string | null;
+  strategicTheme: string | null;
   workItems: CompletedInitiativeWorkItemRow[];
   testPlans: CompletedInitiativeTestPlanRow[];
   /** Latest research/analyst-brief, PRD, architecture, and Figma artifact ids for this item, if

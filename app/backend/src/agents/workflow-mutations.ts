@@ -11,7 +11,7 @@ import db from '../data/database';
 import { sessionManager } from '../session/session-manager';
 import type { AppMode, AgentType } from '@pap/shared';
 import {
-  STAGE_SESSION_MAP, STAGE_LABELS_INTERNAL,
+  STAGE_SESSION_MAP, internalStageLabel,
   stageProgressWorking, stageStartedNarration, stageProgressBriefing, stageProgressBriefReceived,
 } from './stage-metadata';
 import { loadArtifactContentById, resolveArtifactPath, isJsonArtifactContent, loadPriorDraftForStage } from './artifact-helpers';
@@ -120,7 +120,7 @@ export async function reiterateFromStage(
   const idx = sequence.indexOf(fromStage);
   if (idx < 0) throw new Error(`Stage "${fromStage}" is not in the workflow's stage sequence`);
 
-  const stageLabel = STAGE_LABELS_INTERNAL[fromStage] ?? fromStage;
+  const stageLabel = internalStageLabel(fromStage);
   insertEvent(workflowId, 'reiteration', fromStage,
     `Re-entering at ${stageLabel}: ${feedback.slice(0, 200)}`);
 

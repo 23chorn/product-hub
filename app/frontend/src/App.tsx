@@ -127,6 +127,10 @@ function App() {
     const urlParams = new URLSearchParams(window.location.search);
     const deepLinkWorkflowId = urlParams.get('workflowId');
     const deepLinkArtifactId = urlParams.get('artifactId');
+    // Share button on BacklogOverviewModal (the pipeline's Stories/Tests drawer) produces
+    // ?backlogView=stories|tests alongside ?workflowId= — reopen that same preview once the
+    // workflow's own artifact list (PipelineTerminalView) is ready to receive it.
+    const deepLinkBacklogView = urlParams.get('backlogView');
     // Share button on the Progress Tracker detail page produces ?completedItemId=...
     const deepLinkCompletedItemId = urlParams.get('completedItemId');
 
@@ -151,6 +155,9 @@ function App() {
           // If artifactId is provided, open that artifact
           if (deepLinkArtifactId) {
             useWorkflowStore.getState().setViewingArtifactId(Number(deepLinkArtifactId));
+          }
+          if (deepLinkWorkflowId && (deepLinkBacklogView === 'stories' || deepLinkBacklogView === 'tests')) {
+            useWorkflowStore.getState().setPendingBacklogPreview(deepLinkBacklogView);
           }
         })
         .catch(() => {

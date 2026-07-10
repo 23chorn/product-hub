@@ -1,5 +1,5 @@
 import type { CoordinatorMessage } from '../../../stores/workflowStore';
-import { getEventCfg, formatTs } from './event-config';
+import { getEventCfg, formatTs, LOG_ROW_GRID } from './event-config';
 import { ExpandableRow } from './ExpandableRow';
 
 /** Render a single pipeline event as a terminal row, with type-specific styling and links. */
@@ -9,8 +9,8 @@ export function EventRow({ msg }: { msg: CoordinatorMessage }) {
       <ExpandableRow
         label="context updates"
         labelColor="text-brand-600 dark:text-brand-500"
-        borderColor="border-brand-200 dark:border-brand-800/40"
-        bgColor="bg-brand-50 dark:bg-brand-900/10"
+        accentColor="border-brand-500"
+        bgColor="bg-brand-50/70 dark:bg-brand-900/20"
         content={msg.content}
         timestamp={msg.timestamp}
       />
@@ -22,8 +22,8 @@ export function EventRow({ msg }: { msg: CoordinatorMessage }) {
       <ExpandableRow
         label="validation"
         labelColor="text-amber-700 dark:text-amber-500"
-        borderColor="border-amber-200/40 dark:border-amber-800/20"
-        bgColor="bg-amber-50/50 dark:bg-amber-900/10"
+        accentColor="border-amber-500"
+        bgColor="bg-amber-50/60 dark:bg-amber-900/20"
         content={msg.content}
         timestamp={msg.timestamp}
       />
@@ -37,8 +37,8 @@ export function EventRow({ msg }: { msg: CoordinatorMessage }) {
       <ExpandableRow
         label="quality review"
         labelColor="text-lime-700 dark:text-lime-500"
-        borderColor="border-lime-200/40 dark:border-lime-800/20"
-        bgColor="bg-lime-50/50 dark:bg-lime-900/10"
+        accentColor="border-lime-500"
+        bgColor="bg-lime-50/60 dark:bg-lime-900/20"
         content={msg.content}
         timestamp={msg.timestamp}
       />
@@ -73,18 +73,12 @@ export function EventRow({ msg }: { msg: CoordinatorMessage }) {
   const isAdoLink = msg.eventType === 'board_synced' && !!externalUrl;
 
   return (
-    <div className={`flex items-center gap-2 px-2 py-1.5 rounded transition-colors hover:bg-surface-100 dark:hover:bg-surface-800/20 ${isProgress ? 'opacity-60' : ''}`}>
-      {/* Icon badge */}
-      <div className={`flex-shrink-0 w-5 h-5 rounded flex items-center justify-center text-[10px] ${cfg.bgColor}`}>
-        <span className={cfg.color}>{cfg.icon}</span>
-      </div>
+    <div className={`${LOG_ROW_GRID} items-baseline px-2 py-1 rounded transition-colors hover:bg-surface-100 dark:hover:bg-surface-800/50 ${isProgress ? 'opacity-60' : ''}`}>
+      <span className={`text-[11px] leading-none ${cfg.color}`}>{cfg.icon}</span>
 
       {/* Content */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="text-sm text-surface-700 dark:text-surface-300 leading-tight font-mono truncate">{title}</span>
-          <span className="flex-shrink-0 text-[11px] text-surface-400 dark:text-surface-700 font-mono">{formatTs(msg.timestamp)}</span>
-        </div>
+      <div className="min-w-0">
+        <span className="text-sm text-surface-700 dark:text-surface-300 leading-tight font-mono truncate block">{title}</span>
         {detail && !externalUrl && (
           <p className="text-[12px] text-surface-500 dark:text-surface-600 font-mono mt-0.5 leading-relaxed truncate">{detail}</p>
         )}
@@ -129,6 +123,8 @@ export function EventRow({ msg }: { msg: CoordinatorMessage }) {
           </a>
         )}
       </div>
+
+      <span className="text-[11px] text-surface-400 dark:text-surface-700 font-mono tabular-nums text-right">{formatTs(msg.timestamp)}</span>
     </div>
   );
 }

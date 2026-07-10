@@ -145,6 +145,12 @@ interface WorkflowStoreState {
   viewingArtifactId: number | null;
   setViewingArtifactId: (id: number | null) => void;
 
+  // Deep-linked Stories/Tests preview (BacklogOverviewModal's share link) — set from the
+  // ?backlogView= URL param on load, consumed once by PipelineTerminalView once its own
+  // artifact list is ready, then cleared so it doesn't reopen on later navigation.
+  pendingBacklogPreview: 'stories' | 'tests' | null;
+  setPendingBacklogPreview: (view: 'stories' | 'tests' | null) => void;
+
   // Pending context diffs notification
   pendingDiffCount: number;
   setPendingDiffCount: (n: number) => void;
@@ -254,6 +260,9 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
   viewingArtifactId: null,
   setViewingArtifactId: (id) => set({ viewingArtifactId: id }),
 
+  pendingBacklogPreview: null,
+  setPendingBacklogPreview: (view) => set({ pendingBacklogPreview: view }),
+
   pendingDiffCount: 0,
   setPendingDiffCount: (n) => set({ pendingDiffCount: n }),
 
@@ -321,6 +330,7 @@ export const useWorkflowStore = create<WorkflowStoreState>((set) => ({
       planningPhase: 'idle',
       planningSessionId: null,
       viewingArtifactId: null,
+      pendingBacklogPreview: null,
       activeCR: null,
     });
   },

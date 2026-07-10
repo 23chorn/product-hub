@@ -14,16 +14,6 @@ export function Chevron({ expanded, className = 'w-3.5 text-surface-400' }: { ex
   );
 }
 
-export function InitiativeHeader({ title }: { title?: string }) {
-  if (!title) return null;
-  return (
-    <div>
-      <span className="text-xs font-semibold uppercase tracking-wide text-violet-500 dark:text-violet-400">Initiative</span>
-      <p className="text-base font-bold text-surface-900 dark:text-surface-100 truncate">{title}</p>
-    </div>
-  );
-}
-
 export function PhaseTag({ label, colorClass }: { label: string; colorClass: string }) {
   return (
     <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${colorClass}`}>{label}</span>
@@ -32,13 +22,33 @@ export function PhaseTag({ label, colorClass }: { label: string; colorClass: str
 
 /** Terminal-window title-bar strip for a collapsible card header — mono label on the left,
  *  a right-aligned mono readout on the right. Mirrors the seq-number/updated-at strip on
- *  home/InitiativeCard.tsx, applied here to Epic-level cards (the top of the hierarchy, where
- *  a persistent chrome bar reads best). */
+ *  home/InitiativeCard.tsx. Used by both InitiativeCard (below) and each Epic-level card, so
+ *  the two top tiers of the hierarchy read as the same kind of "windowed" card — only the
+ *  glyph and weight in `left` (■ initiative vs ◆ epic) tells them apart. */
 export function ChromeStrip({ left, right }: { left: ReactNode; right?: ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900/40 font-mono text-[10px]">
       <span className="font-semibold uppercase tracking-widest text-surface-500 dark:text-surface-400 truncate">{left}</span>
       {right != null && <span className="flex-shrink-0 text-surface-400 dark:text-surface-500">{right}</span>}
+    </div>
+  );
+}
+
+/** Initiative-level overview card — the top of the hierarchy (Initiative → Epic → Feature),
+ *  so it gets the same ChromeStrip "windowed card" treatment as an Epic card instead of a
+ *  bare label + bold title floating with no chrome. `right` mirrors an Epic card's own
+ *  right-aligned readout (e.g. "N phases · N features"); `children` is the card body
+ *  (description, business value, PRD link, ...) — left to the caller since it varies by
+ *  view (plain text vs ExpandableText, optional PRD link/out-of-scope list). */
+export function InitiativeCard({ title, right, children }: { title?: string; right?: ReactNode; children?: ReactNode }) {
+  if (!title) return null;
+  return (
+    <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/40 overflow-hidden">
+      <ChromeStrip left="■ initiative" right={right} />
+      <div className="p-4 space-y-2">
+        <p className="text-base font-bold text-surface-900 dark:text-surface-100 truncate">{title}</p>
+        {children}
+      </div>
     </div>
   );
 }
