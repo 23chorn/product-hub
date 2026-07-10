@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Group, Panel, usePanelRef } from 'react-resizable-panels';
 import { api, type AgentFile } from '../../services/api';
 import { useAuthStore } from '../../stores/authStore';
 import { getAgentDisplayName } from '../../utils/agent-display-names';
@@ -9,7 +8,6 @@ import { NewContextForm } from './NewContextForm';
 import { SkillManagerSidebar } from './SkillManagerSidebar';
 import { AirtableSyncPanel } from './AirtableSyncPanel';
 import { DocFileViewer } from '../knowledge/DocFileViewer';
-import { ResizeHandle } from '../common/ResizeHandle';
 import { PageHeaderActions } from '../common/PageHeaderActions';
 import { useContextKeeperStore } from '../../stores/contextKeeperStore';
 import type { PanelSelection, ContextFile } from './types';
@@ -34,10 +32,6 @@ export function SkillManagerPanel() {
   const [isLoading, setIsLoading] = useState(true);
   const [selection, setSelection] = useState<PanelSelection>(null);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
-
-  // Sidebar resize/collapse (react-resizable-panels)
-  const sidebarPanelRef = usePanelRef();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // Section expand state — all collapsed by default
   const [expanded, setExpanded] = useState({ context: false, behaviour: false, agents: false, templates: false, docs: false });
@@ -261,18 +255,9 @@ export function SkillManagerPanel() {
       )}
 
       {/* Body */}
-      <Group orientation="horizontal" className="flex-1 overflow-hidden" id="knowledge-studio-layout">
+      <div className="flex-1 flex overflow-hidden" id="knowledge-studio-layout">
         {/* Left nav */}
-        <Panel
-          id="sidebar"
-          defaultSize="22%"
-          minSize="14%"
-          maxSize="65%"
-          collapsible
-          collapsedSize={0}
-          panelRef={sidebarPanelRef}
-          onResize={() => setSidebarCollapsed(sidebarPanelRef.current?.isCollapsed() ?? false)}
-        >
+        <div className="w-[22%] flex-shrink-0 border-r border-surface-200 dark:border-surface-700 overflow-hidden">
         <SkillManagerSidebar
           isLoading={isLoading}
           expanded={expanded}
@@ -295,19 +280,9 @@ export function SkillManagerPanel() {
           selectedDocFileId={selection?.type === 'doc_file' ? selection.fileId : null}
           onSelectDocFile={(file) => setSelection({ type: 'doc_file', fileId: file.id })}
         />
-        </Panel>
-
-        <ResizeHandle
-          collapsed={sidebarCollapsed}
-          collapseDirection="before"
-          onToggleCollapse={() => {
-            if (sidebarPanelRef.current?.isCollapsed()) sidebarPanelRef.current?.expand();
-            else sidebarPanelRef.current?.collapse();
-          }}
-        />
+        </div>
 
         {/* Right panel */}
-        <Panel id="main" minSize="30%">
         <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
           {selection?.type === 'context' && contextFiles[selection.index] ? (
             <ContextFileEditor
@@ -377,8 +352,7 @@ export function SkillManagerPanel() {
             </div>
           )}
         </div>
-        </Panel>
-      </Group>
+      </div>
     </div>
   );
 }

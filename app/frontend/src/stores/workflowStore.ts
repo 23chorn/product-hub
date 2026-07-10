@@ -85,6 +85,7 @@ export interface CoordinatorMessage {
   isProgress?: boolean;  // progress events replace each other in the chat
   eventType?: string;    // original workflow event type for styled rendering
   stage?: string;        // stage the event belongs to
+  details?: Record<string, unknown>;  // structured payload for events that need more than text (e.g. wave membership)
 }
 
 export interface WorkflowEvent {

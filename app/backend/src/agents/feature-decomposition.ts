@@ -334,7 +334,8 @@ export async function injectFeatureDecompositionStages(workflowId: string): Prom
   const waveSummary = waveStageGroups.map(w => `[${w.join(', ')}]`).join(' → ');
   logger.info(`[FEATURE DECOMP] Injected ${featureCount} feature stages as ${waveStageGroups.length} wave(s) into workflow ${workflowId}: ${waveSummary}`);
   insertEvent(workflowId, 'stage_progress', 'epic_feature_planner',
-    `Injected ${featureCount} feature stages across ${waveStageGroups.length} wave(s) — up to ${maxConcurrency} run concurrently: ${waveSummary}`);
+    `Injected ${featureCount} feature stages across ${waveStageGroups.length} wave(s) — up to ${maxConcurrency} run concurrently: ${waveSummary}`,
+    { waves: waveStageGroups, maxConcurrency });
 
   return featureCount;
 }

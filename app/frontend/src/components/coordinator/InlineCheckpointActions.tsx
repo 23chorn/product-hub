@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { STAGE_LABELS } from '../../constants/stage-labels';
 import { parseCriticData } from '../../utils/coordinator-helpers';
 import { CriticQuestionForm } from '../artifact/CriticQuestionForm';
 import { ApproveConfirmModal } from '../artifact/ApproveConfirmModal';
@@ -146,9 +145,6 @@ export function InlineCheckpointActions({
         )
       ) : (
         <div className="flex items-center gap-2">
-          <span className="text-xs text-surface-400 dark:text-surface-500 mr-1">
-            {STAGE_LABELS[checkpoint.stage] ?? checkpoint.stage}:
-          </span>
           <button
             onClick={() => setShowApproveConfirm(true)}
             disabled={loading}

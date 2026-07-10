@@ -10,27 +10,31 @@ import { StageRow, StatusIcon } from './StageRow';
 import { tryParseEpicFeatures, toPhases } from '../artifact/EpicFeaturesView';
 import { STAGE_LABELS, STAGE_SHORT_LABELS } from '../../constants/stage-labels';
 import type { StageStatus, CoordinatorMessage } from '../../stores/workflowStore';
-import { DancingCreature } from './pipeline-terminal/DancingCreature';
+import { XCubeTrail } from './pipeline-terminal/XCubeTrail';
 import { StageGroupHeader } from './pipeline-terminal/StageGroupHeader';
+import { WaveGroupHeader } from './pipeline-terminal/WaveGroupHeader';
 import { EventRow } from './pipeline-terminal/EventRow';
 import { CheckpointRow, isStaleRecoveryCheckpoint } from './pipeline-terminal/CheckpointRow';
 import { BrailleSpinner } from './pipeline-terminal/BrailleSpinner';
 import { buildRoadmapTree } from './pipeline-terminal/roadmap-tree';
 import { AuditTrailPanel } from './AuditTrailPanel';
 import { RestartConfirmModal } from './RestartConfirmModal';
+import { ResumeFromStageModal } from './ResumeFromStageModal';
 import { RetryConfirmModal } from './RetryConfirmModal';
 import { StopConfirmModal } from './StopConfirmModal';
 import { BacklogOverviewModal } from '../artifact/BacklogOverviewModal';
 import { PageHeaderTitle } from '../common/PageHeaderTitle';
 import { PageHeaderActions } from '../common/PageHeaderActions';
 import { DescriptionModal } from '../common/DescriptionModal';
+import { InfoBadge } from '../common/InfoBadge';
+import { StatusBadge } from '../home/StatusBadge';
+import type { WorkflowInfo } from '../home/types';
 import { CommentsPanel } from '../initiative/CommentsPanel';
 
 // ── Main component ────────────────────────────────────────────────────────────
 
 interface Props {
   coordinatorMessages: CoordinatorMessage[];
-  isRunning: boolean;
   onCheckpointResolved: (result: any) => void;
   onBack: () => void;
   onShowCRForm?: () => void;
@@ -39,7 +43,7 @@ interface Props {
   onShowDiffPanel?: () => void;
 }
 
-export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpointResolved, onBack, onShowCRForm, showCRButton, pendingDiffCount, onShowDiffPanel }: Props) {
+export function PipelineTerminalView({ coordinatorMessages, onCheckpointResolved, onBack, onShowCRForm, showCRButton, pendingDiffCount, onShowDiffPanel }: Props) {
   const {
     activeWorkflow,
     stageSequence,
@@ -72,9 +76,11 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   const [stopping, setStopping] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [retryingStage, setRetryingStage] = useState(false);
+  const [resuming, setResuming] = useState(false);
   const [showRestartConfirm, setShowRestartConfirm] = useState(false);
   const [showRetryConfirm, setShowRetryConfirm] = useState(false);
   const [showStopConfirm, setShowStopConfirm] = useState(false);
+  const [showResumeModal, setShowResumeModal] = useState(false);
   const [generalExpanded, setGeneralExpanded] = useState(false);
   const [crExpanded, setCrExpanded] = useState(false);
   const [showAudit, setShowAudit] = useState(false);
@@ -139,6 +145,25 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
     if (matches.length === 0) return null;
     return matches.reduce((latest, a) => (a.created_at > latest.created_at ? a : latest), matches[0]).id;
   }, [artifacts]);
+
+  // story_decomposition_F<n> → 1-based wave number, read off epic_feature_planner's
+  // injection event (details.waves — see injectFeatureDecompositionStages). The roadmap
+  // tree below groups features by phase regardless of which wave scheduled them
+  // concurrently, so this is the only place wave membership surfaces — as a small
+  // per-row badge rather than by reordering the tree.
+  const waveIndexByStage = useMemo(() => {
+    const map = new Map<string, number>();
+    const injectionMsg = coordinatorMessages.find(
+      m => m.stage === 'epic_feature_planner' && Array.isArray(m.details?.waves)
+    );
+    const waves = injectionMsg?.details?.waves as string[][] | undefined;
+    if (!waves) return map;
+    waves.forEach((wave, i) => {
+      if (wave.length <= 1) return; // nothing parallel to call out
+      wave.forEach(stageName => map.set(stageName, i + 1));
+    });
+    return map;
+  }, [coordinatorMessages]);
 
   // Resolve which phase each feature belongs to, for the "Refinement - F1" stage rows.
   // Also re-fetches on stageSequence changes, not just epicFeaturesArtifactId: a feature
@@ -239,6 +264,16 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
   // on it being the *last* terminal event, since a rejected flow can emit a trailing
   // 'workflow_complete' that would otherwise flip the header back to "complete".
   const isCancelled = isComplete && coordinatorMessages.some(m => m.eventType === 'workflow_cancelled');
+  // Same WorkflowInfo shape + StatusBadge the Home card uses, so the header pill always
+  // agrees with the card on colors/labels and doesn't collapse paused-at-checkpoint into "live".
+  const headerWorkflowInfo: WorkflowInfo = {
+    id: activeWorkflow.id,
+    status: activeWorkflow.status,
+    currentStage,
+    summary: activeWorkflow.summary,
+    isCancelled,
+    pendingStage,
+  };
 
   const handleStop = async () => {
     if (stopping || isComplete) return;
@@ -269,6 +304,20 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
     }
   };
 
+  const handleResume = async (fromStage: string, feedback: string) => {
+    if (resuming) return;
+    setResuming(true);
+    try {
+      const status = await api.reiterateWorkflow(activeWorkflow.id, fromStage, feedback);
+      applyWorkflowStatus(status);
+      setShowResumeModal(false);
+    } catch (err) {
+      console.error('Failed to resume workflow from stage:', err);
+    } finally {
+      setResuming(false);
+    }
+  };
+
   const handleRetryStage = async () => {
     if (!activeWorkflow || retryingStage) return;
     setRetryingStage(true);
@@ -296,6 +345,15 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
     deriveStageStatus(s, currentStage, completedStages, pendingStage, activeWorkflow.status, inProgressStages, pendingStages)
   );
   const statusByStage = new Map(stageSequence.map((s, i) => [s, statuses[i]]));
+
+  // Stages the workflow has actually reached — i.e. everywhere it's valid to resume from.
+  // Can't rely on statuses[] alone: deriveStageStatus only reports 'in-progress' while
+  // workflowStatus === 'active', so the stage a stopped workflow was mid-run on (no
+  // approved checkpoint yet) would otherwise read as 'pending' and be excluded.
+  const currentStageIdx = currentStage ? stageSequence.indexOf(currentStage) : -1;
+  const resumableStages = stageSequence
+    .filter((s, i) => completedStages.includes(s) || (currentStageIdx >= 0 && i <= currentStageIdx))
+    .map(s => ({ stage: s, label: STAGE_LABELS[s] ?? s }));
 
   // Keep story_decomposition in the roadmap as a pending placeholder. Once epic_feature_planner
   // is approved, injectFeatureDecompositionStages replaces it with story_decomposition_F1…Fn,
@@ -399,6 +457,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                 : node.featureIndex != null
                   ? [STAGE_SHORT_LABELS[stageName], featureName].filter(Boolean).join(' — ')
                   : undefined;
+              const waveIndex = node.featureIndex != null ? waveIndexByStage.get(stageName) : undefined;
               return (
                 <StageRow
                   key={stageName}
@@ -407,14 +466,15 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                   customLabel={customLabel}
                   onSelect={() => scrollToStageSection(stageName)}
                   treePrefix={node.prefix}
+                  badge={waveIndex ? `wave ${waveIndex}` : undefined}
                 />
               );
             })}
           </div>
         </div>
 
-        {/* Creature lives outside the scrollable area */}
-        {!isComplete && <DancingCreature />}
+        {/* Traveling mark lives outside the scrollable area */}
+        {!isComplete && <XCubeTrail />}
 
         {/* Progress */}
         <div className="px-3 py-2 border-t border-surface-200 dark:border-surface-800/40 flex-shrink-0">
@@ -457,34 +517,11 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
               [i]
             </button>
           )}
+          <StatusBadge wf={headerWorkflowInfo} />
           {productArea && splitProductAreas(productArea).map(area => (
-            <span key={area} className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400">
-              {area}
-            </span>
+            <InfoBadge key={area} variant="productArea">{area}</InfoBadge>
           ))}
-          {strategicTheme && (
-            <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
-              {strategicTheme}
-            </span>
-          )}
-          {isRunning && !isComplete && (
-            <span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400">
-              <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse" />
-              live
-            </span>
-          )}
-          {isComplete && !isCancelled && (
-            <span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-              complete
-            </span>
-          )}
-          {isCancelled && (
-            <span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400">
-              <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-              stopped
-            </span>
-          )}
+          {strategicTheme && <InfoBadge variant="theme">{strategicTheme}</InfoBadge>}
         </PageHeaderTitle>
         <PageHeaderActions>
           {isAdmin && isWorkflowActive && !isComplete && (
@@ -559,7 +596,13 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
             // instead of the (nonexistent) statuses[] slot.
             const isQaSubStage = stageIdx === -1 && stageName.endsWith('_qa');
             const status = isQaSubStage ? deriveQaSubStageStatus(stageName) : (stageIdx >= 0 ? statuses[stageIdx] : 'pending');
-            const msgs = eventsByStage.get(stageName) ?? [];
+            const allMsgs = eventsByStage.get(stageName) ?? [];
+            // A wave's kickoff event is tagged to its first member stage (see
+            // insertEvent('wave_started', ...) in workflow-router.ts) — pull it out of
+            // that stage's own event list and render it as a wave-wide banner above
+            // this section instead, so it doesn't read as F1-specific narration.
+            const waveStartMsg = allMsgs.find(m => m.eventType === 'wave_started');
+            const msgs = waveStartMsg ? allMsgs.filter(m => m !== waveStartMsg) : allMsgs;
             // Each section (a refinement stage and its QA sub-stage) hosts its own
             // independent checkpoint card, keyed to its own exact stage name — the QA
             // approval no longer gets folded into its parent refinement stage's card.
@@ -587,6 +630,7 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                   else stageSectionRefs.current.delete(stageName);
                 }}
               >
+                {waveStartMsg && <WaveGroupHeader msg={waveStartMsg} featureNames={featureNames} />}
                 <StageGroupHeader
                   stageName={stageName}
                   status={status}
@@ -638,6 +682,21 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
                   {isCancelled ? 'workflow stopped' : 'workflow complete'}
                 </div>
                 <div className="flex items-center gap-2">
+                  {isComplete && isAdmin && resumableStages.length > 0 && (
+                    <button
+                      onClick={() => setShowResumeModal(true)}
+                      disabled={resuming}
+                      title="Re-enter at an earlier stage, keeping upstream artifacts"
+                      className="flex items-center gap-1.5 text-[11px] font-mono font-semibold px-2.5 py-1 rounded border border-surface-300 dark:border-surface-600 text-surface-600 dark:text-surface-300 hover:bg-surface-100 dark:hover:bg-surface-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {resuming ? (
+                        <>
+                          <BrailleSpinner className="text-[11px]" />
+                          resuming…
+                        </>
+                      ) : '⏵ resume from stage…'}
+                    </button>
+                  )}
                   {isComplete && isAdmin && (
                     <button
                       onClick={() => setShowRestartConfirm(true)}
@@ -808,6 +867,15 @@ export function PipelineTerminalView({ coordinatorMessages, isRunning, onCheckpo
           loading={restarting}
           onCancel={() => setShowRestartConfirm(false)}
           onConfirm={handleRestart}
+        />
+      )}
+
+      {showResumeModal && (
+        <ResumeFromStageModal
+          stages={resumableStages}
+          loading={resuming}
+          onCancel={() => setShowResumeModal(false)}
+          onConfirm={handleResume}
         />
       )}
 

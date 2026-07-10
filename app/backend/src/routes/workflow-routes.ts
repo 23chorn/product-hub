@@ -34,7 +34,6 @@ import { airtableStatusForStage, checkpointArtifactLabel } from '../agents/stage
 import Logger from '../utils/logger';
 import {
   DEFAULT_STAGES,
-  KNOWN_STAGES,
 } from './workflow-planning';
 
 const logger = new Logger('WORKFLOW-ROUTES-V2');
@@ -663,9 +662,6 @@ workflowRoutes.post('/:id/reiterate', async (req: AuthRequest, res: Response) =>
   const { fromStage, feedback } = req.body as { fromStage?: string; feedback?: string };
   if (!fromStage || !feedback) {
     return res.status(400).json({ error: 'fromStage and feedback are required' });
-  }
-  if (!KNOWN_STAGES.has(fromStage)) {
-    return res.status(400).json({ error: `Unknown stage: ${fromStage}` });
   }
 
   try {

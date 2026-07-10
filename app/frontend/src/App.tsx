@@ -14,6 +14,7 @@ import { QuickFeaturePanel } from './components/quick-feature/QuickFeaturePanel'
 import { PageHeader } from './components/common/PageHeader';
 import { PageHeaderTitle } from './components/common/PageHeaderTitle';
 import { CompanyLogo } from './components/common/CompanyLogo';
+import { RoleBadge } from './components/common/RoleBadge';
 import { AsciiCubeBackground } from './components/common/AsciiCubeBackground';
 import { LoginPage } from './pages/LoginPage';
 import { useModelStore } from './stores/modelStore';
@@ -308,7 +309,7 @@ function App() {
                               <div className="flex flex-wrap gap-1 justify-end flex-shrink-0">
                                 {u.is_admin && <span className="text-[9px] bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-700/50 px-1 py-0.5 rounded">admin</span>}
                                 {u.roles.map(r => (
-                                  <span key={r} className="text-[9px] bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-400 border border-brand-200 dark:border-brand-700/40 px-1 py-0.5 rounded">{ROLE_LABELS[r] ?? r}</span>
+                                  <RoleBadge key={r}>{ROLE_LABELS[r] ?? r}</RoleBadge>
                                 ))}
                                 {!u.is_admin && u.roles.length === 0 && <span className="text-[9px] text-surface-400 dark:text-surface-600">viewer</span>}
                               </div>

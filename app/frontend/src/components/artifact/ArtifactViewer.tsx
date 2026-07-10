@@ -4,7 +4,6 @@ import { useWorkflowStore } from '../../stores/workflowStore';
 import { useConfigStore } from '../../stores/configStore';
 import { useAuthStore, canApprove, parseRequiredRoles, ROLE_LABELS } from '../../stores/authStore';
 import { api } from '../../services/api';
-import { CriticIssuesPanel } from './CriticQuestionForm';
 import { QuestionsReviewPanel } from './QuestionsReviewPanel';
 import { PanelChromeHeader, Chevron } from './ArtifactPrimitives';
 import { ARTIFACT_TYPE_LABELS, STAGE_LABELS } from '../../constants/stage-labels';
@@ -37,7 +36,6 @@ export function ArtifactViewer() {
   const [showReviseForm, setShowReviseForm] = useState(false);
   const [showApproveConfirm, setShowApproveConfirm] = useState(false);
   const [showRejectConfirm, setShowRejectConfirm] = useState(false);
-  const [showIssuesPanel, setShowIssuesPanel] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCriticFlyout, setShowCriticFlyout] = useState(false);
   const [versionInfo, setVersionInfo] = useState<{ change_request_id: number; version: number } | null>(null);
@@ -342,37 +340,17 @@ export function ArtifactViewer() {
               backdrop to the left of the drawer, never covering the document. */}
           {showQuestionsPanel && (
             <div className="absolute top-0 right-full h-full flex z-20">
-              {showIssuesPanel && hasIssues && (
-                <div className="w-[340px] h-full bg-surface-50 dark:bg-surface-800 shadow-xl flex flex-col border-r border-surface-200 dark:border-surface-700">
-                  <PanelChromeHeader
-                    label="issues flagged"
-                    meta={`${criticData.issues.length} issue${criticData.issues.length !== 1 ? 's' : ''}`}
-                    onClose={() => setShowIssuesPanel(false)}
-                  />
-                  <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3">
-                    <CriticIssuesPanel issues={criticData.issues} />
-                  </div>
-                </div>
-              )}
               <div className="w-[520px] h-full bg-surface-50 dark:bg-surface-900 shadow-xl flex flex-col border-r border-surface-200 dark:border-surface-700">
                 <PanelChromeHeader
                   label="questions to review"
                   meta={`${(criticData?.questions?.length ?? 0) + openQuestions.length} to answer`}
-                  actions={hasIssues && !showIssuesPanel && (
-                    <button
-                      onClick={() => setShowIssuesPanel(true)}
-                      className="font-mono text-[10px] uppercase tracking-wide px-2 py-1 rounded border border-amber-300 dark:border-amber-700 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors normal-case"
-                    >
-                      View {criticData.issues.length} issue{criticData.issues.length !== 1 ? 's' : ''}
-                    </button>
-                  )}
                 />
                 <div className="flex-1 min-h-0 px-4 py-3 flex flex-col">
                   <QuestionsReviewPanel
                     criticQuestions={criticData?.questions ?? []}
                     openQuestions={openQuestions}
                     onSubmit={(fb) => resolve('revised', fb)}
-                    onCancel={() => { setShowReviseForm(false); setShowIssuesPanel(false); setFeedback(''); }}
+                    onCancel={() => { setShowReviseForm(false); setFeedback(''); }}
                     loading={resolveLoading}
                   />
                 </div>
@@ -534,9 +512,9 @@ export function ArtifactViewer() {
             return (
               <div className="flex-1 min-h-0 relative">
                 {/* Content — always takes full width, centered with max-w in fullscreen */}
-                <div className={`h-full ${isEditing ? 'flex flex-col px-4 py-4' : isFigmaDesign && figmaDesign && !loading && !error ? 'overflow-hidden flex flex-col' : 'overflow-y-auto px-4 py-4'}`}>
+                <div className={`h-full ${isEditing ? 'flex flex-col px-4 py-4' : isFigmaDesign && figmaDesign && !loading && !error ? 'overflow-hidden flex flex-col' : 'overflow-y-auto [scrollbar-gutter:stable] px-4 py-4'}`}>
                   <div className={`${isEditing || (isFigmaDesign && figmaDesign && !loading && !error) ? 'flex-1 min-h-0 flex flex-col' : ''}`}>
-                    {revisionSummary && !isEditing && (
+                    {revisionSummary && !isEditing && artifactType !== 'qa_tests' && (
                       <div className="mb-4 rounded border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-900/40 overflow-hidden">
                         <button
                           onClick={() => setShowRevisionSummary(v => !v)}

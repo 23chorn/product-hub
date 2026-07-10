@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react';
 import { useWorkflowStore } from '../../../stores/workflowStore';
 import { InlineCheckpointActions } from '../../coordinator/InlineCheckpointActions';
 import { parseRequiredRoles, ROLE_LABELS } from '../../../stores/authStore';
-import { STAGE_SHORT_LABELS } from '../../../constants/stage-labels';
 import { api } from '../../../services/api';
 import { BacklogOverlapPanel } from './BacklogOverlapPanel';
+import { RoleBadge } from '../../common/RoleBadge';
 
 export function isStaleRecoveryCheckpoint(coordinatorAction: string | null): boolean {
   try { return !!JSON.parse(coordinatorAction ?? '{}').stale_recovery; } catch { return false; }
@@ -51,27 +51,18 @@ export function CheckpointRow({
     ? null
     : checkpoint.artifact_id;
 
-  const isQaCheckpoint = checkpoint.stage.endsWith('_qa');
-  const checkpointLabel = isQaCheckpoint
-    ? 'QA Test Suite Review'
-    : `${STAGE_SHORT_LABELS[checkpoint.stage] ?? checkpoint.stage} Review`;
   const requiredRoles = parseRequiredRoles(checkpoint.required_role);
+  // Matches the Home card's fallback: no roles assigned to the stage means anyone can
+  // approve, but the box should still say so instead of silently dropping the badge.
   const roleBadge = requiredRoles.length > 0
     ? requiredRoles.map(r => ROLE_LABELS[r] ?? r).join(' / ')
-    : null;
+    : 'Any role';
 
   return (
     <div className="mx-2 mt-1 mb-2 rounded border border-sky-200 dark:border-sky-700/40 bg-sky-50 dark:bg-sky-900/10 p-2 space-y-2">
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[10px] text-sky-600 dark:text-sky-400 font-mono">⏸ awaiting approval</span>
-        {roleBadge && (
-          <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-700 dark:text-fuchsia-400">
-            {roleBadge}
-          </span>
-        )}
-        <span className="text-[10px] text-sky-600 dark:text-sky-400 font-medium">
-          {checkpointLabel}
-        </span>
+        {roleBadge && <RoleBadge variant="required">{roleBadge}</RoleBadge>}
         {safeArtifactId && (
           <button
             onClick={() => setViewingArtifactId(safeArtifactId)}

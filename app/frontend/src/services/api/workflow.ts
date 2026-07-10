@@ -208,6 +208,13 @@ export const workflowApi = {
     return response.data;
   },
 
+  /** Re-enters a stopped/completed workflow at `fromStage`, preserving every upstream
+   *  artifact — only `fromStage` and downstream stages are re-run. */
+  async reiterateWorkflow(workflowId: string, fromStage: string, feedback: string): Promise<any> {
+    const response = await axios.post(`${API_BASE_URL}/api/workflow/${workflowId}/reiterate`, { fromStage, feedback });
+    return response.data;
+  },
+
   async getWorkflowAudit(workflowId: string): Promise<{ audit: Array<{
     id: number; checkpoint_id: number; stage: string;
     user_name: string; user_email: string; action: string;

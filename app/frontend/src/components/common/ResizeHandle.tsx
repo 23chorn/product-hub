@@ -1,17 +1,21 @@
 import { Separator } from 'react-resizable-panels';
 
 /**
- * Vertical drag handle between two horizontally-arranged Panels, with an optional
+ * Vertical divider between two horizontally-arranged Panels, with an optional
  * collapse/expand toggle. `collapseDirection` controls which neighboring panel the
  * toggle acts on (and which way the chevron points) — 'before' collapses the panel
  * to the left of this handle, 'after' collapses the panel to the right.
+ *
+ * Set `resizable={false}` for a fixed-width neighbor — the divider still allows
+ * collapsing/expanding but disables drag-resize.
  */
 export function ResizeHandle({
-  collapsed, onToggleCollapse, collapseDirection = 'before',
+  collapsed, onToggleCollapse, collapseDirection = 'before', resizable = true,
 }: {
   collapsed?: boolean;
   onToggleCollapse?: () => void;
   collapseDirection?: 'before' | 'after';
+  resizable?: boolean;
 }) {
   // The chevron path below points left. Show it as-is when that's the "collapse" affordance
   // for the current state, otherwise flip it — see collapseDirection doc above.
@@ -19,7 +23,12 @@ export function ResizeHandle({
 
   return (
     <div className="relative flex-shrink-0 w-2 group">
-      <Separator className="w-full h-full bg-surface-200 dark:bg-surface-700 group-hover:bg-brand-400 dark:group-hover:bg-brand-500 transition-colors cursor-col-resize" />
+      <Separator
+        disabled={!resizable}
+        className={`w-full h-full bg-surface-200 dark:bg-surface-700 transition-colors ${
+          resizable ? 'group-hover:bg-brand-400 dark:group-hover:bg-brand-500 cursor-col-resize' : ''
+        }`}
+      />
       {onToggleCollapse && (
         <button
           onClick={onToggleCollapse}

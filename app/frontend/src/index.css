@@ -178,3 +178,18 @@ code {
 .animate-slide-in-right {
   animation: slide-in-right 0.3s ease-out;
 }
+
+/* xCube mark travel — logo sweeps left-to-right across the pane in a continuous cycle,
+   trailing a fading brand-gradient streak, as the pipeline "working" indicator */
+@keyframes xcube-travel {
+  0% {
+    left: -10%;
+  }
+  100% {
+    left: 110%;
+  }
+}
+
+.animate-xcube-travel {
+  animation: xcube-travel 11s linear infinite;
+}

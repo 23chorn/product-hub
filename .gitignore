@@ -68,4 +68,4 @@ version.json
 
 *.ps1
 
-/context/behaviour/
+/context/behaviour

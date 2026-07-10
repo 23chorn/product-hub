@@ -2,6 +2,8 @@
 
 export const EVENT_CFG: Record<string, { icon: string; color: string; bgColor: string }> = {
   stage_started:       { icon: '▶', color: 'text-brand-700 dark:text-brand-500',    bgColor: 'bg-brand-50 dark:bg-brand-900/20' },
+  wave_started:        { icon: '⇉', color: 'text-brand-700 dark:text-brand-500',    bgColor: 'bg-brand-50 dark:bg-brand-900/20' },
+  wave_completed:      { icon: '✓', color: 'text-green-700 dark:text-green-500',  bgColor: 'bg-green-50 dark:bg-green-900/20' },
   stage_progress:      { icon: '·', color: 'text-surface-500 dark:text-surface-400',  bgColor: 'bg-surface-100 dark:bg-surface-800/40' },
   stage_completed:     { icon: '✓', color: 'text-green-700 dark:text-green-500',  bgColor: 'bg-green-50 dark:bg-green-900/20' },
   critic_verdict:      { icon: '◎', color: 'text-lime-700 dark:text-lime-500',  bgColor: 'bg-lime-50 dark:bg-lime-900/20' },

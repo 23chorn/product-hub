@@ -35,7 +35,7 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
 
       <div className="relative w-full max-w-sm">
         <div className="mb-8 text-center opacity-0 motion-reduce:opacity-100 motion-safe:animate-fade-in">
-          <AsciiMark width={150} className="mx-auto mb-4" />
+          <AsciiMark width={150} className="mx-auto mb-4" colored />
           <h1 className="text-2xl font-bold text-surface-900 dark:text-surface-100">xCube Flow</h1>
           <p className="text-xs font-mono text-surface-500 mt-1">
             <span className="text-brand-500">&gt;</span> sign in to continue

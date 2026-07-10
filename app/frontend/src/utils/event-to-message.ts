@@ -14,8 +14,9 @@ interface WorkflowEvent {
  * Convert a workflow event to a coordinator message for the chat narration.
  * Returns null if the event shouldn't be displayed.
  */
-export function eventToMessage(event: WorkflowEvent): { role: 'coordinator'; content: string; timestamp: number; eventType: string; stage?: string } | null {
+export function eventToMessage(event: WorkflowEvent): { role: 'coordinator'; content: string; timestamp: number; eventType: string; stage?: string; details?: Record<string, unknown> } | null {
   let content = event.summary;
+  let parsedDetails: Record<string, unknown> | undefined;
 
   // stage_completed / ado_pushed — append external URLs for direct linking.
   // A story_decomposition_F* pair pushes to two separate work items (the feature's
@@ -137,6 +138,20 @@ export function eventToMessage(event: WorkflowEvent): { role: 'coordinator'; con
     } catch { /* use summary */ }
   }
 
+  // Wave kickoff — reformat into a "Wave X of Y" narrative and pass the member stage
+  // list through so PipelineTerminalView can render it as its own wave-level banner
+  // instead of folding it into the first feature's event list.
+  if (event.event_type === 'wave_started' && event.details) {
+    try {
+      const details = JSON.parse(event.details);
+      parsedDetails = details;
+      const members: string[] = Array.isArray(details.members) ? details.members : [];
+      const keys = members.map((m: string) => m.replace('story_decomposition_', ''));
+      const waveLabel = details.waveIndex && details.waveCount ? `Wave ${details.waveIndex} of ${details.waveCount}` : 'Refinement wave';
+      content = `${waveLabel} — ${keys.length} feature${keys.length !== 1 ? 's' : ''} running in parallel: ${keys.join(', ')}`;
+    } catch { /* fall through to raw summary */ }
+  }
+
   // Show curator reasoning log
   if (event.event_type === 'curator_reasoning' && event.details) {
     try {
@@ -147,12 +162,21 @@ export function eventToMessage(event: WorkflowEvent): { role: 'coordinator'; con
     } catch { /* ignore */ }
   }
 
+  // Generic passthrough — expose any event's details on the returned message even when
+  // no branch above needed them for `content`, so consumers (e.g. the roadmap's
+  // wave-index lookup, which reads the epic_feature_planner injection event's `waves`)
+  // don't need a bespoke formatting branch just to read structured data.
+  if (parsedDetails === undefined && event.details) {
+    try { parsedDetails = JSON.parse(event.details); } catch { /* leave undefined */ }
+  }
+
   return {
     role: 'coordinator',
     content,
     timestamp: event.created_at,
     eventType: event.event_type,
     stage: event.stage ?? undefined,
+    details: parsedDetails,
   };
 }
 

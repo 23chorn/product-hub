@@ -12,6 +12,10 @@ interface StageRowProps {
   onSelect?: () => void;
   /** Box-drawing prefix from buildRoadmapTree (e.g. "├─ ", "│  └─ "), or '' for a flat row. */
   treePrefix?: string;
+  /** Small inline tag next to the label (e.g. "wave 2") — used to surface a feature's
+   *  parallel-refinement wave without letting it dictate the row's position in the tree
+   *  (features stay grouped by phase; wave order is annotation only). */
+  badge?: string;
 }
 
 // ── Status icon ───────────────────────────────────────────────────────────────
@@ -63,6 +67,7 @@ export function StageRow({
   customLabel,
   onSelect,
   treePrefix = '',
+  badge,
 }: StageRowProps) {
   const isActive = status === 'in-progress';
   const clickable = status !== 'pending' && !!onSelect;
@@ -81,9 +86,16 @@ export function StageRow({
         <StatusIcon status={status} />
       </span>
       <div className="flex-1 min-w-0 overflow-hidden">
-        <span className={`block text-[13px] font-mono leading-none truncate ${labelColor(status)} ${clickable ? 'group-hover:text-brand-600 dark:group-hover:text-brand-400 group-hover:underline' : ''}`}>
-          {customLabel ?? STAGE_LABELS[stageName] ?? stageName}
-        </span>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className={`min-w-0 text-[13px] font-mono leading-none truncate ${labelColor(status)} ${clickable ? 'group-hover:text-brand-600 dark:group-hover:text-brand-400 group-hover:underline' : ''}`}>
+            {customLabel ?? STAGE_LABELS[stageName] ?? stageName}
+          </span>
+          {badge && (
+            <span className="flex-shrink-0 text-[9px] font-mono uppercase tracking-wide text-surface-400 dark:text-surface-600 border border-surface-300 dark:border-surface-700 rounded px-1 leading-[14px]">
+              {badge}
+            </span>
+          )}
+        </div>
         {isActive && (
           <div className="mt-1 overflow-hidden">
             <AgentAnimation stageName={stageName} />

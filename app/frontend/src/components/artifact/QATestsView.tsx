@@ -3,7 +3,7 @@ import type { TestCase, QATestSuite } from '@pap/shared';
 import { ExpandableText } from '../common/ExpandableText';
 import { DeleteItemButton } from '../common/DeleteItemButton';
 import { normalizePrdId, PHASE_COLORS } from './EpicFeaturesView';
-import { Chevron, DotLabel } from './ArtifactPrimitives';
+import { Chevron, ChromeStrip, DotLabel } from './ArtifactPrimitives';
 
 /** Remove one test case by its position in data.test_cases. The view groups/reorders
  *  cases by type or priority for display via .filter() (preserves object identity), so
@@ -405,48 +405,43 @@ export function QATestsView({ data, frMap, phaseByFeatureKey, planUrlByFeatureKe
         </div>
       )}
 
-      {/* Test counts — total on its own row, then a toggleable type/priority breakdown. Counts
-          are derived from test_cases directly rather than the artifact's separate `coverage`
-          field, which is frequently absent or stale. Switching the toggle also re-groups the
-          test case list below. */}
+      {/* Test counts — windowed-card readout (ChromeStrip + DotLabel, same vocabulary as
+          InitiativeCard/BacklogView) rather than a pastel-tile stat block, so the summary
+          reads as the same kind of console output as the rest of the app. Counts are derived
+          from test_cases directly rather than the artifact's separate `coverage` field, which
+          is frequently absent or stale. Switching the toggle also re-groups the list below. */}
       {totalCount > 0 && (
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="inline-flex items-baseline gap-1.5 bg-surface-50 dark:bg-surface-800 rounded-lg px-3 py-2">
-              <span className="text-lg font-bold text-surface-900 dark:text-surface-100">{totalCount}</span>
-              <span className="text-xs font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400">
-                test case{totalCount !== 1 ? 's' : ''} total
-              </span>
-            </div>
-            <div className="inline-flex items-center gap-1.5">
-              <span className="text-[10px] font-mono font-semibold uppercase tracking-widest text-surface-400 dark:text-surface-500">
-                by
-              </span>
-              <div className="inline-flex rounded-md border border-surface-200 dark:border-surface-700 overflow-hidden">
+        <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/40 overflow-hidden">
+          <ChromeStrip
+            left={`◆ coverage — ${totalCount} case${totalCount !== 1 ? 's' : ''}`}
+            right={
+              <div className="inline-flex rounded border border-surface-200 dark:border-surface-700 overflow-hidden">
                 {(hasPhaseData ? (['type', 'priority', 'phase'] as const) : (['type', 'priority'] as const)).map((mode, i) => (
                   <button
                     key={mode}
                     onClick={() => setGroupMode(mode)}
-                    className={`px-2.5 py-1 text-[10px] font-mono font-semibold transition-colors ${
+                    className={`px-2 py-0.5 lowercase transition-colors ${
                       effectiveGroupMode === mode
                         ? 'bg-brand-600 text-white'
-                        : 'bg-surface-50 dark:bg-surface-800 text-surface-500 dark:text-surface-400 hover:bg-surface-100 dark:hover:bg-surface-700'
+                        : 'text-surface-500 dark:text-surface-400 hover:text-surface-700 dark:hover:text-surface-200'
                     } ${i > 0 ? 'border-l border-surface-200 dark:border-surface-700' : ''}`}
                   >
-                    {mode}
+                    by {mode}
                   </button>
                 ))}
               </div>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
+            }
+          />
+          <div className="px-3 py-2 flex items-center gap-x-4 gap-y-1.5 flex-wrap">
             {groupedCases.map(([key, cases]) => {
               const meta = groupMeta(key);
               return (
-                <div key={key} className={`${meta.color} rounded-md px-2.5 py-1.5 min-w-[64px] text-center`}>
-                  <p className="text-sm font-bold">{cases.length}</p>
-                  <p className="text-[9px] uppercase tracking-wide mt-0.5 opacity-80">{meta.label}</p>
-                </div>
+                <DotLabel
+                  key={key}
+                  dotClass={meta.dot}
+                  textClass={meta.text}
+                  label={`${meta.label.toLowerCase()} · ${cases.length}`}
+                />
               );
             })}
           </div>

@@ -461,8 +461,15 @@ No changes needed to tech-stack.md or process.md — those remain accurate as wr
   const nextWave = findWaveForStage(decompMeta, nextStage) ?? [nextStage];
 
   if (nextWave.length > 1) {
-    insertEvent(workflowId, 'stage_started', nextStage,
-      `Starting ${nextWave.length} features in parallel: ${nextWave.map(s => s.replace('story_decomposition_', '')).join(', ')}`);
+    const waveIndex = (decompMeta.waves ?? []).indexOf(nextWave);
+    insertEvent(workflowId, 'wave_started', nextStage,
+      `Starting ${nextWave.length} features in parallel: ${nextWave.map(s => s.replace('story_decomposition_', '')).join(', ')}`,
+      {
+        waveIndex: waveIndex >= 0 ? waveIndex + 1 : undefined,
+        waveCount: decompMeta.waves?.length,
+        members: nextWave,
+        maxConcurrency: decompMeta.max_parallel_features,
+      });
     await Promise.all(nextWave.map(memberStage => kickoffMemberStage(memberStage)));
   } else {
     await kickoffMemberStage(nextStage);
@@ -744,6 +751,13 @@ export function resolveCheckpoint(
     if (waveComplete) {
       stmts.updateWorkflowStatus.run('active', now, checkpoint.workflow_id);
       logger.info(`Checkpoint ${checkpointId} approved — wave fully approved, workflow ${checkpoint.workflow_id} can advance`);
+      const workflow = stmts.getWorkflow.get(checkpoint.workflow_id);
+      const decompMeta = workflow ? parseDecompositionMetadata(workflow.decomposition_metadata) : {};
+      const wave = findWaveForStage(decompMeta, getBaseStage(checkpoint.stage));
+      if (wave && wave.length > 1) {
+        insertEvent(checkpoint.workflow_id, 'wave_completed', checkpoint.stage,
+          `Wave complete — all ${wave.length} features approved`, { members: wave });
+      }
     } else {
       logger.info(`Checkpoint ${checkpointId} approved — feature's own pair complete, but wave sibling(s) still pending; workflow ${checkpoint.workflow_id} remains paused`);
     }

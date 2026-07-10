@@ -5,6 +5,8 @@ import { effectiveStatus, type EnrichedItem } from './types';
 import { StatusBadge } from './StatusBadge';
 import { useAuthStore, ROLE_LABELS, canLaunchWorkflow } from '../../stores/authStore';
 import { CardContextMenu } from '../common/CardContextMenu';
+import { RoleBadge } from '../common/RoleBadge';
+import { InfoBadge } from '../common/InfoBadge';
 import { ArchiveConfirmModal } from '../common/ArchiveConfirmModal';
 import { formatAssignedLabel } from '../../utils/assigned-users';
 import { splitProductAreas } from '../../utils/product-area';
@@ -276,23 +278,20 @@ export function InitiativeCard({
           </span>
         )}
         {isAdmin && approvalBadges.map((label) => (
-          <span
+          <RoleBadge
             key={label}
-            className="flex-shrink-0 inline-flex items-center text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400"
+            variant="required"
+            shape="tag"
             title={`Requires approval from: ${label === 'approval' ? 'any role' : label.replace(/\//g, ' or ')}`}
           >
             Needs {label}
-          </span>
+          </RoleBadge>
         ))}
         {item.productArea && splitProductAreas(item.productArea).map(area => (
-          <span key={area} className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
-            {area}
-          </span>
+          <InfoBadge key={area} variant="productArea">{area}</InfoBadge>
         ))}
         {item.strategicTheme && (
-          <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-lime-100 dark:bg-lime-900/30 text-lime-700 dark:text-lime-400">
-            {item.strategicTheme}
-          </span>
+          <InfoBadge variant="theme">{item.strategicTheme}</InfoBadge>
         )}
       </div>
 

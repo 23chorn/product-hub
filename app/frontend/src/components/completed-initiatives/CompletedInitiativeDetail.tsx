@@ -17,6 +17,7 @@ import { QATestsView, groupByType, typeMeta, splitStoryRefs } from '../artifact/
 import { MarkdownContent } from '../common/MarkdownContent';
 import { ArchiveConfirmModal } from '../common/ArchiveConfirmModal';
 import { DescriptionModal } from '../common/DescriptionModal';
+import { InfoBadge } from '../common/InfoBadge';
 import { BrailleSpinner } from '../workflow/pipeline-terminal/BrailleSpinner';
 import { WorkItemManagePanel } from './WorkItemManagePanel';
 import { FigmaScreenPreviewer } from '../artifact/FigmaDesignActions';
@@ -630,15 +631,9 @@ export function CompletedInitiativeDetail({ itemId, archived = false, onBack, on
           </button>
         )}
         {detail?.productArea && splitProductAreas(detail.productArea).map(area => (
-          <span key={area} className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400">
-            {area}
-          </span>
+          <InfoBadge key={area} variant="productArea">{area}</InfoBadge>
         ))}
-        {detail?.strategicTheme && (
-          <span className="flex-shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
-            {detail.strategicTheme}
-          </span>
-        )}
+        {detail?.strategicTheme && <InfoBadge variant="theme">{detail.strategicTheme}</InfoBadge>}
       </PageHeaderTitle>
       <PageHeaderActions>
         {detail && detail.workItems.filter(w => w.adoType === 'epic' && w.adoUrl).map((e, i, arr) => (

@@ -215,9 +215,14 @@ export function CoordinatorChat() {
         if (event.event_type === 'stage_progress') {
           // On replay, collapse progress events to the latest one *per stage* — so a
           // parallel feature wave restores one live line per feature, not a single shared one.
+          // Routed through eventToMessage (same as the live-poll path below) so reconstructed
+          // progress lines carry the same eventType/details the live ones do — e.g. the
+          // epic_feature_planner injection event's `waves` detail, read by the roadmap tree.
           const stage = event.stage ?? undefined;
           const lastIdx = lastProgressIndexForStage(msgs, stage);
-          const progressMsg: CoordinatorMessage = { role: 'coordinator', content: event.summary, timestamp: event.created_at, isProgress: true, stage };
+          const msg = eventToMessage(event);
+          if (!msg) continue;
+          const progressMsg: CoordinatorMessage = { ...msg, isProgress: true };
           if (lastIdx >= 0) {
             msgs[lastIdx] = progressMsg;
           } else {
@@ -283,7 +288,6 @@ export function CoordinatorChat() {
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
           <PipelineTerminalView
             coordinatorMessages={coordinatorMessages}
-            isRunning={!isComplete}
             showCRButton={isAdmin && isComplete && !showCRForm && !crAssessment}
             onShowCRForm={() => setShowCRForm(true)}
             pendingDiffCount={pendingDiffCount}

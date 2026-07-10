@@ -19,6 +19,7 @@ import { isCancelRequested } from './workflow-cancel';
 import { resolveAgentModel } from '../utils/ai-provider';
 import { progressHeartbeatLine, collectStreamWithHeartbeat, STAGE_MAX_OUTPUT_TOKENS, resolveMaxOutputTokens } from './stage-metadata';
 import { stripJsonFence, repairTruncatedJson } from '../utils/json-repair';
+import { stripWholeResponseDuplication, cleanStageArtifactJson } from './stage-output-parser';
 import { computeRevisionDiff } from '../utils/revision-diff';
 import { loadEpicFeatures } from './feature-decomposition';
 import { detectBacklogOverlaps, recordOverlapFlags, loadAutoResolvedStoryKeys, excludeAutoResolvedStories, buildFrOwnershipMap, detectOutOfScopeFrReferences } from './backlog-overlap';
@@ -918,7 +919,7 @@ export async function runEpicQaStage(
     return;
   }
 
-  const stripped = stripJsonFence(rawOutput.trim());
+  const stripped = cleanStageArtifactJson('epic_qa', stripWholeResponseDuplication(rawOutput.trim(), 'epic_qa'));
   const artifactId = await saveLocalArtifact(sessionId, 'qa_tests', stripped, itemId);
 
   emitValidationWarnings(workflowId, 'epic_qa',
@@ -993,7 +994,7 @@ export async function runEpicQaRevision(
     return;
   }
 
-  const stripped = stripJsonFence(rawOutput.trim());
+  const stripped = cleanStageArtifactJson('epic_qa', stripWholeResponseDuplication(rawOutput.trim(), 'epic_qa'));
   const artifactId = await saveLocalArtifact(sessionId, 'qa_tests', stripped, itemId);
 
   emitValidationWarnings(workflowId, 'epic_qa',

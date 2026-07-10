@@ -5,7 +5,16 @@ import type { StageStatus } from '../../../stores/workflowStore';
  *  but a contiguous run of per-feature refinement stages (story_decomposition_F1,
  *  F2, ...) is grouped under a "Refinement" branch — further split into phase
  *  sub-branches when more than one phase is present — so phase → feature
- *  containment is shown structurally instead of a subtitle line. */
+ *  containment is shown structurally instead of a subtitle line.
+ *
+ *  Grouping and ordering are both by declared feature order (F1, F2, F3, ... — i.e.
+ *  the epic_features artifact's phase → feature order), NOT by `stages`' refinement/
+ *  wave order. Independent features get parallelized into waves purely by dependency
+ *  layering, so a wave can freely mix features from different phases (e.g. wave 1 =
+ *  [F1, F3], wave 2 = [F2]) — walking `stages` directly would then split a single
+ *  phase into multiple disjoint branches, or show F3 before F2. Wave order is a
+ *  transient execution detail, not the roadmap's identity, so it's surfaced elsewhere
+ *  (a "wave N" badge) rather than reordering this tree. */
 
 export type RoadmapNode =
   | { kind: 'stage'; stageName: string; prefix: string; nested: boolean; featureIndex?: number }
@@ -59,24 +68,32 @@ export function buildRoadmapTree(
 
     nodes.push({ kind: 'branch', key: 'refinement', label: 'Refinement', prefix: '', status: aggregateStatus(run, getStatus) });
 
-    // Group the run by phase, preserving first-seen order.
+    const featureIndexOf = (s: string) => parseInt(s.match(FEATURE_STAGE_RE)![1], 10) - 1;
+    // Walk the run in declared (F1, F2, F3, ...) order rather than however `stages`
+    // happens to list them, so parallel-wave scheduling can't reorder this tree.
+    const byFeatureOrder = [...run].sort((a, b) => featureIndexOf(a) - featureIndexOf(b));
+
+    // Group by phase, in each phase's first-seen order along the declared sequence —
+    // every feature for a phase lands in that phase's single group even when other
+    // phases' features are interleaved between them in `stages`.
     const groups: { phase: string | undefined; stageNames: string[] }[] = [];
-    for (const s of run) {
-      const match = s.match(FEATURE_STAGE_RE);
-      const featureIdx = match ? parseInt(match[1], 10) - 1 : -1;
-      const phase = phaseLabels[featureIdx];
-      const lastGroup = groups.at(-1);
-      if (lastGroup && lastGroup.phase === phase) lastGroup.stageNames.push(s);
-      else groups.push({ phase, stageNames: [s] });
+    const groupByPhase = new Map<string | undefined, string[]>();
+    for (const s of byFeatureOrder) {
+      const phase = phaseLabels[featureIndexOf(s)];
+      let stageNames = groupByPhase.get(phase);
+      if (!stageNames) {
+        stageNames = [];
+        groupByPhase.set(phase, stageNames);
+        groups.push({ phase, stageNames });
+      }
+      stageNames.push(s);
     }
     const distinctPhases = new Set(groups.map(g => g.phase).filter(Boolean));
 
-    const featureIndexOf = (s: string) => parseInt(s.match(FEATURE_STAGE_RE)![1], 10) - 1;
-
     if (distinctPhases.size <= 1) {
       // No meaningful phase split — features hang directly off "Refinement".
-      run.forEach((s, j) => {
-        const isLast = j === run.length - 1;
+      byFeatureOrder.forEach((s, j) => {
+        const isLast = j === byFeatureOrder.length - 1;
         nodes.push({ kind: 'stage', stageName: s, prefix: isLast ? '└─ ' : '├─ ', nested: true, featureIndex: featureIndexOf(s) });
       });
     } else {

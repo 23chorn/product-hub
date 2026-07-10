@@ -90,6 +90,18 @@ describe('eventToMessage', () => {
     );
   });
 
+  it('formats a wave_started event and carries member details through', () => {
+    const msg = eventToMessage({
+      ...base,
+      stage: 'story_decomposition_F1',
+      event_type: 'wave_started',
+      summary: 'Starting 2 features in parallel: F1, F2',
+      details: JSON.stringify({ waveIndex: 2, waveCount: 3, members: ['story_decomposition_F1', 'story_decomposition_F2'] }),
+    });
+    expect(msg!.content).toBe('Wave 2 of 3 — 2 features running in parallel: F1, F2');
+    expect(msg!.details).toMatchObject({ waveIndex: 2, waveCount: 3, members: ['story_decomposition_F1', 'story_decomposition_F2'] });
+  });
+
   it('falls back to the raw summary on malformed details', () => {
     const msg = eventToMessage({ ...base, event_type: 'critic_verdict', summary: 'raw', details: '{bad json' });
     expect(msg!.content).toBe('raw');

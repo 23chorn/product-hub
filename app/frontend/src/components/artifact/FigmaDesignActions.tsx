@@ -2,6 +2,11 @@ import { useState } from 'react';
 import type { FigmaScreenRef, ParsedFigmaDesign } from '../../utils/figma-design';
 import { DeleteItemButton } from '../common/DeleteItemButton';
 import { normalizeJourneyId } from './EpicFeaturesView';
+import { ChromeStrip } from './ArtifactPrimitives';
+
+// Mono uppercase label for a sub-section inside the Summary page — matches ChromeStrip's
+// label treatment so the page reads as one console block rather than a stack of plain captions.
+const summaryLabel = 'text-[10px] font-mono font-semibold uppercase tracking-widest text-surface-500 dark:text-surface-400 mb-1.5';
 
 const FALLBACK_KEY = '__file__';
 
@@ -140,51 +145,54 @@ export function FigmaScreenPreviewer({
       {/* Page content */}
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
         {isSummary ? (
-          <>
-            <div>
-              <p className={sectionLabel}>Screens ({screens.length})</p>
-              <ul className="space-y-2 mt-1">
-                {screens.map((s, i) => (
-                  <li key={s.name} className="flex gap-2 text-sm">
-                    <span className="text-surface-400 flex-shrink-0 tabular-nums">{i + 1}.</span>
-                    <span>
-                      <span className="font-medium text-surface-800 dark:text-surface-100">{s.name}</span>
-                      {s.description && (
-                        <span className="text-surface-500 dark:text-surface-400"> — {s.description}</span>
-                      )}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            {navigationFlow && (
+          <div className="rounded-lg border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800/40 overflow-hidden">
+            <ChromeStrip left={`▤ summary — ${screens.length} screen${screens.length !== 1 ? 's' : ''}`} />
+            <div className="p-3 space-y-4">
               <div>
-                <p className={sectionLabel}>Navigation flow</p>
-                <pre className="text-xs font-mono text-surface-700 dark:text-surface-300 bg-surface-50 dark:bg-surface-900 border border-surface-200 dark:border-surface-700 rounded-lg p-3 overflow-auto whitespace-pre-wrap">{navigationFlow}</pre>
-              </div>
-            )}
-
-            {notes && (
-              <div>
-                <p className={sectionLabel}>Notes</p>
-                <p className="text-sm text-surface-700 dark:text-surface-300 leading-relaxed">{notes}</p>
-              </div>
-            )}
-
-            {designGaps && designGaps.length > 0 && (
-              <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-3 py-2.5">
-                <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-1.5">
-                  Design gaps ({designGaps.length})
-                </p>
-                <ul className="space-y-0.5">
-                  {designGaps.map((gap, i) => (
-                    <li key={i} className="text-xs text-amber-700 dark:text-amber-300">• {gap}</li>
+                <p className={summaryLabel}>screens</p>
+                <ul className="space-y-2 mt-1">
+                  {screens.map((s, i) => (
+                    <li key={s.name} className="flex gap-2 text-sm">
+                      <span className="text-surface-400 dark:text-surface-500 font-mono flex-shrink-0 tabular-nums">{i + 1}.</span>
+                      <span>
+                        <span className="font-medium text-surface-800 dark:text-surface-100">{s.name}</span>
+                        {s.description && (
+                          <span className="text-surface-500 dark:text-surface-400"> — {s.description}</span>
+                        )}
+                      </span>
+                    </li>
                   ))}
                 </ul>
               </div>
-            )}
-          </>
+
+              {navigationFlow && (
+                <div>
+                  <p className={summaryLabel}>navigation flow</p>
+                  <pre className="text-xs font-mono text-slate-300 bg-slate-900 border border-slate-700 rounded p-3 overflow-auto whitespace-pre-wrap">{navigationFlow}</pre>
+                </div>
+              )}
+
+              {notes && (
+                <div>
+                  <p className={summaryLabel}>notes</p>
+                  <p className="text-sm text-surface-700 dark:text-surface-300 leading-relaxed">{notes}</p>
+                </div>
+              )}
+
+              {designGaps && designGaps.length > 0 && (
+                <div className="rounded border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-3 py-2.5">
+                  <p className="text-[10px] font-mono font-semibold uppercase tracking-widest text-amber-700 dark:text-amber-400 mb-1.5">
+                    ⚠ design gaps · {designGaps.length}
+                  </p>
+                  <ul className="space-y-0.5">
+                    {designGaps.map((gap, i) => (
+                      <li key={i} className="text-xs text-amber-700 dark:text-amber-300">• {gap}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
         ) : screen && (
           <>
             <div className="flex items-start justify-between gap-2">

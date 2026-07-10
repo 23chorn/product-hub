@@ -7,16 +7,22 @@ const BASE_FONT_SIZE = 6;
 const NATURAL_WIDTH = 364;
 const NATURAL_HEIGHT = 288;
 
+// Same diagonal purple-to-blue gradient as the brand xCube mark (xcube logo.svg),
+// reproduced here as a CSS gradient so it can clip to the ASCII glyphs instead of an <svg>.
+const XCUBE_GRADIENT = 'linear-gradient(135deg, #8103FF 0%, #8103FF 10%, #10BAFF 90%, #10BAFF 100%)';
+
 /** Renders the xCube ASCII mark scaled to an exact pixel width, keeping the character
  *  shading crisp. Used inline (CompanyLogo), tiled (AsciiCubeBackground), and as a
- *  standalone hero (LoginPage) — one scaling implementation for all three. */
-export function AsciiMark({ width, className = '' }: { width: number; className?: string }) {
+ *  standalone hero (LoginPage) — one scaling implementation for all three.
+ *  `colored` swaps the plain black/white text for the brand gradient (CompanyLogo,
+ *  LoginPage); the ambient background watermark stays monochrome. */
+export function AsciiMark({ width, className = '', colored = false }: { width: number; className?: string; colored?: boolean }) {
   const scale = width / NATURAL_WIDTH;
   const height = NATURAL_HEIGHT * scale;
   return (
     <div className={`relative overflow-hidden shrink-0 ${className}`} style={{ width, height }} aria-hidden="true">
       <pre
-        className="absolute top-0 left-0 m-0 text-surface-900 dark:text-surface-100"
+        className={`absolute top-0 left-0 m-0 ${colored ? '' : 'text-surface-900 dark:text-surface-100'}`}
         style={{
           fontFamily: 'monospace',
           fontSize: BASE_FONT_SIZE,
@@ -29,6 +35,14 @@ export function AsciiMark({ width, className = '' }: { width: number; className?
           textAlign: 'left',
           transform: `scale(${scale})`,
           transformOrigin: 'top left',
+          ...(colored
+            ? {
+                backgroundImage: XCUBE_GRADIENT,
+                WebkitBackgroundClip: 'text',
+                backgroundClip: 'text',
+                color: 'transparent',
+              }
+            : {}),
         }}
       >
         {XCUBE_LOGO_ART}
